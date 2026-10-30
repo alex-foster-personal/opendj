@@ -143,6 +143,7 @@ def _clear_hydration_state() -> None:
     stem_index._last_refresh_error.clear()
     stems_module.stem_hydration.OPEN_DECKS._open.clear()
     stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
+    stems_module.stem_hydration.OPEN_DECKS._read_holds.clear()
 
 
 def _drain_hydrations(timeout_s: float = 30.0) -> None:
@@ -616,6 +617,157 @@ def test_part_route_returns_502_on_transport_failure(tmp_path: Path):
 # --- serve-TTL eviction protection (STEM-30) --------------------------------
 
 
+@pytest.mark.requirement("STEM-42")
+def test_manifest_route_marks_then_waits_out_an_eviction_claim(tmp_path: Path):
+    """[if] an eviction claim holds the bundle lock when a deck asks for the manifest [then] it is marked at once and read after, [else stop].
+
+    Codex P1 on #6820.
+
+    MUTATION TARGET: mark without ``_hold_for_deck``'s wait and the route
+    answers while the claim still holds the lock.
+    """
+    import threading
+
+    from apps.cloud import stem_cache_budget
+    from apps.cloud.stem_upload_queue import exclusive_file_lock
+
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    stable_id = "claimed-track"
+    bundle_dir = stems_dir / stable_id
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+    for part in ("vocals", "drums", "bass", "other"):
+        (bundle_dir / f"{part}.wav").write_bytes(_wav_bytes())
+    registry = stems_module.stem_hydration.OPEN_DECKS
+    statuses: list[int] = []
+
+    with _client(stems_dir, data_dir=data_dir) as client:
+        assert isinstance(client.app, FastAPI)
+        client.app.state.stem_cache_data_dir = data_dir
+        with exclusive_file_lock(stem_cache_budget.eviction_claim_lock_path(data_dir, stable_id)):
+            request = threading.Thread(
+                target=lambda: statuses.append(client.get(f"/api/v1/tracks/{stable_id}/stems").status_code)
+            )
+            request.start()
+            deadline = time.monotonic() + 30
+            while stable_id not in registry.open_ids():
+                assert time.monotonic() < deadline, "the route never marked the bundle"
+                time.sleep(0.01)
+            time.sleep(1.0)
+            assert statuses == [], "the route read the bundle while the claim held the lock"
+        request.join(timeout=60)
+
+    assert statuses == [200]
+
+
+@pytest.mark.requirement("STEM-42")
+def test_manifest_poll_answers_while_a_hydration_holds_the_bundle_lock(tmp_path: Path):
+    """[if] a hydration holds the bundle lock for its R2 fetch [then] the manifest route still answers at once, [else stop].
+
+    Codex P1 on #6821: the documented immediate hydrating answer must not
+    wait on the network.
+
+    MUTATION TARGET: make ``hold_against_eviction`` wait on the bundle lock
+    and this request hangs until the lock is released.
+    """
+    import threading
+
+    from apps.cloud.stem_upload_queue import exclusive_file_lock
+    from apps.stems.bundle_lock import bundle_lock_path
+
+    stems_dir = tmp_path / "stems"
+    stems_dir.mkdir()
+    data_dir = tmp_path / "data"
+    stable_id = "being-hydrated"
+    statuses: list[int] = []
+
+    with _client(stems_dir, data_dir=data_dir) as client:
+        assert isinstance(client.app, FastAPI)
+        client.app.state.stem_cache_data_dir = data_dir
+        with exclusive_file_lock(bundle_lock_path(data_dir, stable_id)):
+            request = threading.Thread(
+                target=lambda: statuses.append(client.get(f"/api/v1/tracks/{stable_id}/stems").status_code)
+            )
+            request.start()
+            request.join(timeout=10)
+            assert statuses == [200], "the manifest route waited on the hydration's bundle lock"
+
+
+def _served_bundle(stems_dir: Path, stable_id: str) -> Path:
+    bundle_dir = stems_dir / stable_id
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+    for part in ("vocals", "drums", "bass", "other"):
+        (bundle_dir / f"{part}.wav").write_bytes(_wav_bytes())
+    return bundle_dir
+
+
+@pytest.mark.requirement("STEM-42")
+@pytest.mark.parametrize(
+    "path",
+    ["/api/v1/tracks/{sid}/stems", "/api/v1/tracks/{sid}/stems/vocals", "/api/v1/tracks/{sid}/stems/vocals/waveform"],
+)
+def test_a_read_of_a_corrupt_bundle_leaves_no_eviction_lease(tmp_path: Path, path: str):
+    """[if] a stems read fails on a corrupt bundle [then] the bundle is not left marked served, [else stop].
+
+    A request that served no bytes must not keep a broken bundle from
+    eviction for the six-hour served window (Codex on #6820).
+
+    MUTATION TARGET: drop the ``withdraw()`` on the failure path and the
+    corrupt bundle stays in ``open_ids()``.
+    """
+    stems_dir = tmp_path / "stems"
+    stable_id = "corrupt-track"
+    _served_bundle(stems_dir, stable_id)
+    (stems_dir / stable_id / "vocals.wav").write_bytes(b"not a wav")
+
+    with _client(stems_dir, data_dir=tmp_path / "data") as client:
+        resp = client.get(path.format(sid=stable_id))
+
+    assert resp.status_code in (404, 422), resp.text
+    assert stable_id not in stems_module.stem_hydration.OPEN_DECKS.open_ids()
+
+
+@pytest.mark.requirement("STEM-42")
+def test_an_unavailable_manifest_answer_leaves_no_eviction_lease(tmp_path: Path):
+    """[if] the manifest route answers unavailable because no bundle is on disk [then] the track is not left marked served, [else stop].
+
+    A request that served no bundle must not shield whatever a hydration
+    later writes for the six-hour served window (Codex on #6820).
+
+    MUTATION TARGET: drop the ``withdraw()`` on the unavailable answer and
+    the track stays in ``open_ids()``.
+    """
+    stems_dir = tmp_path / "stems"
+    stems_dir.mkdir()
+    stable_id = "no-bundle-yet"
+
+    with _client(stems_dir, data_dir=tmp_path / "data") as client:
+        resp = client.get(f"/api/v1/tracks/{stable_id}/stems")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "unavailable", resp.json()
+    assert stable_id not in stems_module.stem_hydration.OPEN_DECKS.open_ids()
+
+
+@pytest.mark.requirement("STEM-42")
+def test_a_failed_read_keeps_the_lease_an_earlier_good_read_took(tmp_path: Path):
+    """[if] a good read marked the bundle and a later read of an unknown part fails [then] the bundle stays marked, [else stop].
+
+    Overshoot control: undoing a failed read must restore, not erase.
+    """
+    stems_dir = tmp_path / "stems"
+    stable_id = "good-then-bad"
+    _served_bundle(stems_dir, stable_id)
+
+    with _client(stems_dir, data_dir=tmp_path / "data") as client:
+        assert client.get(f"/api/v1/tracks/{stable_id}/stems").status_code == 200
+        assert client.get(f"/api/v1/tracks/{stable_id}/stems/not-a-part").status_code == 404
+
+    assert stable_id in stems_module.stem_hydration.OPEN_DECKS.open_ids()
+
+
 @pytest.mark.requirement("STEM-30")
 def test_manifest_route_marks_bundle_recently_served(tmp_path: Path):
     """[if] manifest serves a local bundle [then] it marks it recently-served, [else stop]."""
@@ -633,6 +785,225 @@ def test_manifest_route_marks_bundle_recently_served(tmp_path: Path):
     assert resp.status_code == 200
     assert stable_id in stems_module.stem_hydration.OPEN_DECKS.open_ids()
     assert not stems_module.stem_hydration.OPEN_DECKS.is_open(stable_id)
+
+
+@pytest.mark.requirement("STEM-58")
+@pytest.mark.parametrize("route", ["manifest", "part", "waveform"])
+def test_reads_during_back_to_back_swaps_never_find_the_bundle_gone(tmp_path: Path, route: str):
+    """[if] bundles are swapped in over and over while a deck reads [then] every read finds a bundle, [else stop].
+
+    ``_hold_for_deck`` only waits out a claim already under way; a swap
+    that starts after it would empty the bundle path under the read, which
+    the deck sees as no stems, a 404 part or a 404 waveform (Codex on
+    #6820). Real swaps through ``replace_bundle_dir``, real lock files and
+    a real app, no stand-ins.
+
+    MUTATION TARGET: make ``stem_cache_budget.read_barrier`` hold nothing.
+    """
+    import threading
+
+    from apps.stems.bundle_lock import bundle_lock, replace_bundle_dir
+
+    data_dir = tmp_path / "data"
+    stems_dir = data_dir / "state" / "stems"
+    stable_id = "swapped-track"
+    # A waveform decodes its part outside the barrier, so give it audio long
+    # enough for a decode to overlap a swap (the case its one retry is for).
+    part_bytes = _wav_bytes(frames=44_100 * 2) if route == "waveform" else _wav_bytes()
+
+    def write_bundle(directory: Path) -> None:
+        directory.mkdir(parents=True)
+        (directory / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+        for part in ("vocals", "drums", "bass", "other"):
+            (directory / f"{part}.wav").write_bytes(part_bytes)
+
+    bundle = stems_dir / stable_id
+    write_bundle(bundle)
+    staging_root = data_dir / "state" / ".stem-publish"
+    staging_root.mkdir(parents=True)
+    path = {
+        "manifest": f"/api/v1/tracks/{stable_id}/stems",
+        "part": f"/api/v1/tracks/{stable_id}/stems/vocals",
+        "waveform": f"/api/v1/tracks/{stable_id}/stems/vocals/waveform",
+    }[route]
+    done = threading.Event()
+    swaps: list[int] = []
+
+    def keep_swapping() -> None:
+        try:
+            for i in range(4000):
+                if done.is_set():
+                    return
+                staging = staging_root / f"{stable_id}-{i}"
+                write_bundle(staging)
+                with bundle_lock(bundle):
+                    replace_bundle_dir(staging, bundle)
+                swaps.append(i)
+        finally:
+            done.set()
+
+    misses: list[str] = []
+    reads = 0
+    with _client(stems_dir, data_dir=data_dir) as client:
+        assert isinstance(client.app, FastAPI)
+        client.app.state.stem_cache_data_dir = data_dir
+        writer = threading.Thread(target=keep_swapping)
+        writer.start()
+        deadline = time.monotonic() + 120
+        try:
+            while not done.is_set() and (reads < 1500 or len(swaps) <= 50) and time.monotonic() < deadline:
+                response = client.get(path)
+                reads += 1
+                if response.status_code != 200:
+                    misses.append(f"{response.status_code} {response.json()}")
+                elif route == "manifest" and response.json().get("status") == "unavailable":
+                    misses.append(f"200 {response.json()}")
+        finally:
+            done.set()
+            writer.join(timeout=120)
+
+    assert len(swaps) > 50 and reads > 50, f"control: the swaps and reads overlapped ({len(swaps)} swaps, {reads} reads)"
+    assert not misses, f"{len(misses)} of {reads} reads found no bundle: {misses[:3]}"
+
+
+def _half_tone_wav(*, frames: int, loud_half: int) -> bytes:
+    """A stereo WAV that is silent except in half ``loud_half`` (0 or 1), so envelopes tell versions apart."""
+    import io
+    import struct
+
+    half = frames // 2
+    samples = bytearray()
+    for i in range(frames):
+        value = 12_000 if (i >= half) == bool(loud_half) else 0
+        samples += struct.pack("<hh", value, value)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(44_100)
+        out.writeframes(bytes(samples))
+    return buf.getvalue()
+
+
+def test_an_instrumental_envelope_never_mixes_two_bundle_versions(tmp_path: Path):
+    """[if] bundles alternate between two versions under instrumental reads [then] every envelope served or cached is one version's, [else stop].
+
+    The instrumental envelope decodes bass, then other, outside the read
+    barrier. A swap between the two decodes used to return, and cache, the
+    peak of one version's bass with the next version's other (Codex on
+    #6820). Version A sounds only in its first half and B only in its
+    second, so a mix of the two is loud throughout and matches neither.
+
+    MUTATION TARGET: make ``stem_waveform.pin_waveform_inputs`` link nothing
+    AND ``_require_unchanged`` check nothing (either one alone holds this).
+    """
+    import threading
+
+    from apps.stems.artifacts import load_stem_bundle
+    from apps.stems.bundle_lock import bundle_lock, replace_bundle_dir
+    from apps.stems.stem_waveform import build_stem_waveform_payload
+
+    data_dir = tmp_path / "data"
+    stems_dir = data_dir / "state" / "stems"
+    stable_id = "alternating-track"
+    versions = [_half_tone_wav(frames=44_100 // 2, loud_half=half) for half in (0, 1)]
+
+    def write_bundle(directory: Path, version: int) -> None:
+        directory.mkdir(parents=True)
+        (directory / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+        for part in ("vocals", "drums", "bass", "other"):
+            (directory / f"{part}.wav").write_bytes(versions[version])
+
+    expected: list[list[float]] = []
+    for version in (0, 1):
+        reference = tmp_path / f"reference-{version}" / stable_id
+        write_bundle(reference, version)
+        bundle = load_stem_bundle(stable_id, stems_dir=reference.parent)
+        expected.append(build_stem_waveform_payload(bundle, "instrumental")["envelope"])
+    assert expected[0] != expected[1], "control: the two versions have different envelopes"
+    mixed = [max(a, b) for a, b in zip(expected[0], expected[1], strict=True)]
+    assert mixed not in expected, "control: a mix of the versions matches neither"
+
+    bundle_path = stems_dir / stable_id
+    write_bundle(bundle_path, 0)
+    staging_root = data_dir / "state" / ".stem-publish"
+    staging_root.mkdir(parents=True)
+    done = threading.Event()
+    swaps: list[int] = []
+
+    def keep_swapping() -> None:
+        try:
+            for i in range(200_000):
+                if done.is_set():
+                    return
+                staging = staging_root / f"{stable_id}-{i}"
+                write_bundle(staging, (i + 1) % 2)
+                with bundle_lock(bundle_path):
+                    replace_bundle_dir(staging, bundle_path)
+                swaps.append(i)
+        finally:
+            done.set()
+
+    wrong: list[str] = []
+    served = 0
+    path = f"/api/v1/tracks/{stable_id}/stems/instrumental/waveform"
+    with _client(stems_dir, data_dir=data_dir) as client:
+        assert isinstance(client.app, FastAPI)
+        client.app.state.stem_cache_data_dir = data_dir
+        client.app.state.data_dir = data_dir
+        writer = threading.Thread(target=keep_swapping)
+        writer.start()
+        # Read until both sides have done enough to overlap, not until the
+        # reads alone run out: on a slow disk 60 reads can finish inside 26 swaps.
+        deadline = time.monotonic() + 120
+        try:
+            while not done.is_set() and (served < 60 or len(swaps) <= 50) and time.monotonic() < deadline:
+                response = client.get(path)
+                if response.status_code != 200:
+                    wrong.append(f"{response.status_code} {response.json()}")
+                    continue
+                served += 1
+                if response.json()["envelope"] not in expected:
+                    wrong.append("served an envelope matching neither version")
+        finally:
+            done.set()
+            writer.join(timeout=120)
+
+    cached = sorted((data_dir / "state" / "stem-waveform-cache").rglob("*.json"))
+    wrong.extend(
+        f"cached an envelope matching neither version: {entry.name}"
+        for entry in cached
+        if json.loads(entry.read_text(encoding="utf-8"))["envelope"] not in expected
+    )
+    assert len(swaps) > 50 and served >= 60, f"control: the swaps and reads overlapped ({len(swaps)} swaps, {served} reads)"
+    assert cached, "control: the reads populated the envelope cache"
+    assert not wrong, f"{len(wrong)} wrong answers of {served} served: {wrong[:3]}"
+
+
+def test_a_part_replaced_under_its_decode_is_refused_and_an_untouched_one_is_not(tmp_path: Path):
+    """[if] a part file is replaced after its stat [then] the guard raises; [else] an untouched one passes, [else stop].
+
+    MUTATION TARGET: compare only size and mtime, or always raise.
+    """
+    import os
+
+    from apps.stems.stem_waveform import StemPartChangedError, _require_unchanged
+
+    part = tmp_path / "bass.wav"
+    part.write_bytes(_wav_bytes())
+    before = part.stat()
+    _require_unchanged(part, before)  # control: untouched passes
+
+    replacement = tmp_path / "bass.next.wav"
+    replacement.write_bytes(_wav_bytes())
+    os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+    os.replace(replacement, part)
+    with pytest.raises(StemPartChangedError):
+        _require_unchanged(part, before)
+
+    part.unlink()
+    with pytest.raises(StemPartChangedError):
+        _require_unchanged(part, before)
 
 
 _LEAK_SID = "slow-leak-track"

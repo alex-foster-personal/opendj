@@ -40,13 +40,13 @@ Two entry points:
 from __future__ import annotations
 
 import contextlib
-import hashlib
+import dataclasses
 import json
-import shutil
+import logging
 import tempfile
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -70,6 +70,18 @@ from apps.stems.artifacts import (
     StemBundleNotFoundError,
     load_stem_bundle,
 )
+from apps.stems.bundle_lock import (
+    BUNDLE_LOCK_STRIPES,
+    StagingCleanupError,
+    bundle_lock_path,
+    readers_held_off,
+    remove_staging,
+    replace_bundle_dir,
+    restore_orphaned_swap,
+)
+from apps.stems.recompress import restore_orphaned_recompress_swap
+
+log = logging.getLogger(__name__)
 
 RESERVATION_FILENAME: str = "stem-order-reserved-100.json"
 STEM_ASSET_KIND: str = "stem_bundle"
@@ -133,6 +145,11 @@ class OpenDeckRegistry:
         self._lock = threading.Lock()
         self._open: dict[str, int] = {}
         self._served_at: dict[str, float] = {}
+        #: Each read's own hold, by token, so overlapping reads of one
+        #: bundle never undo each other (Codex on #6821). A read that
+        #: succeeds keeps its hold until the TTL; one that fails drops it.
+        self._read_holds: dict[str, dict[int, float]] = {}
+        self._next_read_token: int = 0
         #: True only in the process that serves decks (the engine, set when it
         #: arms hydration). Any other process (a hydrate worker, a CLI) sees an
         #: empty registry, so it must never evict: its post-hydrate pass only
@@ -166,6 +183,38 @@ class OpenDeckRegistry:
         with self._lock:
             self._served_at[stable_id] = now if now is not None else time.monotonic()
 
+    def mark_served_for_read(self, stable_id: str, *, now: float | None = None) -> Callable[[], None]:
+        """Hold ``stable_id`` against eviction for a read that may fail; returns its undo.
+
+        Each read gets its own hold, kept beside :meth:`mark_served`'s stamp
+        rather than in it, so the undo removes exactly this read's hold and
+        nothing else. A read that serves nothing leaves no protection behind,
+        however its undo interleaves with other reads of the same bundle,
+        while every read that did serve keeps its hold for the TTL (Codex on
+        #6820 and #6821: a single shared stamp restored by a failed read could
+        resurrect another failed read's mark). ``now`` is injectable for
+        tests; production omits it.
+        """
+        moment = now if now is not None else time.monotonic()
+        with self._lock:
+            holds = self._read_holds.setdefault(stable_id, {})
+            for token in [t for t, at in holds.items() if moment - at >= OPEN_DECK_SERVED_TTL_S]:
+                del holds[token]
+            token = self._next_read_token
+            self._next_read_token += 1
+            holds[token] = moment
+
+        def withdraw() -> None:
+            with self._lock:
+                mine = self._read_holds.get(stable_id)
+                if mine is None:
+                    return
+                mine.pop(token, None)
+                if not mine:
+                    del self._read_holds[stable_id]
+
+        return withdraw
+
     def open_ids(self, *, now: float | None = None) -> frozenset[str]:
         """Explicitly-open ids, UNION any id served within the TTL. This is
         the single set every eviction caller already protects via
@@ -177,6 +226,17 @@ class OpenDeckRegistry:
                 sid for sid, at in self._served_at.items()
                 if moment - at < OPEN_DECK_SERVED_TTL_S
             }
+            # Expired holds go here too, not only on the next read of the
+            # same id, so a long-lived engine does not keep one token per
+            # read it ever served (Codex on #6820 and #6821).
+            for sid in list(self._read_holds):
+                holds = self._read_holds[sid]
+                for token in [t for t, at in holds.items() if moment - at >= OPEN_DECK_SERVED_TTL_S]:
+                    del holds[token]
+                if holds:
+                    recently_served.add(sid)
+                else:
+                    del self._read_holds[sid]
             return frozenset(self._open) | recently_served
 
 
@@ -199,15 +259,23 @@ def _hydrate_lock(stable_id: str) -> threading.Lock:
         return _hydrate_locks.setdefault(stable_id, threading.Lock())
 
 
-#: Stripes of the cross-process hydrate lock. Bounded so the lock files never
-#: grow with the library; two ids sharing a stripe only wait on each other.
-HYDRATE_LOCK_STRIPES: int = 256
+#: Stripes of the cross-process hydrate lock, the bundle lock's own stripes.
+#: Bounded so the lock files never grow with the library; two ids sharing a
+#: stripe only wait on each other.
+HYDRATE_LOCK_STRIPES: int = BUNDLE_LOCK_STRIPES
 
 
 def hydrate_lock_path(data_dir: Path, stable_id: str) -> Path:
-    """The OS lock file a hydrate of ``stable_id`` holds, in every process."""
-    stripe = int(hashlib.sha256(stable_id.encode("utf-8")).hexdigest(), 16) % HYDRATE_LOCK_STRIPES
-    return Path(data_dir) / "state" / "stem-hydrate-locks" / f"{stripe:03d}.lock"
+    """The OS lock file a hydrate of ``stable_id`` holds across its whole fetch, in every process.
+
+    Only hydrations take it, so two hydrations of one id never fetch at once.
+    It is NOT the bundle writer lock (:func:`apps.stems.bundle_lock.bundle_lock_path`):
+    a hydrate takes that one only around its publish, because a stems job's
+    publish or a recompress swap of an unrelated id on the same stripe would
+    otherwise wait out a whole R2 transfer (Codex on #6821).
+    """
+    writer_lock = bundle_lock_path(data_dir, stable_id)
+    return writer_lock.with_name(f"fetch-{writer_lock.name}")
 
 
 @contextlib.contextmanager
@@ -258,6 +326,88 @@ def _is_local(stable_id: str, stems_dir: Path) -> bool:
     except (StemBundleNotFoundError, StemArtifactError):
         return False
     return True
+
+
+def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Path) -> bool:
+    """Verify a fetched bundle, then swap it into place under the bundle writer lock.
+
+    The strict reader runs on the fetched copy before anything can read it:
+    the copy is moved, under its own name, into a ``.verify`` container
+    beside it that every scan skips, read there, and only a bundle that
+    passes is swapped in. Verified after the swap instead, a deck read in
+    between served a bundle the verify then took away (Sol on #6820). Only
+    the swap holds the lock every writer of this bundle directory shares, so
+    it never interleaves with a stems job's publish or a recompress swap,
+    while the fetch and the verify hold only the hydrate lock (Codex on
+    #6821); an invalid bundle in place is replaced through the barrier-held
+    swap, never removed then renamed in the open (Codex on #6821). Returns
+    False when another writer already published a valid bundle. A copy that
+    is not published is moved back to ``tmp_dir`` for the caller to discard.
+    """
+    bundle_dir = root / stable_id
+    container = tmp_dir.with_name(f"{tmp_dir.name}.verify")
+    container.mkdir()
+    staged = container / stable_id
+    tmp_dir.rename(staged)
+    try:
+        load_stem_bundle(stable_id, roots=[container])  # strict verify, never mocked
+        with exclusive_file_lock(bundle_lock_path(data_dir, stable_id)):
+            # A writer killed between a swap's two renames left the only good
+            # copy aside, possibly a render never uploaded. Put it back before
+            # the keep check, or the swap below restores it and then deletes
+            # it as the old bundle (Codex P1 on #6821).
+            with readers_held_off(bundle_dir):
+                restore_orphaned_swap(bundle_dir, data_dir)
+                restore_orphaned_recompress_swap(bundle_dir, data_dir)
+            # Cross-process race: something else already published a valid
+            # bundle while we were fetching. Keep the winner, discard our own
+            # copy rather than clobbering it.
+            if bundle_dir.exists() and _is_local(stable_id, root):
+                return False
+            bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+            replace_bundle_dir(staged, bundle_dir)
+        return True
+    finally:
+        try:
+            if staged.exists():
+                staged.rename(tmp_dir)
+            container.rmdir()
+        except OSError:
+            # The copy cannot be handed back: removed here with its
+            # container, or named by StagingCleanupError, never left where
+            # no scan and no caller looks (Codex on #6821).
+            remove_staging(container, "hydration verify container")
+
+
+def _discard_losing_copy(tmp_dir: Path, outcome: HydrationOutcome) -> HydrationOutcome:
+    """Remove the copy a hydrate fetched after another publisher won; report it if it stays.
+
+    The winner's bundle is local and the deck can play it, so the outcome
+    stays ``already_local``. A copy that cannot be removed is logged and
+    named in the outcome's reason, never left on disk unseen (Sol on #6820).
+    """
+    try:
+        remove_staging(tmp_dir, "losing hydration copy")
+    except StagingCleanupError as exc:
+        log.error("%s", exc)
+        return dataclasses.replace(outcome, reason=str(exc))
+    return outcome
+
+
+def _discard_failed_copy(path: Path, reason: str) -> str:
+    """Remove what a failed hydrate wrote; name it in ``reason`` if it stays.
+
+    A ``.tmp-hydrate-*`` directory is outside every scan, so one left behind
+    would never be counted or evicted, and retries could fill the volume
+    unseen. A removal that fails is logged and reported with the hydrate's
+    own error (Codex on #6821).
+    """
+    try:
+        remove_staging(path, "failed hydration copy")
+    except StagingCleanupError as exc:
+        log.error("%s", exc)
+        return f"{reason}; {exc}"
+    return reason
 
 
 def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch, all real states
@@ -338,7 +488,6 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         tmp_dir = Path(
             tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}")
         )
-        renamed = False
         pin: Path | None = None
         try:
             total = source.fetch_bundle_files(
@@ -347,29 +496,18 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 tmp_dir=tmp_dir,
             )
             # Pin BEFORE publishing: an eviction pass in any process may scan
-            # the bundle the moment the rename lands, before the verify below
-            # and before any deck registry names it. The pin is this call's
-            # own file, so another process's hydrate of this id cannot drop it.
+            # the bundle the moment the rename lands, before the verify and
+            # before any deck registry names it. The pin is this call's own
+            # file, so another process's hydrate of this id cannot drop it.
             pin = pin_for_hydrate(bundle_dir)
-            if bundle_dir.exists():
-                # Cross-process race: something else already published a
-                # valid bundle while we were fetching. Keep the winner,
-                # discard our own copy rather than clobbering it.
-                if _is_local(stable_id, root):
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
-                    outcome = already_local()
-                    unpin_hydrate(pin)
-                    return outcome
-                shutil.rmtree(bundle_dir)
-            bundle_dir.parent.mkdir(parents=True, exist_ok=True)
-            tmp_dir.rename(bundle_dir)
-            renamed = True
-            load_stem_bundle(stable_id, stems_dir=root)  # strict re-verify, never mocked
+            if not _publish_fetched(stable_id, data_dir=data_dir, root=root, tmp_dir=tmp_dir):
+                outcome = already_local()
+                unpin_hydrate(pin)
+                return _discard_losing_copy(tmp_dir, outcome)
         except StemSourceError as exc:
-            if renamed:
-                shutil.rmtree(bundle_dir, ignore_errors=True)
-            else:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            # A failed publish already removed what it renamed into place,
+            # under the writer lock; only OUR OWN temp dir can be left.
+            reason = _discard_failed_copy(tmp_dir, exc.message)
             unpin_hydrate(pin)
             status = (
                 "hub_error"
@@ -377,7 +515,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 else "error"
             )
             return HydrationOutcome(
-                stable_id, status, reason=exc.message, code=exc.code
+                stable_id, status, reason=reason, code=exc.code
             )
         except (
             HydrationError,
@@ -386,17 +524,11 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             StemBundleNotFoundError,
             OSError,
         ) as exc:
-            if renamed:
-                # We just published this bundle and OUR OWN verify failed:
-                # it's genuinely bad, remove it -- not another call's work,
-                # because we hold this stable_id's lock.
-                shutil.rmtree(bundle_dir, ignore_errors=True)
-            else:
-                # Fetch failed before publish: remove only OUR OWN temp
-                # dir, never bundle_dir (which we never touched).
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+            # Remove only OUR OWN temp dir, never bundle_dir: a publish whose
+            # verify failed removed its own bundle under the writer lock.
+            reason = _discard_failed_copy(tmp_dir, str(exc))
             unpin_hydrate(pin)
-            return HydrationOutcome(stable_id, "error", reason=str(exc))
+            return HydrationOutcome(stable_id, "error", reason=reason)
 
     # A hydrate just succeeded, so this machine can demonstrably get an
     # evicted bundle back: that is what ``can_rehydrate`` asserts.

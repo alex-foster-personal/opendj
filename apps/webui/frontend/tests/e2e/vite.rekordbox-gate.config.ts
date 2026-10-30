@@ -12,10 +12,12 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
+
 export const REKORDBOX_GATE_E2E_PORT = 5399;
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), ...e2eFootprintsPlugin()],
 	optimizeDeps: { exclude: ['signalsmith-stretch'] },
 	server: {
 		host: '127.0.0.1',

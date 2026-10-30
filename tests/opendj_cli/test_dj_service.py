@@ -25,7 +25,9 @@ from apps.opendj_cli.origin import EngineOrigin
 from tests.autodj.fixtures import anlz_payload, profile, track_row
 
 _ENGINE_DIR = tempfile.TemporaryDirectory()  # the schedule lock is created beside the engine lock file
-ORIGIN = EngineOrigin(host="127.0.0.1", port=1, lock_path=Path(_ENGINE_DIR.name) / ".engine.lock", pid=None, role=None, boot_id=None)
+ORIGIN = EngineOrigin(
+    host="127.0.0.1", port=1, lock_path=Path(_ENGINE_DIR.name) / ".engine.lock", pid=None, role=None, boot_id=None
+)
 TRACKS = {"trk-out": ("8A", 128.0), "trk-in": ("9A", 128.0), "trk-next": ("8B", 127.0)}
 OUT = profile("trk-out")
 
@@ -70,7 +72,10 @@ class FakePage:
         self._abort_lag_left = 0
         self.mirror_doc: dict[str, Any] = {
             "master_deck": 1,
-            "mixer": {"crossfader": 0.5, "channels": {"1": {"fader": 1.0, "trim": 0.5, "assign": "THRU"}, "2": {"fader": 1.0}}},
+            "mixer": {
+                "crossfader": 0.5,
+                "channels": {"1": {"fader": 1.0, "trim": 0.5, "assign": "THRU"}, "2": {"fader": 1.0}},
+            },
             "decks": {
                 "1": {
                     "stable_id": "trk-out",
@@ -120,10 +125,15 @@ class FakePage:
             plan_id = order["plan"]["id"]
             if not self.plan_unpublished:  # the page republishes its mirror with the plan, as the real page does
                 self.mirror_doc["agent_plan"] = {"id": plan_id, "status": "scheduled", "fired": 0}
-            return {"steps": [{"status": "succeeded", "result": {"plan_id": plan_id, "status": "scheduled", "bar": 100.0}}], "mirror_delta": {}}
+            return {
+                "steps": [{"status": "succeeded", "result": {"plan_id": plan_id, "status": "scheduled", "bar": 100.0}}],
+                "mirror_delta": {},
+            }
         if "plan_amend" in order:
             plan_id = order["plan_amend"]["id"]
-            if (self.mirror_doc.get("agent_plan") or {}).get("id") != plan_id:  # an abort for a plan the page does not hold
+            if (self.mirror_doc.get("agent_plan") or {}).get(
+                "id"
+            ) != plan_id:  # an abort for a plan the page does not hold
                 return {"steps": [{"status": "failed", "error": f"no plan {plan_id} on this page"}], "mirror_delta": {}}
             fired = self.fired_on_abort
             if fired is None:  # the events the page had fired when it took the abort
@@ -136,7 +146,10 @@ class FakePage:
 
             self._abort_publication = publish_abort
             self._abort_lag_left = self.abort_republish_lag
-            return {"steps": [{"status": "succeeded", "result": {"plan_id": plan_id, "status": "aborted"}}], "mirror_delta": {}}
+            return {
+                "steps": [{"status": "succeeded", "result": {"plan_id": plan_id, "status": "aborted"}}],
+                "mirror_delta": {},
+            }
         if "single" in order:  # any bus command, as agent-orders.ts runs it through the same dispatch
             return {"steps": [{"status": "succeeded"}], "mirror_delta": {"changed": {}}}
         raise AssertionError(f"unexpected order {order}")
@@ -210,7 +223,9 @@ def test_schedule_loads_the_idle_deck_then_posts_one_plan_order(requests: list[s
     assert any(c["type"] == "seek" and c["deck"] == 2 for c in order["prepare"])
 
 
-def test_schedule_holds_the_lock_until_the_page_publishes_the_plan(requests: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_schedule_holds_the_lock_until_the_page_publishes_the_plan(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """[if] the page accepts a plan but never publishes it [then] schedule says so, not success, [else stop]."""
     from apps.opendj_cli import dj_service
 
@@ -346,7 +361,9 @@ def test_propose_refuses_an_explicit_incoming_deck_armed_for_a_launch(requests: 
     assert _service(page, requests).propose("trk-in", in_deck=2)["proposals"]
 
 
-def test_schedule_puts_back_the_track_a_refused_load_evicted(requests: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_schedule_puts_back_the_track_a_refused_load_evicted(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A plan that clears validation before its load but not after it puts the idle deck's old track back."""
     page = FakePage()
     page.mirror_doc["decks"]["2"] = {"stable_id": "trk-old", "playing": False}
@@ -375,7 +392,12 @@ def test_schedule_puts_back_the_track_when_submitting_the_plan_fails(
 ) -> None:
     """A submit that fails after the load still puts the idle deck's old track back: the rollback covers the whole schedule."""
     page = FakePage()
-    page.mirror_doc["decks"]["2"] = {"stable_id": "trk-old", "playing": False, "position": {"ms": 61000.0}, "pitch": 1.04}
+    page.mirror_doc["decks"]["2"] = {
+        "stable_id": "trk-old",
+        "playing": False,
+        "position": {"ms": 61000.0},
+        "pitch": 1.04,
+    }
     service = _service(page, requests)
     plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
 
@@ -390,7 +412,11 @@ def test_schedule_puts_back_the_track_when_submitting_the_plan_fails(
     assert [order["single"] for order in page.orders if "single" in order] == [
         {"type": "load", "deck": 2, "stable_id": "trk-in"},
         {"type": "load", "deck": 2, "stable_id": "trk-old"},  # the old track comes back
-        {"type": "seek", "deck": 2, "position_ms": 61000.0},  # with its playhead and pitch; the cue is not in the mirror
+        {
+            "type": "seek",
+            "deck": 2,
+            "position_ms": 61000.0,
+        },  # with its playhead and pitch; the cue is not in the mirror
         {"type": "tempo", "deck": 2, "ratio": 1.04},
         {"type": "fader", "deck": 2, "value": 1.0},  # the channel's fader, as the mirror read it before the schedule
     ]
@@ -608,7 +634,11 @@ def test_a_refused_muted_schedule_puts_back_the_master_mute_as_it_was_read(
 
     def muted_then_failed(order: dict[str, Any], plan_id: str) -> None:
         service._order({"single": _MUTE})  # the page applies the plan's own mute before its prepare fails
-        page.mirror_doc["agent_plan"] = {"id": plan_id, "status": "aborted", "fired": 0}  # the abort is published, nothing fired
+        page.mirror_doc["agent_plan"] = {
+            "id": plan_id,
+            "status": "aborted",
+            "fired": 0,
+        }  # the abort is published, nothing fired
         raise DjError("prepare_failed", "a prepare command failed", plan_id=plan_id)
 
     monkeypatch.setattr(service, "_submit_plan", muted_then_failed)
@@ -665,64 +695,75 @@ def test_a_plan_that_failed_before_it_fired_is_rolled_back_though_its_abort_is_r
     assert any(order.get("single", {}).get("type") == "seek" for order in page.orders), "the deck is put back"
 
 
-def test_schedule_refuses_while_autoplay_can_hand_off(requests: list[str]) -> None:
-    """AutoPlay on or armed can replace the cued track or promote a third deck mid-plan: the schedule is refused before any load."""
+@pytest.mark.requirement("AUTOPLAN-05")
+def test_a_plan_schedules_while_autoplay_is_on_because_autoplay_yields(requests: list[str]) -> None:
+    """[if] AutoPlay is on with no handoff in flight [then] the plan is scheduled: AutoPlay stands aside for it, [else stop]."""
+    page = FakePage()
+    service = _service(page, requests)
+    plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
+    page.mirror_doc.update(autoplay_enabled=True, autoplay_armed=True, autoplay_handoff_in_flight=False)
+    assert service.schedule(plan)["scheduled"] is True, "if AutoPlay being on still refuses a plan then broken"
+
+
+@pytest.mark.requirement("AUTOPLAN-05")
+def test_schedule_refuses_a_handoff_in_flight_before_any_load(requests: list[str]) -> None:
+    """[if] a handoff is loading or starting a deck [then] the schedule is refused before it touches a deck, [else stop]."""
+    page = FakePage()
+    service = _service(page, requests)
+    plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
+    page.mirror_doc.update(autoplay_enabled=True, autoplay_handoff_in_flight=True)
+    with pytest.raises(DjError) as refused:
+        service.schedule(plan)
+    assert refused.value.code == "autoplay_handoff"
+    assert page.orders == [], "nothing is loaded or sent during a handoff"
+
+
+@pytest.mark.requirement("AUTOPLAN-05")
+def test_schedule_refuses_a_page_that_does_not_report_handoffs_while_autoplay_is_on(requests: list[str]) -> None:
+    """[if] the mirror cannot say whether a handoff is in flight [then] AutoPlay on is still refused, unmeasured is not clear, [else stop]."""
     page = FakePage()
     service = _service(page, requests)
     plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
     page.mirror_doc["autoplay_enabled"] = True
     with pytest.raises(DjError) as refused:
         service.schedule(plan)
-    assert refused.value.code == "autoplay_on"
-    assert page.orders == [], "nothing is loaded or sent while AutoPlay is on"
+    assert refused.value.code == "autoplay_handoff"
 
 
-def test_autoplay_switched_on_during_the_load_is_refused_and_the_load_is_undone(requests: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """AutoPlay checked only before a slow load can be switched on during it: the plan is refused on the post-load mirror."""
+@pytest.mark.requirement("AUTOPLAN-05")
+def test_a_handoff_starting_during_the_load_is_refused_and_the_load_is_undone(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a handoff starts during the slow load [then] the post-load mirror refuses the plan and the load is undone, [else stop]."""
     page = FakePage()
     service = _service(page, requests)
     plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
+    page.mirror_doc["autoplay_handoff_in_flight"] = False
     post_order = page.post_order
 
-    def switch_autoplay_on_while_loading(order: dict[str, Any]) -> dict[str, Any]:
+    def start_a_handoff_while_loading(order: dict[str, Any]) -> dict[str, Any]:
         result = post_order(order)
         if order.get("single", {}).get("type") == "load":
-            page.mirror_doc["autoplay_enabled"] = True
+            page.mirror_doc["autoplay_handoff_in_flight"] = True
         return result
 
-    monkeypatch.setattr(page, "post_order", switch_autoplay_on_while_loading)
+    monkeypatch.setattr(page, "post_order", start_a_handoff_while_loading)
     with pytest.raises(DjError) as refused:
         service.schedule(plan)
-    assert refused.value.code == "autoplay_on"
-    assert not any("plan" in order for order in page.orders), "no plan is submitted while AutoPlay is on"
+    assert refused.value.code == "autoplay_handoff"
+    assert not any("plan" in order for order in page.orders), "no plan is submitted during a handoff"
     assert {"single": {"type": "unload", "deck": 2}} in page.orders, "the track the refused schedule loaded is unloaded"
 
 
-def test_autoplay_switched_on_after_the_first_read_is_refused_when_the_incoming_deck_is_already_loaded(
-    requests: list[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With the incoming track already on its deck no load runs, so the plan must still be checked on a mirror read after the first."""
+@pytest.mark.requirement("AUTOPLAN-06")
+def test_autoplay_decision_reads_the_mirror_and_decide_now_posts_the_command(requests: list[str]) -> None:
+    """[if] an agent asks AutoPlay to decide [then] it posts the button's command and reads the page's answer, [else stop]."""
     page = FakePage()
-    page.mirror_doc["decks"]["2"] = {"stable_id": "trk-in", "playing": False, "position": {"ms": 0.0}}
     service = _service(page, requests)
-    plan = service.propose("trk-in", in_deck=2)["proposals"][0]["plan"]
-    original_mirror = page.mirror
-
-    reads: list[dict[str, Any]] = []
-
-    def switch_autoplay_on_after_one_read() -> dict[str, Any]:
-        doc = dict(original_mirror())  # a copy, so the flag set below is not visible in the read already taken
-        reads.append(doc)
-        if len(reads) == 1:
-            page.mirror_doc["autoplay_enabled"] = True
-        return doc
-
-    monkeypatch.setattr(page, "mirror", switch_autoplay_on_after_one_read)
-    with pytest.raises(DjError) as refused:
-        service.schedule(plan)
-    assert refused.value.code == "autoplay_on"
-    assert len(reads) >= 2, "the refusal comes from a read after the first one, not the first"
-    assert not any("plan" in order for order in page.orders), "no plan is submitted while AutoPlay is on"
+    page.mirror_doc["autoplay_decision"] = {"phase": "deciding"}
+    assert service.autoplay_decision() == {"autoplay_decision": {"phase": "deciding"}}
+    assert service.autoplay_decide_now() == {"autoplay_decision": {"phase": "deciding"}}
+    assert {"single": {"type": "auto_play_decide_now"}} in page.orders, "if decide now sends nothing then broken"
 
 
 @pytest.mark.requirement("AGENT-29")
@@ -738,14 +779,16 @@ def test_a_muted_session_cannot_finish_a_plan_now_but_a_live_one_can(requests: l
     assert any("plan_amend" in order for order in page.orders), "a live session may finish the plan now"
 
 
-def test_a_schedule_refused_for_autoplay_exits_as_a_refusal() -> None:
-    """[if] a schedule is refused because AutoPlay is on [then] the CLI exits with the refusal code, not a failure, [else stop]."""
-    assert dj_cli._exit_for("autoplay_on") == EXIT_UNCONFIRMED
+def test_a_schedule_refused_for_a_handoff_exits_as_a_refusal() -> None:
+    """[if] a schedule is refused because AutoPlay is handing off [then] the CLI exits with the refusal code, not a failure, [else stop]."""
+    assert dj_cli._exit_for("autoplay_handoff") == EXIT_UNCONFIRMED
     assert dj_cli._exit_for("usage") != EXIT_UNCONFIRMED  # control: a code that is not a refusal keeps its own exit
 
 
 @pytest.mark.requirement("AGENT-29")
-def test_a_deck_the_operator_starts_during_a_refused_schedule_is_not_rolled_back(requests: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_deck_the_operator_starts_during_a_refused_schedule_is_not_rolled_back(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """[if] the operator starts the incoming deck while the page refuses the plan [then] the rollback leaves it as it stands, [else stop]."""
     page = FakePage()
     service = _service(page, requests)
@@ -880,7 +923,9 @@ def test_validate_needs_a_page_unless_offline_is_asked_for(requests: list[str]) 
     assert "ok" in service.validate(plan, live=False)
 
 
-def test_cli_verbs_is_the_static_catalog_with_no_engine(requests: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_verbs_is_the_static_catalog_with_no_engine(
+    requests: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
     """``opendj dj verbs`` answers the same document as the MCP list_verbs tool, without a page."""
     page = FakePage()
     code, verbs = _cli(page, requests, capsys, "verbs")
@@ -957,7 +1002,9 @@ def test_no_page_is_a_named_error(requests: list[str]) -> None:
 # ----- opendj dj ------------------------------------------------------------
 
 
-def _cli(page: FakePage, requests: list[str], capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, Any]]:
+def _cli(
+    page: FakePage, requests: list[str], capsys: pytest.CaptureFixture[str], *argv: str
+) -> tuple[int, dict[str, Any]]:
     code = dj_cli.run(list(argv), lock=None, service_factory=lambda lock: _service(page, requests))
     return code, json.loads(capsys.readouterr().out)
 
@@ -1024,7 +1071,10 @@ def test_the_incoming_deck_skips_a_deck_armed_for_a_launch() -> None:
     # Control: with nothing armed, the partner is still the first choice.
     assert _pick_in_deck(1, {"2": {"playing": False}, "3": {"playing": False}}, "trk-in") == 2
     # An armed deck holding the track is not reused either: the idle deck takes the load instead.
-    holds_armed = {"2": {"stable_id": "trk-in", "playing": False, "quantized_launch_armed": {"bar": 9}}, "3": {"playing": False}}
+    holds_armed = {
+        "2": {"stable_id": "trk-in", "playing": False, "quantized_launch_armed": {"bar": 9}},
+        "3": {"playing": False},
+    }
     assert _pick_in_deck(1, holds_armed, "trk-in") == 3
     # A playing deck holding the track is not reused either, but a paused one still is (control).
     holds_playing = {"2": {"stable_id": "trk-in", "playing": True}, "3": {"playing": False}}
@@ -1034,7 +1084,11 @@ def test_the_incoming_deck_skips_a_deck_armed_for_a_launch() -> None:
     from apps.opendj_cli.dj_service import _needs_load
 
     with pytest.raises(DjError) as armed:
-        _needs_load({"decks": {"3": {"stable_id": "trk-old", "playing": False, "quantized_launch_armed": {"bar": 9}}}}, 3, "trk-in")
+        _needs_load(
+            {"decks": {"3": {"stable_id": "trk-old", "playing": False, "quantized_launch_armed": {"bar": 9}}}},
+            3,
+            "trk-in",
+        )
     assert armed.value.code == "deck_busy"
     assert _needs_load({"decks": {"3": {"stable_id": "trk-old", "playing": False}}}, 3, "trk-in") is True
 
@@ -1049,12 +1103,16 @@ def test_the_projected_incoming_deck_takes_the_incoming_tempo_not_the_previous_t
     assert projected["decks"]["2"]["effective_bpm"] == 100.0
     assert mirror["decks"]["2"]["effective_bpm"] == 140.0  # the input mirror is not mutated
     playing = {"decks": {"2": {"stable_id": "old", "playing": True, "effective_bpm": 140.0}}}
-    assert _with_in_track(playing, 2, "new", 100.0)["decks"]["2"]["effective_bpm"] == 140.0  # control: a playing deck is left alone
+    assert (
+        _with_in_track(playing, 2, "new", 100.0)["decks"]["2"]["effective_bpm"] == 140.0
+    )  # control: a playing deck is left alone
 
 
 @pytest.mark.parametrize("style_name", ["bass_swap_blend", "crossfade"])
 @pytest.mark.parametrize("out_bar", [100.0, 100.25, 100.5, 100.75, 100.99])
-def test_a_next_bar_anchor_leaves_room_for_the_plan_pre_roll(requests: list[str], style_name: str, out_bar: float) -> None:
+def test_a_next_bar_anchor_leaves_room_for_the_plan_pre_roll(
+    requests: list[str], style_name: str, out_bar: float
+) -> None:
     """AGENT-35 (Codex P2/BLOCKING on #7595): a compensated blend starts its outgoing ease at bar -1, so next_bar
     resolves far enough ahead for that pre-roll at any point in the bar; a crossfade (no pre-roll) is the control."""
     service = _service(FakePage(out_bar=out_bar), requests)
@@ -1065,9 +1123,11 @@ def test_a_next_bar_anchor_leaves_room_for_the_plan_pre_roll(requests: list[str]
     assert not [e for e in validated["errors"] if "already at bar" in e], validated["errors"]
 
 
-def _propose_with_mirror_changed(change: Callable[[dict[str, Any]], None], requests: list[str]) -> dict[str, Any]:
+def _propose_with_mirror_changed(
+    change: Callable[[dict[str, Any]], None], requests: list[str], start_bar: float = 100.0
+) -> dict[str, Any]:
     """Propose while the mirror changes during the search: every read after the first sees ``change`` applied."""
-    page = FakePage(out_bar=100.0)
+    page = FakePage(out_bar=start_bar)
     first_read = page.mirror
 
     def changing_mirror() -> dict[str, Any]:
@@ -1081,20 +1141,31 @@ def _propose_with_mirror_changed(change: Callable[[dict[str, Any]], None], reque
     return _service(page, requests).propose("trk-in", intent="smooth")
 
 
-def _propose_with_deck_moved_to(bar: float, requests: list[str]) -> dict[str, Any]:
-    """Propose while the outgoing deck reaches ``bar`` during the search."""
+def _propose_with_deck_moved_to(bar: float, requests: list[str], start_bar: float = 100.0) -> dict[str, Any]:
+    """Propose while the outgoing deck reaches ``bar`` during the search (from ``start_bar`` on the first read)."""
     return _propose_with_mirror_changed(
-        lambda doc: doc["decks"]["1"].__setitem__("position", {"ms": OUT.time_of_bar(bar) * 1000.0}), requests
+        lambda doc: doc["decks"]["1"].__setitem__("position", {"ms": OUT.time_of_bar(bar) * 1000.0}),
+        requests,
+        start_bar,
     )
+
+
+#: A playhead with three outgoing windows still ahead (bars 65, 81 and 113): the top-ranked candidates include an early
+#: window, so lower-ranked ones start later and can backfill. Since D8 no style pre-rolls a bar before its window, so
+#: candidates in one window all share one first command and nothing could backfill from them.
+WINDOWS_AHEAD = 60.0
 
 
 def test_propose_rereads_the_playhead_and_drops_plans_whose_start_passed(requests: list[str]) -> None:
     """[if] the outgoing deck moves on while proposals are computed [then] a plan whose first event is no longer more
     than the schedule margin ahead is dropped, and none left is window_passed, [else stop]. Codex #7595."""
+    from apps.autodj.plan import first_dispatch_bar, parse_plan
+
     still = _service(FakePage(out_bar=100.0), requests).propose("trk-in", intent="smooth")
     assert still["proposals"] and still["dropped"] == []
+    # The first COMMAND, as the anchor lead checks it: a play at bar 0 is dispatched a quarter bar ahead.
     first = min(
-        float(row["plan"]["out"]["window"]["start_bar"]) + min(e["at_bar"] for e in row["plan"]["events"])
+        float(row["plan"]["out"]["window"]["start_bar"]) + first_dispatch_bar(parse_plan(row["plan"]))
         for row in still["proposals"]
     )
     # Control: the deck moved, but the earliest plan is still just over the anchor lead ahead, so nothing is dropped.
@@ -1108,7 +1179,11 @@ def test_propose_rereads_the_playhead_and_drops_plans_whose_start_passed(request
 def test_propose_never_returns_a_plan_whose_pre_roll_is_behind_the_live_bar(requests: list[str]) -> None:
     """[if] a style starts with a pre-roll event before its window [then] the plan's FIRST event, not its window, is
     after the live bar plus the anchor lead, [else stop]. Codex #7595: those plans were returned already unschedulable."""
-    for out_bar in (100.0, 110.5, 111.2):  # at 111.2 the bar 113 window passes the window filter, its bar 112 pre-roll does not
+    for out_bar in (
+        100.0,
+        110.5,
+        111.2,
+    ):  # at 111.2 the bar 113 window passes the window filter, its bar 112 pre-roll does not
         result = _service(FakePage(out_bar=out_bar), requests).propose("trk-in", intent="smooth")
         for row in result["proposals"]:
             first = float(row["plan"]["out"]["window"]["start_bar"]) + min(e["at_bar"] for e in row["plan"]["events"])
@@ -1162,12 +1237,19 @@ def test_propose_backfills_from_lower_ranked_candidates_after_the_recheck(reques
     returns the original top with nothing dropped."""
     from apps.autodj.plan import first_dispatch_bar, parse_plan
 
-    still = _service(FakePage(out_bar=100.0), requests).propose("trk-in", intent="smooth")
-    first = min(row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) for row in still["proposals"])
-    moved = _propose_with_deck_moved_to(first - 0.4, requests)  # every original top row is now inside the margin
+    still = _service(FakePage(out_bar=WINDOWS_AHEAD), requests).propose("trk-in", intent="smooth")
+    first = min(
+        row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"]))
+        for row in still["proposals"]
+    )
+    moved = _propose_with_deck_moved_to(
+        first - 0.4, requests, WINDOWS_AHEAD
+    )  # every original top row is now inside the margin
     assert moved["dropped"] and len(moved["proposals"]) == len(still["proposals"])
     for row in moved["proposals"]:
-        assert row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) >= first - 0.4 + 1.0
+        assert (
+            row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) >= first - 0.4 + 1.0
+        )
     assert still["dropped"] == []
 
 
@@ -1177,17 +1259,25 @@ def test_propose_holds_the_anchor_lead_on_the_final_reread(requests: list[str]) 
     #7595. Control: the same plan with more than the lead to spare is kept (the near case in the playhead test)."""
     from apps.autodj.plan import first_dispatch_bar, parse_plan
 
-    still = _service(FakePage(out_bar=100.0), requests).propose("trk-in", intent="smooth")
-    first = min(row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) for row in still["proposals"])
-    moved = _propose_with_deck_moved_to(first - 0.7, requests)  # 0.7 bar ahead: inside the lead, outside the margin
+    still = _service(FakePage(out_bar=WINDOWS_AHEAD), requests).propose("trk-in", intent="smooth")
+    first = min(
+        row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"]))
+        for row in still["proposals"]
+    )
+    moved = _propose_with_deck_moved_to(
+        first - 0.7, requests, WINDOWS_AHEAD
+    )  # 0.7 bar ahead: inside the lead, outside the margin
     assert any("anchor_lead" in row["reason"] for row in moved["dropped"]), moved["dropped"]
     for row in moved["proposals"]:
-        assert row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) >= first - 0.7 + 1.0
+        assert (
+            row["plan"]["out"]["window"]["start_bar"] + first_dispatch_bar(parse_plan(row["plan"])) >= first - 0.7 + 1.0
+        )
 
 
 def test_propose_rechecks_the_mirror_even_when_the_first_read_had_no_playhead(requests: list[str]) -> None:
     """[if] the first mirror read carries no outgoing playhead [then] the final recheck still runs and refuses a
     malformed or changed mirror, [else stop]. Sol P1 #7595. Control: an unchanged mirror returns candidates."""
+
     def without_playhead(change: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
         page = FakePage(out_bar=100.0)
         page.mirror_doc["decks"]["1"].pop("position")

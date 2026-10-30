@@ -3229,6 +3229,51 @@
         "title": "BackfillResumeOut",
         "type": "object"
       },
+      "BatchOut": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "policy": {
+            "title": "Policy",
+            "type": "string"
+          },
+          "proposal_count": {
+            "title": "Proposal Count",
+            "type": "integer"
+          },
+          "undone_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone At"
+          }
+        },
+        "required": [
+          "batch_id",
+          "created_at",
+          "kind",
+          "policy",
+          "proposal_count",
+          "undone_at"
+        ],
+        "title": "BatchOut",
+        "type": "object"
+      },
       "BeatgridFallbackOut": {
         "properties": {
           "anlz_available": {
@@ -4602,6 +4647,91 @@
           "render_url"
         ],
         "title": "CandidateOut",
+        "type": "object"
+      },
+      "CaptureLastOut": {
+        "properties": {
+          "in": {
+            "title": "In",
+            "type": "string"
+          },
+          "out": {
+            "title": "Out",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "out",
+          "in"
+        ],
+        "title": "CaptureLastOut",
+        "type": "object"
+      },
+      "CaptureStatusOut": {
+        "properties": {
+          "in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptureLastOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "out": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "capturing"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "out",
+          "in",
+          "samples",
+          "last"
+        ],
+        "title": "CaptureStatusOut",
         "type": "object"
       },
       "CatalogDevice": {
@@ -7679,6 +7809,84 @@
           "slot"
         ],
         "title": "DeckHotCue",
+        "type": "object"
+      },
+      "DeckLaneOut": {
+        "properties": {
+          "beats": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Beats",
+            "type": "array"
+          },
+          "curves": {
+            "additionalProperties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Curves",
+            "type": "object"
+          },
+          "deck": {
+            "title": "Deck",
+            "type": "integer"
+          },
+          "peaks": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Peaks",
+            "type": "array"
+          },
+          "playing": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Playing",
+            "type": "array"
+          }
+        },
+        "required": [
+          "deck",
+          "peaks",
+          "curves",
+          "playing",
+          "beats"
+        ],
+        "title": "DeckLaneOut",
         "type": "object"
       },
       "DeckLoopExit": {
@@ -12343,6 +12551,57 @@
         "title": "KaraokeWordOut",
         "type": "object"
       },
+      "KeyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "KeyIn",
+        "type": "object"
+      },
+      "KeyStatusOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "source": {
+            "enum": [
+              "user",
+              "env",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "source",
+          "hint"
+        ],
+        "title": "KeyStatusOut",
+        "type": "object"
+      },
       "KindDefaultIn": {
         "additionalProperties": false,
         "properties": {
@@ -15559,6 +15818,53 @@
         "title": "OpsErrorResponse",
         "type": "object"
       },
+      "OutcomeOut": {
+        "properties": {
+          "applied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "batch_id",
+          "applied",
+          "skipped"
+        ],
+        "title": "OutcomeOut",
+        "type": "object"
+      },
       "OverrideIn": {
         "properties": {
           "note": {
@@ -15698,6 +16004,164 @@
           "viewport_height"
         ],
         "title": "PageViewIn",
+        "type": "object"
+      },
+      "PairPlayedIn": {
+        "additionalProperties": false,
+        "properties": {
+          "in": {
+            "minLength": 1,
+            "title": "In",
+            "type": "string"
+          },
+          "out": {
+            "minLength": 1,
+            "title": "Out",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "planner",
+                  "captured",
+                  "edited"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          }
+        },
+        "required": [
+          "out",
+          "in"
+        ],
+        "title": "PairPlayedIn",
+        "type": "object"
+      },
+      "PairTransitionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "plan": {
+            "additionalProperties": true,
+            "title": "Plan",
+            "type": "object"
+          },
+          "source": {
+            "enum": [
+              "planner",
+              "captured",
+              "edited"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "style": {
+            "minLength": 1,
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan",
+          "source",
+          "style"
+        ],
+        "title": "PairTransitionIn",
+        "type": "object"
+      },
+      "PairTransitionMetaOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "in_track_id": {
+            "title": "In Track Id",
+            "type": "string"
+          },
+          "out_track_id": {
+            "title": "Out Track Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "planner",
+              "captured",
+              "edited"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          },
+          "times_played": {
+            "title": "Times Played",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "out_track_id",
+          "in_track_id",
+          "source",
+          "style",
+          "created_at",
+          "updated_at",
+          "times_played"
+        ],
+        "title": "PairTransitionMetaOut",
+        "type": "object"
+      },
+      "PairTransitionOut": {
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PairTransitionMetaOut"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "title": "Plan",
+            "type": "object"
+          }
+        },
+        "required": [
+          "plan",
+          "meta"
+        ],
+        "title": "PairTransitionOut",
         "type": "object"
       },
       "PairingCreate": {
@@ -18653,6 +19117,186 @@
         "title": "PreviewStripsOut",
         "type": "object"
       },
+      "ProposalOut": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "changes_artist": {
+            "title": "Changes Artist",
+            "type": "boolean"
+          },
+          "changes_title": {
+            "title": "Changes Title",
+            "type": "boolean"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "fixer_status": {
+            "title": "Fixer Status",
+            "type": "string"
+          },
+          "jev_kind": {
+            "title": "Jev Kind",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "original_artist": {
+            "title": "Original Artist",
+            "type": "string"
+          },
+          "original_artist_credit": {
+            "title": "Original Artist Credit",
+            "type": "string"
+          },
+          "original_title": {
+            "title": "Original Title",
+            "type": "string"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposed_artist": {
+            "title": "Proposed Artist",
+            "type": "string"
+          },
+          "proposed_title": {
+            "title": "Proposed Title",
+            "type": "string"
+          },
+          "scan_id": {
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "tags_added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags Added",
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "scan_id",
+          "stable_id",
+          "created_at",
+          "original_title",
+          "original_artist",
+          "proposed_title",
+          "proposed_artist",
+          "original_artist_credit",
+          "tags",
+          "fixer_status",
+          "source",
+          "confidence",
+          "jev_kind",
+          "notes",
+          "error",
+          "cost_usd",
+          "state",
+          "batch_id",
+          "tags_added",
+          "changes_title",
+          "changes_artist"
+        ],
+        "title": "ProposalOut",
+        "type": "object"
+      },
+      "ProposalsPage": {
+        "properties": {
+          "counts_by_state": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts By State",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "counts_by_state"
+        ],
+        "title": "ProposalsPage",
+        "type": "object"
+      },
       "Provenance": {
         "additionalProperties": false,
         "description": "Where one binding's wire numbers came from. Required on every binding:\nit is what makes the no-fabricated-numbers house rule mechanical rather\nthan a comment convention, and it drives the confidence badge in the UI.",
@@ -20953,6 +21597,131 @@
         "title": "RowsResponse",
         "type": "object"
       },
+      "ScanIn": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "ScanIn",
+        "type": "object"
+      },
+      "ScanOut": {
+        "properties": {
+          "auto_apply_policy": {
+            "title": "Auto Apply Policy",
+            "type": "string"
+          },
+          "auto_batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Batch Id"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          },
+          "scan_id": {
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "spend_cap_usd": {
+            "title": "Spend Cap Usd",
+            "type": "number"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "done",
+              "capped",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scan_id",
+          "started_at",
+          "finished_at",
+          "state",
+          "requested",
+          "processed",
+          "cost_usd",
+          "spend_cap_usd",
+          "error",
+          "auto_batch_id",
+          "auto_apply_policy"
+        ],
+        "title": "ScanOut",
+        "type": "object"
+      },
       "ScanStatusOut": {
         "description": "Progress of the on-device library fingerprint scan.",
         "properties": {
@@ -21599,6 +22368,25 @@
         "title": "SearchResults",
         "type": "object"
       },
+      "SelectionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Proposal Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposal_ids"
+        ],
+        "title": "SelectionIn",
+        "type": "object"
+      },
       "SettingItem": {
         "properties": {
           "key": {
@@ -21881,6 +22669,24 @@
           "type"
         ],
         "title": "ShiftModifier",
+        "type": "object"
+      },
+      "SkippedOut": {
+        "properties": {
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "reason"
+        ],
+        "title": "SkippedOut",
         "type": "object"
       },
       "SmartlistConflictBody": {
@@ -24903,6 +25709,100 @@
         "title": "TierOut",
         "type": "object"
       },
+      "TitleFixConfigIn": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_apply_policy": {
+            "enum": [
+              "off",
+              "safe_tier",
+              "gate_approved"
+            ],
+            "title": "Auto Apply Policy",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "spend_cap_usd": {
+            "maximum": 100.0,
+            "minimum": 0.01,
+            "title": "Spend Cap Usd",
+            "type": "number"
+          },
+          "tag_families": {
+            "items": {
+              "enum": [
+                "version",
+                "context",
+                "cover",
+                "project"
+              ],
+              "type": "string"
+            },
+            "title": "Tag Families",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "auto_apply_policy",
+          "spend_cap_usd",
+          "tag_families"
+        ],
+        "title": "TitleFixConfigIn",
+        "type": "object"
+      },
+      "TitleFixConfigOut": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_apply_policy": {
+            "enum": [
+              "off",
+              "safe_tier",
+              "gate_approved"
+            ],
+            "title": "Auto Apply Policy",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "$ref": "#/components/schemas/KeyStatusOut"
+          },
+          "spend_cap_usd": {
+            "maximum": 100.0,
+            "minimum": 0.01,
+            "title": "Spend Cap Usd",
+            "type": "number"
+          },
+          "tag_families": {
+            "items": {
+              "enum": [
+                "version",
+                "context",
+                "cover",
+                "project"
+              ],
+              "type": "string"
+            },
+            "title": "Tag Families",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "auto_apply_policy",
+          "spend_cap_usd",
+          "tag_families",
+          "key"
+        ],
+        "title": "TitleFixConfigOut",
+        "type": "object"
+      },
       "TodoCreateIn": {
         "properties": {
           "detail": {
@@ -27271,6 +28171,621 @@
         "title": "TracksPage",
         "type": "object"
       },
+      "TransitionDecideIn": {
+        "additionalProperties": false,
+        "properties": {
+          "earliest_ms": {
+            "minimum": 0.0,
+            "title": "Earliest Ms",
+            "type": "number"
+          },
+          "in_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "In Deck",
+            "type": "integer"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "out_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Out Deck",
+            "type": "integer"
+          },
+          "recent_styles": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Recent Styles",
+            "type": "array"
+          },
+          "shortlist": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Shortlist",
+            "type": "array"
+          },
+          "target_ms": {
+            "minimum": 0.0,
+            "title": "Target Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "out_deck",
+          "in_deck",
+          "shortlist",
+          "earliest_ms",
+          "target_ms"
+        ],
+        "title": "TransitionDecideIn",
+        "type": "object"
+      },
+      "TransitionDecideOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bars"
+          },
+          "m_measured": {
+            "const": false,
+            "title": "M Measured",
+            "type": "boolean"
+          },
+          "out_bar_now": {
+            "title": "Out Bar Now",
+            "type": "number"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rejected": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransitionWindowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionWindowOut"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "track",
+          "window",
+          "style",
+          "bars",
+          "reason",
+          "windows",
+          "rejected",
+          "out_bar_now",
+          "m_measured"
+        ],
+        "title": "TransitionDecideOut",
+        "type": "object"
+      },
+      "TransitionInClearOut": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          },
+          "cue": {
+            "title": "Cue",
+            "type": "null"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "TransitionInClearOut",
+        "type": "object"
+      },
+      "TransitionInCueOut": {
+        "properties": {
+          "in_ms": {
+            "title": "In Ms",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "in_ms"
+        ],
+        "title": "TransitionInCueOut",
+        "type": "object"
+      },
+      "TransitionInReadOut": {
+        "properties": {
+          "cue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransitionInCueOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cue"
+        ],
+        "title": "TransitionInReadOut",
+        "type": "object"
+      },
+      "TransitionInSetIn": {
+        "properties": {
+          "in_ms": {
+            "description": "Where the transition should land, in ms. Snapped to the nearest downbeat.",
+            "minimum": 0.0,
+            "title": "In Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "in_ms"
+        ],
+        "title": "TransitionInSetIn",
+        "type": "object"
+      },
+      "TransitionInSetOut": {
+        "properties": {
+          "bar": {
+            "description": "1-based bar on the track's downbeats, as the AutoDJ planner counts them",
+            "title": "Bar",
+            "type": "integer"
+          },
+          "cue": {
+            "$ref": "#/components/schemas/TransitionInCueOut"
+          },
+          "requested_ms": {
+            "title": "Requested Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cue",
+          "requested_ms",
+          "bar"
+        ],
+        "title": "TransitionInSetOut",
+        "type": "object"
+      },
+      "TransitionPickOut": {
+        "properties": {
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "candidate": {
+            "title": "Candidate",
+            "type": "string"
+          },
+          "out_start_bar": {
+            "title": "Out Start Bar",
+            "type": "integer"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate",
+          "style",
+          "bars",
+          "score",
+          "out_start_bar",
+          "rationale"
+        ],
+        "title": "TransitionPickOut",
+        "type": "object"
+      },
+      "TransitionPlanIn": {
+        "additionalProperties": false,
+        "properties": {
+          "from_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Ms"
+          },
+          "in_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "In Deck",
+            "type": "integer"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "out_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Out Deck",
+            "type": "integer"
+          },
+          "recent_styles": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Recent Styles",
+            "type": "array"
+          },
+          "take_incoming": {
+            "default": false,
+            "title": "Take Incoming",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "out_deck",
+          "in_deck"
+        ],
+        "title": "TransitionPlanIn",
+        "type": "object"
+      },
+      "TransitionPlanOut": {
+        "additionalProperties": false,
+        "properties": {
+          "considered": {
+            "title": "Considered",
+            "type": "integer"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "out_bar_now": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Bar Now"
+          },
+          "pick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransitionPickOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "plan_ms": {
+            "title": "Plan Ms",
+            "type": "number"
+          },
+          "propose_ms": {
+            "title": "Propose Ms",
+            "type": "number"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "render_ms": {
+            "title": "Render Ms",
+            "type": "number"
+          },
+          "rendered": {
+            "title": "Rendered",
+            "type": "integer"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          },
+          "scored": {
+            "title": "Scored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "order",
+          "reason",
+          "intent",
+          "pick",
+          "out_bar_now",
+          "considered",
+          "rendered",
+          "propose_ms",
+          "render_ms",
+          "scored",
+          "plan_ms",
+          "saved",
+          "plan"
+        ],
+        "title": "TransitionPlanOut",
+        "type": "object"
+      },
+      "TransitionPrepareIn": {
+        "additionalProperties": false,
+        "properties": {
+          "from_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Ms"
+          },
+          "in_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "In Deck",
+            "type": "integer"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "out_deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Out Deck",
+            "type": "integer"
+          },
+          "status_only": {
+            "default": false,
+            "title": "Status Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "out_deck",
+          "in_deck"
+        ],
+        "title": "TransitionPrepareIn",
+        "type": "object"
+      },
+      "TransitionPrepareOut": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "in_track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Track"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "render_ms": {
+            "title": "Render Ms",
+            "type": "number"
+          },
+          "state": {
+            "enum": [
+              "warming",
+              "ready",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "candidates",
+          "reason",
+          "render_ms",
+          "in_track"
+        ],
+        "title": "TransitionPrepareOut",
+        "type": "object"
+      },
+      "TransitionWindowOut": {
+        "properties": {
+          "energy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_bars": {
+            "title": "Max Bars",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "start_bar": {
+            "title": "Start Bar",
+            "type": "integer"
+          },
+          "start_ms": {
+            "title": "Start Ms",
+            "type": "number"
+          },
+          "vocal_free_bars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vocal Free Bars"
+          }
+        },
+        "required": [
+          "start_bar",
+          "start_ms",
+          "max_bars",
+          "label",
+          "energy",
+          "vocal_free_bars",
+          "score",
+          "reason"
+        ],
+        "title": "TransitionWindowOut",
+        "type": "object"
+      },
       "TryIn": {
         "properties": {
           "context_bars": {
@@ -27389,6 +28904,32 @@
           "pick"
         ],
         "title": "TryJobOut",
+        "type": "object"
+      },
+      "TryLanesOut": {
+        "properties": {
+          "candidate": {
+            "title": "Candidate",
+            "type": "string"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/DeckLaneOut"
+            },
+            "title": "Decks",
+            "type": "array"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "candidate",
+          "duration_s",
+          "decks"
+        ],
+        "title": "TryLanesOut",
         "type": "object"
       },
       "UiPrefsOut": {
@@ -28216,6 +29757,18 @@
           }
         },
         "title": "UiPrefsPatch",
+        "type": "object"
+      },
+      "UndoIn": {
+        "additionalProperties": false,
+        "properties": {
+          "skip_conflicts": {
+            "default": false,
+            "title": "Skip Conflicts",
+            "type": "boolean"
+          }
+        },
+        "title": "UndoIn",
         "type": "object"
       },
       "UndoRecordOut": {
@@ -32673,6 +34226,270 @@
         ]
       }
     },
+    "/api/v1/autodj/pair-transition": {
+      "delete": {
+        "operationId": "delete_pair_api_v1_autodj_pair_transition_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "out",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Out",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "In",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Pair",
+        "tags": [
+          "autodj"
+        ]
+      },
+      "get": {
+        "operationId": "get_pair_api_v1_autodj_pair_transition_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "out",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Out",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "In",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "out_deck",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Out Deck"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in_deck",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "In Deck"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairTransitionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Pair",
+        "tags": [
+          "autodj"
+        ]
+      },
+      "put": {
+        "operationId": "put_pair_api_v1_autodj_pair_transition_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairTransitionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairTransitionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Put Pair",
+        "tags": [
+          "autodj"
+        ]
+      }
+    },
+    "/api/v1/autodj/pair-transition/capture": {
+      "get": {
+        "operationId": "get_capture_api_v1_autodj_pair_transition_capture_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Capture",
+        "tags": [
+          "autodj"
+        ]
+      }
+    },
+    "/api/v1/autodj/pair-transition/played": {
+      "post": {
+        "operationId": "post_played_api_v1_autodj_pair_transition_played_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairPlayedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairTransitionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Post Played",
+        "tags": [
+          "autodj"
+        ]
+      }
+    },
     "/api/v1/autolists/buckets": {
       "get": {
         "operationId": "list_buckets_api_v1_autolists_buckets_get",
@@ -35549,6 +37366,191 @@
         ]
       }
     },
+    "/api/v1/dj/transition/autoplay-decision": {
+      "get": {
+        "description": "AUTOPLAN-06: what AutoPlay has decided, as the page published it. Null decision: the page predates this mirror field.",
+        "operationId": "autoplay_decision_api_v1_dj_transition_autoplay_decision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "summary": "Autoplay Decision",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
+    "/api/v1/dj/transition/decide": {
+      "post": {
+        "description": "AUTOPLAN-03: the window and track AutoPlay will plan for. Nothing renders, so this answers in the time of a poll.",
+        "operationId": "decide_transition_api_v1_dj_transition_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionDecideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionDecideOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Decide Transition",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
+    "/api/v1/dj/transition/plan": {
+      "post": {
+        "operationId": "plan_transition_api_v1_dj_transition_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Plan Transition",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
+    "/api/v1/dj/transition/prepare": {
+      "post": {
+        "description": "Start scoring the pair if nothing has, and say how far it has got. Safe to call repeatedly.",
+        "operationId": "prepare_transition_api_v1_dj_transition_prepare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionPrepareIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionPrepareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Prepare Transition",
+        "tags": [
+          "dj-transition"
+        ]
+      }
+    },
     "/api/v1/dj/try": {
       "post": {
         "operationId": "start_try_api_v1_dj_try_post",
@@ -35698,6 +37700,78 @@
           }
         },
         "summary": "Dj Try Candidate Audio",
+        "tags": [
+          "dj-try"
+        ]
+      }
+    },
+    "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/lanes": {
+      "get": {
+        "description": "Both decks' waveforms and knob lines for one candidate's kept render (TRYER-16).",
+        "operationId": "candidate_lanes_api_v1_dj_try__job_id__candidates__candidate_id__lanes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "columns",
+            "required": false,
+            "schema": {
+              "default": 800,
+              "title": "Columns",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TryLanesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Candidate Lanes",
         "tags": [
           "dj-try"
         ]
@@ -46840,6 +48914,635 @@
         ]
       }
     },
+    "/api/v1/title-fix/apply": {
+      "post": {
+        "operationId": "apply_title_fix_proposals_api_v1_title_fix_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "a track changed mid-write"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Title Fix Proposals",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/batches": {
+      "get": {
+        "operationId": "list_title_fix_batches_api_v1_title_fix_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BatchOut"
+                  },
+                  "title": "Response List Title Fix Batches Api V1 Title Fix Batches Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Title Fix Batches",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/batches/{batch_id}/undo": {
+      "post": {
+        "operationId": "undo_title_fix_batch_api_v1_title_fix_batches__batch_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "unknown batch"
+          },
+          "409": {
+            "description": "conflict or already undone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Title Fix Batch",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/config": {
+      "get": {
+        "operationId": "get_title_fix_config_api_v1_title_fix_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleFixConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Title Fix Config",
+        "tags": [
+          "title-fix"
+        ]
+      },
+      "put": {
+        "operationId": "put_title_fix_config_api_v1_title_fix_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TitleFixConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleFixConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Title Fix Config",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/key": {
+      "delete": {
+        "operationId": "delete_title_fix_key_api_v1_title_fix_key_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "not the local operator"
+          }
+        },
+        "summary": "Delete Title Fix Key",
+        "tags": [
+          "title-fix"
+        ]
+      },
+      "put": {
+        "operationId": "put_title_fix_key_api_v1_title_fix_key_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "not the local operator"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Title Fix Key",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/proposals": {
+      "get": {
+        "operationId": "list_title_fix_proposals_api_v1_title_fix_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "applied",
+                    "rejected",
+                    "superseded",
+                    "stale",
+                    "undone",
+                    "noop"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "any",
+                  "type": "string"
+                }
+              ],
+              "default": "pending",
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fixer_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "clean",
+                    "fixed",
+                    "review",
+                    "not_music",
+                    "project",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fixer Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scan_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batch_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Batch Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalsPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Title Fix Proposals",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/reject": {
+      "post": {
+        "operationId": "reject_title_fix_proposals_api_v1_title_fix_reject_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Title Fix Proposals",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/scans": {
+      "get": {
+        "operationId": "list_title_fix_scans_api_v1_title_fix_scans_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanOut"
+                  },
+                  "title": "Response List Title Fix Scans Api V1 Title Fix Scans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Title Fix Scans",
+        "tags": [
+          "title-fix"
+        ]
+      },
+      "post": {
+        "description": "Start a scan over the whole library, the first ``limit`` tracks, or explicit ``stable_ids`` (not both: 422).",
+        "operationId": "start_title_fix_scan_api_v1_title_fix_scans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "a requested stable_id does not exist"
+          },
+          "409": {
+            "description": "disabled, key missing, scan running, or no state.db"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Title Fix Scan",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
+    "/api/v1/title-fix/scans/{scan_id}": {
+      "get": {
+        "operationId": "get_title_fix_scan_api_v1_title_fix_scans__scan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "unknown scan"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Title Fix Scan",
+        "tags": [
+          "title-fix"
+        ]
+      }
+    },
     "/api/v1/tracks": {
       "get": {
         "operationId": "list_tracks_api_v1_tracks_get",
@@ -48751,6 +51454,138 @@
         "summary": "Get Stem Waveform",
         "tags": [
           "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/transition-in": {
+      "delete": {
+        "operationId": "clear_transition_in_api_v1_tracks__stable_id__transition_in_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionInClearOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Transition In",
+        "tags": [
+          "transition-in-cue"
+        ]
+      },
+      "get": {
+        "operationId": "read_transition_in_api_v1_tracks__stable_id__transition_in_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionInReadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Transition In",
+        "tags": [
+          "transition-in-cue"
+        ]
+      },
+      "put": {
+        "operationId": "set_transition_in_api_v1_tracks__stable_id__transition_in_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionInSetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransitionInSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Transition In",
+        "tags": [
+          "transition-in-cue"
         ]
       }
     },

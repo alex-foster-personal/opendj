@@ -63,12 +63,14 @@ export async function settleForLoad<R extends SettleRow>(
  * other. Resolves true only when the load committed: `loadOnto` itself reports
  * that, because the load path can refuse (the live master, Library mode) and
  * still return normally. A dropped or refused pick resolves false, so a
- * follow-up (the vocals-only solo) never acts for it.
+ * follow-up (the vocals-only solo) never acts for it. `deckPending` says whether a deck has
+ * queued commands; one queued during the settle wait refuses the pick too.
  */
 export function createPickLoader<R extends SettleRow, D>(
 	fetchMeta: (stable_id: string) => Promise<SettleMeta>,
 	loadOnto: (row: R, deck: D) => Promise<boolean>,
-	deckMark: (deck: D) => string
+	deckMark: (deck: D) => string,
+	deckPending: (deck: D) => boolean
 ): (row: R, deck: D) => Promise<boolean> {
 	const latest = new Map<D, number>();
 	return async (row, deck) => {
@@ -76,25 +78,34 @@ export function createPickLoader<R extends SettleRow, D>(
 		latest.set(deck, pick);
 		const mark = deckMark(deck);
 		const settled = await settleForLoad(row, fetchMeta);
-		if (latest.get(deck) !== pick || deckMark(deck) !== mark) return false;
+		// A play queued during the settle wait moves no mark until it runs, so a queued command also refuses (Codex P1, #6687).
+		if (latest.get(deck) !== pick || deckMark(deck) !== mark || deckPending(deck)) return false;
 		return await loadOnto(settled, deck);
 	};
 }
 
-/** The engine deck-state fields a load moves. */
+/** The engine deck-state fields a load moves, plus whether the deck is playing. */
 export interface DeckLoadState {
 	stable_id: string | null;
 	load_generation: number;
+	playing: boolean;
 }
 
 /**
  * What every load path moves on a deck: the loaded track and the engine's
  * committed-load generation (browser, IPC and MIDI loads all go through the
  * engine; an unload clears the track), plus the browser's own reservation
- * count, which moves before a browser load commits.
+ * count, which moves before a browser load commits. Playing is in it too: a
+ * pick approved over a paused deck must not land on that deck once it is
+ * playing, since only a confirmed pick may interrupt play.
  */
 export function deckLoadMark(state: DeckLoadState, reservation: number): string {
-	return `${state.stable_id ?? ''}|${state.load_generation}|${reservation}`;
+	// A state without a boolean play field is a contract breach, not a paused deck: a caller that
+	// omitted it would otherwise let a pending load interrupt playback without confirmation.
+	if (typeof state.playing !== 'boolean') {
+		throw new Error('deck state has no boolean playing field; refusing to mark it paused');
+	}
+	return `${state.stable_id ?? ''}|${state.load_generation}|${reservation}|${state.playing ? 'playing' : 'paused'}`;
 }
 
 /**

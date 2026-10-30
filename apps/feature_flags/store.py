@@ -160,6 +160,32 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=False,
     ),
     FlagDef(
+        flag_id="cmdk.v2.preview",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Cmd K v2 slice 2 (CMDK-07..10, issue #6090): the preview strip above "
+            "the bar for the highlighted track, the left and right arrows "
+            "previewing it in the headphone cue in phase with the master, and the "
+            "deck picker on Enter. Needs cmdk.v2. OFF keeps the bar as slice 1 "
+            "left it."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="cmdk.v2.preview_inline",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Cmd K v2 preview option C (CMDK-10, issue #6090): draw the preview "
+            "inside the highlighted row instead of the strip above the bar, so "
+            "the two can be compared for performance. Needs cmdk.v2.preview."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="dj.tryer",
         default=False,
         owner="maintainer",

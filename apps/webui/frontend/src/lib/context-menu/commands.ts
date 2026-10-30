@@ -43,6 +43,8 @@ export const MENU_COMMANDS = {
 	'deck.loop.exit': ipc('loop'),
 	'deck.beat_sync': ipc('beat_sync'),
 	'deck.master': ipc('master'),
+	// AGENT-50: auto_play_next_arm with out_deck, in_deck and from_ms.
+	'deck.transition_out_here': ipc('auto_play_next_arm'),
 	// Hot cues.
 	'hot_cue.trigger': ipc('hot_cue_trigger'),
 	'hot_cue.save': ipc('hot_cue_save'),
@@ -61,6 +63,11 @@ export const MENU_COMMANDS = {
 	'track.reveal': http('POST', '/api/v1/tracks/{stable_id}:reveal'),
 	'track.playlists': http('GET', '/api/v1/tracks/{stable_id}/playlists'),
 	'track.read': http('GET', '/api/v1/tracks/{stable_id}'),
+	'track.transition_in.set': http(
+		'PUT',
+		'/api/v1/tracks/{stable_id}/transition-in',
+		'opendj track transition-in <stable_id> set <ms>'
+	),
 	'track.reanalyze': http(
 		'POST',
 		'/api/v1/analysis/backfill/enqueue',

@@ -6,6 +6,13 @@ import {
 	S2_PRESS_KIND,
 	type S2PressRow
 } from '../../src/lib/perf/kpi-s2-capture-types';
+import type { PerfEvent } from '../../src/lib/rb/perf-event-buckets';
+
+// What the ring hands back. `t` and `message` are what tell two presses apart:
+// identical presses produce identical stages and labels, so a key on those
+// alone merged them: on Fri 9 Oct 2026 one cloud run of 40 presses came back as
+// 29 rows, and in a second 40-press run the old key would have kept 32.
+type RingPressRow = S2PressRow & Pick<PerfEvent, 't' | 'message'>;
 
 const RESULT_PATH = process.env.KPI_CAPTURE_RESULT;
 const ENGINE_ORIGIN = (
@@ -141,12 +148,15 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 
 	await page.waitForTimeout(600);
 
+	// Every callback below runs in the BROWSER, which cannot see this module's
+	// imports, so the kind travels as an argument. Naming S2_PRESS_KIND inside
+	// one threw a ReferenceError there and the capture could never pass.
 	const primed = await page.waitForFunction(
-		() => {
+		(pressKind) => {
 			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 			if (read === undefined) return false;
 			return read().some((row) => {
-				if (row.kind !== S2_PRESS_KIND) return false;
+				if (row.kind !== pressKind) return false;
 				const stages = row.stages;
 				if (stages === undefined) return false;
 				const base = stages.base_latency_ms;
@@ -159,20 +169,25 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 				return true;
 			});
 		},
-		undefined,
+		S2_PRESS_KIND,
 		{ timeout: 30_000 }
 	).catch(() => null);
 	if (primed === null) {
-		const floor = await page.evaluate(() => {
+		const floor = await page.evaluate((pressKind) => {
 			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
 			const rows = read?.() ?? [];
-			const last = rows.findLast((row) => row.kind.includes(S2_PRESS_KIND));
+			const last = rows.findLast((row) => row.kind.includes(pressKind));
 			return {
 				labels: last?.labels ?? null,
 				stages: last?.stages ?? null
 			};
-		});
-		fail('audio context had not rendered or outputLatency is 0', floor);
+		}, S2_PRESS_KIND);
+		fail(
+			floor.labels?.output_device === 'absent' || floor.labels?.output_device === 'probe-failed'
+				? 'no audio output device: outputLatency is a fallback sink figure, not a floor'
+				: 'audio context had not rendered or outputLatency is 0',
+			floor
+		);
 		return;
 	}
 
@@ -194,22 +209,17 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 		{ timeout: 15_000 }
 	);
 
-	const collected: S2PressRow[] = [];
+	const collected: RingPressRow[] = [];
 	const seen = new Set<string>();
-	const rowKey = (row: S2PressRow) =>
-		JSON.stringify({
-			kind: row.kind,
-			deck: row.deck,
-			stages: row.stages,
-			labels: row.labels
-		});
+	const rowKey = (row: RingPressRow) =>
+		JSON.stringify({ t: row.t, kind: row.kind, deck: row.deck, message: row.message });
 
 	// Prime play/pause rows stay in the ring; mark them seen so they are not scored.
-	const preLoopRows = await page.evaluate(() => {
-		const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
+	const preLoopRows = await page.evaluate((pressKind) => {
+		const read = (window as Window & { __mdtPerfLog?: () => readonly RingPressRow[] }).__mdtPerfLog;
 		if (read === undefined) return [];
-		return read().filter((row) => row.kind === S2_PRESS_KIND) as S2PressRow[];
-	});
+		return read().filter((row) => row.kind === pressKind);
+	}, S2_PRESS_KIND);
 	for (const row of preLoopRows) {
 		seen.add(rowKey(row));
 	}
@@ -238,11 +248,11 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 			{ timeout: 15_000 }
 		);
 
-		const newRows = await page.evaluate(() => {
-			const read = (window as Window & { __mdtPerfLog?: () => readonly S2PressRow[] }).__mdtPerfLog;
+		const newRows = await page.evaluate((pressKind) => {
+			const read = (window as Window & { __mdtPerfLog?: () => readonly RingPressRow[] }).__mdtPerfLog;
 			if (read === undefined) throw new Error('__mdtPerfLog is not installed');
-			return read().filter((row) => row.kind === S2_PRESS_KIND) as S2PressRow[];
-		});
+			return read().filter((row) => row.kind === pressKind);
+		}, S2_PRESS_KIND);
 		for (const row of newRows) {
 			const key = rowKey(row);
 			if (!seen.has(key)) {

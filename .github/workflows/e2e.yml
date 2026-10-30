@@ -57,6 +57,10 @@ on:
       - ".test_durations"
       - "app_docs/**"
       - "(private path)"
+      - "tests/**"
+      - ".agents/**"
+      - "!tests/fixtures/**"
+      - "!tests/support/**"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.
@@ -109,6 +113,10 @@ permissions:
   actions: read
 
 env:
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
   # apps.shared.library_mode refuses to import on non-darwin platforms without
   # this. ci.yml sets the same value for its openapi dump. 'local' is
   # schema-and-fixture only; no real library is reachable from a runner.
@@ -151,6 +159,17 @@ jobs:
     timeout-minutes: 5
     outputs:
       in_scope: ${{ steps.decide.outputs.in_scope }}
+      # The root Playwright spec selection (TEST-BUDGET round 3,
+      # scripts/ci_e2e_selection.py): `full` or `affected`, and the selected spec
+      # paths. Empty on any event but an in-scope pull request, which the gate's
+      # root step reads as full.
+      e2e_mode: ${{ steps.e2e-select.outputs.e2e_mode }}
+      e2e_specs: ${{ steps.e2e-select.outputs.e2e_specs }}
+      e2e_gates: ${{ steps.e2e-select.outputs.e2e_gates }}
+      # `smoke` or `full` (TEST-BUDGET round 2, scripts/ci_pr_scope.py E2E_SMOKE_TIER_PATHS):
+      # the gate's full-only steps carry `needs.scope.outputs.e2e_tier != 'smoke'`, so an
+      # empty or unexpected value runs everything, never less.
+      e2e_tier: ${{ steps.decide.outputs.e2e_tier }}
     steps:
       - name: Reclaim workspace ownership before checkout
         run: |
@@ -200,7 +219,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           # 0, not 2: every persistent-runner checkout fetches full history
@@ -225,6 +244,39 @@ jobs:
       - name: Decide whether this change set is in e2e.yml's scope
         id: decide
         run: python3 -m scripts.ci_required_gate scope --workflow e2e.yml
+
+      # The root Playwright footprint map (TEST-BUDGET round 3): built from every
+      # full root run on a push to main, published by durations-ledger.yml on the
+      # ci-data-e2e branch (scripts/e2e_footprints_refresh.py). Fetched once here;
+      # a fetch that cannot answer writes nothing and the selection below reads
+      # the committed seed instead, never a smaller run.
+      - name: Resolve the published e2e footprint map (ci-data-e2e)
+        if: github.event_name == 'pull_request' && steps.decide.outputs.in_scope == 'true'
+        timeout-minutes: 1
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          py="$(command -v python3)"
+          timeout --kill-after=10 45 "$py" -m scripts.e2e_footprints_refresh fetch \
+            --repo "$GITHUB_REPOSITORY" \
+            --dest "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints/published.json"
+
+      # Which root specs this change set runs (scripts/ci_e2e_selection.py): the
+      # specs whose measured footprint holds a changed `src/` file, changed specs,
+      # unmeasured specs and the smoke floor; or `full`, named, when a global
+      # path changed, the engine imports changed Python, or the map is stale.
+      # Repo variable CI_E2E_SPEC_SELECTION=full is the kill switch.
+      - name: Select the root Playwright specs this change set affects
+        id: e2e-select
+        if: github.event_name == 'pull_request' && steps.decide.outputs.in_scope == 'true'
+        timeout-minutes: 2
+        env:
+          CI_E2E_SPEC_SELECTION: ${{ vars.CI_E2E_SPEC_SELECTION }}
+        run: |
+          python3 -m scripts.ci_e2e_selection select \
+            --published "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints/published.json" \
+            --out-dir "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-selection"
 
   # ---------------------------------------------------------------------------
   # Trunk flaky-test quarantine, the token half (ADR-NEW-trunk-flaky-quarantine-on).
@@ -514,7 +566,7 @@ jobs:
 
       # No secret in this job, so a checkout is fine. Only scripts/ is needed, and the
       # clean step removes any list an earlier job left in this reused workspace.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -731,7 +783,7 @@ jobs:
           fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -1014,7 +1066,10 @@ jobs:
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
-        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` webkit ` is the selection's exact token for this gate.
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' webkit ')) }}
         working-directory: apps/webui/frontend
         # Engine-served production build, webkit, one worker, zero retries.
         # Retries stay at zero because a flaky worklet IS the defect under
@@ -1077,7 +1132,10 @@ jobs:
 
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
-        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` deckload-smoke ` is the selection's exact token for this gate.
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' deckload-smoke ')) }}
         # Separate step, same engine-served artifact and fixture library as
         # the step above (webServer boots fresh per `playwright test`
         # invocation, so this pays one more ~1s engine boot -- everything
@@ -1144,17 +1202,22 @@ jobs:
         # two independent answers into one. That happened on the first run of
         # this workflow: the webkit step failed and both chromium gates
         # reported `skipped`, which reads as 'fine' and means 'unknown'.
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` rekordbox ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' rekordbox ')) }}
         # Every /api/v1/** call is fulfilled in-page, so this suite needs no
         # backend and no library and can run literally anywhere.
         # Fixed loopback port (see the vite/playwright config it names) on a
         # host that runs up to eight e2e jobs at once: hold the per-suite host
         # lock so a second copy of this step WAITS instead of dying on
         # 'is already used'. Same reason as the webkit-deckload steps.
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/rekordbox
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" rekordbox-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5399 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate
+            pnpm exec playwright test --config tests/e2e/playwright.rekordbox-gate.config.ts --output test-results/rekordbox-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       - name: Hermetic gate - stretch quality smoke
         working-directory: apps/webui/frontend
@@ -1162,14 +1225,20 @@ jobs:
         # two independent answers into one. That happened on the first run of
         # this workflow: the webkit step failed and both chromium gates
         # reported `skipped`, which reads as 'fine' and means 'unknown'.
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` stretch ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' stretch ')) }}
         # No webServer, no port, no data dir; it synthesizes its own audio.
         # STRETCH_QUALITY_PLAN is deliberately unset so the smoke arm runs and
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
       - name: Hermetic gate - master12-cue34 output topology
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` master12 ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' master12 ')) }}
         # No webServer, no port, no data dir: the djio graph is rendered by a
         # real four-channel OfflineAudioContext and the samples are read back.
         # The script skips only while the whole feature (source, spec, config)
@@ -1198,15 +1267,20 @@ jobs:
         # `!cancelled()` so a red webkit gate does not SKIP this one and turn
         # two independent answers into one -- same reasoning as the two
         # hermetic gates above.
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` comment-hotkey ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' comment-hotkey ')) }}
         # Fixed loopback port (see the vite/playwright config it names) on a
         # host that runs up to eight e2e jobs at once: hold the per-suite host
         # lock so a second copy of this step WAITS instead of dying on
         # 'is already used'. Same reason as the webkit-deckload steps.
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/comment-hotkey
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 8696 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate
+            pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       # -- AutoPlay stall-banner gate, real backend + fixture library --------
       # Same PREFLIGHT-01 library-attached reason as comment-hotkey: without
@@ -1216,11 +1290,40 @@ jobs:
       # defect one level up.
       - name: AutoPlay stall-banner gate - real backend, fixture library
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` autoplay ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' autoplay ')) }}
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/autoplay
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" autoplay-stall-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5324 8699 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.autoplay-stall-gate.config.ts --output test-results/autoplay-stall-gate
+            pnpm exec playwright test --config tests/e2e/playwright.autoplay-stall-gate.config.ts --output test-results/autoplay-stall-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
+
+      # -- Cmd K cue-preview gate, real engine + fixture library (CMDK-07..08)
+      # Codex r4278602487 on #6687: the unit suite drives the Cmd K preview
+      # with a recording dispatcher, so a regression in the typed dispatcher,
+      # the engine's preview voice or the real decode could leave it green.
+      # This drives the bar's own keys against the real engine and decoder,
+      # with cmdk.v2 + cmdk.v2.preview on in the fixture's own
+      # feature-flags.json. The bar jumps by bars, so the fixture runs the
+      # production own beatgrid producer (Beat This!) over its generated
+      # audio; that needs the odj-audio decoder, built here first (same
+      # self-heal wrapper as ci.yml's audio engine step), and the Beat This!
+      # checkpoint, which the builder fetches through its sha256-checked
+      # payload fetcher when MDT_BEATGRID_WEIGHTS is unset. Own ports
+      # 5337/8717 under their own host lock. Measured locally: 1/1 in ~1m20s
+      # (about a minute of it is the Beat This! fixture build), and a no-op
+      # cue dispatch in CommandBarV2.svelte turns it red.
+      - name: Cmd K cue-preview gate - real engine, fixture library
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        # The orchestration lives in a Python helper that resolves gcc, cargo and
+        # pnpm by path (PORTABLE BY DEFAULT), as scripts/ci_cmdk_preview_cue_gate.py does
+        # The interpreter is the one the job's Setup Python step installed (no `if:`,
+        # so pythonLocation is always set here), not whatever python3 the PATH finds.
+        run: $pythonLocation/bin/python3 "$GITHUB_WORKSPACE/scripts/ci_cmdk_preview_cue_gate.py"
 
       # -- Headphone device probe gate, performance Playwright config ---------
       # CUEOUT-06 / issue #2090: the probe clicks "+ OUT" by its accessible
@@ -1230,11 +1333,16 @@ jobs:
       # share a host.
       - name: Headphone device probe gate - performance config
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` headphone ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' headphone ')) }}
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/headphone
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" performance-headphone-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5273 8686 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts --output test-results/performance-headphone-gate
+            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts --output test-results/performance-headphone-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       - name: Root Playwright suite (real engine + Vite)
         id: root-playwright
@@ -1251,16 +1359,37 @@ jobs:
         # project prefix. classname is the spec path relative to testDir
         # (./tests/e2e). The report is deleted first so a persistent runner
         # cannot hand the verdict a file from an earlier job.
-        if: ${{ !cancelled() }}
+        #
+        # Spec selection (TEST-BUDGET round 3, scripts/ci_e2e_selection.py): in
+        # `affected` mode the scope job's selected spec paths are appended as
+        # Playwright's positional file filters; `full` (every other event, the
+        # kill switch, a stale map, a global change) appends nothing, so the
+        # invocation is today's. The footprint reporter and E2E_FOOTPRINTS_DIR
+        # record which `src/` modules each spec fetched; a push to main uploads
+        # that map below, a PR run only proves the recorder still works.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' }}
         continue-on-error: true
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: ${{ runner.temp }}/junit-e2e-root.xml
           PLAYWRIGHT_JUNIT_INCLUDE_PROJECT_IN_TEST_NAME: "1"
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints
+          E2E_MODE: ${{ needs.scope.outputs.e2e_mode }}
+          E2E_SPECS: ${{ needs.scope.outputs.e2e_specs }}
         run: |
           set -uo pipefail
           rm -f "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml"
+          # No rm of E2E_FOOTPRINTS_DIR: the named gates before this step have already
+          # written gates/<name>/ under it, and runner.temp is emptied per job anyway.
+          mkdir -p "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints"
+          spec_args=()
+          if [ "${E2E_MODE}" = "affected" ]; then
+            read -r -a spec_args <<< "${E2E_SPECS}"
+            echo "[e2e-selection] affected: running ${#spec_args[@]} selected root spec(s)"
+          else
+            echo "[e2e-selection] full: running every root spec (mode=${E2E_MODE:-unset})"
+          fi
           set +e
-          pnpm test:e2e --output test-results/root-playwright --reporter=list,junit
+          pnpm test:e2e --output test-results/root-playwright --reporter=list,junit,./tests/e2e/support/footprint-reporter.ts ${spec_args[@]+"${spec_args[@]}"}
           rc=$?
           set -e
           echo "rc=${rc}" >> "$GITHUB_OUTPUT"
@@ -1281,6 +1410,7 @@ jobs:
           ROOT_OUTCOME: ${{ steps.root-playwright.outcome }}
           ROOT_RC: ${{ steps.root-playwright.outputs.rc }}
           TRUNK_QUARANTINE_LIST: ${{ needs.trunk-quarantine.outputs.list }}
+          E2E_TIER: ${{ needs.scope.outputs.e2e_tier }}
         run: |
           set -uo pipefail
           case "$ROOT_OUTCOME" in
@@ -1294,19 +1424,37 @@ jobs:
                 --junit "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml" \
                 --shard e2e-root
               ;;
+            skipped)
+              # The smoke tier (scripts/ci_pr_scope.py E2E_SMOKE_TIER_PATHS) runs the
+              # deck-load smoke and the preflight boot gate only; the root suite is out of
+              # this change set's footprint by decision, not by accident. Any other skip
+              # is the accident this branch has always failed on.
+              if [ "${E2E_TIER:-}" = "smoke" ]; then
+                echo "VERDICT: PASS -- smoke tier, the root suite is outside this change set's footprint"
+                exit 0
+              fi
+              printf '::error title=root Playwright did not run::root Playwright step was skipped outside the smoke tier (e2e_tier=%s)\n' "${E2E_TIER:-empty}"
+              exit 1
+              ;;
             *)
               printf '::error title=root Playwright did not run::root Playwright step outcome=%s\n' "${ROOT_OUTCOME:-empty}"
               exit 1
               ;;
           esac
 
+
       - name: Library jobs ordering (chromium, dry runner)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` library-jobs ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' library-jobs ')) }}
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/library-jobs
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
+            pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       # -- Onboarding: the boot gate and a new user's first run (SETUP-25) ------
       # Both suites existed and NO workflow ran them: fresh-install-onboarding
@@ -1316,11 +1464,16 @@ jobs:
       # holds THAT lock name: one port, one lock (see the fixed-port lock test).
       - name: Preflight boot gate + fresh-install onboarding (real backends)
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` preflight ` is the selection's exact token for this gate.
+        if: ${{ !cancelled() && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' preflight ')) }}
+        env:
+          E2E_FOOTPRINTS_DIR: ${{ runner.temp }}/e2e-footprints/gates/preflight
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 5323 8696 8697 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.preflight-gate.config.ts --output test-results/preflight-gate
+            pnpm exec playwright test --config tests/e2e/playwright.preflight-gate.config.ts --output test-results/preflight-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       # The onboarding gauntlet (SETUP-21..23, (private path)):
       # every test boots its own brand-new PACKAGED engine on an OS-assigned
@@ -1329,8 +1482,41 @@ jobs:
       # case red until its marker is removed, never silently green.
       - name: Onboarding gauntlet (packaged engine, production build)
         working-directory: apps/webui/frontend
-        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
+        # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
+        # gate runs; ` onboarding ` is the selection's exact token for this gate.
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' onboarding ')) }}
         run: pnpm exec playwright test --config tests/e2e/playwright.onboarding.config.ts --output test-results/onboarding-gauntlet
+
+      # The footprint map (TEST-BUDGET round 3): only a FULL, green root run on a
+      # push to main is a measurement of every spec, so only that builds and
+      # uploads one. After the LAST named gate (Codex, PR #7948): the six
+      # dev-server gates write gates/<name>/ into the same directory, and two
+      # of them run after the root suite. durations-ledger.yml publishes the newest to ci-data-e2e.
+      # Non-fatal like the other byproduct uploads: a storage block never paints
+      # main red; a map that fails to build is a warning here and a stale map in
+      # the scope job, which runs the full suite, never a smaller one.
+      - name: Build the root Playwright footprint map
+        id: e2e-footprints
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.root-playwright.outcome == 'success'
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          .venv/bin/python -m scripts.e2e_footprints_refresh build \
+            --dir "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints" \
+            --sha "$GITHUB_SHA" \
+            --out "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints-map/.spec_footprints.json"
+
+      - name: Upload the root Playwright footprint map
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.e2e-footprints.outcome == 'success'
+        continue-on-error: true
+        uses: ./.github/actions/r2-artifact
+        with:
+          mode: upload
+          name: e2e-spec-footprints
+          path: ${{ runner.temp }}/e2e-footprints-map/.spec_footprints.json
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,
@@ -1344,8 +1530,9 @@ jobs:
         if: failure()
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: e2e-gate-failures
           # The engine's own logs from each suite's fixture data dir travel with
           # the Playwright output: twice on Sat 5 Sep 2026 the suite failed on
@@ -1367,7 +1554,6 @@ jobs:
             apps/webui/frontend/playwright-report/**
             apps/webui/frontend/tests/e2e/fixtures/*-data/logs/**
           if-no-files-found: ignore
-          retention-days: 1
 
       # Stage the root JUnit for the hosted uploader (ADR-NEW-trunk-flaky-quarantine-on).
       # This job checks out the repo, so the token stays in e2e-trunk-upload.
@@ -1414,12 +1600,12 @@ jobs:
       - name: Upload the root Playwright JUnit report for Trunk
         if: always() && steps.stage-e2e-junit.outcome == 'success'
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
           path: ${{ steps.stage-e2e-junit.outputs.stage_dir }}
           if-no-files-found: error
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -1550,7 +1736,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -1900,14 +2086,14 @@ jobs:
         if: failure()
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: e2e-extended-failures
           path: |
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
-          retention-days: 2
 
   verdict:
     name: e2e verdict
@@ -1981,7 +2167,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           # 0: every persistent-runner checkout fetches full history
@@ -2038,10 +2224,16 @@ jobs:
         id: download-e2e-root
         if: always() && steps.trunk-token.outputs.present == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/staged-e2e-root
+        # No checkout in a Trunk-token job, so the R2 client is curl's built-in SigV4.
+        env:
+          ARTIFACT_NAME: e2e-trunk-junit-attempt-${{ github.run_attempt }}
+          DEST: ${{ runner.temp }}/staged-e2e-root
+        run: |
+          set -euo pipefail
+          mkdir -p "$DEST"
+          curl -fsS --aws-sigv4 "aws:amz:auto:s3" --user "$CI_ARTIFACT_R2_ACCESS_KEY_ID:$CI_ARTIFACT_R2_SECRET_ACCESS_KEY" \
+            "https://$CI_ARTIFACT_R2_ACCOUNT_ID.r2.cloudflarestorage.com/$CI_ARTIFACT_R2_BUCKET/ci/$GITHUB_REPOSITORY/$GITHUB_RUN_ID/$ARTIFACT_NAME.tar.gz" \
+            | tar -xz -C "$DEST"
 
       - name: Find the root Playwright report
         id: e2e-root-report

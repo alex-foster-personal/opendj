@@ -119,7 +119,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
-import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
+import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -897,6 +897,7 @@ function _ensureGraph(): AudioContext {
 		_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
 		registerAudioContext(_ctx);
 		stampContextDeviceFloors(_ctx);
+		watchOutputDevice(); // off the press path; rows read the remembered answer
 		// A context that is allowed to start running immediately never fires
 		// statechange, so the build stamp above already caught it; one that starts
 		// suspended is re-stamped the moment it runs, whichever path resumed it.
@@ -1250,6 +1251,7 @@ function _syncMaster(): DeckId | null {
 }
 
 /** Playing master that can phase-lock. A gridless one is none, so later tempo and seek stay on free transport. */
+export { _beatSyncMaster as beatSyncMasterDeck };
 function _beatSyncMaster(): DeckId | null {
 	const master = _syncClockMaster();
 	return master === null ? null : beatSyncClockMaster(master, deckStates[master]);
@@ -1604,7 +1606,7 @@ async function _scheduleDeckSerial(
 		processorLeadSec,
 		processorLatencySec: rt.latencySec,
 		baseLatencySec: _ctx.baseLatency,
-		outputLatencySec: _ctx.outputLatency,
+		outputLatencySec: outputLatencyIfDevice(_ctx.outputLatency),
 		masterDelayMs: mixerState.headphones.master_delay_ms,
 		active,
 		...(pressToScheduleMs === undefined ? {} : { pressToScheduleMs })
@@ -1920,6 +1922,15 @@ function _futureScheduleTime(deck: DeckId): number {
 
 function _tempoAt(deck: DeckId, contextTime: number): number {
 	return _controlSegmentAt(_rt[deck], contextTime).tempoRatio;
+}
+
+/**
+ * Commit every quantized launch whose time has come. A launch only flips `playing` when something reads its deck's clock,
+ * which is the rAF tick while the tab is visible. In a hidden tab nothing does, so the armed flag lapses with `playing`
+ * still false and the plan runner reads a launched deck as stopped. Decisions that run in the background call this first.
+ */
+export function commitDueQuantizedLaunches(): void {
+	for (const deck of DECK_IDS) _commitPendingIfDue(deck);
 }
 
 /**
@@ -3062,35 +3073,44 @@ class RbAudioEngine implements AudioEngine {
 			// the list behind a multi-MB audio download on a single-worker engine,
 			// it held the fetch wall on its own (PR #601 measured 47% of it for a
 			// 1-9ms endpoint). It now runs after the swap, in _upgradeDeckStems.
-			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
-				await Promise.all([
-					time('getTrack', (trackRequest = getTrack(stable_id)).catch(rethrowLibraryTrackLookupError)),
-					time(audio.fetchStage, audio.bytes),
-					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
-					time('fetchHotCues', fetchHotCueSlots(stable_id)),
-					time('fetchAutoGain', settleTrackAutoGain(stable_id).then((settled) => { candidateAutoGain = settled; }))
-				]);
-			stages.fetchWall = perfMs();
-			Object.assign(stages, audio.stats(audioBytes));
-			const ctx = _ensureGraph();
-			loadCtx = ctx;
-			track = trackRes.track;
-			anlz = requiredAnlz;
-			hotCueSlots = requiredHotCueSlots;
 			const processorOptions = {
 				onProcessorError: (error: unknown) => {
 					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
 				}
 			};
-			// LAZY-STEMS: EVERY load now takes the mix path. The mix buffer is
-			// what first playback actually needs -- a stemmed deck kept the mix
-			// buffer anyway (rt.audioBuffer, for the sync blend), so nothing
-			// audible is being deferred here, only the per-stem gain branches.
-			// SPIKE-PERF: overlap decode with worklet create.
-			const [decodedMix, mixProcessor] = await Promise.all([
-				time(audio.decodeStage, decodeDeckLoadAudio(ctx, stable_id, audio, audioBytes)),
-				time('stretchCreate', StretchDeckProcessor.create(ctx, processorOptions))
-			]);
+			// LAZY-STEMS: EVERY load takes the mix path; the mix buffer is what first playback needs.
+			// PERF win #3: decode and the worklet create start the moment the audio bytes land, overlapping
+			// the track, ANLZ and hot-cue fetches instead of waiting for the slowest of the four.
+			const bytesStage = time(audio.fetchStage, audio.bytes);
+			// Set when a metadata fetch fails: bytes landing after that must not build a graph for a dead load.
+			let abandoned = false;
+			const mix = bytesStage.then((landed) => {
+				// A failed sibling fetch, a newer load or engine.dispose() (which swaps _rt[deck]) ends this load first.
+				if (abandoned || _rt[deck] !== rt || token !== rt.loadToken) throw new Error('load: abandoned before the mix decode started');
+				const graph = (loadCtx = _ensureGraph());
+				return Promise.all([landed, graph, time(audio.decodeStage, decodeDeckLoadAudio(graph, stable_id, audio, landed)), time('stretchCreate', StretchDeckProcessor.create(graph, processorOptions))] as const);
+			});
+			const metadata = [time('getTrack', (trackRequest = getTrack(stable_id)).catch(rethrowLibraryTrackLookupError)), time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise), time('fetchHotCues', fetchHotCueSlots(stable_id)), time('fetchAutoGain', settleTrackAutoGain(stable_id).then((settled) => { candidateAutoGain = settled; }))] as const;
+			// As before, the first of the four fetches to fail is the error the DJ sees, a fetch failure
+			// beats any decode or graph failure, and a load that fails never leaks the worklet.
+			const mixSettled = mix.then((ready) => ({ ready }), (error: unknown) => ({ error }));
+			const [, trackRes, requiredAnlz, requiredHotCueSlots] = await Promise.all([bytesStage, ...metadata]).catch((exc: unknown) => {
+				abandoned = true;
+				// A dispose that rejects (worklet ack timeout after the context closed) is logged, never left
+				// unhandled, and never replaces the metadata error the DJ sees.
+				void mix
+					.then(([, , , orphan]) => orphan.dispose(), () => undefined)
+					.catch((disposeError: unknown) => console.warn('[deck-load] orphan mix processor dispose failed', disposeError));
+				throw exc;
+			});
+			stages.fetchWall = perfMs();
+			const settled = await mixSettled;
+			if ('error' in settled) throw settled.error;
+			const [audioBytes, ctx, decodedMix, mixProcessor] = settled.ready;
+			Object.assign(stages, audio.stats(audioBytes));
+			track = trackRes.track;
+			anlz = requiredAnlz;
+			hotCueSlots = requiredHotCueSlots;
 			buffer = decodedMix;
 			await time('stretchLoad', mixProcessor.load(buffer));
 			processor = mixProcessor;

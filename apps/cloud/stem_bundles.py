@@ -21,6 +21,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared.shared_read_open import open_read_shared
+
 _HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
 
 #: ``hydrate_one`` fetches into ``<stable_id>.tmp-hydrate-<random>`` beside the
@@ -121,6 +123,30 @@ def current_fingerprint(bundle_dir: Path) -> str | None:
     return None if bundle is None else bundle.fingerprint
 
 
+def file_marks(bundle_dir: Path) -> tuple[tuple[str, int, int, int], ...] | None:
+    """Every file's (name, device, inode, ctime_ns), or None when the bundle is gone.
+
+    Taken under the bundle lock before an unlocked hash and compared after
+    it: every writer swaps a whole directory in (new inodes), and a write
+    in place moves ctime, which ``os.utime`` cannot put back, so a bundle
+    rewritten while its hash ran outside the lock is told apart from the
+    one hashed even where size and mtime match (Codex on #6821)."""
+    if not bundle_dir.is_dir() or bundle_dir.is_symlink():
+        return None
+    marks: list[tuple[str, int, int, int]] = []
+    try:
+        own = bundle_dir.stat()
+        marks.append(("", own.st_dev, own.st_ino, own.st_ctime_ns))
+        for file_path in bundle_dir.rglob("*"):
+            if file_path.is_file():
+                stat_result = file_path.stat()
+                name = file_path.relative_to(bundle_dir).as_posix()
+                marks.append((name, stat_result.st_dev, stat_result.st_ino, stat_result.st_ctime_ns))
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return tuple(sorted(marks))
+
+
 def _remove_tree(path: Path) -> None:
     """``rmtree`` that treats an entry already gone as removed: a sweep and a
     claimant may delete the same abandoned claim at once."""
@@ -167,8 +193,16 @@ def index_gap(bundle: LocalBundle, index: StemAssetIndex) -> str | None:
 
 
 def _sha256_of(path: Path) -> str:
+    """The part's sha256, read through :func:`open_read_shared`.
+
+    The eviction claim hashes outside the bundle lock, so a publisher can
+    swap the bundle mid-hash; a plain open on Windows would make that
+    rename fail with a sharing violation (Codex on #6820). The seam refuses
+    a symlinked part, so its ``OSError`` reaches the pass rather than a
+    hash of whatever the link points at vouching for an eviction.
+    """
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with os.fdopen(open_read_shared(path), "rb") as handle:
         while chunk := handle.read(_HASH_CHUNK_BYTES):
             digest.update(chunk)
     return digest.hexdigest()

@@ -10,7 +10,7 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import { API_BASE } from '$lib/api/base';
-	import { pickCandidate, startTry, undoPick } from '$lib/api/dj-try';
+	import { pickCandidate, startTry, trackLabel, undoPick } from '$lib/api/dj-try';
 	import {
 		groupDividerIndex,
 		CHIP_LETTERS,
@@ -20,6 +20,7 @@
 		NOT_IMPLEMENTED_TITLE,
 		redFlags,
 		scoreBarPercent,
+		sharedNotes,
 		shuffledOrder,
 		unmeasured,
 		useBestTarget,
@@ -28,6 +29,8 @@
 		type TryCandidate,
 		type TryJob
 	} from './tryer-model';
+	import TryerLanes from './TryerLanes.svelte';
+	import { LANE_KNOBS } from './tryer-lanes';
 
 	let { outId, inId, n, contextBars }: { outId: string; inId: string; n: number; contextBars: number } = $props();
 
@@ -38,6 +41,27 @@
 	let currentId = $state<string | null>(null);
 	let lastId = $state<string | null>(null);
 	let playing = $state(false);
+	let playhead = $state<number | null>(null);
+	let titles = $state<{ out: string; in: string } | null>(null);
+
+	$effect(() => {
+		Promise.all([trackLabel(outId), trackLabel(inId)]).then(
+			([out, incoming]) => (titles = { out, in: incoming }),
+			(failure: unknown) => (error = `track names: ${failure instanceof Error ? failure.message : String(failure)}`)
+		);
+	});
+
+	// The playhead follows the current candidate's audio element while it plays (TRYER-16).
+	$effect(() => {
+		if (!playing || currentId === null || auditioner === null) return;
+		const id = currentId;
+		const audio = auditioner;
+		let frame = requestAnimationFrame(function tick() {
+			playhead = audio.position(id);
+			frame = requestAnimationFrame(tick);
+		});
+		return () => cancelAnimationFrame(frame);
+	});
 	const auditioner =
 		typeof Audio === 'undefined'
 			? null
@@ -52,6 +76,7 @@
 
 	const chips = $derived(job === null ? [] : chipOrder(job, blindOrder));
 	const bestId = $derived(job === null ? null : useBestTarget(job));
+	const shared = $derived(job === null ? [] : sharedNotes(job.candidates));
 	const divider = $derived(blindOrder === null ? groupDividerIndex(chips) : null);
 
 	async function run(action: () => Promise<TryJob>): Promise<void> {
@@ -83,6 +108,16 @@
 		}
 		playing = true;
 		auditioner.play(candidate.id, `${API_BASE}${candidate.render_url}`); // a server path; resolve it like every API call
+	}
+
+	function playFrom(candidate: TryCandidate, seconds: number): void {
+		if (auditioner === null) throw new Error('no HTMLAudioElement in this environment');
+		if (currentId !== candidate.id) {
+			lastId = currentId;
+			currentId = candidate.id;
+		}
+		playing = true;
+		auditioner.playFrom(candidate.id, `${API_BASE}${candidate.render_url}`, seconds);
 	}
 
 	function stop(): void {
@@ -165,7 +200,9 @@
 <section class="tryer" aria-label="Transition try-er">
 	<header>
 		<h2>Try transitions</h2>
-		<span class="pair" title="Outgoing and incoming track stable ids">{outId} → {inId}</span>
+		<span class="pair" title="Outgoing ({outId}) into incoming ({inId})">
+			{titles === null ? `${outId} → ${inId}` : `${titles.out} → ${titles.in}`}
+		</span>
 		<button onclick={render} disabled={busy}>{job === null ? 'Render candidates' : 'Render again'}</button>
 		<button disabled title={NOT_IMPLEMENTED_TITLE}>Render more (R)</button>
 		<button disabled title={NOT_IMPLEMENTED_TITLE}>Rank up/down (J/K)</button>
@@ -185,7 +222,13 @@
 		{/if}
 	</header>
 
-	{#if busy}<p role="status">Working...</p>{/if}
+	<p class="task">
+		Each card is one way to mix these two tracks, rendered from your audio. Play them (keys 1-{Math.min(n, 9)}, or
+		click a waveform to jump there), compare, then <strong>Pick</strong> the one you would play in a set. The score
+		ranks them; VETO means a hard check failed.
+	</p>
+
+	{#if busy}<p role="status">Rendering {n} candidates...</p>{/if}
 	{#if error !== null}<p class="error" role="alert">{error}</p>{/if}
 
 	{#if job !== null}
@@ -199,6 +242,31 @@
 				</span>
 			{/if}
 		</p>
+		<div class="legend" aria-label="What the waveforms and lines show">
+			<span><i class="swatch fill out"></i>outgoing deck (top)</span>
+			<span><i class="swatch fill in"></i>incoming deck (below)</span>
+			{#each LANE_KNOBS as knob (knob.name)}
+				<span
+					><i
+						class="swatch line"
+						style:border-top="2px {knob.dash.length === 0 ? 'solid' : 'dashed'} {knob.color}"
+					></i>{knob.label}</span
+				>
+			{/each}
+			<span><i class="swatch tick bar"></i>bar line</span>
+			<span><i class="swatch tick beat"></i>beat</span>
+			<span title="Line height is the knob position: top = full, bottom = off; filter is off at the middle"
+				>higher line = more</span
+			>
+		</div>
+		{#if shared.length > 0 && blindOrder === null}
+			<div class="shared" title="Notes every candidate carries; each card below lists only what differs, in red">
+				<strong>Same for every candidate:</strong>
+				<ul>
+					{#each shared as note (note)}<li>{note}</li>{/each}
+				</ul>
+			</div>
+		{/if}
 		<ol class="chips">
 			{#each chips as chip, slot (chip.id)}
 				{@const bar = scoreBarPercent(chip)}
@@ -213,10 +281,12 @@
 					</li>
 				{/if}
 				<li
+					class="card"
 					class:current={chip.id === currentId}
 					class:vetoed={isVetoed(chip)}
 					class:picked={job.pick?.picked_candidate_id === chip.id}
 				>
+					<div class="info">
 					<button class="chip" onclick={() => play(chip)} title={slot < 6 ? `Play this candidate's render (key ${slot + 1})` : "Play this candidate's render"}>
 						<strong>{CHIP_LETTERS[slot]}</strong>
 						{#if blindOrder === null}
@@ -237,8 +307,12 @@
 						</div>
 						{#if isVetoed(chip)}<span class="veto" title="A hard check failed; this candidate scores 0">VETO</span>{/if}
 						<ul class="flags">
-							{#each redFlags(chip) as flag (flag)}<li title="Veto: measured value and its limit">{flag}</li>{/each}
-							{#each unmeasured(chip) as gap (gap)}<li class="gap" title="Not measured, so not counted">{gap}</li>{/each}
+							{#each redFlags(chip) as flag (flag)}
+								{#if !shared.includes(flag)}<li class="differs" title="Veto: measured value and its limit">{flag}</li>{/if}
+							{/each}
+							{#each unmeasured(chip) as gap (gap)}
+								{#if !shared.includes(gap)}<li class="differs gap" title="Not measured, so not counted; only this candidate or some others">{gap}</li>{/if}
+							{/each}
 						</ul>
 						<span class="timing" title="Milliseconds to render, then to score, this candidate">
 							{chip.render_ms === null ? `not rendered: ${chip.refused}` : `${chip.render_ms.toFixed(0)} ms render`}, {chip.score_ms.toFixed(
@@ -253,11 +327,19 @@
 					>
 						Pick
 					</button>
+					</div>
+					{#if chip.render_ms !== null}
+						<TryerLanes
+							jobId={job.job_id}
+							candidateId={chip.id}
+							playhead={chip.id === currentId ? playhead : null}
+							onSeek={(seconds) => playFrom(chip, seconds)}
+						/>
+					{/if}
 				</li>
 			{/each}
 		</ol>
 		<p class="keys">1-6 play, Space play/stop, X swap to last, Enter pick, B blind, Esc cancel</p>
-		<p class="deferred" title={NOT_IMPLEMENTED_TITLE}>Overlap waveforms and lane curves: not implemented</p>
 	{/if}
 </section>
 
@@ -275,7 +357,7 @@
 	}
 	.chips {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+		grid-template-columns: 1fr;
 		gap: 0.5rem;
 		list-style: none;
 		padding: 0;
@@ -284,8 +366,64 @@
 		border: 1px solid var(--border, #555);
 		border-radius: 6px;
 		padding: 0.5rem;
+	}
+	.chips > li.card {
+		display: grid;
+		grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+		gap: 0.75rem;
+		align-items: center;
+	}
+	.info {
 		display: grid;
 		gap: 0.25rem;
+	}
+	.task {
+		margin: 0;
+		max-width: 60rem;
+	}
+	.legend {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1.1rem;
+		align-items: center;
+		padding: 0.45rem 0.6rem;
+		background: var(--bg, #111);
+		border: 1px solid var(--border, #555);
+		border-radius: 6px;
+		font-size: 0.85em;
+	}
+	.swatch {
+		display: inline-block;
+		margin-right: 0.35rem;
+		vertical-align: middle;
+	}
+	.swatch.fill {
+		width: 1.1rem;
+		height: 0.7rem;
+		border-radius: 2px;
+	}
+	.swatch.fill.out {
+		background: rgba(90, 160, 255, 0.75);
+	}
+	.swatch.fill.in {
+		background: rgba(255, 150, 70, 0.75);
+	}
+	.swatch.line {
+		width: 1.6rem;
+		height: 0;
+	}
+	.swatch.tick {
+		width: 2px;
+		height: 0.9rem;
+	}
+	.swatch.tick.bar {
+		background: rgba(255, 255, 255, 0.6);
+	}
+	.swatch.tick.beat {
+		background: rgba(255, 255, 255, 0.22);
 	}
 	.chips > li.group {
 		grid-column: 1 / -1;
@@ -326,16 +464,23 @@
 		padding-left: 1rem;
 		font-size: 0.85em;
 	}
-	.flags .gap {
-		opacity: 0.7;
+	.flags .differs {
+		color: var(--danger, #ff5a5a);
+	}
+	.shared {
+		font-size: 0.8em;
+		opacity: 0.8;
+	}
+	.shared ul {
+		margin: 0.2rem 0 0;
+		padding-left: 1rem;
 	}
 	.error {
 		color: var(--danger, #e44);
 	}
 	.timing,
 	.meta,
-	.keys,
-	.deferred {
+	.keys {
 		font-size: 0.8em;
 		opacity: 0.8;
 	}

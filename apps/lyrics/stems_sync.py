@@ -12,22 +12,95 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from apps.cloud import asset_store, policy
 from apps.cloud.eviction import HydrationError
+from apps.cloud.stem_bundles import file_marks
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.shared.paths import DATA_DIR
 from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.bundle_lock import beside_stem_root, remove_staging, replace_bundle_dir, store_writer_lock
 from apps.stems.r2_migration import main as rail_main
+from apps.stems.recompress import bundle_fingerprint
 
 STEM_ASSET_KIND = "stem_bundle"
+#: Beside the stem root, never inside it, so no scan or eviction pass sees a
+#: half-fetched bundle: ``<root parent>/.stem-hydrate/<unique>/<stable_id>``.
+HYDRATE_STAGING_DIR_NAME = ".stem-hydrate"
 
 
 def _stems_root(data_dir: Path | None) -> Path:
     if data_dir is not None:
         return data_dir / "state" / "stems-roformer-spike"
     return ROFORMER_STEMS_DIR
+
+
+#: What :func:`live_bundle_digest` returns for a bundle another writer changed
+#: while it was hashed: it equals no digest, so the swap keeps that writer's bundle.
+CHANGING = "changing"
+
+
+def _hash_outside_the_lock(bundle_dir: Path) -> tuple[str, tuple[tuple[str, int, int, int], ...] | None]:
+    """The bundle's content digest and the marks it was taken against.
+
+    The marks (:func:`file_marks`: every file's device, inode and ctime) are
+    read under the bundle lock, the bytes are hashed with it released, and the
+    caller compares the marks again under the lock before relying on the
+    digest. The lock is striped across ids, so a full hash under it would stall
+    other tracks' hydrates and publishes for the length of a disk read (Codex
+    on #6821). Every writer swaps a whole directory in (new inodes) and a write
+    in place moves ctime, so a bundle changed mid-hash fails that comparison.
+    ``CHANGING`` when the bundle vanished or was swapped out under the hash.
+    """
+    with store_writer_lock(bundle_dir):
+        marks = file_marks(bundle_dir)
+    try:
+        digest = bundle_fingerprint(bundle_dir)
+    except (FileNotFoundError, NotADirectoryError):
+        return CHANGING, marks
+    return digest, marks
+
+
+def live_bundle_digest(bundle_dir: Path) -> str:
+    """The live bundle's content digest (:func:`bundle_fingerprint`, ``"absent"``
+    when there is none), or :data:`CHANGING` when another writer changed it
+    while it was hashed outside the bundle lock.
+
+    Content, not names, sizes and mtimes: on a coarse-clock filesystem (FAT,
+    HFS+) a same-codec republish of fixed-duration CBR parts can keep all
+    three, and a metadata stamp would then let a stale cloud copy overwrite
+    the newer render (Codex P1 on #6821).
+    """
+    digest, marks = _hash_outside_the_lock(bundle_dir)
+    with store_writer_lock(bundle_dir):
+        if file_marks(bundle_dir) != marks:
+            return CHANGING
+    return digest
+
+
+def swap_in_hydrated(staging: Path, bundle_dir: Path, before: str) -> bool:
+    """Swap a fetched ``staging`` bundle in as ``bundle_dir``, unless it changed.
+
+    Under the bundle lock every writer of this directory holds (the STEM-58
+    re-compress swap and eviction rewrite this root too), and for the mark
+    check and swap alone; the content hash runs before it with the lock free.
+    ``before`` is :func:`live_bundle_digest` taken before the fetch: if
+    another writer published, rewrote or removed the bundle since, its bundle
+    is kept and False is returned (Codex on #6820 and #6821).
+    """
+    if before == CHANGING:
+        return False
+    digest, marks = _hash_outside_the_lock(bundle_dir)
+    if digest != before:
+        return False
+    with store_writer_lock(bundle_dir):
+        if file_marks(bundle_dir) != marks:
+            return False
+        bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+        replace_bundle_dir(staging, bundle_dir)
+        return True
 
 
 def push_missing(
@@ -86,16 +159,41 @@ def hydrate(
     s3, cfg = asset_clients_for_mode(writing=True)
     if s3 is None or cfg is None:
         raise HydrationError("cloud mode but no S3 client / CloudConfig supplied")
-
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-    for part, rel in files.items():
-        dest = bundle_dir / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        fetch_asset = asset_store.fetch_asset
-        fetch_asset(cfg, s3, hashes[part], dest)
-
-    shutil.copy2(manifest_path, bundle_dir / "manifest.json")
-    load_stem_bundle(stable_id, stems_dir=stems_root)
+    # Fetch into a staging copy and swap it in whole (Codex on #6820): a
+    # bundle STEM-58 already re-compressed holds other files, which layering
+    # the manifest's parts over it would leave behind, outside the new
+    # manifest's R2 index and so never evictable; and a failed fetch must
+    # leave the old bundle as it was.
+    # One staging parent per call, not per process: the webui serves hydrates
+    # for different tracks at once (Codex on #6820).
+    # Beside the RESOLVED root, so the publishing rename stays on one
+    # filesystem when the stem root is a symlink to another disk.
+    staging_root = beside_stem_root(stems_root) / HYDRATE_STAGING_DIR_NAME
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging_parent = Path(tempfile.mkdtemp(prefix=f"{stable_id}-", dir=str(staging_root)))
+    staging = staging_parent / stable_id
+    # What the live bundle was before the unlocked fetch, so a bundle another
+    # writer publishes meanwhile is kept, not overwritten (Codex on #6820).
+    before = live_bundle_digest(bundle_dir)
+    try:
+        # The staging copy is this call's alone, so the network fetch and the
+        # strict load run with no lock held: the striped bundle lock is shared
+        # by every id on its stripe, and a deck hydrate of another track must
+        # not wait out this transfer (Codex on #6821).
+        staging.mkdir()
+        for part, rel in files.items():
+            dest = staging / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            fetch_asset = asset_store.fetch_asset
+            fetch_asset(cfg, s3, hashes[part], dest)
+        shutil.copy2(manifest_path, staging / "manifest.json")
+        load_stem_bundle(stable_id, stems_dir=staging_parent)
+        swapped = swap_in_hydrated(staging, bundle_dir, before)
+    finally:
+        remove_staging(staging_parent, "stems hydrate staging directory")
+    if not swapped:
+        print(f"[KEEP] {stable_id}: another writer published {bundle_dir} during the fetch; kept its bundle")
+        return 0
     print(f"[OK] hydrated {stable_id} at {bundle_dir}")
     return 0
 

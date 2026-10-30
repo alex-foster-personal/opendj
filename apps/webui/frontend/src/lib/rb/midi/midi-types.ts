@@ -5,7 +5,7 @@
  * action glue, per-device maps, midi UI). Device-map units import these
  * types; the runtime consumes DeviceMap instances registered at startup.
  *
- * Grounding: .planning/rekordbox-parity/spikes/SPIKE-CONTROLLERS.md
+ * Grounding: (private path)
  * (section 2: both target controllers - Pioneer DDJ-FLX10 per the official
  * AlphaTheta MIDI message list [spike source 1], Reloop Mixtour per the
  * community-verified Mixxx map [spike source 4] - speak plain Note/CC with
@@ -135,6 +135,12 @@ export interface DeckTempoNudgeAction {
 	direction: -1 | 1;
 }
 
+/** Jog rotation. Paused: scrub. Playing: bend the tempo while it turns. */
+export interface DeckJogAction {
+	type: 'deck_jog';
+	deck: DeckId;
+}
+
 /** Device-local performance-pad mode. Kept generic so another controller can
  * use the same stateful pad dispatcher without device checks in the glue. */
 export type ControllerPadMode =
@@ -246,6 +252,7 @@ export type MidiAction =
 	| DeckStemEqToggleAction
 	| DeckKeyNudgeAction
 	| DeckTempoNudgeAction
+	| DeckJogAction
 	| ControllerPadModeAction
 	| ControllerPadAction
 	| MixerChannelAction
@@ -289,8 +296,13 @@ export interface MidiBinding {
 	/** Treat this CC as a relative encoder (two's-complement delta) instead
 	 * of an absolute 0..127 value. Required true for browse_encoder. */
 	relative?: boolean;
+	/** Relative values centre on 64 (0x41 = +1, 0x3F = -1), not two's complement. */
+	relativeCentered?: boolean;
 	/** Normalize any non-zero relative value to one row/detent. */
 	relativeUnit?: boolean;
+	/** This CC is a button (0 = release, non-zero = press), as on Pioneer
+	 * all-in-ones whose mixer section sends CC for CH CUE and MASTER CUE. */
+	ccButton?: boolean;
 }
 
 // ------------------------------------------------------------ led feedback

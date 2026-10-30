@@ -17,14 +17,19 @@ STARTED a download as a side effect and reported a failed fetch forever.
 """
 from __future__ import annotations
 
+import socket
 import threading
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import apps.webui.server.routes.stems as stems_module
 from apps.cloud import stem_hydration
 from apps.cloud.stem_index import load_cached_index, save_cached_index
+from apps.cloud.stem_source import HubPresignedSource
+from apps.webui.server.routes.stems import router
 from tests.cloudsync.conftest import InMemoryAssetS3
 from tests.webui.test_stems_hydration import (  # noqa: F401 - fixture import
     _cfg,
@@ -269,6 +274,46 @@ def test_hydrate_replaces_an_invalid_local_bundle_with_the_cloud_copy(tmp_path: 
     assert landed["state"] == "local"
 
 
+@pytest.mark.requirement("STEM-58")
+def test_hydrate_repairs_an_invalid_shared_bundle_behind_the_read_barrier(tmp_path: Path):
+    """[if] hydration replaces an invalid bundle in the shared store [then] it waits on the read barrier, [else stop].
+
+    The repair used to delete the invalid bundle and rename the fetched one
+    in the open, so a deck read in between saw it half deleted or missing
+    (Codex on #6821). It now goes through the barrier-held swap. While a read
+    holds the barrier the old bundle stays whole; once it lets go the
+    repaired bundle lands.
+
+    MUTATION TARGET: restore ``shutil.rmtree`` + ``rename`` in
+    ``_publish_fetched``.
+    """
+    from apps.cloud.stem_cache_budget import read_barrier
+
+    data_dir = tmp_path / "data"
+    stems_dir = data_dir / "state" / "stems"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    save_cached_index(data_dir, {SID: _seed_bundle(s3, cfg, SID)})
+    _write_local_bundle(stems_dir, SID)
+    (stems_dir / SID / "vocals.wav").write_bytes(b"not a wav")
+    before = sorted(p.name for p in (stems_dir / SID).iterdir())
+
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        with read_barrier(data_dir, SID):
+            retried = client.post(f"/api/v1/tracks/{SID}/stems/hydrate")
+            future = stems_module._INFLIGHT[SID]
+            done = threading.Event()
+            future.add_done_callback(lambda _f: done.set())
+            assert not done.wait(1.0), "the repair waits for the read holding the barrier"
+            assert sorted(p.name for p in (stems_dir / SID).iterdir()) == before, "the old bundle stays whole"
+            assert (stems_dir / SID / "vocals.wav").read_bytes() == b"not a wav"
+        future.result(timeout=20)
+        landed = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+
+    assert retried.status_code == 200
+    assert landed["state"] == "local", "control: once the read lets go the repair lands"
+
+
 @pytest.mark.requirement("STEM-46")
 def test_hydrate_on_an_invalid_bundle_with_no_cloud_copy_names_the_bundle(tmp_path: Path):
     """[if] the local bundle is invalid and the cloud has none [then] hydrate is a 422, [else stop]."""
@@ -333,3 +378,47 @@ def test_state_route_is_not_swallowed_by_the_part_route(tmp_path: Path):
     assert state.json()["stable_id"] == SID
     assert part.status_code == 404
     assert part.json()["detail"]["code"] == "STEM_PART_NOT_FOUND"
+
+
+def _closed_loopback_url() -> str:
+    """An http URL on a loopback port nothing listens on, so any fetch fails fast."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+@pytest.mark.requirement("STEM-44")
+def test_a_missing_part_of_a_local_bundle_is_a_404_and_never_hydrates(tmp_path: Path):
+    """[if] a local bundle lacks the asked part [then] 404 STEM_PART_NOT_FOUND, no fetch, [else stop].
+
+    With hydration armed and the bundle absent from the index, treating the
+    part-level 404 as a missing bundle would start a hydration and answer
+    502 STEM_BUNDLE_NOT_INDEXED instead (Codex on #6821). Hydration is armed
+    with the production hub source and its real HTTP transport, aimed at a
+    loopback port nothing serves, so no fake provider stands in for it.
+    Control: the same request for a part the bundle has is served.
+    """
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    save_cached_index(data_dir, {})
+    _write_local_bundle(stems_dir, SID)
+    app = FastAPI()
+    app.state.stems_dir = stems_dir
+    app.state.stem_hydration_data_dir = data_dir
+    app.state.stem_hydration_source = HubPresignedSource(
+        data_dir=data_dir,
+        hub_url=_closed_loopback_url(),
+        machine_id="machine-1",
+        bearer=None,
+    )
+    app.state.stem_hydration_cfg = None
+    app.state.stem_hydration_s3 = None
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as client:
+        missing = client.get(f"/api/v1/tracks/{SID}/stems/not-a-part")
+        present = client.get(f"/api/v1/tracks/{SID}/stems/vocals")
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["detail"]["code"] == "STEM_PART_NOT_FOUND"
+    assert SID not in stems_module._INFLIGHT
+    assert present.status_code == 200, present.text

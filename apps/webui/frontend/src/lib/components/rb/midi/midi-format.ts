@@ -176,6 +176,8 @@ export function friendlyLabel(action: MidiAction): string {
 			return 'Browse';
 		case 'browse_load':
 			return `Load (deck ${action.deck})`;
+		case 'deck_jog':
+			return `Jog (deck ${action.deck})`;
 		case 'shift_modifier':
 			return 'Shift';
 		case 'channel_cue':

@@ -113,7 +113,9 @@ def test_docs_workflow_present():
     assert wf.is_file(), ".github/workflows/docs.yml missing"
     text = wf.read_text(encoding="utf-8")
     assert "mkdocs build --strict" in text
-    assert "actions/deploy-pages" in text
+    assert "wrangler@4.148.0 pages deploy site" in text
+    assert "actions/deploy-pages" not in text
+    assert "upload-pages-artifact" not in text
 
 
 def test_ci_and_docs_workflows_accept_all_normal_pull_request_bases():
@@ -168,10 +170,10 @@ def test_docs_publish_guards_target_release_branch_only():
 
     assert text.count("github.ref == 'refs/heads/main'") == 2
     assert "github.ref == 'refs/heads/af--rekordbox-parity-ui'" not in text
-    # Pages publish is main-only at the step, not the job: a job-level
+    # Publish is main-only at the step, not the job: a job-level
     # `if: github.ref == main` reports SKIPPED on pull requests.
-    deploy = _load_workflow("docs.yml")["jobs"]["deploy"]
-    assert "if" not in deploy
+    build = _load_workflow("docs.yml")["jobs"]["build"]
+    assert "if" not in build
 
 
 @pytest.mark.parametrize(
@@ -193,6 +195,6 @@ def test_docs_pull_requests_create_no_deployment():
     The job must still exist on a pull request (no job-level `if`, pinned above), so the
     environment stays and only its deployment object is switched off outside a push.
     """
-    environment = _load_workflow("docs.yml")["jobs"]["deploy"]["environment"]
+    environment = _load_workflow("docs.yml")["jobs"]["build"]["environment"]
     assert environment["deployment"] == "${{ github.event_name == 'push' }}"
-    assert "'github-pages'" in environment["name"]
+    assert "'cloudflare-pages'" in environment["name"]

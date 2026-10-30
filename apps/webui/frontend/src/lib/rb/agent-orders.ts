@@ -3,6 +3,7 @@ import { releaseBody } from '../api/release-body';
 import {
 	dispatchPerformanceCommand,
 	performanceContextTimeNowSec,
+	commitPerformanceLaunches,
 	performancePositionAnchor,
 	performanceStepState,
 	performanceForgetStep,
@@ -72,7 +73,11 @@ async function _plans(): Promise<PlanRunner> {
 	if (epoch !== _planOpenEpoch) throw new Error(PLAN_CLOSED);
 	_planRunner ??= createPlanRunner({
 		dispatch: (command) => dispatchPerformanceCommand(command as PerformanceCommand, undefined, 'agent-command'),
-		query: () => queryPerformanceState(),
+		// A plan keeps ticking in a hidden tab, where only this read commits its incoming launch.
+		query: () => {
+			commitPerformanceLaunches();
+			return queryPerformanceState();
+		},
 		setTimer: (callback, ms) => window.setTimeout(callback, ms),
 		clearTimer: (handle) => window.clearTimeout(handle as number),
 		now: () => Date.now(),

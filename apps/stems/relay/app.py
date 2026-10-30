@@ -46,7 +46,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 
+from apps.stems.bundle_publish import route_stem_codec_for_source
 from apps.stems.relay import contract as api
 from apps.stems.relay.identity import (
     ALLOWLIST_ENV,
@@ -61,6 +63,7 @@ from apps.stems.relay.identity import (
     assert_allowlisted,
     load_allowlist,
 )
+from apps.stems.stem_size_policy import UnknownSourceFormatError
 from apps.stems.tiers import modal_tiers
 
 log = logging.getLogger(__name__)
@@ -93,6 +96,20 @@ class Separation:
     model: dict[str, str] | None = None
     preset: dict[str, Any] | None = None
     source_sha256: str | None = None
+    size_policy: dict[str, Any] | None = None
+    #: The caller sent :data:`contract.HEADER_STEM_CODECS`, so it is a client
+    #: from STEM-76 on and its ``SeparationState`` knows ``size_policy``.
+    reports_size_policy: bool = False
+
+    def to_wire(self) -> dict[str, Any]:
+        """The poll body this caller can parse.
+
+        A client from before STEM-76 validates the state with
+        ``extra="forbid"`` and has no ``size_policy`` field, so the key is
+        left out for it, even as null (Codex on #6821).
+        """
+        exclude = None if self.reports_size_policy else {"size_policy"}
+        return self.to_state().model_dump(mode="json", exclude=exclude)
 
     def to_state(self) -> api.SeparationState:
         return api.SeparationState(
@@ -106,6 +123,7 @@ class Separation:
             model=self.model,
             preset=self.preset,
             source_sha256=self.source_sha256,
+            size_policy=self.size_policy,
         )
 
 
@@ -138,7 +156,28 @@ class _Separations:
 # The separation call, isolated behind one callable so the relay can be assembled
 # and tested without importing modal at all. The real one is injected by the
 # entrypoint, scripts/stems_relay_app.py.
-SeparationBackend = Callable[[bytes, str, str, str], dict[str, Any]]
+SeparationBackend = Callable[[bytes, str, str, str, str], dict[str, Any]]
+"""``(audio_bytes, stable_id, source_name, tier_key, stem_codec)``: the codec
+is :func:`stem_codec_for_client`'s answer, which the backend asks the farm for."""
+
+_FLAC: str = "flac"
+
+
+def stem_codec_for_client(tier_key: str, source_name: str, client_codecs: str | None) -> str:
+    """The codec to ask the farm for: the tier's policy, or FLAC for an older client.
+
+    ``client_codecs`` is the :data:`contract.HEADER_STEM_CODECS` value. A
+    client that does not list every codec in ``STEM_CODEC_FILES`` (one from
+    before STEM-76 sends none) names every part ``.flac``, so an MP3 answer
+    would be saved under the wrong extension and refused at play time after
+    the quota was spent (Codex on #6821): it gets FLAC for every source.
+    Raises ``UnknownSourceFormatError`` as :func:`route_stem_codec_for_source`
+    does, only when the tier's policy applies.
+    """
+    accepted = {codec.strip() for codec in (client_codecs or "").split(",") if codec.strip()}
+    if not accepted >= set(api.STEM_CODEC_FILES):
+        return _FLAC
+    return route_stem_codec_for_source(tier_key, source_name)
 
 
 def resolve_caller(
@@ -239,6 +278,7 @@ def build_router(
         x_stems_stable_id: str = Header(default=""),
         x_stems_source_sha256: str | None = Header(default=None),
         x_stems_source_name: str = Header(default="track"),
+        x_stems_codecs: str | None = Header(default=None),
     ) -> api.SeparationCreated:
         caller = _caller(authorization)
         if x_stems_tier not in MODAL_TIER_KEYS:
@@ -247,6 +287,16 @@ def build_router(
             )
         if not x_stems_stable_id.strip():
             raise _bad_request(f"{api.HEADER_STABLE_ID} is required")
+        # The tier's codec policy for this source, refused BEFORE the quota is
+        # charged (STEM-75): a by-source tier cannot encode a source whose
+        # extension has no output-format policy, and the backend would only
+        # find that out after the caller had paid for it.
+        try:
+            stem_codec = stem_codec_for_client(x_stems_tier, x_stems_source_name, x_stems_codecs)
+        except UnknownSourceFormatError as exc:
+            raise _bad_request(
+                f"{api.HEADER_SOURCE_NAME} {x_stems_source_name!r}: {exc}"
+            ) from exc
 
         audio_bytes = await _read_source_audio(request)
         _charge_or_refuse(rate_cap, caller.email)
@@ -256,10 +306,11 @@ def build_router(
             stable_id=x_stems_stable_id.strip(),
             owner_subject=caller.subject,
             source_sha256=x_stems_source_sha256,
+            reports_size_policy=x_stems_codecs is not None,
         )
         store.put(row)
         pool.submit(
-            _run, row, audio_bytes, x_stems_source_name, x_stems_tier, backend
+            _run, row, audio_bytes, x_stems_source_name, x_stems_tier, backend, stem_codec
         )
         return api.SeparationCreated(
             separation_id=row.separation_id,
@@ -270,8 +321,8 @@ def build_router(
     @router.get(api.PATH_SEPARATION, response_model=api.SeparationState)
     def separation_state(
         separation_id: str, authorization: str | None = Header(default=None)
-    ) -> api.SeparationState:
-        return store.owned(separation_id, _caller(authorization)).to_state()
+    ) -> Response:
+        return JSONResponse(store.owned(separation_id, _caller(authorization)).to_wire())
 
     @router.get(api.PATH_SEPARATION_PART)
     def separation_part(
@@ -297,7 +348,8 @@ def build_router(
                     message=f"no part {part!r}; have {sorted(row.parts)}",
                 ).model_dump(),
             )
-        return Response(content=blob, media_type="audio/flac")
+        codec = str((row.audio or {}).get("codec"))  # checked at success
+        return Response(content=blob, media_type=api.STEM_CODEC_FILES[codec][1])
 
     return router
 
@@ -378,24 +430,52 @@ def _require_every_part(result: dict[str, Any]) -> dict[str, bytes]:
     return stems
 
 
+def _require_known_codec(result: dict[str, Any]) -> str:
+    """The codec the backend encoded, refused unless the client can write it.
+
+    The part route serves the media type for this codec and the client names
+    the files after it, so an unknown codec fails the separation here instead
+    of becoming parts saved under an extension their bytes do not match.
+    """
+    audio = result.get("audio")
+    codec = audio.get("codec") if isinstance(audio, dict) else None
+    if codec not in api.STEM_CODEC_FILES:
+        raise RuntimeError(
+            f"backend returned stem codec {codec!r}, expected one of "
+            f"{sorted(api.STEM_CODEC_FILES)}"
+        )
+    return str(codec)
+
+
+def _require_asked_codec(asked: str, returned: str) -> None:
+    """Refuse a non-FLAC answer to a client that writes only FLAC: it would save it under ``.flac``."""
+    if asked == _FLAC and returned != _FLAC:
+        raise RuntimeError(f"asked the backend for flac, it returned {returned!r}")
+
+
 def _run(
     row: Separation,
     audio_bytes: bytes,
     source_name: str,
     tier_key: str,
     backend: SeparationBackend,
+    stem_codec: str,
 ) -> None:
     """Do the separation and record it. Never raises into the pool."""
     row.status = "running"
     row.progress = 0.05
     try:
-        result = backend(audio_bytes, row.stable_id, source_name, tier_key)
+        result = backend(audio_bytes, row.stable_id, source_name, tier_key, stem_codec)
         stems = _require_every_part(result)
+        _require_asked_codec(stem_codec, _require_known_codec(result))
         row.parts = dict(stems)
         row.audio = result["audio"]
         row.model = result.get("model")
         row.preset = result.get("preset")
         row.source_sha256 = result.get("source_sha256") or row.source_sha256
+        # The farm's ladder audit (rung, bitrate, any part still over the
+        # source), carried so the published manifest keeps it (Codex on #6821).
+        row.size_policy = result.get("size_policy")
         row.progress = 1.0
         row.status = "succeeded"
     except Exception as exc:  # a worker thread must not die silently

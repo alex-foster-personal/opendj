@@ -52,7 +52,7 @@ def test_v23_db_loses_the_index_on_open(tmp_path: Path) -> None:
     try:
         assert INDEX not in _indexes(upgraded)
         assert upgraded.execute("SELECT count(*) FROM path_availability").fetchone()[0] == 1
-        assert upgraded.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 24
+        assert upgraded.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
     finally:
         upgraded.close()
 
@@ -83,7 +83,7 @@ def test_drop_is_safe_when_the_index_is_already_gone(tmp_path: Path) -> None:
     state_db.open_rw(path).close()
     check = sqlite3.connect(str(path))
     try:
-        assert check.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == 24
+        assert check.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0] == state_schema.SCHEMA_VERSION
     finally:
         check.close()
 

@@ -14,9 +14,10 @@
 	 * daemon that cannot serve either file renders a banner, not an empty
 	 * grid.
 	 *
-	 * TABS. Four controls share one ARIA tablist: "KPI ledger" is this page's
+	 * TABS. Five controls share one ARIA tablist: "KPI ledger" is this page's
 	 * default content, "Diagnostics" is an in-page panel at ?tab=diagnostics,
-	 * "Playground" is an in-page panel at ?tab=playground, and "Setup" leaves
+	 * "Playground" is an in-page panel at ?tab=playground, "Title fixes" is an
+	 * in-page panel at ?tab=title-fix, and "Setup" leaves
 	 * for /setup through the shared entry point so the doors into the wizard
 	 * behave identically.
 	 */
@@ -36,6 +37,7 @@
 	import TipLayer from './TipLayer.svelte';
 	import DiagnosticsPanel from './DiagnosticsPanel.svelte';
 	import PlaygroundPanel from './PlaygroundPanel.svelte';
+	import TitleFixPanel from './TitleFixPanel.svelte';
 	import { adminTabFromUrl, type AdminTab } from './admin-tab';
 	import {
 		fetchKpiLedger,
@@ -134,6 +136,17 @@
 		onclick={() => selectTab('playground')}
 	>
 		Playground
+	</button>
+	<button
+		type="button"
+		class="admin-tab"
+		class:on={tab === 'title-fix'}
+		role="tab"
+		aria-selected={tab === 'title-fix'}
+		title="Fix tracks whose artist, key or version is jammed into the title: scan, review, apply, undo."
+		onclick={() => selectTab('title-fix')}
+	>
+		Title fixes
 	</button>
 	<button
 		type="button"
@@ -285,6 +298,8 @@
 <DiagnosticsPanel />
 {:else if tab === 'playground'}
 <PlaygroundPanel />
+{:else if tab === 'title-fix'}
+<TitleFixPanel />
 {/if}
 
 <style>

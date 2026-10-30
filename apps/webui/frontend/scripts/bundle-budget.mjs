@@ -238,6 +238,17 @@ const BUDGETS = [
   // Merge note (PR #4014 x #4906, Sat 3 Oct 2026): both sides already sit on the
   // same 264,192 ceiling (the larger of the two). The merged tree measures
   // 264,845 (653 over); +5% ceil-to-KiB => 278,528 (272 KiB).
+  // RAISED Wed 14 Oct 2026 (+1 KiB, PR #6687 then PR #6689, CMDK-07..10, CMDK-15 and
+  // CMDK-19, issues #6090 to #6092): #6687 adds the preview strip's one-track read
+  // (fetchPreviewAsset in row-assets-fill.ts) and the preview flag readers, and
+  // #6689 the bar's IPC parity (cmdk_open, cmdk_close, then cmdk_pick), validator
+  // and executor code in performance-ipc.svelte.ts. All of it ships in the root
+  // chunk "/" loads; the house rule that every control has IPC parity puts the
+  // dispatcher half on first paint. The
+  // bar itself, its ranking and its pairs stay in the lazy v2 chunk. CI read
+  // main + #6687 at 278,538 (10 over) and main + #6689 at 278,876; #6092's
+  // cmdk_pick lands under the same KiB. Payback, not yet measured: the
+  // dispatcher's per-command validators table-driven instead of one branch each.
   // RAISED Wed 14 Oct 2026 (+1 KiB, PR #6585 follow-up, perf board row
   // anlz-raw-not-deep-proxy): rawAnlz (src/lib/rb/anlz-raw.ts) keeps each deck's
   // ANLZ payload out of the deep $state proxy, roughly 20 MB and ~100k signals per
@@ -311,7 +322,10 @@ const BUDGETS = [
   // Measured ceiled to KiB (274,432) plus 1 KiB of jitter, which also absorbs the #7658 raise
   // above. Payback: owed by #7594 and #6565 (the #7658 share).
   // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
-  { name: 'library', limit: 279552, measured: 277411, note: 'initial load of "/"' },
+  // RAISED Fri 30 Oct 2026 (+1 KiB, PR #6127, decode-on-bytes deck load and the S2 output-device
+  // probe, V1 rule): CI build job 124242420096 at 1dc9b508d measured library 279,864, 312 B over
+  // 279,552; ceiled to KiB. Payback: none planned.
+  { name: 'library', limit: 280576, measured: 279864, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
@@ -759,7 +773,28 @@ const BUDGETS = [
   // Measured ceiled to KiB (395,264) plus 1 KiB of jitter. Payback: none open.
   // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
   // Thu 29 Oct 2026, merged main 4e77993175 (#7743 raised other-lazy to 395,264): this PR's +20 KiB carried onto it, so 415,744; measured is main 4e77993175 + this PR.
-  { name: 'other-lazy', limit: 415744, measured: 413815, note: 'all other routes plus deferred shell' },
+  // RAISED Thu 29 Oct 2026 (+6 KiB, PR #5399, title-fix admin panel): the panel, its poller and its
+  // typed API wrapper are lazy admin-route code. One clean local build each: main f6b05d5b44 392,325;
+  // this PR merged onto it 397,483 (+5,158). Carried onto main bc38a57200 (limit 418,816, measured 416,287 incl. #7806) after the merge: measured 416,287 + 5,158 = 421,445; limit plus the
+  // delta, ceiled to KiB: 424,960 (415 KiB). Payback: none planned; the panel is the feature.
+  // RAISED Thu 29 Oct 2026 (+3 KiB, PR #7806, TRYER-16): the try-er panel's two-deck lanes (canvas waveform, knob
+  // lines, beat grids, legend, shared-notes block), lazy on the flagged /tryer route (`dj.tryer`, default off).
+  // Local, one clean build each on silver: main a7b02184fa 392,244; main + this PR 394,716 (+2,472). Re-merged onto
+  // main 4e77993175 + #6829 (#7743 ceiling 415,744, measured 413,815): this PR's delta stacked on that measured
+  // figure (413,815 + 2,472 = 416,287), limit plus delta ceiled to KiB => 418,816. Payback: none planned; the
+  // lanes are the feature.
+  // RAISED Fri 30 Oct 2026 (PR #6687, Cmd K preview strip, cue preview and deck picker, behind flags default off): the bar's lazy chunk. One clean local vite
+  // build each: before 421,949, after 429,666 (+7,717). Measured ceiled to KiB plus 1 KiB of jitter. Payback: none planned.
+  // RAISED Fri 30 Oct 2026 (+1 KiB, PR #6634, PREPWS-01 prep hub and LIBM-184 All Tracks badge, V1 rule of
+  // up to 4 KiB per V1 PR): the /prep hub page replaces the stub. One clean local vite build each: main
+  // 995cc2493b 431,042 (62 B of headroom); main + this PR 431,724 (+682). Limit plus 1 KiB. Payback: none
+  // planned; the hub is the page.
+  // RAISED Fri 30 Oct 2026 (+2 KiB over #6634's 432,128, PR #6534, DECKUX-42 snapped Gothic block edges):
+  // the block snapper (block-layout.ts) is a lazy chunk so it stays off the "/" first paint; it loads
+  // on the first snapped 'blocks' row. One clean local vite build each: main 995cc2493 430,952; main +
+  // this PR 432,256 (+1,304, one more file). Stacked on #6634's limit: 432,128 + 1,304, ceiled to KiB:
+  // 434,176. Payback: none planned; the snapper is the feature.
+  { name: 'other-lazy', limit: 434176, measured: 433039, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

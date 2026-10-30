@@ -1,6 +1,8 @@
 import { api } from './api/client';
 import { type PerfEvent, setPerfEventEscalator } from './rb/perf-event-log';
 
+export const EXPECTED_RESOURCE_ERROR_ATTR = 'data-expected-resource-error';
+
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 const MAX_QUEUE = 20;
 const DEDUPE_MS = 10_000;
@@ -249,6 +251,24 @@ function resourceTarget(event: Event): EventTarget | null {
 	return null;
 }
 
+function resourceDeclaresExpectedError(target: EventTarget): boolean {
+	const named = target as EventTarget & {
+		hasAttribute?: (name: string) => boolean;
+		getAttribute?: (name: string) => string | null;
+		dataset?: DOMStringMap;
+	};
+	if (typeof named.hasAttribute === 'function') {
+		return named.hasAttribute(EXPECTED_RESOURCE_ERROR_ATTR);
+	}
+	if (typeof named.getAttribute === 'function') {
+		return named.getAttribute(EXPECTED_RESOURCE_ERROR_ATTR) !== null;
+	}
+	if (named.dataset !== undefined && named.dataset !== null) {
+		return 'expectedResourceError' in named.dataset;
+	}
+	return false;
+}
+
 function resourceSource(target: EventTarget): string | null {
 	if (typeof Element !== 'undefined' && target instanceof Element) {
 		if (target instanceof HTMLScriptElement) return target.src || null;
@@ -263,6 +283,7 @@ function resourceSource(target: EventTarget): string | null {
 function handleResourceError(event: Event): void {
 	const target = resourceTarget(event);
 	if (target === null) return;
+	if (resourceDeclaresExpectedError(target)) return;
 	const source = resourceSource(target) ?? 'unknown';
 	const tagName =
 		typeof Element !== 'undefined' && target instanceof Element

@@ -4,12 +4,13 @@ Windows-native Rekordbox parity stabilization gate.
 
 .DESCRIPTION
 Requirements:
-  [DONE] Bootstrap the Python 3.11 .venv through uv when absent.
+  [DONE] Sync the Python 3.11 .venv exactly from the committed uv.lock, never a fresh resolve.
   [DONE] Reject Node runtimes below pnpm 11.9's minimum supported version.
   [DONE] Install the frozen pnpm workspace before frontend verification.
   [DONE] Run the focused Python, frontend unit, Svelte, and optional build gates.
 
 Acceptance:
+  [if] uv.lock is missing or stale against pyproject.toml [then STOP] the script fails before any test runs.
   [if] any child command exits nonzero [then STOP] this script exits nonzero immediately.
   [if] Node is older than 22.14.0 [then STOP] this script fails before dependency installation.
   [if] pytest runs on Windows [then PASS] temp files stay inside the workspace and the tracked coverage matrix is not rewritten.
@@ -65,14 +66,22 @@ if ($NodeVersion -lt $MinimumNodeVersion) {
     throw "Node $MinimumNodeVersion or newer is required by pnpm 11.9; found $NodeVersion."
 }
 
+# Exact install from the committed uv.lock, never a fresh resolve. The gate used
+# `uv pip install -e .[dev]`, which ignores the lock: since Thu 15 Oct 2026 (run
+# 38719125594) it tested pyrekordbox 0.5.0, which has no pyrekordbox.db6, while
+# every lock pins 0.4.4. analysis and observability match the Linux lane's
+# pylock.ci.toml. --locked fails on a stale lock, and sync trims a reused .venv.
+$LockFile = Join-Path $RepoRoot "uv.lock"
+if (-not (Test-Path -LiteralPath $LockFile -PathType Leaf)) {
+    throw "Committed lock is missing: $LockFile (regenerate with: uv lock)"
+}
+Invoke-Checked -Label "sync Python dependencies exactly from uv.lock" -Executable "uv" `
+    -CommandArgs @(
+        "sync", "--locked", "--python", "3.11",
+        "--extra", "dev", "--extra", "analysis", "--extra", "observability"
+    ) -WorkingDirectory $RepoRoot
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
-    Invoke-Checked -Label "create Python 3.11 virtual environment" -Executable "uv" `
-        -CommandArgs @("venv", "--python", "3.11", ".venv") -WorkingDirectory $RepoRoot
-    Invoke-Checked -Label "install focused Python dependencies" -Executable "uv" `
-        -CommandArgs @(
-            "pip", "install", "--python", $PythonExe, "-e", ".[dev]",
-            "pytest", "pytest-cov", "psutil"
-        ) -WorkingDirectory $RepoRoot
+    throw "uv sync did not produce the project interpreter: $PythonExe"
 }
 
 New-Item -ItemType Directory -Force -Path $TmpRoot | Out-Null
@@ -84,8 +93,13 @@ if (Test-Path -LiteralPath $PytestBaseTemp) {
     Remove-Item -LiteralPath $PytestBaseTemp -Recurse -Force
 }
 
+# Half the logical CPUs, not auto: at 14 workers on bifrost1 the warm-index wall-clock
+# ratchet in tests/webui/test_track_index.py took 3.4 s against its 1.5 s bound.
+$XdistWorkers = [Math]::Max(2, [int][Math]::Floor([Environment]::ProcessorCount / 2))
+Write-Output "[INFO] pytest-xdist workers: $XdistWorkers of $([Environment]::ProcessorCount) logical CPUs"
 $PytestArgs = @(
     "-m", "pytest", "-q", "-m", "rb_parity", "--no-coverage-matrix",
+    "-n", "$XdistWorkers", "--dist", "loadgroup",
     "--basetemp", $PytestBaseTemp
 )
 

@@ -18,11 +18,13 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
+
 export const COMMENT_HOTKEY_GATE_FRONTEND_PORT = 5321;
 export const COMMENT_HOTKEY_GATE_API_PORT = 8696;
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), ...e2eFootprintsPlugin()],
 	server: {
 		host: '127.0.0.1',
 		port: COMMENT_HOTKEY_GATE_FRONTEND_PORT,

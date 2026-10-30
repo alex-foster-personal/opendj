@@ -28,7 +28,8 @@
 //   (PR #4906, the deck's named stem states). Sat 3 Oct 2026 the merge of
 //   #4014 with main measured 264,845 against the shared 264,192 ceiling
 //   (653 over); +5% ceil-to-KiB => 278,528. +1 KiB Wed 14 Oct 2026 (PR #6585's
-//   rawAnlz, +89 bytes, main 2 bytes over) => 279,552. Any further move is a deliberate act with
+//   rawAnlz, +89 bytes, main 2 bytes over) => 279,552. Later raises and moves are dated in
+//   the gate; the latest, +1 KiB Fri 30 Oct 2026 (PR #6127, 312 bytes over) => 280,576. Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -141,19 +142,20 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 279552: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600 and #7601 raises, less the #6829 lazy-settings move', () => {
+test('the library limit is exactly 280576: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 279552,/,
+    /\{ name: 'library', limit: 280576,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, same PR, merged onto main e5fb30dcfd\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 16 Oct 2026 \(\+1 KiB, PR #6786/, 'the raise must carry its note');
   assert.match(source, /LOWERED Wed 28 Oct 2026 \(-17 KiB, PR #6829, re-land of #6205/, 'the move must carry its note');
+  assert.match(source, /RAISED Fri 30 Oct 2026 \(\+1 KiB, PR #6127, decode-on-bytes/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 28 Oct 2026 \(trunk repair #7658\)/, 'the raise must carry its note');
@@ -171,6 +173,7 @@ test('the library limit is exactly 279552: the inherited 256000 plus the reviewe
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #5086/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4014/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4906/, 'the raise must carry its note');
+  assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6687 then PR #6689/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

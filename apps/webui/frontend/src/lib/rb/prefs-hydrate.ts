@@ -318,6 +318,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		// A claim held when the GET left still covers its body: the disk may have
 		// answered before the claim's own write landed (Codex P1, PR #6829).
 		const radialClaimedAtRequest = isDiskValueSuperseded('jog_radial_waveform');
+		const jogRadialAtRequest = uiPrefs.jog_radial_waveform;
 		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
 		const { hydrateConfirmFromDisk, hydrateCompatibleFilter, hydrateLibraryKeyFilter } =
 			await late;
@@ -346,9 +347,14 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
+		const radialChangedDuringGet = uiPrefs.jog_radial_waveform !== jogRadialAtRequest;
 		if (radialClaimedAtRequest || isDiskValueSuperseded('jog_radial_waveform')) {
-			onSupersededDiskValue('jog_radial_waveform', body.jog_radial_waveform);
-		} else if (typeof body.jog_radial_waveform === 'boolean') {
+			// A pick made while this GET was in flight stands: do not run the
+			// migration settle path from a body read before that pick landed.
+			if (!radialChangedDuringGet) {
+				onSupersededDiskValue('jog_radial_waveform', body.jog_radial_waveform);
+			}
+		} else if (typeof body.jog_radial_waveform === 'boolean' && !radialChangedDuringGet) {
 			uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
 		}
 		if (body.deck_layout === 'more' || body.deck_layout === 'less') {

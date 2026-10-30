@@ -27,7 +27,6 @@ chunk, and a retry that does not converge):
 
 from __future__ import annotations
 
-import hashlib
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,7 +40,7 @@ from apps.sync_hub import client, engine, service, wire_version
 
 from .enrollment_transport import TestClientTransport
 from .fault_transport import FaultInjected, FaultTransport
-from .test_hub_sync import _DEV_A, _T1, _T2, _open, _set_track_title
+from .test_hub_sync import _DEV_A, _T1, _T2, _insert_track, _open, _set_track_title
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-04")
 
@@ -104,17 +103,12 @@ def _insert_tracks(data_dir: Path, stable_ids: tuple[str, ...], *, updated_at: s
     conn = _open(data_dir)
     try:
         for stable_id in stable_ids:
-            conn.execute(
-                "INSERT INTO tracks(stable_id, stable_id_tier, title, content_hash, "
-                "created_at, updated_at, origin_device_id) "
-                "VALUES (?, 'inferred', 'seed', ?, ?, ?, ?)",
-                (
-                    stable_id,
-                    hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
-                    updated_at,
-                    updated_at,
-                    _DEV_A,
-                ),
+            _insert_track(
+                conn,
+                stable_id,
+                title="seed",
+                updated_at=updated_at,
+                origin=_DEV_A,
             )
     finally:
         conn.close()

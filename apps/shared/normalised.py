@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-CueKind = Literal["memory", "hot", "load", "loop"]
+#: ``transition_in`` (AGENT-51) is where the user expects an incoming transition
+#: to land: Traktor's Fade In cue, Mixxx's intro start. rekordbox has no such type.
+CueKind = Literal["memory", "hot", "load", "loop", "transition_in"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -24,7 +26,7 @@ class NormalisedCue:
     position_msec
         Milliseconds from track start.
     kind
-        ``"memory"`` / ``"hot"`` / ``"load"`` / ``"loop"``.
+        ``"memory"`` / ``"hot"`` / ``"load"`` / ``"loop"`` / ``"transition_in"``.
     index
         Hot-cue slot 0..7 for ``kind="hot"``, else ``None``.
     color_rgb

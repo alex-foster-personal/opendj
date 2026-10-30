@@ -84,12 +84,12 @@ def test_the_upload_job_stages_reports_where_the_runner_empties_them() -> None:
     """The workspace persists on self-hosted runners, but runner.temp is emptied at
     the start of each job, so a failed download cannot leave an earlier run's report."""
     job_id, job = _upload_job()
-    downloads = [s for s in job["steps"] if "download-artifact" in str(s.get("uses"))]
+    downloads = [s for s in job["steps"] if "--aws-sigv4" in str(s.get("run"))]
     uploads = [s for s in job["steps"] if "analytics-uploader" in str(s.get("uses"))]
     finds = [s for s in job["steps"] if re.fullmatch(r"(shard|rust)-report-.+", str(s.get("id")))]
     assert len(downloads) == len(uploads) == len(finds) == 7, (len(downloads), len(uploads), len(finds))
     for step in downloads:
-        assert step["with"]["path"].startswith("${{ runner.temp }}/staged-"), f"{job_id}: {step['with']['path']}"
+        assert step["env"]["DEST"].startswith("${{ runner.temp }}/staged-"), f"{job_id}: {step['env']['DEST']}"
     for step in uploads:
         assert step["with"]["junit-paths"].startswith("${{ runner.temp }}/staged-"), f"{job_id}: {step['with']['junit-paths']}"
     for step in finds:

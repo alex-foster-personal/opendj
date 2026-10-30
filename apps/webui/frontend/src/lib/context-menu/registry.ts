@@ -65,7 +65,17 @@ export interface MenuContextByKind {
 	/** moveLoses: what a move to the playhead would drop from the filled cue
 	 * (the save command keeps the comment, not a loop or a color). */
 	'hot-cue': { loaded: boolean; filled: boolean; moveLoses: 'nothing' | 'color' | 'loop' };
-	waveform: { loaded: boolean; looping: boolean; vocalHit: boolean };
+	/** `cueAt` (AGENT-51): where a transition-in cue would go. `position`: the
+	 * click resolves to a track time; `none`: it does not (no wave surface or no
+	 * measured length); `stick`: the track is on a USB stick, which keeps no own cues. */
+	waveform: {
+		loaded: boolean;
+		looping: boolean;
+		vocalHit: boolean;
+		cueAt: 'position' | 'none' | 'stick';
+		/** AGENT-50: the decks a transition out of this one may go to (loaded, not played to their end). */
+		outTargets: readonly DeckNumber[];
+	};
 	'mixer-channel': {
 		eqFlat: boolean;
 		filterFlat: boolean;
@@ -406,6 +416,31 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			when: (ctx) => ctx.loaded && ctx.vocalHit,
 			testId: () => 'quick-draw-vocal-fix'
 		},
+		{
+			// AGENT-51: Traktor's Fade In cue / Mixxx's intro start, at the click.
+			// The engine snaps it to the nearest downbeat; AutoDJ mixes in there.
+			id: 'transition-in',
+			label: 'Transition in around here',
+			command: 'track.transition_in.set',
+			when: (ctx) => ctx.loaded,
+			disabledWhen: (ctx) => {
+				if (ctx.cueAt === 'stick') return 'a USB stick track keeps no transition-in cue';
+				if (ctx.cueAt === 'none') return 'no track time under the pointer';
+				return null;
+			},
+			testId: () => 'quick-draw-transition-in'
+		},
+		...DECKS.map(
+			(deck): MenuContribution<'waveform'> => ({
+				// AGENT-50: plan a transition leaving this track near the click, into the named deck.
+				id: `transition-out-${deck}`,
+				label: `Transition out around here to CH${deck}`,
+				command: 'deck.transition_out_here',
+				when: (ctx, target) => ctx.loaded && target.deck !== deck && ctx.outTargets.includes(deck),
+				disabledWhen: (ctx) => (ctx.cueAt === 'position' ? null : 'no track time under the pointer'),
+				testId: () => `quick-draw-transition-out-${deck}`
+			})
+		),
 		DECK_UNLOAD as MenuContribution<'waveform'>,
 		DECK_EXIT_LOOP as MenuContribution<'waveform'>
 	],

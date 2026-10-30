@@ -12,12 +12,21 @@ test('playlist rows contain no fabricated EXTRA badge or name-based analysis sta
 	assert.doesNotMatch(source, /_hasExtraBadge|badge-extra|CUE Analysis Playlist/);
 });
 
-// REQ: LIBM-105 (issue #3883 AC6; #3534 adds unique library-wide wording)
-test('All Tracks count hover quotes non-broken tracks, not playable (issue #3883 AC6)', () => {
+// REQ: LIBM-105 (issue #3883 AC6), changed by LIBM-184 (issue #3934): the All
+// Tracks badge and title come from allTracksBadge (all-tracks-badge.test.mjs),
+// which counts audio on this machine like the playlist badges below it.
+test('All Tracks count and hover come from allTracksBadge, never "playable tracks"', () => {
+	assert.match(source, /allTracksBadge\(allTracksCount, allTracksBrokenCount, allTracksAvailability\)/);
 	assert.match(
 		source,
-		/\$\{allTracksCount\} unique library-wide non-broken tracks, \$\{allTracksBrokenCount\} broken tracks/
+		/\{allTracksError === null && allBadge\.error === null \? allBadge\.count \?\? '\.\.\.' : '!'\}/
 	);
+	// The availability prop has no default: an unwired caller fails the type check.
+	assert.match(source, /^\t\tallTracksAvailability,$/m);
+	assert.doesNotMatch(source, /allTracksAvailability = /);
+	const props = readFileSync(new URL('../../src/lib/components/rb/browser/playlist-tree-props.ts', import.meta.url), 'utf8');
+	assert.match(props, /^\tallTracksAvailability: unknown;$/m, 'the prop is required, not optional');
+	assert.match(source, /return allBadge\.title;/);
 	assert.doesNotMatch(source, /playable tracks/);
 });
 

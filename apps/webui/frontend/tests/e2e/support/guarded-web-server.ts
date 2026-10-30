@@ -27,7 +27,7 @@ const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../../../', import.meta.
 const GUARD = join(REPOSITORY_ROOT, 'scripts', 'server_owner_guard.py');
 const VENV_PYTHON = join(REPOSITORY_ROOT, '.venv', 'bin', 'python');
 
-function shellArgument(value: string): string {
+export function shellArgument(value: string): string {
 	return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 

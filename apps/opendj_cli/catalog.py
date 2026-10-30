@@ -61,6 +61,7 @@ ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
 # TOPVIEW-01..03: mirrors PERF_VIEWS in apps/webui/frontend/src/lib/rb/topbar-view-prefs.ts.
+TRANSITION_INTENT_VALUES: tuple[str, ...] = ("smooth", "energy_up", "wind_down", "showy", "vocals_clean")
 PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
 UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light")
 WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
@@ -312,8 +313,20 @@ _VERBS: tuple[Verb, ...] = (
     ), note="TOPVIEW-01..03: the top bar's view icons; what the wavestack area shows."),
     Verb("show_pads", "show_pads", (_ENABLED,),
          note="TOPVIEW-04: the top bar's PAD button; show or hide the performance-pad rows."),
-    Verb("auto_play_next_arm", "auto_play_next_arm", ()),
+    Verb("auto_play_next_arm", "auto_play_next_arm", (
+        arg("intent", "enum", enum_value(TRANSITION_INTENT_VALUES), "smooth|energy_up|wind_down|showy|vocals_clean", optional=True),
+        arg("out_deck", "deck", deck_value, "1-4", optional=True),
+        arg("in_deck", "deck", deck_value, "1-4", optional=True),
+        arg("from_ms", "number", number_value, "ms on the outgoing track", optional=True),
+    ), note="AGENT-48: plan the next transition from the live position; the fixed loop runs when no plan is eligible. "
+            "AGENT-50: out_deck, in_deck and from_ms plan out of that deck around that point (no fallback)."),
     Verb("auto_play_next_cancel", "auto_play_next_cancel", ()),
+    Verb("auto_play_decide_now", "auto_play_decide_now", (),
+         note="AUTOPLAN-06: AutoPlay decides now rather than at its target; read autoplay_decision on the mirror."),
+    Verb("auto_play_early", "auto_play_early", (
+        arg("enabled", "bool", bool_value, "true|false", optional=True),
+        arg("decide_after_s", "number", number_value, "seconds on the master", optional=True),
+    ), note="AUTOPLAN-01: AutoPlay's early planning and its soft target; the AutoPlay menu's twin."),
     Verb("pins_show_other_users", "pins_show_other_users", (),
          note="UI contract only: community pin sync has no channel yet."),
     Verb("library_panels", "library_panels", (

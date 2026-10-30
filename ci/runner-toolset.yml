@@ -141,7 +141,7 @@ entries:
   - {name: jq, kind: apt, version: "1.7.1-3ubuntu0.24.04.2", source: agentbox, provides: [jq], needed_by: [all], install: "apt-get install -y jq", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' jq | grep ^ii"}
   - {name: make, kind: apt, version: "4.3-4.1build2", source: agentbox, provides: [make], needed_by: [pytest, release-check], install: "apt-get install -y make", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' make | grep ^ii", notes: "`make waveform-native-release-check` and `make release-check`"}
   - {name: zstd, kind: apt, version: "1.5.5+dfsg2-2build1.1", source: agentbox, provides: [zstd], needed_by: [pytest], install: "apt-get install -y zstd", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' zstd | grep ^ii"}
-  - {name: unzip, kind: apt, version: "6.0-28ubuntu4.1", source: agentbox, provides: [unzip], needed_by: [e2e, frontend], install: "apt-get install -y unzip", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' unzip | grep ^ii", notes: "missing on megamac; scripts/ci_frontend_build_acquire_from_ci.sh unpacks the frontend artifact with it"}
+  - {name: unzip, kind: apt, version: "6.0-28ubuntu4.1", source: agentbox, provides: [unzip], needed_by: [e2e, frontend], install: "apt-get install -y unzip", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' unzip | grep ^ii", notes: "missing on megamac; no CI step calls it since artifacts became R2 tarballs (ADR-0125), kept for the e2e hosts' existing provisioning"}
 
   #----- CI-specific packages (provisioning items 3, 11, 14, 15) --------------
   - {name: file, kind: apt, version: "1:5.45-3build1", source: agentbox, provides: [file], needed_by: [pytest], install: "apt-get install -y file", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' file | grep ^ii", notes: "item 3: Mach-O classification tests shell out to file(1)"}
@@ -228,6 +228,15 @@ entries:
     install: "bundled with node-system 22.23.2"
     verify: "corepack --version"
     notes: "missing on megamac"
+  - name: npx
+    kind: toolchain
+    version: "22.23.2"
+    source: agentbox
+    provides: [npx]
+    needed_by: [docs]
+    install: "ships in the node-system tarball; actions/setup-node's copy wins inside a job"
+    verify: "npx --version"
+    notes: "docs.yml publishes the site with `npx wrangler@4.148.0 pages deploy` (ADR-0125)"
   - name: pnpm
     kind: toolchain
     version: "11.9.0"

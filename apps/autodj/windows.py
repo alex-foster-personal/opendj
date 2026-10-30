@@ -14,12 +14,18 @@ A window is a phrase start plus the most bars a blend can use from there:
 * ``in``: from the window start to the incoming track's next peak (drop or
   chorus) or first vocal bar, whichever comes first, so the incoming energy
   can land when the blend ends.
+
+A user's transition-in cue (AGENT-51, ADR-0128) overrides the rules for
+``in``: when the track has one, it is the only in window offered. That is
+the mimicked behavior of Traktor (Cruise mode mixes in at the Fade In cue)
+and Mixxx (AutoDJ starts the incoming track at its intro start cue), which
+take the user's placement as the answer rather than one candidate among many.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile
@@ -45,6 +51,9 @@ FALLBACK_BARS = 32
 
 _OUT_LABEL_WEIGHT = {OUTRO: 1.0, BREAKDOWN: 0.8, BRIDGE: 0.7, INSTRUMENTAL: 0.7}
 _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
+#: Above every rule score (each is a weighted sum of terms in 0..1), so a
+#: caller that merges windows from elsewhere still ranks the user's cue first.
+USER_CUE_SCORE = 2.0
 _OTHER_LABEL_WEIGHT = 0.3
 
 
@@ -146,9 +155,7 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> M
     vocal_term = 1.0 if vocal_free is None else vocal_free / max_bars
     length_term = min(1.0, max_bars / 16.0)
     landing = 1.0 if peak is not None else 0.0
-    score = (
-        0.4 * label_weight + 0.15 * vocal_term + 0.15 * position + 0.15 * length_term + 0.15 * landing
-    )
+    score = 0.4 * label_weight + 0.15 * vocal_term + 0.15 * position + 0.15 * length_term + 0.15 * landing
     reasons = [why, f"{max_bars} usable bars"]
     if peak is not None:
         reasons.append(f"lands on a peak at bar {peak}")
@@ -173,9 +180,13 @@ def _offer_out_windows(
     tail_from = max(1, int(profile.bars * 0.5))
     for section in profile.sections:
         if section.label in MIX_OUT_LABELS:
-            _offer_if_open(offer, _out_window(profile, section.start_bar, section.label, f"{section.label} starts here"))
+            _offer_if_open(
+                offer, _out_window(profile, section.start_bar, section.label, f"{section.label} starts here")
+            )
         elif section.start_bar >= tail_from:
-            _offer_if_open(offer, _out_window(profile, section.start_bar, section.label, "phrase start in the back half"))
+            _offer_if_open(
+                offer, _out_window(profile, section.start_bar, section.label, "phrase start in the back half")
+            )
     fallback = max(1, profile.bars - FALLBACK_BARS + 1)
     fallback -= (fallback - 1) % 8  # keep it on an 8-bar boundary from bar 1
     if not candidates:
@@ -200,10 +211,33 @@ def _offer_in_windows(
         offer(_in_window(profile, 1, "unknown", "no phrase analysis: from bar 1"))
 
 
+def _transition_in_window(profile: TrackProfile, bar: int) -> MixWindow:
+    """The in window at the user's transition-in cue.
+
+    The cue is stored on a downbeat, so ``bar`` is always a valid window
+    start. It need NOT be a phrase start: a cue that lands mid-phrase (say
+    bar 13 of an intro that starts at bar 9) still opens the window there,
+    labelled with the phrase it falls inside, because where the user put it
+    is the point. Its length is still capped at the next peak or first vocal
+    bar like any in window, so a cue placed late in an intro gets a short
+    blend rather than one that runs over the drop.
+    """
+    section = profile.section_at(bar)
+    label = section.label if section is not None else "unknown"
+    on_phrase = section is not None and section.start_bar == bar
+    why = "your transition-in cue" + ("" if on_phrase or section is None else f" (mid-{label}, not a phrase start)")
+    return replace(_in_window(profile, bar, label, why), score=USER_CUE_SCORE)
+
+
 def mix_windows(profile: TrackProfile, role: Role, *, limit: int = 5) -> list[MixWindow]:
-    """Ranked windows for ``role``, best first, at most ``limit``."""
+    """Ranked windows for ``role``, best first, at most ``limit``.
+
+    For ``in``, a track with a transition-in cue returns that one window.
+    """
     if role not in ROLES:
         raise ValueError(f"role must be 'out' or 'in', got {role!r}")
+    if role == "in" and profile.transition_in_bar is not None:
+        return [_transition_in_window(profile, profile.transition_in_bar)]
     candidates: dict[int, MixWindow] = {}
 
     def offer(window: MixWindow) -> None:

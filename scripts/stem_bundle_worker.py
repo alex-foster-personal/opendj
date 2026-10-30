@@ -5,13 +5,14 @@
 #   "demucs==4.0.1",
 #   "torch==2.5.1",
 #   "torchaudio==2.5.1",
-#   "soundfile>=0.12",
+#   "soundfile>=0.13",
 #   "numpy<2",
+#   "tinytag>=2.3.2,<3",
 # ]
 # ///
 """Standalone htdemucs 4-stem bundle writer for the webui stems contract.
 
-Writes ``data/state/stems/<stable_id>/{vocals,drums,bass,other}.<ext>`` plus
+Writes ``(private path)/<stable_id>/{vocals,drums,bass,other}.<ext>`` plus
 a schema v3 ``manifest.json`` (apps.stems.artifacts), where
 ``<ext>`` is decided by apps/stems/stem_size_policy.py's source-extension
 codec policy, not hardcoded WAV.
@@ -74,8 +75,13 @@ works as expected.
   OK+run guard test with a sabotage-verify pass:
     tests/scripts/test_stem_bundle_worker_codec.py
   OK+run no ffmpeg (the installed app): non-WAV decodes via ``odj-audio
-    decode`` into a temp WAV, neither -> raise before model load, and mp3
-    policy parts are FLAC with size_policy.codec_fallback (STEM-50, STEM-51).
+    decode`` into a temp WAV, neither -> raise before model load (STEM-50).
+    tests/scripts/test_stem_bundle_worker_decode.py
+  OK+run MP3 parts are encoded by LAME inside soundfile's bundled libsndfile,
+    never by ffmpeg, so the installed app writes the policy codec too
+    (STEM-57, superseding STEM-51's lossless FLAC fallback, which made every
+    part of an MP3 source larger than the source file). No MP3 encoder ->
+    raise before model load, never a silent codec swap.
     tests/scripts/test_stem_bundle_worker_decode.py
 
 -Claude
@@ -84,14 +90,15 @@ works as expected.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import hashlib
 import json
 import os
-import shutil
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +191,54 @@ def _guard_duration(source_s: float, model_s: float) -> None:
         )
 
 
+def _guard_truncated(audio_path: Path, decoded_s: float) -> None:
+    """Refuse a decode far shorter than the duration the source file claims.
+
+    ``_guard_duration`` compares the model timeline with the SOURCE duration,
+    but on the odj-audio and WAV paths that source duration is read from the
+    decode itself, so a truncated file agrees with itself and stems its few
+    surviving frames into a bundle readiness counts as ready (issue #6150 B3).
+    The container's own claim (tinytag, the same reader folder ingest uses)
+    is the independent side.
+
+    Stems fail closed where the shared check gives no verdict: a separation
+    is paid GPU time, so a source whose claimed length cannot be read is
+    refused by name rather than stemmed unchecked. A streamed WAV, which
+    the shared check exempts, still claims a length (its size sentinel reads
+    as hours) and so passes here as it does there.
+    """
+    from apps.shared import _tagreader
+    from apps.shared.audio_playable import (
+        UnplayableAudioError,
+        check_decoded_duration,
+    )
+
+    try:
+        check_decoded_duration(audio_path, decoded_s)
+    except UnplayableAudioError as exc:
+        raise RuntimeError(f"{audio_path.name}: {exc.reason}") from None
+    if not _tagreader.HAS_TAG_READER:
+        raise RuntimeError(
+            f"{audio_path.name}: cannot check for truncation: the tag reader "
+            "(tinytag) is not installed in this environment"
+        )
+    if not _tagreader.can_read(audio_path):
+        raise RuntimeError(
+            f"{audio_path.name}: cannot check for truncation: the tag reader "
+            f"cannot parse {audio_path.suffix or 'this file'}"
+        )
+    try:
+        claimed = _tagreader.read(audio_path).duration
+    except _tagreader.TagReadError as exc:
+        raise RuntimeError(
+            f"{audio_path.name}: cannot check for truncation: unreadable metadata ({exc})"
+        ) from None
+    if claimed is None or claimed <= 0:
+        raise RuntimeError(
+            f"{audio_path.name}: cannot check for truncation: the file claims no duration"
+        )
+
+
 # ----- load / separate -------------------------------------------------------
 
 
@@ -251,16 +306,24 @@ def _load_audio(audio_path: Path, model: Any) -> tuple[Any, int, float]:
     return wav, model.samplerate, source_duration_s
 
 
-def _effective_output_codec(policy_codec: str) -> tuple[str, str | None]:
-    """(codec to write, why it is not the policy's, or None). MP3 parts need
-    ffmpeg's libmp3lame, which the installed app lacks: there they are FLAC,
-    recorded in the manifest, not a failure after the separation (STEM-51)."""
-    if policy_codec == "mp3" and not _ffmpeg_reachable():
-        return "flac", (
-            "policy codec mp3 needs ffmpeg (libmp3lame), which this install "
-            "does not have; wrote lossless flac instead"
-        )
-    return policy_codec, None
+def _require_mp3_encoder() -> None:
+    """Raise before the model loads when soundfile cannot write MP3
+    (apps.stems.stem_encode.require_mp3_encoder, STEM-57)."""
+    from apps.stems.stem_encode import require_mp3_encoder
+
+    require_mp3_encoder()
+
+
+def _output_codec(audio_path: Path) -> str:
+    """The codec every part of this source is written in: the size policy's,
+    always, with or without ffmpeg (STEM-57). Raises before any model load on
+    an unrecognised extension or when no MP3 encoder is present."""
+    from apps.stems import stem_size_policy as pol
+
+    codec = pol.stem_output_codec_for_source_ext(audio_path.suffix)
+    if codec == "mp3":
+        _require_mp3_encoder()
+    return codec
 
 
 def _separate_all(model: Any, wav: Any, device: str) -> dict[str, Any]:
@@ -287,67 +350,43 @@ def _pick_device(requested: str) -> str:
     return "cpu"
 
 
-def _encode_flac_bytes(tensor: Any, sample_rate: int) -> bytes:
-    """One stem as 16-bit FLAC bytes (house convention, always PCM_16 -- see
-    modal_vocal_farm.py's ``_encode_flac`` and modal_demucs_ab.py's OUTPUT
-    POLICY comment: control/eval FLAC output is always 16-bit, never a
-    source-bit-depth match)."""
-    import io
+def _tensor_to_numpy(tensor: Any) -> Any:
+    """A Demucs output tensor as a host numpy array, [channels, frames].
 
+    The one line in this worker that touches torch: everything after it
+    takes numpy, so the encode chain is tested on real arrays with no
+    stand-in for a tensor (Codex P1 on #6820). Torch never enters the repo
+    venv, so this conversion itself runs only in the separation itself.
+    """
+    return tensor.detach().cpu().numpy()
+
+
+def _stem_array(stem: Any) -> Any:
+    """One stem, a numpy [channels, frames] array, as float32 [frames, channels] (soundfile's layout)."""
     import numpy as np
-    import soundfile as sf
 
-    arr = tensor.detach().cpu().numpy().T.astype(np.float32, copy=False)
+    arr = np.asarray(stem).T.astype(np.float32, copy=False)
     if arr.ndim != 2 or arr.shape[1] not in (1, 2):
         raise RuntimeError(f"unexpected stem shape {arr.shape}")
-    buffer = io.BytesIO()
-    sf.write(buffer, arr, sample_rate, format="FLAC", subtype="PCM_16")
-    return buffer.getvalue()
+    return arr
 
 
-def _ffmpeg_encode_mp3(flac_bytes: bytes, out_path: Path, *, cbr_kbps: int | None) -> bytes:
-    """LAME-encode a FLAC intermediate to mp3: CBR at ``cbr_kbps`` if given,
-    else V0 VBR.
+def _encode_flac_bytes(stem: Any, sample_rate: int) -> bytes:
+    """One stem as 16-bit FLAC bytes (apps.stems.stem_encode.encode_flac_bytes)."""
+    from apps.stems.stem_encode import encode_flac_bytes
 
-    ``out_path`` MUST be a real (seekable) file, not a pipe -- a VBR mp3
-    muxed to a pipe comes out with no Xing/VBR header (ffmpeg writes that
-    header as a placeholder up front and seeks back to patch in the real
-    frame count once encoding finishes), which makes every fast duration
-    reader (ffprobe, mutagen, the webui player) read the wrong length even
-    though the audio decodes fine. See modal_roformer_spike.py's
-    ``_ffmpeg_encode_mp3_v0`` for the same finding, checked there directly
-    against ffmpeg's own behaviour.
-    """
-    import subprocess
+    return encode_flac_bytes(_stem_array(stem), sample_rate)
 
-    args = ["-b:a", f"{cbr_kbps}k"] if cbr_kbps is not None else ["-qscale:a", "0"]
-    proc = subprocess.run(
-        [
-            os.environ.get("MDT_FFMPEG", "ffmpeg"),
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            "pipe:0",
-            "-codec:a",
-            "libmp3lame",
-            *args,
-            str(out_path),
-        ],
-        input=flac_bytes,
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0 or not out_path.is_file():
-        stderr_tail = proc.stderr.decode(errors="replace")[-500:]
-        msg = f"ffmpeg mp3 encode failed rc={proc.returncode}: {stderr_tail}"
-        raise RuntimeError(msg)
-    return out_path.read_bytes()
+
+def _encode_mp3(arr: Any, sample_rate: int, out_path: Path, *, cbr_kbps: int | None) -> bytes:
+    """LAME through soundfile, no ffmpeg (apps.stems.stem_encode.encode_mp3)."""
+    from apps.stems.stem_encode import encode_mp3
+
+    return encode_mp3(arr, sample_rate, out_path, cbr_kbps=cbr_kbps)
 
 
 def _encode_stem_part(
-    tensor: Any,
+    stem: Any,
     sample_rate: int,
     *,
     codec: str,
@@ -356,30 +395,21 @@ def _encode_stem_part(
     source_kbps: float,
     out_path: Path,
 ) -> tuple[bytes, str | None]:
-    """Write one stem part at ``out_path`` in ``codec``; return (bytes,
+    """Write one stem (a numpy [channels, frames] array) at ``out_path`` in ``codec``; return (bytes,
     final mp3 rung-2 settings string or None if rung 1 held / codec is flac).
+    The encode and the two-rung ladder are apps.stems.stem_encode.encode_part,
+    shared with the re-compress pass (apps.stems.recompress)."""
+    from apps.stems.stem_encode import encode_part
 
-    Size-vs-source is a KPI/target, not a hard gate (see
-    apps/stems/stem_size_policy.py's module docstring): a part that still
-    exceeds source bytes after the rung-2 re-encode is written anyway.
-    """
-    from apps.stems import stem_size_policy as pol
-
-    flac_bytes = _encode_flac_bytes(tensor, sample_rate)
-    if codec == "flac":
-        out_path.write_bytes(flac_bytes)
-        return flac_bytes, None
-
-    cbr_kbps = pol.MP3_CBR_KBPS if mp3_settings == "lame_320kbps_cbr" else None
-    encoded = _ffmpeg_encode_mp3(flac_bytes, out_path, cbr_kbps=cbr_kbps)
-    if not pol.lossy_stem_exceeds_source(
-        source_bytes=source_bytes, part_bytes=len(encoded), codec=codec
-    ):
-        return encoded, None
-
-    rung2_cbr = pol.mp3_rung2_cbr_kbps(source_kbps)
-    encoded = _ffmpeg_encode_mp3(flac_bytes, out_path, cbr_kbps=rung2_cbr)
-    return encoded, f"lame_{rung2_cbr}kbps_cbr"
+    return encode_part(
+        _stem_array(stem),
+        sample_rate,
+        codec=codec,
+        mp3_settings=mp3_settings,
+        source_bytes=source_bytes,
+        source_kbps=source_kbps,
+        out_path=out_path,
+    )
 
 
 def _manifest_dict(
@@ -412,6 +442,58 @@ def _manifest_dict(
     }
 
 
+def bundle_publish_dir(out_dir: Path) -> Path:
+    """``out_dir`` made absolute but NOT resolved.
+
+    A stem root that is a symlink to another disk must keep its
+    ``<data>/state/<stem root>/<stable_id>`` spelling: resolved, it no longer
+    names a data dir, so :func:`publish_into_place` finds no shared bundle
+    lock and publishes without it (Codex on #6820).
+    """
+    return Path(os.path.abspath(out_dir))
+
+
+def publish_into_place(tmp: Path, out_dir: Path) -> None:
+    """Replace ``out_dir`` with the finished bundle in ``tmp``.
+
+    Under the bundle's cross-process lock (apps/stems/bundle_lock.py) when
+    ``out_dir`` is ``<data>/state/<stem root>/<stable_id>``, the shape every
+    stems job writes: a re-compress swap (STEM-58) or an R2 hydrate of the
+    same id then waits rather than interleaving with the swap, and the old
+    bundle stays in place until the new one has landed.
+    An ``--out-dir`` outside a data dir has no shared lock to take and none
+    of those writers, so it is replaced without one.
+    """
+    from apps.stems.bundle_lock import bundle_lock, data_dir_of_bundle, replace_bundle_dir
+
+    try:
+        data_dir_of_bundle(out_dir)
+        held: contextlib.AbstractContextManager[None] = bundle_lock(out_dir)
+    except ValueError:
+        held = contextlib.nullcontext()
+    with held:
+        replace_bundle_dir(tmp, out_dir)
+
+
+@contextlib.contextmanager
+def staged_bundle(out_dir: Path, stable_id: str) -> Iterator[Path]:
+    """A fresh staging directory beside ``out_dir`` for one bundle write.
+
+    On any error the staging bundle is removed strictly: one that cannot be
+    removed raises :class:`apps.stems.bundle_lock.StagingCleanupError` naming
+    it, with the worker's own error kept as its context, rather than left on
+    disk unseen (Sol on #6820).
+    """
+    from apps.stems.bundle_lock import remove_staging
+
+    tmp = Path(tempfile.mkdtemp(prefix=f".stem-{stable_id}-", dir=str(out_dir.parent)))
+    try:
+        yield tmp
+    except BaseException:
+        remove_staging(tmp, "stem worker staging directory")
+        raise
+
+
 def write_bundle(
     *,
     audio_path: Path,
@@ -429,11 +511,8 @@ def write_bundle(
     audio_path = audio_path.resolve()
     # Resolve the output codec before spending any GPU time: an unrecognised
     # source extension is a policy gap, not a guess (UnknownSourceFormatError).
-    policy_codec = pol.stem_output_codec_for_source_ext(audio_path.suffix)
-    output_codec, codec_fallback = _effective_output_codec(policy_codec)
+    output_codec = _output_codec(audio_path)
     ext = "." + output_codec
-    if codec_fallback is not None:
-        _log(f"[stem] {codec_fallback}")
     _preflight_decoder(audio_path)
     source_bytes = audio_path.stat().st_size
 
@@ -444,6 +523,10 @@ def write_bundle(
     model.eval()
     wav, _source_sr, source_duration_s = _load_audio(audio_path, model)
     model_duration_s = float(wav.shape[-1]) / float(model.samplerate)
+    # Truncation first: on the ffmpeg path the source duration is the
+    # container's claim, so a truncated file would otherwise surface as
+    # timeline drift with no file name (Codex on #6816).
+    _guard_truncated(audio_path, model_duration_s)
     _guard_duration(source_duration_s, model_duration_s)
     source_kbps = pol.effective_bitrate_kbps(source_bytes, source_duration_s)
     mp3_settings_rung1 = (
@@ -472,15 +555,14 @@ def write_bundle(
                 f"expected={model.audio_channels}"
             )
 
-    out_dir = out_dir.resolve()
+    out_dir = bundle_publish_dir(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix=f".stem-{stable_id}-", dir=str(out_dir.parent)))
-    try:
+    with staged_bundle(out_dir, stable_id) as tmp:
         part_sizes: dict[str, int] = {}
         mp3_settings_by_part: dict[str, str] = {}
         for name, tensor in parts.items():
             encoded, rung2_settings = _encode_stem_part(
-                tensor,
+                _tensor_to_numpy(tensor),
                 int(model.samplerate),
                 codec=output_codec,
                 mp3_settings=mp3_settings_rung1,
@@ -515,19 +597,12 @@ def write_bundle(
                 "mp3_settings": mp3_settings_by_part or None,
                 "part_bytes": part_sizes,
                 "violations": violations,
-                "policy_codec": policy_codec,
-                "codec_fallback": codec_fallback,
             },
         )
         (tmp / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
-        if out_dir.exists():
-            shutil.rmtree(out_dir)
-        tmp.rename(out_dir)
-    except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
+        publish_into_place(tmp, out_dir)
 
     wall_s = time.time() - t0
     result = {
@@ -542,7 +617,6 @@ def write_bundle(
         "wall_s": round(wall_s, 1),
         "realtime_factor": round(wall_s / source_duration_s, 3),
         "size_violations": violations,
-        "codec_fallback": codec_fallback,
     }
     _log(
         f"[stem] done id={stable_id} wall={wall_s:.1f}s "
@@ -562,7 +636,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--out-dir",
         type=Path,
         required=True,
-        help="bundle directory (e.g. data/state/stems/<stable_id>)",
+        help="bundle directory (e.g. (private path)/<stable_id>)",
     )
     p.add_argument(
         "--device",

@@ -55,8 +55,7 @@ UPLOAD_JOB = "e2e-trunk-upload"
 VERDICT_STEP = "Root Playwright verdict (Trunk quarantine applied)"
 JUNIT_NAME = "junit-e2e-root.xml"
 COLLECTION = "L3VoLxNK"
-UPLOAD_SHA = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
-DOWNLOAD_SHA = "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+R2_ACTION = "./.github/actions/r2-artifact"
 UPLOADER_SHA = "trunk-io/analytics-uploader@14c0f18990953eecd01c9c5afe3cc63a73b6c371"
 
 pytestmark = pytest.mark.requirement("CIQUAR-01")
@@ -316,9 +315,10 @@ def test_the_upload_job_stages_in_runner_temp_and_is_not_a_verdict_need() -> Non
     assert probe["env"]["TRUNK_API_TOKEN"] == "${{ secrets.TRUNK_API_TOKEN }}"
 
     download = _step(UPLOAD_JOB, step_id="download-e2e-root")
-    assert str(download["uses"]).startswith(DOWNLOAD_SHA)
-    assert download["with"]["name"] == "e2e-trunk-junit-attempt-${{ github.run_attempt }}"
-    assert download["with"]["path"] == "${{ runner.temp }}/staged-e2e-root"
+    # No checkout in a token job, so the download is curl's SigV4, not the r2-artifact action.
+    assert "uses" not in download and "--aws-sigv4" in download["run"]
+    assert download["env"]["ARTIFACT_NAME"] == "e2e-trunk-junit-attempt-${{ github.run_attempt }}"
+    assert download["env"]["DEST"] == "${{ runner.temp }}/staged-e2e-root"
     assert download.get("continue-on-error") is True
     assert "steps.trunk-token.outputs.present == 'true'" in download["if"]
 
@@ -348,12 +348,11 @@ def test_the_upload_job_stages_in_runner_temp_and_is_not_a_verdict_need() -> Non
     artifact = next(
         step
         for step in _jobs()["gate"]["steps"]
-        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+        if step.get("uses") == R2_ACTION
         and step.get("with", {}).get("name", "").startswith("e2e-trunk-junit-attempt-")
     )
-    assert str(artifact["uses"]).startswith(UPLOAD_SHA)
-    assert artifact["with"]["name"] == download["with"]["name"]
-    assert artifact["with"]["retention-days"] == 1
+    assert artifact["with"]["mode"] == "upload"
+    assert artifact["with"]["name"] == download["env"]["ARTIFACT_NAME"]
     assert artifact.get("continue-on-error") is True
     assert artifact["if"] == "always() && steps.stage-e2e-junit.outcome == 'success'"
 

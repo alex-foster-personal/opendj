@@ -102,7 +102,7 @@ jobs:
       # Full history so origin/main is current enough for the ancestry guard
       # (issue #3513). edited below re-runs body declarations; ancestry catches
       # stale synthetic merge refs that predate trunk ADR fixes.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           fetch-depth: 0
@@ -130,7 +130,7 @@ jobs:
       # Step names are quoted: an unquoted ` #` starts a YAML comment and truncates them.
       - name: "ADR check (issue #1489)"
         # No venv: scripts.adr_check is stdlib only. It reads THIS PR's
-        # docs/decisions/ for whether an id exists, and the PR body plus
+        # (private path)/ for whether an id exists, and the PR body plus
         # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
         # Exit 2 = the gate could not measure, which is never a pass.
         env:

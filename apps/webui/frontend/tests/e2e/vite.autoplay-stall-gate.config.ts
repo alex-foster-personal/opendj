@@ -16,11 +16,13 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
+
 export const AUTOPLAY_STALL_GATE_FRONTEND_PORT = 5324;
 export const AUTOPLAY_STALL_GATE_API_PORT = 8699;
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), ...e2eFootprintsPlugin()],
 	server: {
 		host: '127.0.0.1',
 		port: AUTOPLAY_STALL_GATE_FRONTEND_PORT,

@@ -95,6 +95,16 @@ def test_the_discovery_probe_finds_a_port_in_a_new_configuration(tmp_path: Path)
 #: the file today and (b) would break if the port value changed, so a future
 #: renumbering cannot pass this test without being noticed here too.
 KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
+    (
+        "apps/webui/frontend/tests/e2e/vite.transition-in-cue.config.ts",
+        "export const TRANSITION_IN_CUE_FRONTEND_PORT = 5334;",
+        5334,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.transition-in-cue.config.ts",
+        "export const TRANSITION_IN_CUE_API_PORT = 8714;",
+        8714,
+    ),
     ("apps/desktop/wdio.conf.ts", "const EMBEDDED_WEBDRIVER_PORT = 4455;", 4455),
     ("apps/desktop/mcp/smoke.ts", "const WEBDRIVER_PORT = 4456;", 4456),
     ("apps/desktop/mcp/smoke.ts", "const CDP_PORT = 9336;", 9336),
@@ -210,6 +220,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/playwright.playlist-switch-latency.config.ts",
         "process.env.PLAYLIST_SWITCH_BENCH_PORT ?? 8713",
         8713,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-preview-cue.config.ts",
+        "export const CMDK_PREVIEW_CUE_FRONTEND_PORT = 5337;",
+        5337,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-preview-cue.config.ts",
+        "export const CMDK_PREVIEW_CUE_API_PORT = 8717;",
+        8717,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.hotcue-mapping-gate.config.ts",

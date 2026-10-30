@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -103,32 +105,45 @@ class _CopySource:
 
 
 @pytest.mark.requirement("STEM-42")
-def test_a_timer_pass_landing_between_publish_and_verify_keeps_the_hydrate(tmp_path: Path, monkeypatch):
-    """[if] an eviction pass runs between the publishing rename and the verify [then] the hydrate still succeeds, [else stop].
+def test_a_timer_pass_landing_right_after_the_publish_keeps_the_hydrate(tmp_path: Path, monkeypatch):
+    """[if] an eviction pass runs the moment the publishing swap lands [then] the hydrate still succeeds, [else stop].
 
-    MUTATION TARGET: pin after the rename (or not at all) in ``hydrate_one``
-    and the timer evicts the bundle, so the verify records a valid fetch as
-    a hydration failure.
+    The fetched copy is verified before it is swapped in (Sol on #6820), so
+    the window is between the swap and the hydrate letting go of its pin.
+
+    MUTATION TARGET: pin after the swap (or not at all) in ``hydrate_one``
+    and the timer evicts the bundle a valid fetch just published.
     """
     from apps.cloud import stem_hydration
     from apps.cloud.stem_bundles import hydrate_pins
 
     remote, stems_dir, data_dir = tmp_path / "remote", tmp_path / "stems", tmp_path / "data"
     index = {"fresh": make_bundle(remote, "fresh", atime=100.0)}
-    real_load = stem_hydration.load_stem_bundle
+    real_replace = stem_hydration.replace_bundle_dir
     timer_reports: list[budget.EnforceReport] = []
 
-    def load_after_a_timer_pass(stable_id: str, *, stems_dir: Path):  # type: ignore[no-untyped-def]
-        if not timer_reports and (stems_dir / stable_id).is_dir():
-            timer_reports.append(enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0)))
-        return real_load(stable_id, stems_dir=stems_dir)
+    timers: list[threading.Thread] = []
 
-    monkeypatch.setattr(stem_hydration, "load_stem_bundle", load_after_a_timer_pass)
+    def replace_then_a_timer_pass(new_dir: Path, dest: Path) -> None:
+        # The timer is another process in production: it runs on its own
+        # thread, so an eviction claim that must wait for this publish's
+        # bundle lock waits instead of deadlocking the test.
+        real_replace(new_dir, dest)
+        timer = threading.Thread(
+            target=lambda: timer_reports.append(enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=0)))
+        )
+        timers.append(timer)
+        timer.start()
+        timer.join(2)
+
+    monkeypatch.setattr(stem_hydration, "replace_bundle_dir", replace_then_a_timer_pass)
 
     outcome = stem_hydration.hydrate_one(
         "fresh", data_dir=data_dir, source=_CopySource(remote), index=index, stems_dir=stems_dir,  # type: ignore[arg-type]
     )
 
+    for timer in timers:
+        timer.join(30)
     assert len(timer_reports) == 1, "the timer pass ran inside the publish window"
     assert timer_reports[0].evicted_stable_ids == ()
     assert outcome.status == "hydrated", outcome.reason
@@ -317,6 +332,74 @@ def test_a_hydrate_holds_the_cross_process_lock_for_its_id(tmp_path: Path):
 
 
 @pytest.mark.requirement("STEM-42")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="probes the lock with fcntl.flock; Windows takes the msvcrt.locking branch of the same helper",
+)
+def test_the_fetch_leaves_the_bundle_writer_lock_free_and_the_publish_takes_it(tmp_path: Path):
+    """[if] a hydrate is mid-fetch [then] the bundle writer lock is free, and its publish still waits for it, [else stop].
+
+    Holding the writer lock across the R2 transfer made a stems job's publish
+    or a recompress swap of any id on the same stripe wait out the download
+    (Codex on #6821). The opposite direction is the control: the publishing
+    rename must still wait for a writer that holds the lock, so a thread
+    takes it during the fetch, holds it, and checks that no bundle appeared
+    under it.
+
+    MUTATION TARGETS: hold the writer lock in ``_hydrate_locks_held`` (the
+    probe finds it taken mid-fetch); drop it around the publish (the bundle
+    appears while the other writer holds it).
+    """
+    import threading
+
+    from apps.cloud.stem_hydration import hydrate_lock_path, hydrate_one
+    from apps.cloud.stem_upload_queue import exclusive_file_lock
+    from apps.stems.bundle_lock import bundle_lock_path
+
+    stems_dir, data_dir, remote = tmp_path / "stems", tmp_path / "data", tmp_path / "remote"
+    entry = make_bundle(remote, "striped", atime=100.0)
+    writer_lock = bundle_lock_path(data_dir, "striped")
+    fetch_lock = hydrate_lock_path(data_dir, "striped")
+    assert fetch_lock != writer_lock
+    held = threading.Event()
+    seen: dict[str, bool] = {}
+
+    def other_writer() -> None:
+        with exclusive_file_lock(writer_lock):
+            held.set()
+            time.sleep(0.3)
+            seen["published_under_other_writer"] = (stems_dir / "striped").exists()
+
+    other = threading.Thread(target=other_writer)
+
+    class _ProbeCopySource(_CopySource):
+        def fetch_bundle_files(self, *, stable_id: str, file_hashes: object, tmp_dir: Path) -> int:
+            seen["fetch_lock_held"] = _stripe_is_locked(fetch_lock)
+            seen["writer_lock_held"] = _stripe_is_locked(writer_lock)
+            other.start()
+            assert held.wait(timeout=10.0)
+            return super().fetch_bundle_files(stable_id=stable_id, file_hashes=file_hashes, tmp_dir=tmp_dir)
+
+    try:
+        outcome = hydrate_one(
+            "striped",
+            data_dir=data_dir,
+            source=_ProbeCopySource(remote),  # type: ignore[arg-type]
+            index={"striped": entry},
+            stems_dir=stems_dir,
+        )
+    finally:
+        if other.is_alive() or held.is_set():
+            other.join(timeout=10.0)
+
+    assert outcome.status == "hydrated", outcome
+    assert seen["fetch_lock_held"] is True, "the fetch ran without the hydrate lock"
+    assert seen["writer_lock_held"] is False, "the fetch held the bundle writer lock"
+    assert seen["published_under_other_writer"] is False, "the publish did not wait for the writer lock"
+    assert (stems_dir / "striped").is_dir()
+
+
+@pytest.mark.requirement("STEM-42")
 def test_the_windows_lock_waits_past_msvcrt_ten_second_limit(tmp_path: Path):
     """[if] another process holds the lock longer than ``LK_LOCK``'s ten retries [then] the waiter keeps waiting rather than raising, [else stop].
 
@@ -339,3 +422,46 @@ def test_the_windows_lock_waits_past_msvcrt_ten_second_limit(tmp_path: Path):
 
     assert len(calls) == 26
     assert set(calls) == {(0, 2, 1)}
+
+
+@pytest.mark.requirement("STEM-58")
+def test_a_hydrate_replacing_an_invalid_bundle_waits_for_the_read_barrier(tmp_path: Path):
+    """[if] a reader holds the read barrier [then] a hydrate leaves the invalid bundle in place until it lets go, [else stop].
+
+    Removing an invalid local bundle and renaming the fetched one in is a
+    bundle replacement like any other: a deck read landing between the two
+    would find no bundle, and its restore of a stale swap backup would then
+    fail this rename (Codex on #6820).
+
+    MUTATION TARGET: drop the ``readers_held_off`` hold in ``hydrate_one``.
+    """
+    import threading
+    import time
+
+    from apps.cloud import stem_hydration
+    from apps.cloud.stem_upload_queue import exclusive_file_lock
+
+    remote, data_dir = tmp_path / "remote", tmp_path / "data"
+    stems_dir = data_dir / "state" / "stems"
+    index = {"sid": make_bundle(remote, "sid", atime=100.0)}
+    (stems_dir / "sid").mkdir(parents=True)
+    (stems_dir / "sid" / "vocals.wav").write_bytes(b"truncated")  # no manifest: invalid
+    outcomes: list[stem_hydration.HydrationOutcome] = []
+
+    def hydrate() -> None:
+        outcomes.append(
+            stem_hydration.hydrate_one(
+                "sid", data_dir=data_dir, source=_CopySource(remote), index=index, stems_dir=stems_dir,  # type: ignore[arg-type]
+            )
+        )
+
+    worker = threading.Thread(target=hydrate)
+    with exclusive_file_lock(budget.eviction_claim_lock_path(data_dir, "sid")):
+        worker.start()
+        time.sleep(1.0)  # an unblocked hydrate of a local copy takes milliseconds
+        assert worker.is_alive(), "the hydrate replaced the bundle while a reader held the barrier"
+        assert (stems_dir / "sid" / "vocals.wav").read_bytes() == b"truncated"
+    worker.join(timeout=60)
+    # Control: once released, the fetched bundle lands and verifies.
+    assert [outcome.status for outcome in outcomes] == ["hydrated"], outcomes
+    assert (stems_dir / "sid" / "manifest.json").is_file()

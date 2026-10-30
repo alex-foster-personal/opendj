@@ -83,6 +83,10 @@ permissions:
   issues: read
 
 env:
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
   LEDGER_ISSUE: "1492"
   DEFAULT_THRESHOLD: "50"
   # Self-hosted runners persist the workspace between jobs, so a .pyc written
@@ -171,7 +175,7 @@ jobs:
       # itself, but it shares a persistent runner with every other job here,
       # and a clean: true checkout wipes node_modules/.venv/target for the
       # NEXT job regardless of whether THIS one needed them.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -467,7 +471,7 @@ jobs:
       # advance between the two, and the report persists the window head as
       # the next state marker, so an unpinned checkout would mark commits
       # covered that no check here ever executed.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -530,12 +534,12 @@ jobs:
       - name: Upload the measurement
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: bundle-size-${{ needs.window.outputs.head }}
           path: ${{ runner.temp }}/bundle.json
           if-no-files-found: warn
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Row 5: the boot-burst perf bench, against (private path).
@@ -619,7 +623,7 @@ jobs:
       # advance between the two, and the report persists the window head as
       # the next state marker, so an unpinned checkout would mark commits
       # covered that no check here ever executed.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -693,12 +697,12 @@ jobs:
       - name: Upload bench output
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: boot-burst-${{ needs.window.outputs.head }}
           path: ${{ runner.temp }}/boot-burst.log
           if-no-files-found: warn
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Row 6 (stem decode): four-way FLAC decode on the production browser path.
@@ -766,7 +770,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -840,12 +844,12 @@ jobs:
       - name: Upload bench output
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: stem-decode-bench-${{ needs.window.outputs.head }}
           path: ${{ runner.temp }}/stem-decode-bench.log
           if-no-files-found: warn
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Row 6 (waveform render): native waveform materialization on Linux.
@@ -912,7 +916,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -977,12 +981,12 @@ jobs:
       - name: Upload bench output
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: waveform-render-bench-${{ needs.window.outputs.head }}
           path: ${{ runner.temp }}/waveform-render-bench.log
           if-no-files-found: warn
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Row 9 (remote half): preview-branch drift. Cheap, no toolchain, so it runs
@@ -1052,7 +1056,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Credentials persist on purpose: the drift step runs `git fetch origin`
           # against this private repo, and the job has no other credential for it.
@@ -1203,7 +1207,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner (tests/scripts/test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -1271,8 +1275,11 @@ jobs:
           # UNKNOWN rather than to a zero -- a clean count rendered from a
           # failed parse is the silent zero this row exists to avoid.
           declared="$(sed -n 's/^\[reqs-cited-unflipped\].*cited pending ids=\([0-9][0-9]*\)$/\1/p' drift.out)"
-          ids="$(grep -oE '^  [A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]+[a-z]?' drift.out | sed 's/^  //' | sort -u)"
-          id_total="$(printf '%s\n' "$ids" | grep -c .)"
+          # GitHub runs this step as `bash -e {0}` and it sets pipefail, so grep's exit 1
+          # on zero matches would kill the step before any verdict is written. `|| true`
+          # keeps grep -c's printed 0: a zero-id window is a result, not a failure.
+          ids="$(grep -oE '^  [A-Z][A-Z0-9]*(-[A-Z0-9]+)*-[0-9]+[a-z]?' drift.out | sed 's/^  //' | sort -u || true)"
+          id_total="$(printf '%s\n' "$ids" | grep -c . || true)"
 
           if [ "$code" -eq 0 ] && [ -n "$declared" ] && [ "$declared" = "$id_total" ]; then
             if [ "$id_total" = "0" ]; then
@@ -1280,9 +1287,9 @@ jobs:
             elif [ "$id_total" -gt 15 ]; then
               # Truncation is NAMED, never silent: the count above the list is
               # the whole measurement, and the run log carries every line.
-              id_list="$(printf '%s\n' "$ids" | head -n 15 | paste -sd', ' -), +$(( id_total - 15 )) more (full list in the run log)"
+              id_list="$(printf '%s\n' "$ids" | head -n 15 | paste -sd, - | sed 's/,/, /g'), +$(( id_total - 15 )) more (full list in the run log)"
             else
-              id_list="$(printf '%s\n' "$ids" | paste -sd', ' -)"
+              id_list="$(printf '%s\n' "$ids" | paste -sd, - | sed 's/,/, /g')"
             fi
             verdict="${id_total} cited pending id(s): ${id_list}"
           else
@@ -1383,7 +1390,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner (tests/scripts/test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -1506,7 +1513,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -1619,14 +1626,14 @@ jobs:
       - name: Upload audit report
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: dependency-audit-${{ steps.head.outputs.sha }}
           path: |
             ${{ runner.temp }}/dependency-audit.json
             ${{ runner.temp }}/dependency-audit.txt
           if-no-files-found: warn
-          retention-days: 2
 
   dependency-audit-report:
     name: dependency audit ledger (row 8)
@@ -1854,7 +1861,7 @@ jobs:
 
       # clean: false, like every other self-hosted checkout in this workflow
       # (tests/scripts/test_ci_workspace_reuse.py): same runner, same rule.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0

@@ -6,6 +6,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { appVersionFromTauriConf } from './vite-app-version';
 import { claimAndCheckWebuiDevConfig, resolveAllowedHosts } from './webui-port-config';
 import { codecParserTrimPlugin } from './vite-codec-parser-trim';
+import { e2eFootprintsPlugin } from './vite-e2e-footprints';
 import { holdFullReloadPlugin } from './vite-hold-full-reload';
 import { bootManualChunks } from './vite-layout-shell-chunk';
 
@@ -37,7 +38,14 @@ export default defineConfig(({ command, mode }) => {
 			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen),
 			'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersionFromTauriConf(REPOSITORY_ROOT))
 		},
-		plugins: [sveltekit(), holdFullReloadPlugin(), codecParserTrimPlugin()],
+		// e2eFootprintsPlugin is empty unless E2E_FOOTPRINTS_DIR is set (the e2e
+		// gate's root step and scripts/e2e_footprints_refresh.py set it).
+		plugins: [
+			sveltekit(),
+			holdFullReloadPlugin(),
+			codecParserTrimPlugin(),
+			...e2eFootprintsPlugin()
+		],
 		build: {
 			// Terser instead of Vite's default esbuild minifier. Measured on
 			// origin/main at 59248abb9, gzip under build/_app/immutable/, which is

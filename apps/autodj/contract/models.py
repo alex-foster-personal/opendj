@@ -26,11 +26,11 @@ class StyleParamsWire(_Wire):
 
     volume: str
     fade_shape: str
-    swap_position: str
+    swap_position: str | None
     filter: str | None
     stems: str | None
-    overlap_comp_db: float
-    comp_with_low_kill: bool
+    min_body_fade_bars: int
+    pre_hit_db: float
 
 
 class StyleSummary(_Wire):
@@ -45,7 +45,6 @@ class StyleSummary(_Wire):
     available: bool
     unavailable_reason: str | None
     # AGENT-34: a parametric style's settings (volume lane, fade_shape, swap_position, filter, stems,
-    # overlap_comp_db, comp_with_low_kill), null for a fixed style; the Spotify transition it mirrors, or null.
+    # min_body_fade_bars, pre_hit_db), null for a fixed style; the Spotify transition it mirrors, or null.
     params: StyleParamsWire | None
     spotify: str | None
-

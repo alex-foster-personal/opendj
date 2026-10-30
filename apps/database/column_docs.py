@@ -47,6 +47,7 @@ from apps.database.column_docs_feedback import FEEDBACK_COLUMN_DOCS
 from apps.database.column_docs_genre import GENRE_COLUMN_DOCS
 from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
+from apps.database.column_docs_pair_transitions import PAIR_TRANSITION_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
 from apps.database.column_docs_sync_gate import SYNC_GATE_COLUMN_DOCS
@@ -57,6 +58,8 @@ __all__ = ["COLUMN_DOCS", "TABLE_DOCS"]
 
 
 COLUMN_DOCS: dict[str, dict[str, str]] = {
+    # Migration v25 (transition memory, ADR-0129).
+    **PAIR_TRANSITION_COLUMN_DOCS,
     "tracks": {
         "stable_id": (
             "Primary key. 40-char lowercase hex SHA-1 minted by "

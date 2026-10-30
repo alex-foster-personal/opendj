@@ -46,7 +46,8 @@ runner image's own `python3`.
 from __future__ import annotations
 
 import fnmatch
-from collections.abc import Sequence
+import re
+from collections.abc import Collection, Sequence
 
 #: ci.yml: every path except documentation, with the requirements ledger re-included.
 CI_PULL_REQUEST_PATHS: tuple[str, ...] = (
@@ -85,7 +86,61 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
     # The fan-out ledger (bundle merges, Tue 27 Oct 2026): the frontend names the
     # `/progress-tree` route, never this file, and no Playwright run reads it.
     "(private path)",
+    # TEST-BUDGET round 1 (Fri 30 Oct 2026): the pytest tree and the agent skills. No
+    # Playwright run imports `tests/` (the specs live in apps/webui/frontend/tests/e2e and
+    # e2e.yml shells out to `scripts/`, never `tests/`), and `.agents/` is read by coding
+    # agents only. Measured on the 459 PRs the queue tested Thu 1 to Fri 16 Oct 2026: the
+    # gate ran for 88% of them; with these two entries it runs for 79%, which is 22
+    # runner-minutes and an e2e seat per skipped draft.
+    "tests/**",
+    ".agents/**",
+    # ...except the two things under tests/ that Playwright does consume: the media
+    # fixtures its specs read (tests/fixtures/phase7-dedup) and the helper the
+    # deck-load fixture builder imports (tests.support.embed_picture).
+    "!tests/fixtures/**",
+    "!tests/support/**",
 )
+
+#: ci.yml's fixed jobs on a pull request (TEST-BUDGET round 4; the maintainer, Fri 30 Oct 2026:
+#: a HARD cap of 10 runner-minutes per PR head and queue draft). One inclusive GitHub
+#: `paths` list per job, evaluated per in-scope changed file with the same `!`
+#: semantics as `CI_PULL_REQUEST_PATHS`; a job runs for a pull_request only when at
+#: least one in-scope changed file matches its list. An EMPTY list is a job that never
+#: runs on a pull_request (ordinary head or trunk-merge draft alike): it runs on the push
+#: to main (the checkpoint cadence the maintainer approved, with auto-revert) and on the nightly.
+#:
+#: - `contracts` (reqs-check, native wheel, Rust nextest, contract drift; 2.5 min) and
+#:   `quality` (the ratchet; 5.4 min) never run on a pull request. Before this they ran
+#:   on every in-scope one, and their footprints measured near-universal (the ratchet
+#:   scores the whole tree, the openapi dump imports every router), so under the cap
+#:   they move to main entirely.
+#: - `frontend` (unit + check + build; 3.2 min) runs only when `apps/webui/frontend/**`
+#:   changes. Its unit tests also read a few files outside that tree (the Tauri shell,
+#:   the entitlements resolver, perf helpers; tests/scripts/
+#:   test_ci_fixed_jobs_by_footprint.py keeps the list); a change there is caught on
+#:   main, by decision.
+#: - `frontend-build` (0.9 min) runs when `frontend` runs (it needs the artifact) and
+#:   whenever the e2e gate will run for the same change set (`E2E_PATHS_IGNORE`, the
+#:   e2e.yml scope decision; round 2's tiers narrow the steps inside the gate, never
+#:   whether it runs), because `scripts/ci_frontend_build_acquire_from_ci.sh` refuses a
+#:   sha whose `frontend-build` job did not succeed.
+#:
+#: `test` keeps its own selector (scripts/ci_test_selection.py) and is never listed here.
+#: Pushes and dispatches run every job: the decision is pull_request only. ADR:
+#: (private path).
+CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
+    "contracts": (),
+    "frontend": ("apps/webui/frontend/**",),
+    "frontend-build": ("apps/webui/frontend/**",),
+    "quality": (),
+}
+
+#: The jobs `CI_JOB_PATHS` decides, in the order `skip_jobs` lists them.
+CI_FIXED_JOBS: tuple[str, ...] = tuple(CI_JOB_PATHS)
+
+#: The fixed jobs that never run on a pull_request (empty list above). ci.yml's `if:` on
+#: each also carries `github.event_name != 'pull_request'`, so the YAML says it too.
+CI_JOBS_NEVER_ON_PULL_REQUEST: tuple[str, ...] = tuple(job for job, patterns in CI_JOB_PATHS.items() if not patterns)
 
 #: Workflow file -> (`paths`, `paths-ignore`) its in-run scope job evaluates for a
 #: pull_request event. Exactly one of the pair is set, the same shape
@@ -94,6 +149,37 @@ IN_RUN_PULL_REQUEST_SCOPES: dict[str, tuple[tuple[str, ...] | None, tuple[str, .
     "ci.yml": (CI_PULL_REQUEST_PATHS, None),
     "e2e.yml": (None, E2E_PATHS_IGNORE),
 }
+
+
+#: e2e.yml tiers (TEST-BUDGET round 2, Fri 30 Oct 2026; (private path)/
+#: ADR-NEW-e2e-smoke-tier-by-footprint.md). An in-scope pull request runs the FULL gate
+#: unless every in-scope file lies under one of these roots, none lies under a full-tier
+#: root, and none is a script the gate itself runs: then the gate runs its SMOKE tier only,
+#: the deck-load smoke and the preflight boot gate, which prove the engine still boots,
+#: serves the production build and loads a deck. Any root not listed here is full tier,
+#: so an unfamiliar path can only add tests, never drop them. Measured on the 441 PRs
+#: merged Thu 1 to Fri 16 Oct 2026: 179 (41%) are smoke tier, 172 (39%) full, 90 out of scope.
+E2E_SMOKE_TIER_PATHS: tuple[str, ...] = (
+    "apps/**",
+    "ops/**",
+    "ci/**",
+    "scripts/**",
+    "tests/**",
+    ".agents/**",
+    ".github/**",
+    "justfile",
+    "Makefile",
+    ".gitignore",
+    "NOTICE",
+    ".mergify.yml",
+)
+
+#: Always full tier, whatever else the change set holds: the web app and the engine that
+#: every Playwright run boots. The scripts e2e.yml runs are read from the workflow itself
+#: (`e2e_gate_scripts`), so a new gate helper needs no entry here.
+E2E_FULL_TIER_PATHS: tuple[str, ...] = ("apps/webui/**",)
+
+E2E_TIERS = ("smoke", "full")
 
 
 # ----- path filter evaluation ------------------------------------------------
@@ -116,7 +202,8 @@ def _file_matches_paths_list(path: str, patterns: Sequence[str]) -> bool:
 
 
 def _file_matches_paths_ignore(path: str, patterns: Sequence[str]) -> bool:
-    return any(_github_glob_matches(pattern, path) for pattern in patterns)
+    """`paths-ignore` with `!` re-inclusion, like `paths`: later patterns win."""
+    return _file_matches_paths_list(path, patterns)
 
 
 def workflow_would_run_for_files(
@@ -133,3 +220,67 @@ def workflow_would_run_for_files(
     if paths_ignore is not None:
         return any(not _file_matches_paths_ignore(path, paths_ignore) for path in changed_files)
     return True
+
+
+# ----- e2e tiers ------------------------------------------------------------------
+
+
+_GATE_SCRIPT_RE = re.compile(r"(?<!tests/)(?<![\w-])scripts/[\w.-]+(?:/[\w.-]+)*(?<!\.)")
+
+
+def e2e_gate_scripts(workflow_text: str) -> frozenset[str]:
+    """Every `scripts/...` file path e2e.yml names (steps and comments alike).
+
+    `tests/scripts/...` mentions are excluded by the lookbehind (`$GITHUB_WORKSPACE/scripts/...`
+    still matches); a bare directory mention (`scripts/`) carries no file name and is dropped.
+    A path that ends a comment sentence keeps its name and loses the full stop.
+    """
+    return frozenset(match for match in _GATE_SCRIPT_RE.findall(workflow_text) if "." in match.rsplit("/", 1)[-1])
+
+
+def e2e_tier(in_scope_files: Sequence[str], gate_scripts: Collection[str]) -> str:
+    """`smoke` when every in-scope file is smoke tier, else `full`; no files is `full`."""
+    if not in_scope_files:
+        return "full"
+    for path in in_scope_files:
+        if path in gate_scripts or _file_matches_paths_ignore(path, E2E_FULL_TIER_PATHS):
+            return "full"
+        if not _file_matches_paths_ignore(path, E2E_SMOKE_TIER_PATHS):
+            return "full"
+    return "smoke"
+
+
+# ----- per-job footprint (TEST-BUDGET round 4) ---------------------------------
+
+
+def e2e_gate_will_run(changed_files: Sequence[str]) -> bool:
+    """Whether e2e.yml's gate job runs for a pull_request with this change set.
+
+    The e2e scope decision (`E2E_PATHS_IGNORE`), nothing finer: round 2's tiers decide
+    which steps run inside the gate, and the gate acquires the production build either
+    way. An empty change set is unmeasured, so the gate runs.
+    """
+    return not changed_files or workflow_would_run_for_files(changed_files, paths_ignore=E2E_PATHS_IGNORE)
+
+
+def ci_fixed_jobs_to_skip(changed_files: Sequence[str]) -> dict[str, str]:
+    """`CI_JOB_PATHS` over a pull request's change set: job -> why it is skipped.
+
+    Only the files `CI_PULL_REQUEST_PATHS` keeps in ci.yml scope count; an out-of-scope
+    file (documentation) decides nothing. A job with an empty list is skipped on every
+    pull request. `frontend-build` also runs whenever the e2e gate will. An empty
+    change set is unmeasured: the footprint jobs run, the never-on-a-pull-request
+    jobs still do not.
+    """
+    in_scope = [path for path in changed_files if _file_matches_paths_list(path, CI_PULL_REQUEST_PATHS)]
+    skipped: dict[str, str] = {}
+    for job, patterns in CI_JOB_PATHS.items():
+        if not patterns:
+            skipped[job] = "never runs on a pull request; it runs on the push to main and nightly"
+        elif not changed_files:
+            continue
+        elif not any(_file_matches_paths_list(path, patterns) for path in in_scope):
+            skipped[job] = f"none of the {len(in_scope)} in-scope changed file(s) is under its footprint"
+    if "frontend-build" in skipped and e2e_gate_will_run(changed_files):
+        del skipped["frontend-build"]
+    return skipped

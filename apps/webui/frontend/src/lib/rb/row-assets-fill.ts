@@ -13,7 +13,17 @@
  * `fetchRowAssetsLazily`), so none of it rides the /performance route's eager bundle.
  */
 
-import { fetchRowAssets, parseStemSummary, parseVocals, type StemSummary, type Vocals } from './api-rb';
+import {
+	decodePreviewStrip,
+	fetchRowAssets,
+	parseStemSummary,
+	parseVocals,
+	type PreviewStripData,
+	type StemSummary,
+	type Vocals
+} from './api-rb';
+
+export type { PreviewStripData, Vocals };
 
 type ArtworkStatus = 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 
@@ -59,4 +69,29 @@ export async function fetchAndApplyRowAssets(
 		strips[id] = b64 === null || max === null ? null : { preview_b64: b64, preview_max: max };
 	}
 	return { strips, pending: answer.pending };
+}
+
+function pendingList(value: unknown): readonly unknown[] {
+	if (!Array.isArray(value)) throw new Error('row assets answered without a pending list: the response contract changed');
+	return value;
+}
+
+/** One track's decoded strip and vocals, the same answer a library row in view
+ * gets (CMDK-07, the Cmd K preview). null when the id is not a library track; a
+ * contract breach in either half throws, so it is shown as one, never drawn as
+ * "no data". Lives here rather than in its caller so the bar adds no importer
+ * to api-rb, the most-imported module. */
+export async function fetchPreviewAsset(
+	stable_id: string
+): Promise<{ strip: PreviewStripData | null; vocals: Vocals; pending: boolean } | null> {
+	const answer = await fetchRowAssets([stable_id]);
+	const asset = answer.assets[stable_id];
+	if (asset === undefined) return null;
+	return {
+		strip: decodePreviewStrip(asset.preview_b64, asset.preview_max),
+		vocals: parseVocals(asset.vocals),
+		// Still being analyzed: the caller asks again rather than holding "no strip" for good.
+		// A missing or non-list `pending` is contract drift, so it throws rather than reading as "done" (Sol P1, #6687).
+		pending: pendingList(answer.pending).includes(stable_id)
+	};
 }

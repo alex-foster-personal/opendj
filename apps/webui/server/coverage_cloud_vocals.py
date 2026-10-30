@@ -51,6 +51,7 @@ from typing import Any
 
 from apps.cloud import stem_bundles, stem_cache_budget, stem_hydration
 from apps.cloud.stem_source import StemHydrationSource
+from apps.stems import bundle_lock
 from apps.vocals import cache as vocals_cache
 
 log = logging.getLogger(__name__)
@@ -162,32 +163,77 @@ class CloudVocals:
     def held(self, inputs: CloudInputs | None = None) -> list[dict[str, Any]]:
         """Ledger entries whose bundle is still on disk (others were evicted)."""
         stems_dir = (inputs or self.inputs_fn()).stems_dir
-        return [e for e in self._store.load() if (stems_dir / str(e["stable_id"])).is_dir()]
+        return [e for e in self._store.load() if self._on_disk(stems_dir, str(e["stable_id"]))]
 
-    def _release_down_to(self, keep: int, inputs: CloudInputs) -> None:
+    def _on_disk(self, stems_dir: Path, stable_id: str) -> bool:
+        """Whether the bundle is there, settling a missing one under its bundle lock.
+
+        A swap (re-compress, hydrate) holds that lock across the gap between
+        moving the old bundle aside and moving the new one in, so a bundle
+        missing only in that gap is seen again here and keeps its entry: a
+        dropped entry would free a slot for a bundle the swap restores
+        untracked, over the cap (Codex on #6821).
+        """
+        bundle_dir = stems_dir / stable_id
+        if bundle_dir.is_dir():
+            return True
+        with bundle_lock.held_for_read(self.data_dir, stable_id):
+            return bundle_dir.is_dir()
+
+    def _release_down_to(self, keep: int, inputs: CloudInputs) -> bool:
+        """Release the drain's oldest bundles until at most ``keep`` remain; False if it could not.
+
+        A bundle a deck has open, or one the eviction claim keeps, stays on
+        the ledger and counts against the cap, so the caller must not fetch
+        while this returns False (Codex on #6820).
+        """
         held = self.held(inputs)
-        while len(held) > keep:
+        kept: list[dict[str, Any]] = []
+        while held and len(held) + len(kept) > keep:
             entry = held.pop(0)
             stable_id = str(entry["stable_id"])
             if stable_id in inputs.protected:
-                continue    # a deck adopted it: no longer ours to remove
+                # Open on a deck: not removable now, but still on disk and
+                # still fetched by this drain, so the ledger keeps it and a
+                # release after the deck lets go frees it (Sol on #6820).
+                kept.append(entry)
+                continue
             bundle = next(
                 (b for b in stem_cache_budget.scan_bundles(inputs.stems_dir)
                  if b.stable_id == stable_id),
                 None,
             )
             if bundle is None:
+                # The scan can land in a swap's gap too: settle the absence
+                # under the bundle lock, as held() does (Codex on #6821).
+                if self._on_disk(inputs.stems_dir, stable_id):
+                    kept.append(entry)
                 continue
             gap = stem_cache_budget.unconfirmed_reason(bundle, inputs.index)
-            if gap == stem_bundles.REASON_GONE:
-                continue    # an eviction pass removed it first
-            if gap is not None:
+            # REASON_GONE may be a pass that removed it or a swap to other file
+            # names that kept it: the claim below tells them apart under the
+            # bundle lock, False for gone and None for kept (Codex on #6820).
+            if gap is not None and gap != stem_bundles.REASON_GONE:
+                # Still on disk and still this drain's: the ledger keeps it and
+                # it counts against the cap until R2 confirms it (Codex on #6820).
                 log.warning("cloud vocals: keeping %s, R2 does not confirm it (%s)", stable_id, gap)
+                kept.append(entry)
                 continue
             # The eviction passes can claim this bundle concurrently; the
             # rename claim lets exactly one remove it, the loser sees False.
-            stem_bundles.claim_and_remove(bundle.path)
-        self._store.save(held)
+            # Under the bundle lock, and only if it is still the bundle just
+            # confirmed: a re-compress swap may have replaced it since.
+            claimed = stem_cache_budget.claim_if_unchanged(
+                bundle, self.data_dir, inputs.index,
+                live_protected=stem_hydration.OPEN_DECKS.open_ids,
+            )
+            if claimed is None:
+                # Rewritten, opened or pinned since the check: still on disk
+                # and still ours, so the ledger keeps it for the next release
+                # (Codex on #6820).
+                kept.append(entry)
+        self._store.save(kept + held)
+        return len(kept) + len(held) <= keep
 
     # --- one job -------------------------------------------------------------
     def run(self, stable_id: str, audio_path: str) -> None:
@@ -197,7 +243,13 @@ class CloudVocals:
         inputs = self.inputs_fn()
         if inputs.source is None:
             raise CloudPaused("no stem hydration source is armed on this machine")
-        self._release_down_to(self.cap_fn() - 1, inputs)
+        if not self._release_down_to(self.cap_fn() - 1, inputs):
+            # About the cap, not this track: spend no attempt, fetch once a
+            # deck lets go of a held bundle or a later release frees one.
+            raise CloudPaused(
+                "every transient_bundle_cap slot holds a bundle a deck has open "
+                "or the eviction claim kept; fetching another would exceed the cap"
+            )
         outcome = stem_hydration.hydrate_one(
             stable_id,
             data_dir=self.data_dir,

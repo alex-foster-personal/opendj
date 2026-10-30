@@ -1,6 +1,6 @@
 """Migration v7 (CLOUDSYNC sync-safe schema) + machine identity.
 
-Contract under test: specs/design_decision_05.md. CLOUDSYNC yielded v6 to the
+Contract under test: (private path). CLOUDSYNC yielded v6 to the
 Google-auth branch (users + auth_sessions) when it merged to main first, so
 this schema now lands as migration v7, one step above auth's v6. The DDL is
 unchanged; only its position in the ladder moved.
@@ -553,11 +553,15 @@ def test_register_machine_round_trips_and_is_idempotent(
     assert mid.load_machine(state_conn, "never-registered") is None
 
 
-def test_duplicate_machine_name_is_rejected(
+def test_duplicate_machine_name_reuses_existing_machine_row(
     state_conn: sqlite3.Connection, tmp_path: Path
 ) -> None:
-    mid.register_machine(state_conn, data_dir=tmp_path / "a", name="silver", now=_TS)
-    with pytest.raises(sqlite3.IntegrityError):
-        mid.register_machine(
-            state_conn, data_dir=tmp_path / "b", name="silver", now=_TS
-        )
+    first = mid.register_machine(
+        state_conn, data_dir=tmp_path / "a", name="silver", now=_TS
+    )
+    second = mid.register_machine(
+        state_conn, data_dir=tmp_path / "b", name="silver", now="2026-08-29T12:00:00+00:00"
+    )
+
+    assert second == first
+    assert state_conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0] == 1

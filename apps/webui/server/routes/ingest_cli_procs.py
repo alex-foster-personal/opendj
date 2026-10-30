@@ -638,10 +638,29 @@ def _wait(
     for proc in running:
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=max(0.0, deadline - time.monotonic()))
-    if not members:
-        return []
-    _, alive = psutil.wait_procs(members, timeout=max(0.0, deadline - time.monotonic()))
-    return list(alive)
+    return _wait_members(members, deadline)
+
+
+def _wait_members(members: list[psutil.Process], deadline: float) -> list[psutil.Process]:
+    """`psutil.wait_procs`, surviving a member whose pid a thread has since taken.
+
+    pidfd_open() answers EINVAL for a pid that now names a non-leader thread:
+    the member already died and the busy host recycled its pid (seen on a CI
+    runner). `is_running()` compares create times, so it drops exactly those
+    members; an EINVAL that drops nobody is not that case and is raised.
+    """
+    while members:
+        try:
+            _, alive = psutil.wait_procs(members, timeout=max(0.0, deadline - time.monotonic()))
+            return list(alive)
+        except OSError as exc:
+            if exc.errno != errno.EINVAL:
+                raise
+            still = [member for member in members if member.is_running()]
+            if len(still) == len(members):
+                raise
+            members = still
+    return []
 
 
 def _descendants(proc: subprocess.Popen[str]) -> list[psutil.Process]:

@@ -18,8 +18,14 @@ from pathlib import Path
 
 import pytest
 
+# A capability report, not a pass (Codex on #6821): the CI lanes that run
+# this file (ci.yml's test, fast and contracts jobs) install ffmpeg and fail
+# their preflight without it (scripts/ci_runner_preflight.sh), so there these
+# tests always run.
 pytestmark = pytest.mark.skipif(
-    shutil.which("ffprobe") is None, reason="ffprobe not on PATH"
+    shutil.which("ffprobe") is None,
+    reason="UNAVAILABLE: ffprobe is not on PATH, so register_pair (and its "
+           "bundle-lock acceptance) is unmeasured here. CI installs ffmpeg.",
 )
 
 from apps.lyrics.register_stems import (  # noqa: E402
@@ -222,3 +228,52 @@ def test_batch2_is_registrable_via_the_tracks_json_join(tmp_path: Path, monkeypa
 
     mapping = rs._tracks_json_stable_ids("batch2")
     assert mapping == {"batch2000": ("sidB", "/x/c.mp3")}
+
+
+def test_register_pair_into_a_data_dir_waits_for_the_bundle_lock(tmp_path: Path) -> None:
+    """[if] another writer (the STEM-58 swap, eviction) holds this bundle's lock
+    [then] register_pair publishes nothing until it is released, [else stop]
+    (Codex P1 on #6820 and #6821).
+
+    MUTATION TARGET: drop ``store_writer_lock`` from ``register_pair`` and the
+    bundle appears while the lock is still held.
+    """
+    import threading
+    import time
+
+    from apps.cloud.stem_upload_queue import exclusive_file_lock
+    from apps.stems.bundle_lock import bundle_lock_path
+
+    _write_wav(tmp_path / "x-vocals.wav", 1.0)
+    _write_wav(tmp_path / "x-instrumental.wav", 1.0)
+    data_dir = tmp_path / "data"
+    root = data_dir / "state" / "stems-roformer-spike"
+    results: list[object] = []
+
+    def run() -> None:
+        try:
+            results.append(
+                register_pair(
+                    stable_id="sid-locked",
+                    vocals=tmp_path / "x-vocals.wav",
+                    instrumental=tmp_path / "x-instrumental.wav",
+                    model_name="m",
+                    model_version="v",
+                    source_path=str(tmp_path / "x-vocals.wav"),
+                    storage=RegisterPairStorage(root=root),
+                )
+            )
+        except BaseException as exc:  # noqa: BLE001 - the test reports any failure
+            results.append(exc)
+
+    with exclusive_file_lock(bundle_lock_path(data_dir, "sid-locked")):
+        thread = threading.Thread(target=run)
+        thread.start()
+        time.sleep(1.0)  # an unlocked register of two small parts takes milliseconds
+        assert thread.is_alive() and not (root / "sid-locked").exists(), (
+            "register_pair published while another writer held the lock"
+        )
+    thread.join(timeout=60)
+
+    assert results == [root / "sid-locked"]
+    load_stem_bundle("sid-locked", stems_dir=root)

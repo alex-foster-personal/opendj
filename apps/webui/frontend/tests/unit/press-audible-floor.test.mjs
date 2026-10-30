@@ -83,7 +83,8 @@ test('the unavailable terms are NAMED, so a row says which number it lost', () =
 	);
 });
 
-test('the labels state completeness explicitly, never by omission', () => {
+test('the labels state completeness explicitly, never by omission', async () => {
+	await floor.probeOutputDevice(deviceEnv(['audiooutput'])); // a device answered, so the floor can be complete
 	const complete = floor.latencyFloorLabels({ unavailable: [], contextState: 'running' });
 	assert.equal(complete.latency_floor, 'complete');
 	assert.equal(complete.audio_context_state, 'running');
@@ -512,6 +513,9 @@ test('NEGATIVE CONTROL: a press on an empty deck dispatches nothing at all', () 
 
 test('scheduleRowFacts reads the row it labels, not a second opinion of the context', async () => {
 	const press = await loadTypeScriptModule('src/lib/rb/press-stamp.ts');
+	// This bundle has its own probe state; give it a device answer, as the engine does at context creation.
+	press.watchOutputDevice(deviceEnv(['audiooutput']));
+	await new Promise((resolve) => setImmediate(resolve));
 
 	// A complete floor: both terms present in the stages, and a press behind it.
 	const complete = press.scheduleRowFacts(
@@ -952,4 +956,192 @@ test('QuickDrawMenu Play/Pause and its contextual actions thread their own click
 		menu.includes('void item.run(e.timeStamp);'),
 		'and the generic contextual-action button must hand on its own click event stamp'
 	);
+});
+
+//-----------------------------------------------------------------------------
+// no output device: a fallback sink's nonzero figure is not a floor
+//-----------------------------------------------------------------------------
+//
+// [if] the platform can list outputs and lists none [then] the output term is
+//   dropped, the row reads partial with output_device=absent, and
+//   input_to_output_ms is withheld (Chromium headless with no /dev/snd reported
+//   outputLatency 32ms and rows labeled complete, Fri 9 Oct 2026)
+// [if] the platform cannot list outputs (WebKit) [then] nothing changes
+//   (control: "cannot tell" must not refuse every WebKit row)
+// [if] a device is listed [then] the floor stays complete (control: the
+//   overshoot would refuse every real Chromium row)
+
+function deviceEnv(devices, { canListOutputs = true, rejects = false } = {}) {
+	return {
+		canListOutputs,
+		mediaDevices: {
+			enumerateDevices: async () => {
+				if (rejects) throw new Error('enumerateDevices refused');
+				return devices.map((kind) => ({ kind }));
+			}
+		}
+	};
+}
+
+function chromiumHeadlessStages() {
+	return math.scheduleOffsetStages({
+		contextTimeSec: 10,
+		requestedWhenSec: 10.05,
+		effectiveWhenSec: 10.0548,
+		processorLeadSec: 0.002,
+		processorLatencySec: 0.003,
+		baseLatencySec: 0.01,
+		outputLatencySec: floor.outputLatencyIfDevice(0.032),
+		active: true,
+		pressToScheduleMs: 4.6
+	});
+}
+
+test('no listed output device drops the fallback sink figure and marks the floor partial', async () => {
+	assert.equal(await floor.probeOutputDevice(deviceEnv(['audioinput'])), 'absent');
+	assert.equal(floor.outputLatencyIfDevice(0.032), undefined);
+	const stages = chromiumHeadlessStages();
+	assert.equal(stages.output_latency_ms, undefined);
+	assert.equal(stages.input_to_output_ms, undefined, 'a total built on a fake floor is withheld');
+	assert.equal(stages.base_latency_ms, 10, 'the base term is the context buffer, still real');
+	const labels = floor.latencyFloorLabels({
+		unavailable: floor.unavailableLatencyTerms({ base: stages.base_latency_ms, output: stages.output_latency_ms }),
+		contextState: 'running'
+	});
+	assert.equal(labels.latency_floor, 'partial');
+	assert.equal(labels.latency_unavailable, 'output_latency_ms');
+	assert.equal(labels.output_device, 'absent');
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false })); // back to unverified
+});
+
+test('control: a listed output device keeps the same 32ms reading as a complete floor', async () => {
+	assert.equal(await floor.probeOutputDevice(deviceEnv(['audioinput', 'audiooutput'])), 'present');
+	const stages = chromiumHeadlessStages();
+	assert.equal(stages.output_latency_ms, 32);
+	assert.equal(typeof stages.input_to_output_ms, 'number');
+	const labels = floor.latencyFloorLabels({ unavailable: [], contextState: 'running' });
+	assert.equal(labels.latency_floor, 'complete');
+	assert.equal(labels.output_device, 'present');
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false })); // back to unverified
+});
+
+test('control: an engine that cannot list outputs stays unverified and changes nothing', async () => {
+	assert.equal(await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false })), 'unverified');
+	assert.equal(floor.outputLatencyIfDevice(0.016), 0.016);
+	const labels = floor.latencyFloorLabels({ unavailable: [], contextState: 'running' });
+	assert.equal(labels.latency_floor, 'complete');
+	assert.equal(labels.output_device, 'unverified');
+	assert.equal(labels.output_device_error, undefined);
+});
+
+test('a probe that throws, or no mediaDevices, is recorded as probe-failed with its cause and refuses the output term', async () => {
+	const warn = console.warn;
+	const warned = [];
+	console.warn = (line) => warned.push(line);
+	try {
+		assert.equal(await floor.probeOutputDevice(deviceEnv([], { rejects: true })), 'probe-failed');
+		assert.equal(floor.outputLatencyIfDevice(0.032), undefined);
+		let labels = floor.latencyFloorLabels({ unavailable: [], contextState: 'running' });
+		assert.equal(labels.latency_floor, 'partial');
+		assert.equal(labels.output_device, 'probe-failed');
+		assert.match(labels.output_device_error, /enumerateDevices threw: enumerateDevices refused/);
+		assert.equal(await floor.probeOutputDevice({ canListOutputs: true }), 'probe-failed');
+		labels = floor.latencyFloorLabels({ unavailable: [], contextState: 'running' });
+		assert.match(labels.output_device_error, /mediaDevices is unavailable/);
+		assert.equal(warned.length, 2, 'each failure is logged, not swallowed');
+	} finally {
+		console.warn = warn;
+	}
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false }));
+});
+
+test('an absent device forces a partial floor even when a caller passed the raw outputLatency', async () => {
+	await floor.probeOutputDevice(deviceEnv(['audioinput']));
+	const labels = floor.latencyFloorLabels({
+		unavailable: floor.unavailableLatencyTerms({ base: 10, output: 32 }),
+		contextState: 'running'
+	});
+	assert.equal(labels.latency_floor, 'partial');
+	assert.equal(labels.latency_unavailable, 'output_latency_ms');
+	assert.equal(labels.output_device, 'absent');
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false }));
+});
+
+test('the engine routes the output term through outputLatencyIfDevice and starts the probe with the context', () => {
+	const engine = readSource('src/lib/rb/audio-engine.svelte.ts');
+	assert.match(engine, /outputLatencySec: outputLatencyIfDevice\(_ctx\.outputLatency\)/);
+	assert.match(engine, /_ctx = new AudioContext\(AUDIO_CONTEXT_OPTIONS\);[\s\S]{0,200}watchOutputDevice\(\)/);
+});
+
+// [if] an older device probe finishes after a newer one [then] the newer answer
+//   stands - broken otherwise (a slow probe from before a devicechange
+//   overwrites the current answer; Codex P2 on #6127)
+test('a stale device probe cannot overwrite the newer answer', async () => {
+	let releaseOld;
+	const oldGate = new Promise((resolve) => {
+		releaseOld = resolve;
+	});
+	const slowAbsent = {
+		canListOutputs: true,
+		mediaDevices: {
+			enumerateDevices: async () => {
+				await oldGate;
+				return [{ kind: 'audioinput' }];
+			}
+		}
+	};
+	const old = floor.probeOutputDevice(slowAbsent);
+	assert.equal(await floor.probeOutputDevice(deviceEnv(['audiooutput'])), 'present');
+	releaseOld();
+	assert.equal(await old, 'absent', 'the old probe still reports what it saw');
+	assert.equal(floor.outputLatencyIfDevice(0.032), 0.032, 'the stale absent answer replaced the newer present one');
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false })); // back to unverified
+});
+
+test('control: the newest probe still publishes when it is the only one', async () => {
+	await floor.probeOutputDevice(deviceEnv(['audioinput']));
+	assert.equal(floor.outputLatencyIfDevice(0.032), undefined);
+	await floor.probeOutputDevice(deviceEnv([], { canListOutputs: false }));
+	assert.equal(floor.outputLatencyIfDevice(0.032), 0.032);
+});
+
+// [if] no probe has answered, or a re-probe after a devicechange is in flight
+//   [then] the output term is withheld and the row reads output_device pending
+//   - broken otherwise (a fallback sink's figure passes as a complete floor,
+//   or a removed device reads present while its re-probe runs; Sol P1 on #6127)
+test('a pending probe withholds the output term, before the first answer and during a re-probe', async () => {
+	const fresh = await loadTypeScriptModule('src/lib/player/transport/press-audible.ts?pending');
+	assert.equal(fresh.outputLatencyIfDevice(0.032), undefined, 'before any probe the output term passed');
+	const before = fresh.latencyFloorLabels({ unavailable: [], contextState: 'running' });
+	assert.equal(before.latency_floor, 'partial');
+	assert.equal(before.output_device, 'pending');
+
+	await fresh.probeOutputDevice(deviceEnv(['audiooutput']));
+	assert.equal(fresh.outputLatencyIfDevice(0.032), 0.032, 'control: an answered present device keeps the term');
+
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	const reprobe = fresh.probeOutputDevice({
+		canListOutputs: true,
+		mediaDevices: {
+			enumerateDevices: async () => {
+				await gate;
+				return [{ kind: 'audioinput' }];
+			}
+		}
+	});
+	assert.equal(fresh.outputLatencyIfDevice(0.032), undefined, 'the old present answer stood while the re-probe ran');
+	assert.equal(fresh.latencyFloorLabels({ unavailable: [], contextState: 'running' }).output_device, 'pending');
+	release();
+	assert.equal(await reprobe, 'absent');
+	assert.equal(fresh.outputLatencyIfDevice(0.032), undefined);
+});
+
+test('control: an engine that cannot list outputs answers unverified at once and keeps the term', async () => {
+	const fresh = await loadTypeScriptModule('src/lib/player/transport/press-audible.ts?webkit');
+	const answering = fresh.probeOutputDevice(deviceEnv([], { canListOutputs: false }));
+	assert.equal(fresh.outputLatencyIfDevice(0.032), 0.032, 'a WebKit probe must not pass through pending');
+	assert.equal(await answering, 'unverified');
 });

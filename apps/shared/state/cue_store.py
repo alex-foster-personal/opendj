@@ -1,4 +1,5 @@
-"""Open DJ's own cue store: hot cues, memory cues and loops (CUES-01).
+"""Open DJ's own cue store: hot cues, memory cues, loops (CUES-01) and the
+transition-in cue (AGENT-51).
 
 Cues used to live only in rekordbox's ``djmdCue`` table, so a track with no
 rekordbox mapping could not keep a single cue. They now live in ``state.db``
@@ -39,7 +40,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 CUE_FIELD = "cue_points"
@@ -50,7 +51,10 @@ OWN_SOURCE: Final = "webui"
 #: Undo tokens kept per slot. Older tokens answer HOT_CUE_REVERSAL_NOT_FOUND.
 MAX_REVERSALS_PER_SLOT = 8
 
-CUE_KINDS = ("hot_cue", "memory", "loop")
+#: ``transition_in`` (AGENT-51, ADR-0128): at most one per track, no slot. It is
+#: where the user expects an incoming transition to land, stored on a downbeat.
+TRANSITION_IN_KIND: Final = "transition_in"
+CUE_KINDS = ("hot_cue", "memory", "loop", TRANSITION_IN_KIND)
 
 VendorCues = Callable[[], list[dict[str, Any]]]
 
@@ -454,6 +458,48 @@ def restore_hot_cue(
     }
 
 
+# ---------- transition-in cue (AGENT-51) ------------------------------------
+
+
+def transition_in_cue(state: StoredCues) -> dict[str, Any] | None:
+    """The track's transition-in cue in wire shape, or ``None``."""
+    found = [c for c in state.cues if c["kind"] == TRANSITION_IN_KIND]
+    if len(found) > 1:
+        raise CueStoreError(
+            500, "TRANSITION_IN_CORRUPT", f"track holds {len(found)} transition-in cues"
+        )
+    return cue_view(found[0]) if found else None
+
+
+def save_transition_in(
+    state: StoredCues,
+    in_ms: int,
+    *,
+    duration_ms: int | None,
+    write: WriteBlob,
+) -> dict[str, Any]:
+    """Set (or move) the one transition-in cue. ``in_ms`` is already on a downbeat.
+
+    Last write wins, with no revision: unlike a hot-cue slot there is one cue
+    and no performance action reads it mid-gesture, so a CAS round trip would
+    buy nothing. The rest of the cue set, hot cues included, is untouched.
+    """
+    _validate_position(in_ms, duration_ms)
+    cue = normalize_cue({"kind": TRANSITION_IN_KIND, "in_ms": in_ms})
+    others = [c for c in state.cues if c["kind"] != TRANSITION_IN_KIND]
+    write(_blob(replace(state, cues=_sorted([*others, cue]))))
+    return cue_view(cue)
+
+
+def clear_transition_in(state: StoredCues, *, write: WriteBlob) -> bool:
+    """Remove the transition-in cue. Returns False (and writes nothing) when there was none."""
+    others = [c for c in state.cues if c["kind"] != TRANSITION_IN_KIND]
+    if len(others) == len(state.cues):
+        return False
+    write(_blob(replace(state, cues=others)))
+    return True
+
+
 # ---------- ingest ----------------------------------------------------------
 
 
@@ -493,12 +539,14 @@ __all__ = [
     "CUE_FIELD",
     "HOT_CUE_SLOTS",
     "OWN_SOURCE",
+    "TRANSITION_IN_KIND",
     "CueStoreError",
     "HotCueSlotError",
     "StoredCues",
     "VendorCues",
     "WriteBlob",
     "clear_hot_cue",
+    "clear_transition_in",
     "cue_view",
     "hot_cue_slots",
     "import_vendor_cues",
@@ -508,5 +556,7 @@ __all__ = [
     "restore_hot_cue",
     "revision",
     "save_hot_cue",
+    "save_transition_in",
     "stored_cues_view",
+    "transition_in_cue",
 ]

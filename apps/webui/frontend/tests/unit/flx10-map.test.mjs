@@ -242,10 +242,20 @@ test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
 		'DDJ-400',
 		'\\bMixtour\\s+Pro\\b',
 		'\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))',
-		'DDJ-FLX4'
+		'DDJ-FLX4',
+		'XDJ-RX3',
+		'XDJ-AZ'
 	]);
 	registry.registerAllDeviceMaps();
 	registry.registerAllDeviceMaps(); // second call must no-op, not throw
 	webmidi._resetMidiForTests();
 	registry._resetMapsRegistryForTests();
+});
+
+test('FLX10 jog binds platter vinyl on and off plus the wheel side', () => {
+	const jogs = mapModule.FLX10_MAP.bindings.filter((b) => b.action.type === 'deck_jog' && b.action.deck === 2);
+	assert.deepEqual(jogs.map((b) => b.source.id), [34, 35, 33]);
+	for (const jog of jogs) {
+		assert.deepEqual([jog.source.ch, jog.source.kind, jog.relativeCentered], [2, 'cc', true]);
+	}
 });

@@ -371,6 +371,7 @@
 						class="art"
 						src={artSrc}
 						alt=""
+						data-expected-resource-error
 						onerror={() => {
 							artworkFailed = true;
 						}}

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
+from apps.webui.server import pair_capture
 from apps.webui.server.headphone_reports import client_id_of, headphone_reports
 from apps.webui.server.routes.commands import order_loop_state
 
@@ -363,6 +364,7 @@ async def publish_ui_mirror(
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored
     request.app.state.ui_mirror_received_monotonic = monotonic()
+    pair_capture.observe_mirror(request, body)
     # CUEOUT-18: the mirror stays last-writer-wins; the headphone state is
     # also kept per reporting client, so one tab cannot overwrite another's.
     mixer = body.get("mixer")

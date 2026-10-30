@@ -24,7 +24,16 @@
 		runPerformanceCommandFromUi,
 		type PairingSnapshot
 	} from '$lib/rb/performance-ipc.svelte';
-	import { autoPlayNextState } from '$lib/rb/auto-play-next.svelte';
+	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
+	import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, decisionLine } from '$lib/rb/auto-play-early';
+	import { autoPlayDecision } from '$lib/rb/auto-play-early.svelte';
+	import {
+		autoPlayNextState,
+		runLabel,
+		runTitle,
+		TRANSITION_INTENTS,
+		type TransitionIntent
+	} from '$lib/rb/auto-play-next.svelte';
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
@@ -199,15 +208,15 @@
 	const autoPlayTitle: string = $derived.by(() => {
 		const d = describeAutoPlayMode(uiPrefs);
 		if (d.mode === 'off') return `${d.short} - ${d.detail}`;
-		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
+		return `AutoPlay ON (${d.short}) - plans the handoff early; with no plan, the last ~16s loads onto a free/stopped deck. ${d.detail}`;
 	});
 
 	// The AutoPlay menu is the one explainer for both AutoPlay buttons, so their
 	// status lines live in its header instead of on a second (title) tooltip.
 	const autoPlayNextLine: string = $derived(
 		autoPlayNextState.armed
-			? `Next-track loop armed (${autoPlayNextState.phase}) - click >| to cancel`
-			: 'Next-track loop (>|): loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'
+			? `Next transition armed (${autoPlayNextState.phase}) - click >| to cancel`
+			: 'Next transition (>|): plan one from the live position; with no plan, loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'
 	);
 
 	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
@@ -923,12 +932,17 @@
 			data-rust-command="auto_play_next_arm"
 			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
-			aria-label="Next-track loop"
+			aria-label="Next transition"
 			aria-describedby="ap-menu-next"
 			onclick={_toggleAutoPlayNext}
 		>
 			&gt;|
 		</button>
+		{#if autoPlayNextState.phase === 'planning'}
+			<span class="ap-next-path" data-testid="ap-next-path">planning</span>
+		{:else if autoPlayNextState.run !== null}
+			<span class="ap-next-path" data-testid="ap-next-path">{runLabel(autoPlayNextState.run)}</span>
+		{/if}
 		{#if autoPlayMenuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
@@ -944,6 +958,65 @@
 				<p class="ap-head">AutoPlay</p>
 				<p class="ap-status" id="ap-menu-status" data-testid="ap-menu-status">{autoPlayTitle}</p>
 				<p class="ap-status" id="ap-menu-next" data-testid="ap-menu-next">{autoPlayNextLine}</p>
+				{#if autoPlayNextState.run !== null}
+					<p class="ap-status" data-testid="ap-next-run">{runTitle(autoPlayNextState.run)}</p>
+				{/if}
+				<p class="ap-status" data-testid="ap-decision">{decisionLine(autoPlayDecision, uiPrefs.auto_play_early_planning)}</p>
+				<label class="ap-row" title="Decide the next transition early and plan it. Off: AutoPlay hands off in the last ~16 s only.">
+					<input
+						type="checkbox"
+						data-testid="ap-early"
+						checked={uiPrefs.auto_play_early_planning}
+						onchange={async (e) => {
+							const input = e.currentTarget as HTMLInputElement;
+							const result = await runPerformanceCommandFromUi({ type: 'auto_play_early', enabled: input.checked });
+							if (!result.ok) input.checked = uiPrefs.auto_play_early_planning;
+						}}
+					/>
+					<span>Plan the handoff early</span>
+				</label>
+				<label class="ap-row" title="Soft target: seconds of the master before AutoPlay looks for a mix-out point. Short tracks decide earlier.">
+					Decide after (s)
+					<input
+						type="number"
+						data-testid="ap-decide-after"
+						min={DECIDE_AFTER_MIN_S}
+						max={DECIDE_AFTER_MAX_S}
+						step="15"
+						value={uiPrefs.auto_play_decide_after_s}
+						disabled={!uiPrefs.auto_play_early_planning}
+						onchange={async (e) => {
+							const input = e.currentTarget as HTMLInputElement;
+							const result = await runPerformanceCommandFromUi({ type: 'auto_play_early', decide_after_s: input.valueAsNumber });
+							if (!result.ok) input.value = String(uiPrefs.auto_play_decide_after_s);
+						}}
+					/>
+				</label>
+				<button
+					type="button"
+					class="ap-row"
+					data-testid="ap-decide-now"
+					title={rustCommandUnsupported('auto_play_decide_now')
+						? 'Not available with the Rust engine yet: it does not run planned transitions'
+						: 'Pick the next track and plan the transition now, from the next good mix-out point'}
+					disabled={!uiPrefs.auto_play_enabled ||
+						!uiPrefs.auto_play_early_planning ||
+						autoPlayDecision.phase === 'running' ||
+						rustCommandUnsupported('auto_play_decide_now')}
+					onclick={() => void runPerformanceCommandFromUi({ type: 'auto_play_decide_now' })}
+				>Decide now</button>
+				<label class="ap-row" title="What the next planned transition aims for: the planner tries this intent's styles first">
+					Intent
+					<select
+						data-testid="ap-next-intent"
+						value={autoPlayNextState.intent}
+						onchange={(event) => (autoPlayNextState.intent = event.currentTarget.value as TransitionIntent)}
+					>
+						{#each TRANSITION_INTENTS as intent (intent)}
+							<option value={intent}>{intent}</option>
+						{/each}
+					</select>
+				</label>
 				<label class="ap-row">
 					<input
 						type="checkbox"
@@ -1589,6 +1662,13 @@
 	}
 	.ap-wrap:not(.on) > .bsm-toggle:first-child {
 		border-right: none;
+	}
+	.ap-next-path {
+		align-self: center;
+		margin-inline-start: 4px;
+		font-size: 10px;
+		white-space: nowrap;
+		opacity: 0.8;
 	}
 	.ap-next-btn {
 		border-top-left-radius: 0;

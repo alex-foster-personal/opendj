@@ -24,6 +24,8 @@
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
+	import { devicePixelRatioNow, startDevicePixelRatioWatch } from '$lib/ui/device-pixel-ratio.svelte';
 	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
 	import {
 		blitJogRadial,
@@ -128,11 +130,18 @@
 	$effect(() => {
 		if (deck.audible) tracePlayhead('jog', deck.deck_id, jogPositionMs);
 	});
+	// Listen for density changes from mount, before the tick below is ever read.
+	startDevicePixelRatioWatch();
 	const dialCircumference = 2 * Math.PI * 46;
+	// The progress tick turns once per TRACK, so its rim end crosses a device
+	// pixel only every second or so. Snapping to that pixel step
+	// (snapFractionToPixels) keeps the trail and tick attributes still between
+	// steps instead of rewriting both every frame. The rim is r=46 of the
+	// 100-unit viewBox drawn at the 104 px .dial-wrap.
 	const tickAngle: number = $derived(
 		deck.duration_ms === null || deck.duration_ms <= 0
 			? 0
-			: Math.min(1, Math.max(0, jogPositionMs / deck.duration_ms)) * 360
+			: snapFractionToPixels(jogPositionMs / deck.duration_ms, dialCircumference * 1.04 * devicePixelRatioNow()) * 360
 	);
 
 	// Pin 67a4ce88805f: an obviously-playing deck needs a fast white line

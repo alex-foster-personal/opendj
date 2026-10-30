@@ -38,6 +38,7 @@ setting change for the owner.
   },
   "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] },
   "platformAutomerge": false,
+  "rebaseWhen": "conflicted",
   "packageRules": [
     {
       "description": "Group non-major updates per ecosystem so a week is ~4 PRs, not 40",
@@ -67,6 +68,9 @@ Notes:
   `pip_requirements` (`requirements*.txt`), `npm` (pnpm lockfiles),
   `cargo`, `github-actions`. Verify on the first run's Dependency Dashboard that all five
   appear. If one is missing, the ecosystem is unmanaged.
+- `rebaseWhen: "conflicted"`: Renovate rebases a branch only when it conflicts, never just
+  because the base moved. The live `renovate.json` is the source of truth for this policy;
+  why: [ADR-NEW-renovate-rebases-only-on-conflict](../decisions/ADR-NEW-renovate-rebases-only-on-conflict.md).
 - `platformAutomerge: false` makes Renovate itself confirm the checks are green before
   merging. Required-status-check enforcement (branch protection) is not available for
   private repos on GitHub Free, so GitHub's native auto-merge would have nothing to wait

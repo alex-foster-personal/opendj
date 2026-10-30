@@ -119,6 +119,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -133,6 +134,7 @@ from apps.stems.artifacts import (
     StemBundleNotFoundError,
     load_stem_bundle,
 )
+from apps.stems.bundle_lock import held_for_read
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 
@@ -300,7 +302,10 @@ def _bundle_source_label(bundle: StemBundle) -> str:
     conflict-update on -- always built from
     :data:`apps.lyrics.store.STEM_COVERAGE_SOURCE_PREFIX`, never a
     hardcoded literal, so the two never drift apart."""
-    identity = vfrom_stems.bundle_stem_identity(bundle)
+    return _source_label(bundle, vfrom_stems.bundle_stem_identity(bundle))
+
+
+def _source_label(bundle: StemBundle, identity: str) -> str:
     return f"{store.STEM_COVERAGE_SOURCE_PREFIX}{bundle.layout}:{identity}"
 
 
@@ -387,7 +392,13 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
         return None
     try:
         live_identity = vfrom_stems.bundle_stem_identity(bundle)
-        stem_identity_matches = params.get("bundle_stem_sha256") == live_identity
+        # The identity is names, sizes and mtimes, which a same-codec
+        # republish on a coarse clock can repeat, so the entry must also name
+        # this generation's directory and part inodes (Codex on #6821).
+        stem_identity_matches = (
+            params.get("bundle_stem_sha256") == live_identity
+            and params.get("bundle_generation_marks") == vfrom_stems.generation_marks_record(bundle)
+        )
     except OSError as exc:
         # Same second-stat-pass hazard as ``_bundle_source_label`` (see its
         # comment in ``_scan_candidate``): the bundle loaded fine earlier,
@@ -422,17 +433,73 @@ def _cached_coverage_pct(data_dir: Path, stable_id: str, bundle: StemBundle) -> 
 
 
 def coverage_pct_for_bundle(
-    data_dir: Path, stable_id: str, bundle: StemBundle
+    data_dir: Path, stable_id: str, bundle: StemBundle, *, expected_source: str
 ) -> tuple[float, bool]:
+    """(coverage_pct, reused_cache), measured as :func:`publish_coverage_for_bundle` measures it."""
+    coverage_pct, reused, _ = publish_coverage_for_bundle(
+        data_dir, stable_id, bundle, expected_source=expected_source, publish=lambda _pct: None
+    )
+    return coverage_pct, reused
+
+
+def publish_coverage_for_bundle(
+    data_dir: Path,
+    stable_id: str,
+    bundle: StemBundle,
+    *,
+    expected_source: str,
+    publish: Callable[[float], Any],
+) -> tuple[float, bool, Any]:
     """(coverage_pct, reused_cache). Never reimplements the coverage maths:
     reuses a compatible vocal-cache entry, else derives it via
     :func:`apps.vocals.from_stems.derive_worker_result` (same code path as
-    ``python -m apps.vocals from-stems``)."""
-    cached = _cached_coverage_pct(data_dir, stable_id, bundle)
-    if cached is not None:
-        return cached, True
-    result = vfrom_stems.derive_worker_result(bundle)
-    return float(result["coverage_pct"]), False
+    ``python -m apps.vocals from-stems``).
+
+    Decodes outside the bundle lock (Codex on #6821) but never across a swap
+    (Codex on #6820): under the lock it first re-reads the on-disk bundle's
+    identity, since ``bundle`` and ``expected_source`` were captured by the
+    unlocked scan and a publisher that replaced the bundle in between would
+    otherwise have its stems measured and written under the scanned
+    generation's label (Codex on #6820);
+    :func:`apps.vocals.from_stems.derive_from_generation` then proves the
+    decode read that same generation. A changed identity raises
+    ``RuntimeError``, which the write loop reports as a per-track failure;
+    the next run scans the new generation.
+
+    ``publish`` is called with the coverage under the same lock hold as the
+    last identity check, on the cached path and the derived one alike, and
+    its return value is the third element: a swap landing after that check
+    and before a separate write would store the old generation's verdict
+    while the new stems are live, and the library rows read ``lyric_verdict``
+    without comparing its source to the bundle (Codex on #6820)."""
+    with held_for_read(data_dir, stable_id):
+        try:
+            identity = vfrom_stems.bundle_stem_identity(bundle)
+        except OSError as exc:
+            raise RuntimeError(
+                f"stem bundle for {stable_id!r} could not be re-checked under the lock: {exc}"
+            ) from exc
+        if _source_label(bundle, identity) != expected_source:
+            raise RuntimeError(
+                f"stem bundle for {stable_id!r} changed since the scan; left for the next run"
+            )
+        cached = _cached_coverage_pct(data_dir, stable_id, bundle)
+        if cached is not None:
+            return cached, True, publish(cached)
+
+    def publish_derived(result: dict[str, Any]) -> tuple[float, Any]:
+        coverage_pct = float(result["coverage_pct"])
+        return coverage_pct, publish(coverage_pct)
+
+    try:
+        coverage_pct, published = vfrom_stems.derive_from_generation(
+            data_dir, stable_id, bundle, identity, publish=publish_derived
+        )
+    except vfrom_stems.BundleChangedError as exc:
+        raise RuntimeError(
+            f"stem bundle for {stable_id!r} changed while it was measured; left for the next run"
+        ) from exc
+    return coverage_pct, False, published
 
 
 #-----------------------------------------------------------------------------
@@ -551,9 +618,9 @@ def _write_candidate(
     per-track failure (filesystem, store, or malformed-cache) -- those come
     back as :attr:`_WriteOutcome.fail_reason` so the caller can keep
     processing the REST of the run instead of aborting it."""
-    try:
-        coverage_pct, reused = coverage_pct_for_bundle(data_dir, stable_id, bundle)
-        written = store.upsert_stem_coverage_verdict(
+
+    def upsert(coverage_pct: float) -> bool:
+        return store.upsert_stem_coverage_verdict(
             conn,
             stable_id=stable_id,
             verdict=coverage_verdict(coverage_pct),
@@ -561,6 +628,13 @@ def _write_candidate(
             source=expected_source,
             pipeline_version=STEM_COVERAGE_PIPELINE_VERSION,
             computed_at=sync_stamp.canonical_now(),
+        )
+
+    try:
+        # The upsert runs under the bundle lock that proved the generation,
+        # so a swap cannot land between that proof and the row (Codex on #6820).
+        _, reused, written = publish_coverage_for_bundle(
+            data_dir, stable_id, bundle, expected_source=expected_source, publish=upsert
         )
     except (store.LyricStoreError, sqlite3.Error, RuntimeError, ValueError, OSError) as exc:
         return _WriteOutcome(fail_reason=f"{type(exc).__name__}: {exc}")
@@ -692,5 +766,6 @@ __all__ = [
     "coverage_pct_for_bundle",
     "format_report",
     "load_reserved_ids",
+    "publish_coverage_for_bundle",
     "report_to_dict",
 ]

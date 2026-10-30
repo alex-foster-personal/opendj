@@ -120,6 +120,13 @@ def _pitch_follows_tempo(entry: dict[str, Any]) -> bool:
     raise RescoreError(f"{entry['pair_id']} {entry['candidate_id']}: recorded key_shift says neither way")
 
 
+def _bass_hit_from(
+    entry: dict[str, Any], plan: TransitionPlan, out_p: TrackProfile, layout: RenderLayout
+) -> float | None:
+    hit = (entry["plan"].get("bass_entry") or {}).get("hit_plan_bar")
+    return None if hit is None else _render_s(float(hit), plan, out_p, layout)
+
+
 def clip_context(
     entry: dict[str, Any], profiles: Profiles, frames: int, path_map: tuple[str, str] | None = None
 ) -> RenderContext:
@@ -160,6 +167,7 @@ def clip_context(
         out_natural=natural,
         in_natural=in_natural,
         in_bass_entry_s=entry_s,
+        bass_hit_s=_bass_hit_from(entry, plan, out_p, layout),
         out_natural_unknown_reason=f"outgoing source {source.name} is not on this machine",
         steps=steps,
         seams_s=seams,

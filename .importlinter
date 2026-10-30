@@ -203,6 +203,7 @@ dynamic_loaders =
     scripts.lyrics_stem_coverage
     scripts.modal_align_spike
     scripts.modal_beat_farm
+    scripts.modal_vocal_farm
     scripts.native10_offline_acceptance
     scripts.pytest_tree_read_census
     scripts.selection_reach_census

@@ -17,6 +17,7 @@ from apps.database.column_docs_sync_gate import SYNC_GATE_TABLE_DOC
 from apps.database.enrollment_table_docs import ENROLLMENT_TABLE_DOCS
 
 TABLE_DOCS: dict[str, str] = {
+    "pair_transitions": "The saved transition for one ordered pair of tracks, as a plan. Most recent wins. Machine-local.",
     # ----- apps.shared.state.schema.TABLES (the schema authority) --------
     "tracks": (
         "Canonical per-track identity row: one per song, regardless of how "

@@ -34,6 +34,7 @@
     ]
   },
   "platformAutomerge": false,
+  "rebaseWhen": "conflicted",
   "packageRules": [
     {
       "description": "Majors still wait for a tick on the Dependency Dashboard; minor, patch and lockfile maintenance open on their own (JIK, Wed 1 Oct 2026)",

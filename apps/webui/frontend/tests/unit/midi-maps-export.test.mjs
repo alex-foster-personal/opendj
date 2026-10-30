@@ -52,7 +52,7 @@ test('the export holds every registry map, in registry order', async () => {
 	// bindings, so an empty or partial registry cannot pass as "in sync".
 	assert.deepEqual(
 		doc.maps.map((m) => m.nameMatch),
-		['DDJ-FLX10', 'DDJ-400', PRO, CLASSIC, 'DDJ-FLX4']
+		['DDJ-FLX10', 'DDJ-400', PRO, CLASSIC, 'DDJ-FLX4', 'XDJ-RX3', 'XDJ-AZ']
 	);
 	for (const m of doc.maps) assert.ok(m.bindings.length > 0, `${m.nameMatch} has no bindings`);
 });

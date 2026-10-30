@@ -36,6 +36,7 @@
 		readPalette
 	} from '../wave/cues';
 	import { vocalAlpha } from '../wave/render';
+	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
 	import { sectionsApiFor, type SectionsApi } from '../wave/sections-lazy.svelte';
 
 	const W = 165;
@@ -96,15 +97,19 @@
 		return indexLyricWords(entry.track.words);
 	});
 
-	/** Clamped playhead offset in CSS px, or null when off-deck / unusable. */
-	const nowX: number | null = $derived(
-		nowRatio === null || !Number.isFinite(nowRatio)
-			? null
-			: Math.min(1, Math.max(0, nowRatio)) * W
-	);
-
 	let canvas: HTMLCanvasElement | undefined = $state(undefined);
 	let dpr = $state(1);
+
+	/**
+	 * Clamped playhead offset in CSS px, or null when off-deck / unusable.
+	 *
+	 * Snapped to the device pixel grid (see snapFractionToPixels): otherwise a
+	 * playing deck rewrote the marker's `left` every frame and repainted the
+	 * library table row with it.
+	 */
+	const nowX: number | null = $derived(
+		nowRatio === null || !Number.isFinite(nowRatio) ? null : snapFractionToPixels(nowRatio, W * dpr) * W
+	);
 	let hoverX: number | null = $state(null);
 
 	const title: string | null = $derived(vocalsStatusTitle(vocals));

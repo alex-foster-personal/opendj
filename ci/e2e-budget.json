@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "why": [
+    "Runner-minute budget for the e2e gate's Playwright work per PR head and per queue draft",
+    "(TEST-BUDGET round 3, Fri 30 Oct 2026; the maintainer's design change the same day: a HARD cap of 10",
+    "runner minutes per run across pytest, e2e and the fixed jobs, of which the e2e share on a",
+    "frontend PR is about 4). scripts/ci_e2e_selection.py prices its selection with the model",
+    "below and takes the best-ranked root specs and named gates until the budget is spent;",
+    "what it drops is listed under `budget` in e2e-selection.json so an escape can be attributed.",
+    "JSON, not YAML, because the scope job runs on the runner's bare python3 (no PyYAML);",
+    "the shape mirrors ci/test-budget.yml (round 0). Decision record:",
+    "(private path)."
+  ],
+  "runner_minutes": {
+    "pr_head": 4,
+    "queue_draft": 4
+  },
+  "model": {
+    "comment": [
+      "planned minutes = root_overhead_min + root spec seconds / 60 * min_per_recorded_minute",
+      "+ per kept named gate: gate_overhead_min + its recorded seconds / 60 * min_per_recorded_minute.",
+      "Overheads are the engine and Vite boots the step pays before its first test; the recorded",
+      "seconds come from the footprint map, measured on the host that built it. Both overheads",
+      "are first estimates from the gate's logs (root boot about 60 s, a gate's own engine about",
+      "30 s) and are the next thing to fit on real runs."
+    ],
+    "root_overhead_min": 1.0,
+    "gate_overhead_min": 0.5,
+    "min_per_recorded_minute": 1.0
+  },
+  "static_gates_min": {
+    "comment": [
+      "Estimated runner minutes per named gate that has no footprint and no recorded seconds",
+      "(production builds, a no-server spec, a shell script), so an unmeasured gate is never",
+      "free to the budget. First estimates from gate job logs, to be replaced by measurement."
+    ],
+    "webkit": 1.5,
+    "deckload-smoke": 1.0,
+    "stretch": 0.5,
+    "master12": 0.5,
+    "onboarding": 3.0
+  },
+  "strong": [
+    "always run (ci/e2e-always-run.txt)",
+    "changed spec"
+  ],
+  "rank": [
+    "overlap: the number of changed files the spec or gate executed, descending",
+    "seconds: the spec's or gate's recorded seconds, ascending",
+    "unmeasured specs and gates rank after every overlap"
+  ]
+}

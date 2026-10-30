@@ -108,7 +108,10 @@
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/performance-playwright-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/comment-hotkey-gate-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-preview-cue-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-preview-cue-data-home/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/transition-in-cue-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/autoplay-error-hunt-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-manifest.json", "kind": "build_output", "data_class": null},
@@ -151,5 +154,6 @@
 {"pattern": "junit-shard-*.xml", "kind": "build_output", "data_class": null},
 {"pattern": "apps/desktop/src-tauri/junit.xml", "kind": "build_output", "data_class": null},
 {"pattern": "apps/audio-engine/junit.xml", "kind": "build_output", "data_class": null},
+{"pattern": "cases.pulled.json", "kind": "build_output", "data_class": null},
 {"pattern": "scripts/bench/tryer_calibration/sessions/", "kind": "user_data", "data_class": "stem-experiments"}
 ]

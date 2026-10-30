@@ -61,6 +61,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
+
 jobs:
   macos-native-companion:
     name: macOS native companion wheel
@@ -84,7 +90,7 @@ jobs:
       && (github.event_name == 'push' || github.event_name == 'pull_request'))
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           # Persistent self-hosted workspace contract (tests/scripts/test_ci_workspace_reuse.py).
@@ -156,10 +162,9 @@ jobs:
             'import _rb_waveform_native as n, numpy as np; assert int(np.__version__.partition(".")[0]) >= 2; assert n.bands_payload({"low": np.array([0.0, 1.0])}, 100)["length"] == 2'
 
       - name: Upload macOS production wheel
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: music-dj-tools-macos-arm64
           path: dist/music_dj_tools-*.whl
           if-no-files-found: error
-          retention-days: 2

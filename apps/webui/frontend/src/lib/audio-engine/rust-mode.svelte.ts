@@ -120,6 +120,7 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'master_delay_ms',
 	'auto_play_next_arm',
 	'auto_play_next_cancel',
+	'auto_play_decide_now',
 	'rescue_resume',
 	'rescue_stop_all',
 	'pairing_snapshot_save'

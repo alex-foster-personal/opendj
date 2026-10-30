@@ -18,7 +18,11 @@ coverage fell under the fast tier's floor, and main locked itself red
 Subcommands (standard library only, so a bare runner `python3` can run them):
 
 - `build`: union the five `test-durations-shard-N` artifacts of the newest successful
-  main-push `ci.yml` run that still has all five, and write the merged ledger. When no
+  main-push `ci.yml` run that still has all five, and write the merged ledger. The runs
+  are listed through the GitHub API; the artifacts are read from Cloudflare R2
+  (`scripts/r2_artifact.py`, key `ci/<repo>/<run_id>/<name>.tar.gz`), where CI uploads
+  them since GitHub blocked artifact uploads on Fri 30 Oct 2026. An absent object is a
+  missing shard; any other R2 failure fails the build, it is never read as missing. When no
   run qualifies it writes nothing and keeps the published ledger, green with a warning
   while that ledger is under `MAX_LEDGER_AGE_DAYS` old, red beyond it.
 - `publish`: store a built ledger on `ci-data` (force-moved, no history kept).
@@ -45,16 +49,18 @@ from __future__ import annotations
 
 import argparse
 import base64
-import io
 import json
 import math
 import shutil
 import subprocess
 import sys
-import zipfile
+import tarfile
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
+
+from scripts import r2_artifact
 
 SHARDS = 5
 SHARD_ARTIFACT = "test-durations-shard-{n}"
@@ -80,6 +86,25 @@ FETCH_ATTEMPTS = 2
 Api = Callable[[str], bytes]
 # The one write seam: (method, path, JSON body) -> response body.
 Send = Callable[[str, str, dict], bytes]
+
+
+class ArtifactStore(Protocol):
+    """The artifact read seam, shaped like `scripts.r2_artifact` with credentials bound:
+    `exists` is False only for an absent object and raises `R2Error` on anything else."""
+
+    def exists(self, key: str) -> bool: ...
+    def read_member(self, key: str, member: str) -> bytes: ...
+
+
+class R2Store:
+    """`scripts.r2_artifact` on the env credentials (R2_*), read per call so a subcommand
+    that never touches an artifact (resolve, fetch, publish) needs none."""
+
+    def exists(self, key: str) -> bool:
+        return r2_artifact.exists(r2_artifact._creds_from_env(), key)
+
+    def read_member(self, key: str, member: str) -> bytes:
+        return r2_artifact.read_member(r2_artifact._creds_from_env(), key, member)
 
 
 class LedgerError(Exception):
@@ -150,41 +175,45 @@ def _gh_json(api: Api, path: str) -> dict:
     return json.loads(api(path))
 
 
-def _live_artifact(repo: str, run_id: int, name: str, api: Api = _gh) -> int | None:
-    """The id of a run's unexpired artifact called `name`, or None. Filtered by name, so
-    a run with more than one page of artifacts cannot hide it."""
-    listing = _gh_json(api, f"repos/{repo}/actions/runs/{run_id}/artifacts?name={name}&per_page=100")
-    live = [a["id"] for a in listing.get("artifacts", []) if a.get("name") == name and not a.get("expired")]
-    return live[0] if live else None
+def _shard_keys(repo: str, run_id: int) -> list[str]:
+    return [r2_artifact.object_key(repo, SHARD_ARTIFACT.format(n=n), str(run_id)) for n in range(1, SHARDS + 1)]
 
 
-def _artifact_file(repo: str, artifact_id: int, api: Api = _gh) -> object:
-    blob = api(f"repos/{repo}/actions/artifacts/{artifact_id}/zip")
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-        try:
-            return json.loads(archive.read(LEDGER_FILE))
-        except KeyError as exc:
-            raise LedgerError(f"artifact {artifact_id} has no {LEDGER_FILE}") from exc
+def _artifact_present(store: ArtifactStore, key: str) -> bool:
+    """True or False for present or absent (expired under the bucket's lifecycle rule, or
+    never uploaded); any other R2 failure raises, never reads as absent."""
+    try:
+        return store.exists(key)
+    except r2_artifact.R2Error as exc:
+        raise LedgerError(f"R2 lookup of {key} failed: {exc}") from exc
 
 
-def build(repo: str, out: Path, seed_path: Path, api: Api = _gh) -> str:
+def _artifact_file(store: ArtifactStore, key: str) -> bytes:
+    try:
+        return store.read_member(key, LEDGER_FILE)
+    except r2_artifact.R2Error as exc:
+        raise LedgerError(f"R2 read of {key}:{LEDGER_FILE} failed: {exc}") from exc
+
+
+def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: ArtifactStore | None = None) -> str:
+    store = R2Store() if store is None else store
     seed = _validate(_read_json(seed_path), f"seed {seed_path}")
     runs = _gh_json(
         api,
         f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
         f"?branch=main&event=push&status=success&per_page={RUNS_TO_SCAN}",
     ).get("workflow_runs", [])
-    names = [SHARD_ARTIFACT.format(n=n) for n in range(1, SHARDS + 1)]
     skipped: list[str] = []
     for run in runs:
-        found = [_live_artifact(repo, run["id"], name, api) for name in names]
-        ids = [artifact_id for artifact_id in found if artifact_id is not None]
-        if len(ids) != len(names):
+        keys = _shard_keys(repo, run["id"])
+        if not all(_artifact_present(store, key) for key in keys):
             skipped.append(f"run {run['id']}: shard artifact(s) missing or expired")
             continue
+        # Read outside the try: an R2 failure is not a bad run, it fails the build.
+        blobs = [_artifact_file(store, key) for key in keys]
         # One bad run (a short run, a repeated test) must not hide an older good one.
         try:
-            ledger = merge([_artifact_file(repo, artifact_id, api) for artifact_id in ids])
+            ledger = merge([json.loads(blob) for blob in blobs])
             check_rows(ledger, seed)
         except LedgerError as exc:
             skipped.append(f"run {run['id']}: {exc}")
@@ -367,7 +396,13 @@ def _bounded_gh(path: str) -> bytes:
     return _gh(path, timeout=FETCH_GH_TIMEOUT_S)
 
 
-def main(argv: list[str] | None = None, api: Api = _gh, send: Send = _gh_send, now: datetime | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    api: Api = _gh,
+    send: Send = _gh_send,
+    now: datetime | None = None,
+    store: ArtifactStore | None = None,
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     p_build = sub.add_parser("build")
@@ -388,7 +423,7 @@ def main(argv: list[str] | None = None, api: Api = _gh, send: Send = _gh_send, n
     try:
         if args.command == "build":
             try:
-                print(build(args.repo, args.out, args.seed, api))
+                print(build(args.repo, args.out, args.seed, api, store))
             except LedgerError as exc:
                 # Nothing is written to --out, so the workflow's publish step skips.
                 print(keep_published(args.repo, now or datetime.now(UTC), str(exc), api))
@@ -398,7 +433,7 @@ def main(argv: list[str] | None = None, api: Api = _gh, send: Send = _gh_send, n
             print(resolve(args.repo, args.seed, api))
         else:
             print(fetch(args.repo, args.ref, args.dest, _bounded_gh if api is _gh else api))
-    except (LedgerError, OSError, ValueError, KeyError, zipfile.BadZipFile, subprocess.TimeoutExpired) as exc:
+    except (LedgerError, OSError, ValueError, KeyError, tarfile.TarError, EOFError, subprocess.TimeoutExpired) as exc:
         # Every failure, expected or not, reaches the log as an annotation that names it.
         print(f"::error title=durations ledger::{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

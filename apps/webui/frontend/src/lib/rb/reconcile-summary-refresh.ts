@@ -37,7 +37,10 @@ export async function readReconcileSummaryOnce(
 			counts: {
 				nonBroken: summary.total_tracks - summary.total_broken,
 				broken: summary.total_broken,
-				availability: summary.availability ?? 'unknown'
+				// The engine sends null when it had nothing to scan. A missing
+				// field is not that: it passes through as undefined so the
+				// All Tracks badge reads it as malformed (LIBM-184).
+				availability: summary.availability === null ? 'unknown' : summary.availability
 			},
 			// A failed rescan leaves the last good counts, which are then
 			// unchecked: the light says so instead of quoting them as current.

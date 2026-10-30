@@ -36,7 +36,7 @@ from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from typing import Any, NamedTuple
 
-from apps.autodj.profile import TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
+from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
 from apps.autodj.styles import STYLES
 
 #: Per-deck controls a plan may set or ramp, and the bus command each becomes.
@@ -47,6 +47,11 @@ CONTROLS: frozenset[str] = DECK_CONTROLS | MIXER_CONTROLS
 ACTIONS: frozenset[str] = frozenset({"play", "stop", "master"})
 TEMPO_MODES: frozenset[str] = frozenset({"sync_to_out", "none"})
 ANCHORS: frozenset[str] = frozenset({"window", "next_phrase", "next_bar"})
+#: D13: plan shapes whose loudness dip before the incoming bass hit is intended (a scorer may skip its loudness-loss
+#: check for them); every other plan carries none.
+SHAPES: frozenset[str] = frozenset({"lull_then_drop"})
+#: The style each shape is built by: the shape is explicit on the plan, never implied by its style alone.
+SHAPE_STYLES: Mapping[str, str] = {"lull_then_drop": "lull_then_drop"}
 
 #: How far ahead of the outgoing playhead a plan's first event must be for it to still schedule.
 OUT_POSITION_MARGIN_BARS = 0.5
@@ -59,9 +64,10 @@ EARLIEST_BAR = -1.0
 PLAY_LEAD_BARS = 0.25
 #: Fader and EQ above these count as "the deck is heard" in the simulation.
 AUDIBLE_FADER = 0.3
+#: ADR-0135: the trim every deck loads at (apps.autodj.profile.DECK_LOAD_TRIM_DB), as a gain.
+LOAD_GAIN = 10.0 ** (DECK_LOAD_TRIM_DB / 20.0)
 # The page's silence threshold on a channel's gain (agent-plan.ts SILENCE_GAIN_EPSILON): below it a channel is silent.
 SILENT_GAIN = 1e-4
-AUDIBLE_LOW = 0.3
 #: Samples per bar on the grid that silence is checked on before the flips inside it are bisected.
 SILENCE_SAMPLES_PER_BAR = 32
 #: Samples per bar inside a ramp's span: a ramp crosses the audible floor where its value does, so its span is finer.
@@ -72,6 +78,9 @@ BOUNDARY_BISECTIONS = 40
 SILENCE_EPSILON_BARS = 1e-9
 STRONG_BASS = 0.5
 FLAT = 0.5
+#: D14: two basslines clash only when both lows are NEAR FULL: within 3 dB of flat on the EQ law (0.5 flat, 0 = -26 dB,
+#: linear in dB). the maintainer's crossover keeps both partly present for a few bars on purpose; that is not a clash.
+NEAR_FULL_LOW = round(FLAT - FLAT * 3.0 / 26.0, 6)
 #: The crossfader's middle, and how far toward the other side a channel stays heard: a
 #: side-A channel is cut at 0.9 and up, a side-B channel at 0.1 and down.
 CROSSFADER_CENTER = 0.5
@@ -137,6 +146,10 @@ class TransitionPlan:
     anchor: str = "window"
     intent: str | None = None
     rationale: str | None = None
+    #: D11: where the incoming bass lands (``BassEntry``), as the proposer measured it; None when not recorded.
+    bass_entry: BassEntry | None = None
+    #: D13: an intended shape (one of ``SHAPES``), or None.
+    shape: str | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -163,6 +176,30 @@ class TransitionPlan:
             "events": [event.to_json() for event in self.events],
             "intent": self.intent,
             "rationale": self.rationale,
+            "bass_entry": None if self.bass_entry is None else self.bass_entry.to_json(),
+            "shape": self.shape,
+        }
+
+
+@dataclass(frozen=True)
+class BassEntry:
+    """D11: the incoming track's bass hit as the proposer placed it, so a reviewer can draw it on the lanes."""
+
+    #: The incoming track's own bar where its steady bass starts, or None when unknown (no bar_bass series).
+    in_bar: int | None
+    #: That bar on the plan clock (0 when the window starts in the bass), or None when unknown.
+    entry_plan_bar: float | None
+    #: The plan bar the bass lands on audibly: the outgoing deck gives way at or after it, never before.
+    hit_plan_bar: float
+    #: How the entry was found, or why it is unknown.
+    note: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "in_bar": self.in_bar,
+            "entry_plan_bar": self.entry_plan_bar,
+            "hit_plan_bar": self.hit_plan_bar,
+            "note": self.note,
         }
 
 
@@ -291,6 +328,27 @@ def _optional_text(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _bass_entry(document: Any) -> BassEntry | None:
+    if document is None:
+        return None
+    where = "bass_entry"
+    if not isinstance(document, Mapping):
+        raise PlanError(f"{where} must be an object or null")
+    in_bar = document.get("in_bar")
+    entry = document.get("entry_plan_bar")
+    note = document.get("note")
+    if not isinstance(note, str) or not note:
+        raise PlanError(f"{where}.note must say how the entry was found")
+    if (in_bar is None) != (entry is None):
+        raise PlanError(f"{where}.in_bar and entry_plan_bar are known together or not at all")
+    return BassEntry(
+        in_bar=None if in_bar is None else _int(in_bar, f"{where}.in_bar", minimum=1),
+        entry_plan_bar=None if entry is None else _number(entry, f"{where}.entry_plan_bar"),
+        hit_plan_bar=_number(document.get("hit_plan_bar"), f"{where}.hit_plan_bar"),
+        note=note,
+    )
+
+
 def parse_plan(document: Any) -> TransitionPlan:
     """A :class:`TransitionPlan` from its JSON, or :class:`PlanError` naming the field."""
     if not isinstance(document, Mapping):
@@ -305,7 +363,10 @@ def parse_plan(document: Any) -> TransitionPlan:
     anchor = document.get("anchor", "window")
     if anchor not in ANCHORS:
         raise PlanError(f"anchor must be one of {sorted(ANCHORS)}, got {anchor!r}")
-    known = {"out", "in", "style", "events", "tempo", "anchor", "intent", "rationale"}
+    known = {"out", "in", "style", "events", "tempo", "anchor", "intent", "rationale", "bass_entry", "shape"}
+    shape = document.get("shape")
+    if shape is not None and shape not in SHAPES:
+        raise PlanError(f"shape must be one of {sorted(SHAPES)} or null, got {shape!r}")
     parsed = TransitionPlan(
         out=_side(document.get("out"), "out"),
         in_=_side(document.get("in"), "in"),
@@ -315,6 +376,8 @@ def parse_plan(document: Any) -> TransitionPlan:
         anchor=str(anchor),
         intent=_optional_text(document.get("intent")),
         rationale=_optional_text(document.get("rationale")),
+        bass_entry=_bass_entry(document.get("bass_entry")),
+        shape=shape,
         extra={key: value for key, value in document.items() if key not in known},
     )
     return parsed
@@ -396,6 +459,8 @@ class _Replay:
         self._events = events
         self._lanes: dict[tuple[int | None, str], tuple[list[PlanEvent], list[float]]] = {}
         self._transport: dict[int, list[tuple[float, bool]]] = {}
+        #: Per lane and start value, what each event's ramp starts from, so a sample never re-walks the lane.
+        self._begins: dict[tuple[int | None, str, float], list[float]] = {}
 
     def value(self, deck: int | None, control: str, at: float, start: float) -> float:
         key = (deck, control)
@@ -403,7 +468,31 @@ class _Replay:
             lane = _lane(self._events, deck, control)
             self._lanes[key] = (lane, [e.at_bar for e in lane])
         lane, bars = self._lanes[key]
-        return _lane_value(lane, bisect_right(bars, at), at, start)
+        count = bisect_right(bars, at)
+        if count == 0:
+            return start
+        last = lane[count - 1]
+        target = last.target()
+        if last.kind == "set" or at >= last.at_bar + last.over_bars:
+            return target
+        begin = self._begins_of(deck, control, lane, start)[count - 1]
+        return begin + (target - begin) * (at - last.at_bar) / last.over_bars
+
+    def _begins_of(self, deck: int | None, control: str, lane: list[PlanEvent], start: float) -> list[float]:
+        key = (deck, control, start)
+        if key not in self._begins:
+            begins: list[float] = []
+            for index, event in enumerate(lane):
+                previous = lane[index - 1] if index else None
+                begin = start
+                if previous is not None:
+                    target = previous.target()
+                    done = previous.kind == "set" or event.at_bar >= previous.at_bar + previous.over_bars
+                    span = (event.at_bar - previous.at_bar) / previous.over_bars if not done else 1.0
+                    begin = target if done else begins[-1] + (target - begins[-1]) * span
+                begins.append(begin)
+            self._begins[key] = begins
+        return self._begins[key]
 
     def playing(self, deck: int, at: float, start: bool) -> bool:
         if deck not in self._transport:
@@ -430,7 +519,11 @@ def first_dispatch_bar(plan: TransitionPlan) -> float:
     previous: dict[int | None, float] = {}
     for event in sorted(plan.events, key=lambda e: e.at_bar):
         is_transport = event.kind == "do" and event.name in ("play", "stop")
-        bars.append(launch_bar(event.at_bar, previous.get(event.deck)) if is_transport and event.name == "play" else event.at_bar)
+        bars.append(
+            launch_bar(event.at_bar, previous.get(event.deck))
+            if is_transport and event.name == "play"
+            else event.at_bar
+        )
         previous.update({event.deck: event.at_bar} if is_transport else {})
     return min(bars, default=0.0)
 
@@ -627,7 +720,11 @@ def _terminal_handover(plan: TransitionPlan) -> tuple[float, int] | None:
     """(bar, plan index) of the plan's LAST ``master`` handover to the incoming deck, the one that leaves it leading
     (Sol P1 #7594: an earlier one may be handed back), or None when it has none. Same-bar events keep plan order."""
     return max(
-        ((e.at_bar, i) for i, e in enumerate(plan.events) if e.kind == "do" and e.name == "master" and e.deck == plan.in_.deck),
+        (
+            (e.at_bar, i)
+            for i, e in enumerate(plan.events)
+            if e.kind == "do" and e.name == "master" and e.deck == plan.in_.deck
+        ),
         default=None,
     )
 
@@ -843,18 +940,29 @@ def _in_bar(
     tempo heard before the bar counts and one after it does not. The clock deck's own tempo at that sample stretches
     the clock bar, so the grid advances by the rate divided by it.
     """
+    return _in_bars(plan, plan_bar, base, scale, clock_pitch, in_pitch)[plan_bar]
+
+
+def _in_bars(
+    plan: TransitionPlan, last_bar: int, base: float, scale: float, clock_pitch: float, in_pitch: float
+) -> list[int]:
+    """:func:`_in_bar` for every plan bar 0..``last_bar``, in one pass over the samples."""
+    replay = _Replay(plan.events)
+    tempo_bars = [
+        e.at_bar for e in plan.events if e.kind in ("set", "ramp") and e.deck == plan.in_.deck and e.name == "tempo"
+    ]
+    first_tempo = min(tempo_bars, default=math.inf)
     consumed = 0.0
-    for sample in range(plan_bar * _BAR_SAMPLES):
+    bars = [plan.in_.start_bar]
+    for sample in range(last_bar * _BAR_SAMPLES):
         at = (sample + 0.5) / _BAR_SAMPLES
-        if _playing_at(plan.events, plan.in_.deck, at, False):
-            authored = any(
-                e.kind in ("set", "ramp") and e.deck == plan.in_.deck and e.name == "tempo" and e.at_bar <= at
-                for e in plan.events
-            )
-            rate = _value_at(plan.events, plan.in_.deck, "tempo", at, in_pitch) * scale if authored else base
-            clock = _value_at(plan.events, plan.out.deck, "tempo", at, clock_pitch) / clock_pitch
+        if replay.playing(plan.in_.deck, at, False):
+            rate = replay.value(plan.in_.deck, "tempo", at, in_pitch) * scale if first_tempo <= at else base
+            clock = replay.value(plan.out.deck, "tempo", at, clock_pitch) / clock_pitch
             consumed += rate / clock / _BAR_SAMPLES
-    return plan.in_.start_bar + int(consumed)
+        if (sample + 1) % _BAR_SAMPLES == 0:
+            bars.append(plan.in_.start_bar + int(consumed))
+    return bars
 
 
 def validate_plan(
@@ -948,7 +1056,9 @@ def _check_trim_order(plan: TransitionPlan, start: ChannelStart, result: Validat
         at its own bar only, so it leaves the list here whatever the verdict."""
         nonlocal moves
         settle(now)
-        heard = [(at, end) for at, end in moves if at <= now < end or at == end == now] if audible and fader > 0.0 else []
+        heard = (
+            [(at, end) for at, end in moves if at <= now < end or at == end == now] if audible and fader > 0.0 else []
+        )
         result.errors.extend(
             f"incoming trim at bar {at:g} lands while deck {deck} is heard: set the trim before its fader comes up or "
             "before it plays"
@@ -1030,6 +1140,8 @@ def _check_structure(
         )
     if _incoming_start(plan) is None:
         errors.append(f"no play event starts the incoming deck {plan.in_.deck}")
+    errors.extend(_shape_errors(plan))
+    errors.extend(_gives_way_before_hit(plan))
     # A quantized play starts on a downbeat strictly after its dispatch, so no launch plays a pre-roll.
     in_bars_heard = _incoming_grid_bars(_synced_grid_view(plan), base, scale, clock_pitch)
     if plan.in_.start_bar + in_bars_heard > in_profile.bars + 1:
@@ -1037,6 +1149,45 @@ def _check_structure(
             f"the incoming track runs out of grid: it starts at bar {plan.in_.start_bar} and the "
             f"plan needs {in_bars_heard:g} bars, but its grid ends at bar {in_profile.bars}"
         )
+
+
+def _shape_errors(plan: TransitionPlan) -> list[str]:
+    """D13: a shape and the style that builds it come together, so a plan never implies an intended dip."""
+    wanted = next((shape for shape, style in SHAPE_STYLES.items() if style == plan.style), None)
+    if plan.shape != wanted:
+        return [f"style {plan.style!r} carries shape {wanted!r}, but the plan says {plan.shape!r}"]
+    return []
+
+
+def _gives_way(event: PlanEvent, out_deck: int) -> bool:
+    """Whether an event takes something away from the outgoing deck: a fader or EQ below full, a filter off flat, a
+    stop."""
+    if event.deck != out_deck:
+        return False
+    if event.kind == "do":
+        return event.name == "stop"
+    if event.value is None:
+        return False
+    if event.name == "fader":
+        return event.value < 1.0
+    if event.name in ("eq_low", "eq_mid", "eq_high"):
+        return event.value < FLAT
+    if event.name == "filter":
+        return event.value != FLAT
+    return False
+
+
+def _gives_way_before_hit(plan: TransitionPlan) -> list[str]:
+    """D11: nothing on the outgoing deck before the incoming bass has landed, in every style."""
+    if plan.bass_entry is None:
+        return []
+    hit = plan.bass_entry.hit_plan_bar
+    return [
+        f"the outgoing deck {plan.out.deck} gives way ({event.kind} {event.name}) at bar {event.at_bar:g}, before the"
+        f" incoming bass lands at bar {hit:g} (D11)"
+        for event in plan.events
+        if event.at_bar < hit - 1e-9 and _gives_way(event, plan.out.deck)
+    ]
 
 
 def _event_errors(plan: TransitionPlan, event: PlanEvent) -> list[str]:
@@ -1189,11 +1340,13 @@ def _heard(row: BarState, out_assign: Any = None, in_assign: Any = None) -> tupl
     A channel's level is its fader scaled by its trim (unity at ``UNITY_TRIM``), as the
     engine's input gain and fader gain multiply.
     """
+    # ADR-0135: audibility is judged against the level decks load at.
+    floor = AUDIBLE_FADER * LOAD_GAIN
     out_level = row.out_fader * row.out_trim / UNITY_TRIM
     in_level = row.in_fader * row.in_trim / UNITY_TRIM
     return (
-        row.out_playing and out_level >= AUDIBLE_FADER and _side_open(out_assign, row.crossfader),
-        row.in_playing and in_level >= AUDIBLE_FADER and _side_open(in_assign, row.crossfader),
+        row.out_playing and out_level >= floor and _side_open(out_assign, row.crossfader),
+        row.in_playing and in_level >= floor and _side_open(in_assign, row.crossfader),
     )
 
 
@@ -1221,19 +1374,25 @@ def _check_clashes(
     channels = (_channel_start(mixer, plan.out.deck), _incoming_channel_start(plan, mixer))
     silent_bars = len(_silent_bars(plan, (start, channels), (out_assign, in_assign)))
     grid_view = _synced_grid_view(plan)
-    for row in simulate(plan, crossfader=start, channels=channels):
+    rows = simulate(plan, crossfader=start, channels=channels)
+    in_bars = _in_bars(grid_view, max((row.bar for row in rows), default=0), base, scale, pitches[0], pitches[1])
+    for row in rows:
         out_bar = plan.out.start_bar + row.bar
-        in_bar = _in_bar(grid_view, row.bar, base, scale, pitches[0], pitches[1])
+        in_bar = in_bars[row.bar]
         out_heard, in_heard = _heard(row, out_assign, in_assign)
         if not (out_heard and in_heard):
             continue
         if _overlaps(out_profile.bar_vocals, in_profile.bar_vocals, out_bar, in_bar, VOCAL_BAR_THRESHOLD):
             vocal_overlap += 1
-        lows_open = row.out_low >= AUDIBLE_LOW and row.in_low >= AUDIBLE_LOW
-        if lows_open and _overlaps(out_profile.bar_bass, in_profile.bar_bass, out_bar, in_bar, STRONG_BASS):
+        lows_full = row.out_low >= NEAR_FULL_LOW and row.in_low >= NEAR_FULL_LOW
+        if lows_full and _overlaps(out_profile.bar_bass, in_profile.bar_bass, out_bar, in_bar, STRONG_BASS):
             bass_overlap += 1
     _report_clashes(out_profile, in_profile, (vocal_overlap, bass_overlap, silent_bars), result)
     _check_end(plan, (start, channels), (out_assign, in_assign), result)
+
+
+#: What ``_heard`` reads: transport, fader, trim and crossfader. Every other event is left out of the silence replay.
+_AUDIBILITY_EVENTS = frozenset({"play", "stop", "fader", "trim", "crossfader"})
 
 
 def _silence_cuts(plan: TransitionPlan) -> set[float]:
@@ -1241,6 +1400,8 @@ def _silence_cuts(plan: TransitionPlan) -> set[float]:
     cuts = {bar + step / SILENCE_SAMPLES_PER_BAR for bar in range(plan.bars) for step in range(SILENCE_SAMPLES_PER_BAR)}
     cuts.add(float(plan.bars))
     for event in plan.events:
+        if event.name not in _AUDIBILITY_EVENTS:
+            continue  # an EQ or filter move cannot change whether a deck is heard
         cuts.add(float(event.at_bar))
         if event.kind == "ramp":
             cuts.add(float(event.at_bar + event.over_bars))

@@ -59,6 +59,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
   # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
   # made actions/checkout fail with EACCES and skip every test step (#1338).
   # This covers interpreters these workflows start directly. It does NOT reach
@@ -189,7 +193,7 @@ jobs:
           fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           # A caller's pinned SHA when there is one; empty falls back to the
@@ -330,31 +334,31 @@ jobs:
         # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: coverage-matrix
           path: coverage-matrix.md
           if-no-files-found: warn
-          retention-days: 2
 
       - name: Upload htmlcov/ artifact
         if: always()
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: htmlcov
           path: htmlcov/
           if-no-files-found: warn
-          retention-days: 2
 
       - name: Upload coverage.xml
         if: always()
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/r2-artifact
         with:
+          mode: upload
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
-          retention-days: 2

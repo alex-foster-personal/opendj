@@ -1,5 +1,5 @@
 <script lang="ts">
-	// CMDK-04..07: the redesigned Cmd K bar, behind the `cmdk.v2` build flag
+	// CMDK-04..06: the redesigned Cmd K bar, behind the `cmdk.v2` build flag
 	// (the shipped CommandBar.svelte stays when the flag is off).
 	//
 	// One search covers the open playlist and the whole collection in one
@@ -12,7 +12,13 @@
 	// the search instead of being lost. Loading goes through the browser's own
 	// deck-load path (the `load` prop), so every guard that applies to a
 	// double-click applies here.
-	import { tick } from 'svelte';
+	//
+	// CMDK-07..10 (flag `cmdk.v2.preview`, issue #6090): a highlighted track
+	// shows its overview in a strip above the bar (or inside the row with
+	// `cmdk.v2.preview_inline`), ← and → preview it in the headphone cue in
+	// phase with the master, and Enter opens a deck picker. With the flag off
+	// none of it runs and the bar is slice 1's.
+	import { tick, untrack } from 'svelte';
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
 	import {
 		searchGroups,
@@ -31,7 +37,7 @@
 		type CmdkFilterRow as FilterFields
 	} from '$lib/rb/command-bar-filters';
 	import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
-	import { cycleFocusIndex, defaultTargetDeck, stepSelection, waitForStemsSettled } from '$lib/rb/command-bar';
+	import { clampSelection, cycleFocusIndex, defaultTargetDeck, stepSelection, waitForStemsSettled } from '$lib/rb/command-bar';
 	import type { DeckId } from '$lib/rb/deck-id';
 	import { filterForKeyCode, type LibraryFilterId } from '$lib/rb/library-filter-labels';
 	import { libraryIndexIsCurrent, loadLibraryIndex, onLibraryIndexInvalidated, peekLibraryIndex } from '$lib/rb/library-index';
@@ -39,6 +45,19 @@
 	import { compatibleKeyChecked, computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import CmdkDeckRings from './cmdk/CmdkDeckRings.svelte';
 	import CmdkFilterRow from './cmdk/CmdkFilterRow.svelte';
+	import CmdkPreviewStrip from './cmdk/CmdkPreviewStrip.svelte';
+	import CmdkDeckPicker from './cmdk/CmdkDeckPicker.svelte';
+	import { cmdkPreviewMode } from '$lib/rb/cmdk-flag';
+	import { previewAssets, requestPreviewAssets, watchPreview } from '$lib/rb/cmdk-preview-data.svelte';
+	import { createCuePreview, type CuePreviewCommand, type CuePreviewTrack } from '$lib/rb/cmdk-cue-preview.svelte';
+	import { barPhase, downbeatTimes, snapStops } from '$lib/rb/cmdk-preview-grid';
+	import { guardHolds, pickerAction, pickerArrow, pickerOrder, pickerStart, pickerStep, replaceGuard, type ReplaceGuard } from '$lib/rb/cmdk-deck-picker';
+	import { previewCue } from '$lib/player/preview-cue.svelte';
+	import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
+	import { effectiveWaveformDesign, type UiSkin } from '$lib/rb/ui-skin';
+	import type { WaveformDesignPref } from '$lib/rb/waveform-design';
+	import { ensureAnlzPrefetch, getAnlzEntry } from './wave/anlz-cache.svelte';
+	import { sectionSpans } from './wave/sections';
 
 	/** What a row needs to be searched, filtered and loaded. */
 	type CmdkRow = SearchableRow &
@@ -46,6 +65,7 @@
 			file_exists: boolean | null;
 			is_streaming: boolean | null;
 			file_availability?: FileAvailabilityStatus;
+			duration_ms?: number | null;
 		};
 
 	let {
@@ -61,7 +81,9 @@
 		setHideBrokenLinks,
 		setNextOnlyFilter,
 		setRemixesFilter,
-		setVocalsFilter
+		setVocalsFilter,
+		runCommand,
+		deckPending
 	}: {
 		rows: readonly CmdkRow[];
 		playlistTitle: string;
@@ -76,12 +98,17 @@
 		soloVocals: (deck: DeckId, settled: 'ready' | 'unavailable' | 'error' | 'timeout') => Promise<void>;
 		/** The page passes the prefs store and its filter setters, so this bar
 		 * does not import prefs.svelte itself (keeps its fan-in down). */
-		uiPrefs: CmdkFilterPrefs;
+		uiPrefs: CmdkFilterPrefs & { waveform_design: WaveformDesignPref; ui_skin: UiSkin; theme: string; wave_palette: string };
 		setAvailableOfflineFilter: (next: boolean) => void;
 		setHideBrokenLinks: (next: boolean) => void;
 		setNextOnlyFilter: (next: boolean) => void;
 		setRemixesFilter: (next: boolean) => void;
 		setVocalsFilter: (next: boolean) => void;
+		/** The typed dispatcher's UI entry, passed in by the page so this bar does
+		 * not import performance-ipc.svelte itself (the most-imported module). */
+		runCommand: (command: CuePreviewCommand) => Promise<{ ok: boolean }>;
+		/** Whether the deck has a command still queued: the typed dispatcher's count, passed in as `runCommand` is. */
+		deckPending: (deck: DeckId) => boolean;
 	} = $props();
 
 	/** Rows each group draws at once; the header count says when there are more. */
@@ -95,6 +122,8 @@
 	let wrap = $state<HTMLDivElement | null>(null);
 	let collection = $state<readonly CmdkRow[]>([]);
 	let collectionError = $state<string | null>(null);
+	/** Why the last picker pick was refused, shown under the deck picker. */
+	let pickerNote = $state<string | null>(null);
 	/** True while the library index has never loaded and its first load is in flight. */
 	let collectionPending = $state(false);
 	/** The exact row sets whose search strings are all built; a new set is cold until its warm-up ends. */
@@ -148,6 +177,278 @@
 	const playlistKeys = $derived(rowKeys(groups.playlist.rows));
 	/** Every selectable row, playlist group first, in the order drawn. */
 	const flat = $derived([...groups.playlist.rows, ...groups.collection.rows]);
+
+	// A refreshed index can shorten the list under a highlight further down it;
+	// keep the highlight on a real row so Enter always acts on what is shown.
+	$effect(() => {
+		const clamped = clampSelection(selected, flat.length);
+		if (clamped !== selected) selected = clamped;
+	});
+
+	// ---- CMDK-07..10: preview strip, cue preview, deck picker ----
+
+	/** A row must be rested on this long before its overview is asked for (spec: 90 ms). */
+	const PREVIEW_DWELL_MS = 90;
+	const previewMode = $derived(cmdkPreviewMode());
+	/** True once the user moved onto a row (↑↓, the pointer, or ← →); typing clears it. */
+	let touched = $state(false);
+	/** The deck picker: the track Enter chose, its vocals-only flag, the picked row, and a pending confirm. */
+	// The selection is a deck, not a row index: the order moves when the master changes.
+	let picker = $state<{ row: CmdkRow; vocalsOnly: boolean; sel: DeckId; guard: ReplaceGuard | null } | null>(null);
+	/** When the dwell asked for the overview, for the first-paint readout. */
+	let dwellAt = 0;
+	/** The row the dwell asked for; a paint counts toward its first-paint time only while that row is shown. */
+	let dwellId: string | null = null;
+	let firstPaintMs = $state<number | null>(null);
+
+	/** The track the strip and the cue preview are about: the picker's, else the highlighted row. */
+	const previewRow = $derived(
+		previewMode === 'off' ? null : (picker?.row ?? (touched ? (flat[selected] ?? null) : null))
+	);
+	const previewId = $derived(previewRow?.stable_id ?? null);
+	const previewAnlz = $derived.by((): AnlzData | null => {
+		if (previewId === null) return null;
+		const entry = getAnlzEntry(previewId);
+		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
+	});
+	const previewData = $derived(previewId === null ? undefined : previewAssets(previewId));
+	const previewDuration = $derived(
+		previewRow?.duration_ms != null && previewRow.duration_ms > 0 ? previewRow.duration_ms / 1000 : null
+	);
+	const waveDesign = $derived(effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin));
+	/** The preview strip's repaint key: the three prefs that swap the --rb-wave-* vars. */
+	const wavePaletteKey = $derived(`${uiPrefs.theme}|${uiPrefs.wave_palette}|${uiPrefs.ui_skin}`);
+
+	/** Downbeats per beat array, built once per /anlz payload. */
+	const downbeatMemo = new WeakMap<readonly AnlzBeat[], number[]>();
+	function downbeatsOf(anlz: AnlzData): number[] {
+		const beats = anlz.beatgrid.beats;
+		let hit = downbeatMemo.get(beats);
+		if (hit === undefined) {
+			// An untrusted grid's bar numbers are not derived from (Sol P1, #6687): the preview gets no downbeats and says why.
+			hit = anlz.beatgrid.bar_phase_untrusted === true ? [] : downbeatTimes(beats);
+			downbeatMemo.set(beats, hit);
+		}
+		return hit;
+	}
+
+	const cueTrack = $derived.by((): CuePreviewTrack | null => {
+		if (previewRow === null) return null;
+		const downbeats = previewAnlz === null ? [] : downbeatsOf(previewAnlz);
+		const vocals =
+			previewData?.status === 'ready' && (previewData.vocals.status === 'rekordbox' || previewData.vocals.status === 'demucs')
+				? previewData.vocals.regions
+				: [];
+		return {
+			stable_id: previewRow.stable_id,
+			downbeats,
+			stops: previewAnlz === null ? [] : snapStops(downbeats, sectionSpans(previewAnlz.phrases), vocals),
+			duration_s: previewDuration,
+			bpm: previewRow.bpm,
+			// Not read yet (the dwell has not fired) or still loading: a press is held until it answers.
+			gridPending: previewAnlz === null && getAnlzEntry(previewRow.stable_id)?.status !== 'error',
+			untrusted: previewAnlz?.beatgrid.bar_phase_untrusted === true
+		};
+	});
+
+	const cue = createCuePreview({
+		dispatch: async (command) => (await runCommand(command)).ok,
+		masterPhase: () => {
+			const master = DECK_IDS.find((d) => decks[d].is_master && decks[d].playing);
+			if (master === undefined) return null;
+			// A playing master whose phase cannot be read is not "no master": the preview refuses
+			// rather than starting knowingly out of phase (Sol r4280385227).
+			const anlz = decks[master].anlz;
+			const phase = anlz === null ? null : barPhase(downbeatsOf(anlz), decks[master].position_ms / 1000);
+			return phase ?? 'unknown';
+		},
+		sounding: (stable_id) => previewCue.stable_id === stable_id && previewCue.playing,
+		now: () => performance.now()
+	});
+	$effect(() => cue.setTrack(cueTrack));
+
+	/** The row the dwell last fired for; null from the moment the highlight moves. */
+	let dwelled = $state<string | null>(null);
+	// Ask for the overview only after a rest on the row, so arrowing past rows fetches nothing.
+	$effect(() => {
+		const id = previewId;
+		dwelled = null;
+		watchPreview(null);
+		// A paint from here until this row's own dwell is not its ask-to-paint time (Sol review of 8e53c84f1).
+		dwellAt = 0;
+		dwellId = null;
+		firstPaintMs = null;
+		if (id === null) return;
+		const timer = setTimeout(() => {
+			dwelled = id;
+			watchPreview(id);
+			dwellAt = performance.now();
+			dwellId = id;
+			firstPaintMs = null;
+			requestPreviewAssets(id);
+		}, PREVIEW_DWELL_MS);
+		return () => {
+			clearTimeout(timer);
+			watchPreview(null);
+		};
+	});
+	// Sections, cues and the grid come second: the /anlz read is the larger one and,
+	// sent alongside, measurably delayed the strip's first paint. It waits for this row's
+	// own dwell too, so a row whose strip is still cached asks nothing before 90 ms
+	// (Sol r4278366206). Untracked: on a cache hit ensureAnlzPrefetch READS the entry and
+	// WRITES it back with a fresh LRU stamp, so a tracked call reruns this effect on its own
+	// write until Svelte aborts with effect_update_depth_exceeded (strip-anlz-prefetch.ts says
+	// more). The cmdk-preview-cue e2e caught it here: the loop dropped the cue preview's state.
+	$effect(() => {
+		const id = previewId;
+		if (id !== null && dwelled === id && previewData !== undefined && previewData.status !== 'loading')
+			untrack(() => ensureAnlzPrefetch(id));
+	});
+
+	function onPreviewPainted(): void {
+		if (firstPaintMs === null && dwellAt > 0 && dwellId !== null && dwellId === previewId) firstPaintMs = performance.now() - dwellAt;
+	}
+
+	const cuePlayhead = $derived(
+		previewId !== null && previewCue.stable_id === previewId && previewCue.playing && previewDuration !== null
+			? previewCue.position_ms / 1000 / previewDuration
+			: null
+	);
+	// The cue's status counts only while its preview sounds: a voice that ended or was stopped elsewhere shows nothing (Sol P2, #6687).
+	const cueSounding = $derived(cue.state.started && previewCue.playing && previewCue.stable_id === previewId);
+	const cueAnchor = $derived.by((): number | null => {
+		if (!cueSounding || cueTrack === null || previewDuration === null) return null;
+		const at = cueTrack.downbeats[cue.state.anchor];
+		return at === undefined ? null : at / previewDuration;
+	});
+	const cueMessage = $derived(
+		cue.state.message !== '' && cueSounding
+			? `${cue.state.message} · in the cue`
+			: cue.state.message !== ''
+				? cue.state.message
+				: '← → to play it in the cue'
+	);
+
+	const pickerDecks = $derived(
+		pickerOrder(
+			DECK_IDS.map((id) => ({
+				id,
+				title: decks[id].title,
+				artist: decks[id].artist,
+				loaded: decks[id].stable_id !== null,
+				playing: decks[id].playing,
+				is_master: decks[id].is_master
+			}))
+		)
+	);
+
+	/** Where the picker's selected deck sits in the current order. */
+	const pickerSel = $derived(picker === null ? -1 : pickerDecks.findIndex((deck) => deck.id === picker?.sel));
+
+	function openPicker(row: CmdkRow, vocalsOnly: boolean): void {
+		picker = { row, vocalsOnly, sel: pickerDecks[pickerStart(pickerDecks, target)]?.id ?? target, guard: null };
+		pickerNote = null;
+	}
+
+	/** Load to the picker's deck at `index`, asking first over a playing deck. */
+	function pickerLoad(index: number, confirmed: boolean): void {
+		const p = picker;
+		const deck = pickerDecks[index];
+		if (p === null || deck === undefined) return;
+		// A command still queued for the deck (a play from IPC or MIDI) is not in its state yet, so a pick read against a
+		// paused deck could be approved while that play lands and the unload runs after it. The count moves at dispatch;
+		// refuse, and the DJ picks again once the deck settles (Codex P1 BLOCKING, #6687).
+		if (deckPending(deck.id)) {
+			pickerNote = `Deck ${deck.id} is still busy; pick again once it settles`;
+			return;
+		}
+		pickerNote = null;
+		const action = pickerAction(deck, confirmed);
+		if (action === 'refuse') return;
+		if (action === 'ask') {
+			p.guard = replaceGuard(deck.id, decks[deck.id]);
+			return;
+		}
+		target = deck.id;
+		picker = null;
+		void choose(p.row, p.vocalsOnly);
+	}
+
+	function confirmGuard(): void {
+		const p = picker;
+		const guard = p?.guard ?? null;
+		if (p === null || guard === null) return;
+		const index = pickerDecks.findIndex((deck) => deck.id === guard.id);
+		p.guard = null;
+		if (index < 0) return;
+		// The deck took another load while the guard was open: the confirm answered a
+		// question about a track that is gone, so ask again about what is there now, playing
+		// or not. Only a confirm of the load it asked about goes ahead.
+		if (!guardHolds(guard, decks[guard.id])) {
+			p.guard = replaceGuard(guard.id, decks[guard.id]);
+			return;
+		}
+		pickerLoad(index, true);
+	}
+
+	/** Keys while the picker shows; true when the key was the picker's. */
+	function pickerKey(event: KeyboardEvent): boolean {
+		const p = picker;
+		if (p === null) return false;
+		// Tab keeps the bar's wrapping focus cycle while the picker is open (CMDK-04; Sol review of 8e53c84f1).
+		if (event.key === 'Tab') {
+			cycleFocus(event.shiftKey);
+			return true;
+		}
+		if (p.guard !== null) {
+			// Only Cmd/Ctrl+Enter (or the button) confirms; plain Enter and Esc keep playing.
+			if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) confirmGuard();
+			else if (event.key === 'Escape' || event.key === 'Enter' || event.key === 'x' || event.key === 'X') p.guard = null;
+			return true;
+		}
+		const arrow = pickerArrow(event);
+		if (arrow === 'ArrowUp' || arrow === 'ArrowDown') {
+			p.sel = pickerDecks[pickerStep(pickerDecks, pickerSel, arrow === 'ArrowDown' ? 1 : -1)]?.id ?? p.sel;
+			return true;
+		}
+		if (arrow === 'ArrowLeft' || arrow === 'ArrowRight') {
+			void cue.jump(arrow === 'ArrowRight' ? 1 : -1, event.shiftKey);
+			return true;
+		}
+		const digit = event.altKey ? /^Digit([1-4])$/.exec(event.code) : null;
+		if (digit !== null) {
+			const at = pickerDecks.find((deck) => deck.id === Number(digit[1]) && !deck.is_master);
+			if (at !== undefined) p.sel = at.id;
+			return true;
+		}
+		if (event.key === 'Enter') {
+			pickerLoad(pickerSel, false);
+			return true;
+		}
+		if (event.key === 'Escape') {
+			picker = null;
+			return true;
+		}
+		// Typing (or deleting) goes back to the results and edits the search.
+		if (event.key === 'Backspace' && event.target !== input) {
+			// Focus is on a picker row, where the input never sees the key: delete from the
+			// search here, as the window handler types into it (Sol review of 8e53c84f1).
+			picker = null;
+			query = query.slice(0, -1);
+			selected = 0;
+			touched = false;
+			input?.focus();
+			return true;
+		}
+		if (event.key === 'Backspace' || (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey)) {
+			picker = null;
+			return false;
+		}
+		// Editing keys belong to the query input: Delete and Cmd/Ctrl+A, C, V, X, Z pass through to it, and the query
+		// change dismisses the picker as it does for typing (Codex P2, #6687).
+		if (event.key === 'Delete' || ((event.metaKey || event.ctrlKey) && 'acvxz'.includes(event.key.toLowerCase()))) return false;
+		return true;
+	}
 
 	function deckList(): { id: DeckId; loaded: boolean; is_master: boolean }[] {
 		return DECK_IDS.map((id) => ({ id, loaded: decks[id].stable_id !== null, is_master: decks[id].is_master }));
@@ -229,6 +530,8 @@
 	async function openBar(): Promise<void> {
 		query = '';
 		selected = 0;
+		touched = false;
+		picker = null;
 		target = defaultTargetDeck(deckList());
 		open = true;
 		loadCollection();
@@ -238,6 +541,9 @@
 
 	function closeBar(): void {
 		open = false;
+		picker = null;
+		touched = false;
+		cue.stop();
 	}
 
 	function toggleFilter(id: LibraryFilterId): void {
@@ -266,13 +572,24 @@
 		// Keys typed in the moment between Cmd K and the input taking focus (or
 		// while focus sits on a filter or deck button) belong to the search.
 		if (!open || event.target === input) return;
+		// The deck picker's keys (WASD included) come before search typing, so a click on a
+		// picker row that moved focus off the input still steers the picker (Sol r4278366223).
+		if (previewMode !== 'off' && picker !== null && wrap?.contains(event.target as Node) && pickerKey(event)) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
 		if (event.metaKey || event.ctrlKey || event.altKey || event.key.length !== 1) return;
 		// Space on a focused filter icon or deck ring is the button's own activation.
 		if (event.key === ' ' && event.target instanceof HTMLButtonElement) return;
 		event.preventDefault();
 		event.stopPropagation();
 		query += event.key;
+		// Typing edits the search, exactly as in the input: the purposeful highlight and the
+		// picker clear, so arrows edit the new query rather than steer a preview (Sol r4278366215).
 		selected = 0;
+		touched = false;
+		picker = null;
 		input?.focus();
 	}
 
@@ -281,7 +598,8 @@
 	const pickLoad = createPickLoader<CmdkRow, DeckId>(
 		(stable_id) => fetchMeta(stable_id),
 		(row, deck) => loadCommitted(() => decks[deck], row.stable_id, () => load(row, deck)),
-		(deck) => deckLoadMark(decks[deck], reservation(deck))
+		(deck) => deckLoadMark(decks[deck], reservation(deck)),
+		(deck) => deckPending(deck)
 	);
 
 	async function choose(row: CmdkRow | undefined, vocalsOnly: boolean): Promise<void> {
@@ -292,18 +610,29 @@
 		// deck moved on meanwhile; a dropped or refused pick never solos vocals.
 		const dispatched = await pickLoad(row, deck);
 		if (!dispatched || !vocalsOnly || decks[deck].stable_id !== row.stable_id) return;
+		// The solo is for THIS load: a reload of the same track (IPC, MIDI, AutoPlay) during the
+		// wait moves the engine's load generation and reads as another track, so it is never soloed.
+		const landed = decks[deck].load_generation;
 		const settled = await waitForStemsSettled(
-			() => ({ stable_id: decks[deck].stable_id, status: decks[deck].stems.status }),
+			() => ({ stable_id: decks[deck].load_generation === landed ? decks[deck].stable_id : null, status: decks[deck].stems.status }),
 			row.stable_id
 		);
-		if (settled !== 'stale') await soloVocals(deck, settled);
+		if (settled !== 'stale' && decks[deck].load_generation === landed) await soloVocals(deck, settled);
 	}
 
 	/** Escape clears a typed query first and closes the bar only when it is empty, wherever focus is. */
 	function clearOrClose(): void {
+		if (picker !== null) {
+			if (picker.guard !== null) picker.guard = null;
+			else picker = null;
+			return;
+		}
+		// Esc stops a sounding cue preview before it clears or closes anything.
+		if (cue.stop()) return;
 		if (query !== '') {
 			query = '';
 			selected = 0;
+			touched = false;
 		} else closeBar();
 	}
 
@@ -314,16 +643,34 @@
 			event.preventDefault();
 			event.stopPropagation();
 		};
-		if (event.key === 'Escape') {
+		if (previewMode !== 'off' && picker !== null) {
+			if (pickerKey(event)) handled();
+			else event.stopPropagation();
+		} else if (event.key === 'Escape') {
 			handled();
 			clearOrClose();
 		} else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			handled();
 			selected = stepSelection(selected, flat.length, event.key === 'ArrowDown' ? 1 : -1);
+			touched = true;
 			document.getElementById(`cmdk2-row-${selected}`)?.scrollIntoView({ block: 'nearest' });
+		} else if (
+			(event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+			previewMode !== 'off' &&
+			touched &&
+			flat[selected] !== undefined &&
+			!event.metaKey &&
+			!event.ctrlKey &&
+			!event.altKey
+		) {
+			// A highlighted result takes ← →; with none highlighted they move the caret.
+			handled();
+			void cue.jump(event.key === 'ArrowRight' ? 1 : -1, event.shiftKey);
 		} else if (event.key === 'Enter') {
 			handled();
-			void choose(flat[selected], event.shiftKey);
+			const row = flat[selected];
+			if (previewMode !== 'off' && row !== undefined) openPicker(row, event.shiftKey);
+			else void choose(row, event.shiftKey);
 		} else if (altShortcut(event)) {
 			handled();
 		} else if (event.key === 'Tab') {
@@ -369,7 +716,10 @@
 		if (event.target === input) return;
 		// The page's own shortcuts never see a key pressed inside the bar.
 		event.stopPropagation();
-		if (altShortcut(event)) {
+		// A click on a picker row moves focus off the input; the picker keys still work.
+		if (previewMode !== 'off' && picker !== null && pickerKey(event)) {
+			event.preventDefault();
+		} else if (altShortcut(event)) {
 			event.preventDefault();
 		} else if (event.key === 'Tab') {
 			event.preventDefault();
@@ -403,10 +753,17 @@
 		class="row"
 		class:selected={i === selected}
 		class:missing={row.file_exists === false}
+		class:with-inline={previewMode === 'inline' && i === selected && previewRow?.stable_id === row.stable_id}
 		data-testid="command-bar-row"
 		data-stable-id={row.stable_id}
-		onmousemove={() => (selected = i)}
-		onclick={(event) => void choose(row, event.shiftKey)}
+		onmousemove={() => {
+			touched = previewMode !== 'off';
+			selected = i;
+		}}
+		onclick={(event) => {
+			if (previewMode !== 'off') openPicker(row, event.shiftKey);
+			else void choose(row, event.shiftKey);
+		}}
 	>
 		<span class="t">
 			{@render hl(row.title ?? '(untitled)')}<small>{@render hl(row.artist ?? '')}</small>
@@ -418,7 +775,28 @@
 			<span title="Tempo in beats per minute">{@render hl(fmtBpm(row.bpm))}</span>
 			{#if row.key !== null}<span class="dot">·</span><span title="Key">{@render hl(row.key)}</span>{/if}
 		</span>
+		{#if previewMode === 'inline' && i === selected && previewRow?.stable_id === row.stable_id}
+			<span class="inl">{@render strip('inline')}</span>
+		{/if}
 	</li>
+{/snippet}
+
+{#snippet strip(variant: 'above' | 'inline')}
+	{#if previewRow !== null}
+		<CmdkPreviewStrip
+			{variant}
+			title={`${previewRow.title ?? '(untitled)'}${previewRow.artist ? ` · ${previewRow.artist}` : ''}`}
+			assets={previewData}
+			anlz={previewAnlz}
+			duration_s={previewDuration}
+			design={waveDesign}
+			playhead={cuePlayhead}
+			anchor={cueAnchor}
+			message={cueMessage}
+			palette={wavePaletteKey}
+			onpainted={onPreviewPainted}
+		/>
+	{/if}
 {/snippet}
 
 {#if open}
@@ -429,13 +807,20 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="wrap" bind:this={wrap} onclick={(event) => event.stopPropagation()} onkeydown={onWrapKeydown}>
 			<div class="rings"><CmdkDeckRings {target} onPick={pickDeck} /></div>
+			{#if previewMode === 'above' && previewRow !== null}
+				<div class="strip-slot">{@render strip('above')}</div>
+			{/if}
 			<div class="cmdk2" role="dialog" aria-modal="true" aria-label="Command bar" tabindex="-1" data-testid="command-bar">
 				<div class="head">
 					<span class="mode">Search</span>
 					<input
 						bind:this={input}
 						bind:value={query}
-						oninput={() => (selected = 0)}
+						oninput={() => {
+							selected = 0;
+							touched = false;
+							picker = null;
+						}}
 						onkeydown={onInputKeydown}
 						class="q"
 						type="text"
@@ -450,6 +835,26 @@
 					/>
 					<div class="filters"><CmdkFilterRow {states} onToggle={toggleFilter} /></div>
 				</div>
+				{#if picker !== null}
+					<CmdkDeckPicker
+						trackTitle={picker.row.title ?? '(untitled)'}
+						{query}
+						decks={pickerDecks}
+						selected={pickerSel}
+						guard={picker.guard?.id ?? null}
+						onHover={(index) => {
+							const deck = pickerDecks[index];
+							if (picker !== null && deck !== undefined) picker.sel = deck.id;
+						}}
+						onPick={(index) => pickerLoad(index, false)}
+						onConfirm={confirmGuard}
+						onCancel={() => {
+							if (picker !== null) picker.guard = null;
+							input?.focus();
+						}}
+					/>
+					{#if pickerNote !== null}<p class="picker-note" role="status">{pickerNote}</p>{/if}
+				{:else}
 				<ul class="list" id="cmdk2-list" role="listbox" data-testid="command-bar-results">
 					{#if groups.playlist.rows.length > 0}
 						<li class="group" role="presentation">
@@ -479,9 +884,24 @@
 						<li class="hint" role="presentation">No tracks match "{query}"</li>
 					{/if}
 				</ul>
+				{/if}
 				<div class="foot" data-testid="command-bar-status">
 					{#if collectionError !== null}
 						<span class="err" role="alert">Collection search unavailable: {collectionError}</span>
+					{:else if picker !== null}
+						<span><b>↑↓</b> or <b>W S</b> deck</span>
+						<span><b>Enter</b> load</span>
+						<span><b>←→</b> or <b>A D</b> move the cue</span>
+						<span><b>Esc</b> back</span>
+					{:else if previewMode !== 'off'}
+						<span><b>↑↓</b> pick</span>
+						<span><b>←→</b> preview in the cue</span>
+						<span><b>Enter</b> pick a deck</span>
+						<span><b>⇧Enter</b> vocals only</span>
+						<span><b>Alt 1-4</b> deck</span>
+						{#if firstPaintMs !== null}
+							<span title="Milliseconds from asking for the highlighted track's overview to drawing it (budget 100 ms)" data-testid="command-bar-preview-paint-ms">{Math.round(firstPaintMs)} ms</span>
+						{/if}
 					{:else}
 						<span><b>↑↓</b> pick</span>
 						<span><b>Enter</b> load to deck {target}</span>
@@ -496,6 +916,11 @@
 {/if}
 
 <style>
+	.picker-note {
+		margin: 4px 12px;
+		font-size: 12px;
+		opacity: 0.8;
+	}
 	.cmdk2-backdrop {
 		/* Background dimming behind the bar (the maintainer, Thu 8 Oct 2026: "less dimming", 30%). */
 		--cmdk-scrim: 30%;
@@ -521,6 +946,27 @@
 	}
 	:global(html[data-theme='light']) .wrap {
 		--rb-cmdk-pick: #7a3fd6;
+	}
+	.strip-slot {
+		/* Above the deck rings, out of the flow, so the bar never moves when it appears. */
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: calc(100% + 34px);
+	}
+	.inl {
+		position: absolute;
+		left: 8px;
+		right: 8px;
+		bottom: 1px;
+		pointer-events: none;
+	}
+	.row {
+		position: relative;
+	}
+	.row.with-inline {
+		/* The inline overview (32 px) plus its one-line cue status. */
+		padding-bottom: 52px;
 	}
 	.rings {
 		position: absolute;

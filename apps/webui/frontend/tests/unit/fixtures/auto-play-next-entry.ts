@@ -5,7 +5,9 @@ export { deckStates } from '$lib/rb/audio-engine.svelte';
 export {
 	armAutoPlayNext,
 	autoPlayNextState,
-	cancelAutoPlayNext
+	cancelAutoPlayNext,
+	registerAutoPlayNextPlanRunner,
+	transitionTargetOk
 } from '$lib/rb/auto-play-next.svelte';
 export {
 	getDispatchPerformanceCommandCalls,

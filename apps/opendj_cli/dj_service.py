@@ -35,6 +35,10 @@ import httpx
 
 from apps.autodj.compile import compile_plan, control_command
 from apps.autodj.http import build_service
+from apps.autodj.live import ANCHOR_LEAD_BARS
+from apps.autodj.live import lead_short as _lead_short
+from apps.autodj.live import live_bar as _live_bar
+from apps.autodj.live import with_in_track as _with_in_track
 from apps.autodj.plan import (
     PlanError,
     TransitionPlan,
@@ -63,9 +67,6 @@ from apps.shared import file_lock
 #: Waveform points requested for a profile: about ten per bar on a six-minute
 #: track, enough for per-bar energy and bass, small enough to fetch quickly.
 PROFILE_POINTS = 2048
-#: Bars of lead a live anchor leaves before the plan's first event, so the page
-#: has time to cue the incoming deck.
-ANCHOR_LEAD_BARS = 1.0
 AMEND_ACTIONS = ("abort", "finish_now", "extend")
 #: How long ``schedule`` waits for the page to republish its mirror with the
 #: incoming track on its deck after the load order succeeded. The page posts the
@@ -311,7 +312,9 @@ class DjService:
             "master": mirror.get("master"),
             "autoplay_enabled": mirror.get("autoplay_enabled"),
             "autoplay_armed": mirror.get("autoplay_armed"),
+            "autoplay_decision": mirror.get("autoplay_decision"),
             "agent_plan": mirror.get("agent_plan"),
+            "auto_play_next": mirror.get("auto_play_next"),
             "agent_audio": self._audio_mode(),
             "decks": decks,
         }
@@ -528,7 +531,7 @@ class DjService:
         mirror = self._mirror()
         # Refuse a busy page BEFORE loading: the idle incoming deck may be the one its running plan still needs.
         _refuse_active_plan(mirror)
-        _refuse_autoplay(mirror)
+        _refuse_autoplay_handoff(mirror)
         needs_load = _needs_load(mirror, parsed.in_.deck, parsed.in_.track)
         # Validate BEFORE touching the deck: a refused plan must not have
         # evicted whatever the idle incoming deck held.
@@ -547,10 +550,10 @@ class DjService:
                 changed = True
                 self._order({"single": {"type": "load", "deck": parsed.in_.deck, "stable_id": parsed.in_.track}})
                 self._confirm_loaded(parsed.in_.deck, parsed.in_.track)
-            # AutoPlay can be switched on while the load, or the reads before it, run: the plan is compiled and submitted
-            # against a mirror read here, so the refusal is checked on it, and a refusal after a load is undone by the rollback.
+            # A handoff can start while the load, or the reads before it, run: the plan is compiled and submitted against
+            # a mirror read here, so the refusal is checked on it, and a refusal after a load is undone by the rollback.
             mirror = self._mirror()
-            _refuse_autoplay(mirror)
+            _refuse_autoplay_handoff(mirror)
             parsed, validation = self._validated(parsed, mirror)
             in_profile = self.profile(parsed.in_.track)
             plan_id = f"plan-{uuid.uuid4().hex[:12]}"
@@ -694,28 +697,14 @@ class DjService:
     def plan_status(self) -> dict[str, Any]:
         return {"agent_plan": self._mirror().get("agent_plan")}
 
+    def autoplay_decision(self) -> dict[str, Any]:
+        """AUTOPLAN-06: AutoPlay's next decision as the page published it."""
+        return {"autoplay_decision": self._mirror().get("autoplay_decision")}
 
-def _lead_short(plan: TransitionPlan, bar_now: float | None) -> str | None:
-    """Sol #7595: the reason a plan's first command is no longer ANCHOR_LEAD_BARS ahead of the playhead, else None.
-
-    The search required that lead; the final reread must hold every candidate to it too, not only to
-    validate_plan's smaller position margin. No playhead means nothing to measure against."""
-    if bar_now is None:
-        return None
-    first = plan.out.start_bar + first_dispatch_bar(plan)
-    if first >= bar_now + ANCHOR_LEAD_BARS:
-        return None
-    return f"anchor_lead: first command at bar {first:.2f} is under {ANCHOR_LEAD_BARS:g} bar ahead of the playhead at {bar_now:.2f}"
-
-
-def _live_bar(profile: TrackProfile, deck_state: Mapping[str, Any]) -> float | None:
-    if deck_state.get("stable_id") != profile.stable_id:
-        return None
-    position = deck_state.get("position")
-    position_ms = position.get("ms") if isinstance(position, Mapping) else None
-    if not isinstance(position_ms, (int, float)):
-        return None
-    return profile.bar_at(float(position_ms) / 1000.0)
+    def autoplay_decide_now(self) -> dict[str, Any]:
+        """AUTOPLAN-06: the Decide now button's twin. The page answers with the decision it starts from."""
+        self._order({"single": {"type": "auto_play_decide_now"}})
+        return self.autoplay_decision()
 
 
 def _check_decks(out_deck: Any, in_deck: int | None) -> None:
@@ -767,11 +756,15 @@ def _refuse_muted_finish_now(plan_id: str, action: str, audio: str) -> None:
         )
 
 
-def _refuse_autoplay(mirror: Mapping[str, Any]) -> None:
-    """Refuse a plan while AutoPlay is on or armed: it can hand off a deck during the plan, replacing the cued track or
-    promoting a third deck to master. The page does not coordinate the two, so the operator turns AutoPlay off first."""
-    if mirror.get("autoplay_enabled") is True or mirror.get("autoplay_armed") is True:
-        raise DjError("autoplay_on", "AutoPlay is on and may hand off a deck during the plan; turn it off before scheduling a plan")
+def _refuse_autoplay_handoff(mirror: Mapping[str, Any]) -> None:
+    """AUTOPLAN-05: a plan may be scheduled while AutoPlay is on, because AutoPlay yields to it (AGENT-29). Only a handoff
+    already loading or starting a deck is refused, since the plan would share that deck. A mirror that does not report it
+    comes from an older page, which cannot yield safely."""
+    in_flight = mirror.get("autoplay_handoff_in_flight")
+    if in_flight is True:
+        raise DjError("autoplay_handoff", "AutoPlay is handing off a deck; schedule the plan once it lands")
+    if in_flight is None and (mirror.get("autoplay_enabled") is True or mirror.get("autoplay_armed") is True):
+        raise DjError("autoplay_handoff", "this page does not report AutoPlay handoffs; reload it before scheduling with AutoPlay on")
 
 
 def _sync_enabled(sync: Any) -> bool | None:
@@ -828,24 +821,6 @@ def _needs_load(mirror: Mapping[str, Any], in_deck: int, in_id: str) -> bool:
             f"deck {in_deck} is armed to launch; pick an idle deck for the incoming track",
         )
     return state.get("stable_id") != in_id
-
-
-def _with_in_track(mirror: Mapping[str, Any], in_deck: int, in_id: str, in_bpm: float | None) -> dict[str, Any]:
-    """The mirror as it will be once ``schedule`` has loaded ``in_id``.
-
-    ``schedule`` loads an idle incoming deck itself, so validating a proposal
-    against the deck's CURRENT track would refuse a plan that will be fine.
-    The tempos are the incoming track's own, not the previous track's.
-    """
-    copy = dict(mirror)
-    decks = {key: dict(value) if isinstance(value, Mapping) else value for key, value in (mirror.get("decks") or {}).items()}
-    state = decks.get(str(in_deck))
-    if isinstance(state, dict) and state.get("stable_id") != in_id and state.get("playing") is not True:
-        state["stable_id"] = in_id
-        state["bpm"] = in_bpm
-        state["effective_bpm"] = in_bpm
-    copy["decks"] = decks
-    return copy
 
 
 def _window_at(profile: TrackProfile, role: str, start_bar: int | None) -> MixWindow:

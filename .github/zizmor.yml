@@ -20,4 +20,4 @@ rules:
       # credential for this private repo) or git fetch + push (debt-index-regen).
       # None of these jobs uploads the checkout as an artifact.
       - debt-index-regen.yml:127
-      - periodic-checks.yml:1055
+      - periodic-checks.yml:1059

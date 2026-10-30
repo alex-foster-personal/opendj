@@ -122,7 +122,9 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
         5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
         5328,  # tests/e2e/vite.lyrics-words.config.ts frontend port
+        5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_FRONTEND_PORT
         5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
+        5334,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
         8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
@@ -142,6 +144,8 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8706,  # tests/e2e/vite.lyrics-words.config.ts API port
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
+        8714,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_API_PORT
+        8717,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_API_PORT
         9336,  # apps/desktop/mcp/smoke.ts CDP_PORT (--shell electron)
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9410,  # tests/e2e/midi-maps-e2e-endpoints.ts DEFAULT_FRONTEND_PORT

@@ -116,6 +116,15 @@ export function createAuditioner(makeAudio: (url: string) => AudioLike, events: 
 			attempts.supersede();
 			current?.element.pause();
 		},
+		/** Seconds into ``candidateId``'s render while it is the current source, else null (TRYER-16 playhead). */
+		position(candidateId: string): number | null {
+			return current !== null && current.id === candidateId ? current.element.currentTime : null;
+		},
+		/** Play ``candidateId`` from ``seconds`` (a click on its lanes). */
+		playFrom(candidateId: string, url: string, seconds: number): void {
+			this.play(candidateId, url);
+			if (current !== null) current.element.currentTime = seconds;
+		},
 		/** Forget the current element and its position: a new job never resumes the previous job's audio. */
 		reset(): void {
 			attempts.supersede();
@@ -141,6 +150,15 @@ export function unmeasured(candidate: TryCandidate): string[] {
 	return Object.entries(candidate.unknown).map(
 		([factor, reason]) => `${words(factor)}: ${reason}`
 	);
+}
+
+/** Notes (red flags and unmeasured gaps) every candidate carries, in the first candidate's order: shown once above
+ * the cards so each card lists only what sets it apart. Fewer than two candidates share nothing. */
+export function sharedNotes(candidates: readonly TryCandidate[]): string[] {
+	if (candidates.length < 2) return [];
+	const notesOf = (c: TryCandidate) => [...redFlags(c), ...unmeasured(c)];
+	const rest = candidates.slice(1).map((c) => new Set(notesOf(c)));
+	return notesOf(candidates[0]).filter((note) => rest.every((notes) => notes.has(note)));
 }
 
 export function isVetoed(candidate: TryCandidate): boolean {

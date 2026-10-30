@@ -28,15 +28,14 @@ what the encoder produced.
 
 This version calls the REAL production ``worker._encode_stem_part`` for both
 codec round trips -- the actual chaining function ``write_bundle`` itself
-calls, not a hand-reimplemented ``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3``
+calls, not a hand-reimplemented ``_stem_array`` -> ``_encode_mp3``
 substitute, so the mp3 rung-1/rung-2 bitrate-ladder retry
 (apps/stems/stem_size_policy.py's ``lossy_stem_exceeds_source`` /
 ``mp3_rung2_cbr_kbps``) is the real code path, not skipped. That function
-calls exactly three methods on its ``tensor: Any`` argument --
-``.detach().cpu().numpy()`` -- so ``_CpuTensor`` below wraps a genuine numpy
-array to satisfy that documented subset without pulling torch into this
-repo's venv (torch stays out per .claude/rules/python-backend.md; only the
-torch OBJECT is stood in for, the array data and the encode call are real).
+takes the numpy [channels, frames] array ``worker._tensor_to_numpy``
+produces from a Demucs tensor, so it runs here on a real numpy array with no
+stand-in for a tensor (Codex P1 on #6820); torch stays out of this repo's
+venv per (private path).
 A real Demucs tensor from ``write_bundle``'s own GPU/torch inference path is
 UNAVAILABLE at this test layer by the same rule (no torch/demucs in the repo
 venv, ever) -- this suite has never claimed to exercise that half, and
@@ -78,7 +77,7 @@ never allowing a SHORTER decode (lost audio would still fail hard).
 
   - [if] the source extension is .mp3 [then] the stem suffix is .mp3, [else stop]
   - [if] a v3 bundle's mp3 parts are encoded by the real production
-    ``_encode_stem_part`` chain (``_encode_flac_bytes`` -> ``_ffmpeg_encode_mp3``,
+    ``_encode_stem_part`` chain (``_stem_array`` -> ``_encode_mp3``,
     including the rung-1/rung-2 bitrate-ladder retry) [then] each part's
     ffprobe duration falls in ``[FRAMES / SAMPLE_RATE, FRAMES / SAMPLE_RATE +
     MP3_MAX_PADDING_S]``, [else stop]
@@ -110,7 +109,7 @@ FFPROBE = os.environ.get("MDT_FFPROBE", "ffprobe")
 # Single source of truth for the codec round-trip tests: fed into the real
 # encoder AND the manifest's declared audio block, so they cannot disagree.
 # 1 second, not the original 4410-frame (0.1s) draft: at 0.1s, LAME frame
-# padding/encoder delay (see _ffmpeg_encode_mp3's own docstring) is a large
+# padding/encoder delay (see _encode_mp3's own docstring) is a large
 # fraction of the clip, so a genuine encoder/decoder-delay difference across
 # ffmpeg builds and a real corruption become hard to tell apart by duration
 # alone. At 1s both are unambiguous.
@@ -154,31 +153,10 @@ def test_unrecognised_source_extension_raises() -> None:
         worker._stem_file_suffix(Path("track.ogg"))
 
 
-class _CpuTensor:
-    """Stands in for a torch.Tensor across exactly the three calls
-    ``_encode_flac_bytes`` makes on its ``tensor: Any`` argument --
-    ``.detach().cpu().numpy()`` -- so that real production function runs for
-    real against a genuine numpy array, without pulling torch into this
-    repo's venv."""
-
-    def __init__(self, array: np.ndarray) -> None:
-        self._array = array
-
-    def detach(self) -> _CpuTensor:
-        return self
-
-    def cpu(self) -> _CpuTensor:
-        return self
-
-    def numpy(self) -> np.ndarray:
-        return self._array
-
-
 def _silence_tensor(*, channels: int = CHANNELS, frames: int = FRAMES) -> Any:
     """A genuinely all-zero (silent, decodable) (channels, frames) float32
-    array -- the shape ``_encode_flac_bytes``' own ``.T`` expects -- wrapped
-    as a real encoder input."""
-    return _CpuTensor(np.zeros((channels, frames), dtype=np.float32))
+    array: the layout ``worker._tensor_to_numpy`` hands the encoder."""
+    return np.zeros((channels, frames), dtype=np.float32)
 
 
 def _ffprobe_duration_s(path: Path) -> float:
@@ -251,7 +229,7 @@ def _assert_parts_decode_to_declared_duration(
 @pytest.mark.requires_ffmpeg
 def test_mp3_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) -> None:
     # The real production chaining function write_bundle itself calls, not a
-    # hand-reimplemented _encode_flac_bytes -> _ffmpeg_encode_mp3 substitute:
+    # hand-reimplemented _stem_array -> _encode_mp3 substitute:
     # this exercises the rung-1/rung-2 bitrate-ladder retry too.
     # source_bytes is set generously above what a silent 1s mp3 can encode
     # to, so rung 1 holds and the assertion below confirms that.

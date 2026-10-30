@@ -57,9 +57,11 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import hashlib
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -73,6 +75,8 @@ from apps.cloud.stem_bundles import (
     LocalBundle,
     StemAssetIndex,
     claim_and_remove,
+    current_fingerprint,
+    file_marks,
     index_gap,
     is_hydrate_pinned,
     scan_bundles,
@@ -94,13 +98,20 @@ from apps.cloud.stem_cache_settings import (
 )
 from apps.cloud.stem_upload_queue import (
     UPLOAD_QUEUE_FILENAME,
+    exclusive_file_lock,
     load_upload_queue,
     load_verified_fingerprints,
     save_upload_queue,
     upload_queue_path,
 )
+from apps.stems.bundle_lock import BUNDLE_LOCK_STRIPES, bundle_lock_path, discard_landed_swap_backup
 
 GIB: int = 1024**3
+#: The short lock an eviction claim holds from its last registry ask through
+#: the rename, and the only one a deck's read waits on. Separate from the
+#: bundle lock, which a hydration holds for its whole R2 fetch, so a read
+#: never waits on the network (Codex P1 on #6821).
+EVICTION_CLAIM_LOCK_DIR_NAME: str = "stem-evict-claim-locks"
 #: Bytes one timer pass may hash to find same-name re-renders, so a first pass
 #: meeting every bundle unverified spreads that read over several passes.
 REVERIFY_HASH_BUDGET_BYTES: int = 2 * GIB
@@ -345,6 +356,32 @@ def _would_evict(evictable: list[LocalBundle], need_bytes: int) -> tuple[int, in
     return count, total_bytes
 
 
+def _remove_one(
+    bundle: LocalBundle, *, dry_run: bool, remove: Callable[[LocalBundle], bool | None]
+) -> tuple[int, bool]:
+    """(bytes this bundle covers, whether this pass removed it).
+
+    A lost claim still covers its bytes (another pass freed them); a bundle
+    rewritten since the scan (``remove`` returns None) is kept and covers
+    nothing, so the pass walks on to the next one.
+    """
+    removed = True if dry_run else remove(bundle)
+    if removed is None:
+        return 0, False
+    return bundle.size_bytes, removed
+
+
+def _held_now(bundle: LocalBundle, live_protected: Callable[[], frozenset[str]] | None) -> bool:
+    """Whether a deck or a hydrate holds ``bundle`` at this moment, so it must stay."""
+    # ``protected`` predates the scan and the hash (seconds on a big bundle),
+    # so a deck may have opened this one since: ask the live registry again.
+    if live_protected is not None and bundle.stable_id in live_protected():
+        return True
+    # A hydrate in any process pins a bundle before publishing it, so a
+    # bundle no deck registry names yet is kept until it is handed over.
+    return is_hydrate_pinned(bundle.path)
+
+
 def _evict_lru(
     bundles: list[LocalBundle],
     *,
@@ -352,7 +389,7 @@ def _evict_lru(
     index: StemAssetIndex,
     protected: frozenset[str],
     dry_run: bool,
-    remove: Callable[[Path], bool],
+    remove: Callable[[LocalBundle], bool | None],
     live_protected: Callable[[], frozenset[str]] | None = None,
 ) -> tuple[list[str], int, set[str], int]:
     """Remove LRU bundles until ``need_bytes`` is freed: (evicted ids, bytes
@@ -369,26 +406,166 @@ def _evict_lru(
         if bundle.stable_id in protected:
             continue
         reason = unconfirmed_reason(bundle, index)  # REASON_GONE when raced away
-        if reason is not None:
+        if reason == REASON_GONE and dry_run:  # removed under us: those bytes are free too
+            covered += bundle.size_bytes
+            continue
+        if reason is not None and reason != REASON_GONE:
             if reason == REASON_CONTENT_DIFFERS:
                 content_differs.add(bundle.stable_id)
-            elif reason == REASON_GONE:  # removed under us: those bytes are free too
-                covered += bundle.size_bytes
             continue
-        # ``protected`` predates the scan and the hash (seconds on a big bundle),
-        # so a deck may have opened this one since: ask the live registry again.
-        if live_protected is not None and bundle.stable_id in live_protected():
+        # A missing file may also mean a writer swapped in a bundle with other
+        # file names (FLAC parts re-rendered as MP3), which frees nothing. The
+        # claim below tells the two apart under the bundle lock and credits
+        # only a bundle that is really gone (Codex on #6820).
+        if _held_now(bundle, live_protected):
             continue
-        # A hydrate in any process pins a bundle before publishing it, so a
-        # bundle no deck registry names yet is kept until it is handed over.
-        if is_hydrate_pinned(bundle.path):
-            continue
-        covered += bundle.size_bytes
-        if not dry_run and not remove(bundle.path):
-            continue  # another pass claimed it first; it freed those bytes
+        credited, removed = _remove_one(bundle, dry_run=dry_run, remove=remove)
+        covered += credited
+        if not removed:
+            continue  # claimed by another pass first, or rewritten since the scan
         evicted.append(bundle.stable_id)
         freed += bundle.size_bytes
     return evicted, freed, content_differs, covered
+
+
+def claim_if_unchanged(
+    bundle: LocalBundle,
+    data_dir: Path,
+    index: StemAssetIndex,
+    *,
+    live_protected: Callable[[], frozenset[str]] | None = None,
+) -> bool | None:
+    """Remove ``bundle`` under its bundle lock if it is still what this pass confirmed.
+
+    Every writer of a bundle directory holds :mod:`apps.stems.bundle_lock`
+    (the same striped files hydration holds) while it creates, replaces or
+    moves it. Eviction confirmed this bundle against R2 without that lock,
+    so a STEM-58 re-compress swap or a republish may have put a new,
+    not-yet-uploaded bundle at this path since (Codex P1 on #6820). Inside
+    the lock the fingerprint (every file's name, size and mtime) is taken
+    again and compared with the scan's; then, OUTSIDE the lock, every
+    file's content is hashed against ``index`` again: a coarse filesystem
+    clock (1-2 s on HFS+ or FAT) can give a same-size rewrite the same
+    mtime, so metadata alone cannot prove these are still the bytes R2
+    holds (Codex P1 on #6821). Under the lock once more, every file's
+    inode and ctime must be as they were before the hash
+    (``file_marks``), so a writer that swapped or rewrote the bundle while
+    it was hashed keeps it (Codex on #6821). That wait and hash can take
+    seconds, so last of all, immediately before the claim, the live deck registry
+    (``live_protected``) and the hydrate pins are asked again: a deck that
+    opened this bundle meanwhile keeps it (STEM-42; Codex P1 on #6820 and
+    #6821). That last ask and the claim run under the eviction-claim lock
+    as well, the one a deck's read waits on. Only a bundle that passes all three is claimed. True: removed.
+    False: already gone, another pass freed it. None: rewritten since the
+    scan, or opened or pinned since, so it is kept and frees nothing.
+    """
+    lock_path = bundle_lock_path(data_dir, bundle.stable_id)
+    with exclusive_file_lock(lock_path):
+        now = current_fingerprint(bundle.path)
+        if now is None:
+            return False
+        if now != bundle.fingerprint:
+            return None
+        marks = file_marks(bundle.path)
+    # The hash reads every part, seconds on a big bundle or a slow disk, so
+    # it runs outside the striped writer lock: a publish or hydration of any
+    # id on this stripe would otherwise wait it out (Codex on #6821). What
+    # was hashed is then proven still in place under the lock, by every
+    # file's inode and ctime, which any write moves (file_marks).
+    reason = unconfirmed_reason(bundle, index)
+    if reason == REASON_GONE:
+        # A file the hash missed may be a swap that put a bundle with other
+        # file names here, not a pass that removed it: only a path still
+        # absent under the lock is another pass's freed bytes (Codex on #6820).
+        with exclusive_file_lock(lock_path):
+            return False if current_fingerprint(bundle.path) is None else None
+    if reason is not None:
+        return None
+    return _claim_if_still_marked(bundle, data_dir, lock_path, marks, live_protected)
+
+
+def _claim_if_still_marked(
+    bundle: LocalBundle,
+    data_dir: Path,
+    lock_path: Path,
+    marks: tuple[tuple[str, int, int, int], ...] | None,
+    live_protected: Callable[[], frozenset[str]] | None,
+) -> bool | None:
+    """The second half of :func:`claim_if_unchanged`, under the bundle lock again."""
+    with exclusive_file_lock(lock_path):
+        marks_now = file_marks(bundle.path)
+        if marks_now is None:
+            return False
+        if marks_now != marks:
+            return None
+        with exclusive_file_lock(eviction_claim_lock_path(data_dir, bundle.stable_id)):
+            if live_protected is not None and bundle.stable_id in live_protected():
+                return None
+            if is_hydrate_pinned(bundle.path):
+                return None
+            # A backup a killed swap left beside this live bundle is an older
+            # render; it goes first, or the next read would restore it once
+            # the bundle is gone (Codex on #6821). One that cannot be moved
+            # aside keeps the bundle, which a later pass retries (Codex on
+            # #6820).
+            if not discard_landed_swap_backup(bundle.path):
+                return None
+            # Likewise a recompression's landed journal, or a read would put
+            # its old backup back once the bundle is gone (Codex on #6820).
+            # Imported here: recompress pulls in the pydantic bundle schema,
+            # and the root conftest imports this module in environments
+            # (the quality job's) that do not install it.
+            from apps.stems.recompress import clear_landed_recompress_journal
+
+            clear_landed_recompress_journal(bundle.path)
+            return claim_and_remove(bundle.path)
+
+
+def eviction_claim_lock_path(data_dir: Path, stable_id: str) -> Path:
+    """The OS lock an eviction claim of ``stable_id`` holds, striped like the bundle lock."""
+    stripe = int(hashlib.sha256(stable_id.encode("utf-8")).hexdigest(), 16) % BUNDLE_LOCK_STRIPES
+    return Path(data_dir) / "state" / EVICTION_CLAIM_LOCK_DIR_NAME / f"{stripe:03d}.lock"
+
+
+def hold_against_eviction(mark: Callable[[], None], data_dir: Path, stable_id: str) -> None:
+    """Record a deck's hold on ``stable_id``, then wait out any claim already under way.
+
+    :func:`claim_if_unchanged` asks the deck registry and claims the bundle
+    inside one hold of the eviction-claim lock. A deck that only marked the
+    registry could mark just after that ask and then read a bundle the claim
+    is about to rename away (Codex P1 on #6820). So the deck marks FIRST,
+    then takes and drops that lock before it reads: a claim that asked
+    before the mark has finished by then (the read finds nothing and
+    hydrates), and every claim that asks after it sees the mark and keeps
+    the bundle. It waits on the claim lock, not the bundle lock, because a
+    hydration holds the bundle lock for its whole R2 fetch and a manifest
+    poll must answer at once (Codex P1 on #6821). The deck never holds the
+    lock while it reads, so serving parts never blocks a writer.
+    """
+    mark()
+    with exclusive_file_lock(eviction_claim_lock_path(data_dir, stable_id)):
+        pass
+
+
+@contextlib.contextmanager
+def read_barrier(data_dir: Path | None, stable_id: str) -> Iterator[None]:
+    """Hold the eviction-claim lock while a read resolves and opens a bundle.
+
+    A swap (``apps.stems.bundle_lock.replace_bundle_dir``, the STEM-58
+    ``_swap_in``) and an eviction claim hold this lock across the moves
+    that empty the bundle path, so a stems route that finds its bundle and
+    opens the file it serves inside this hold sees either the old bundle or
+    the new one, never the gap between them and never a lower-precedence
+    root (Codex on #6820). Only that resolve-and-open is held; streaming
+    an opened file and decoding a waveform run outside it, so a writer
+    waits milliseconds at most. ``data_dir`` is None for an app with no
+    data dir, which runs no swap or eviction, and then nothing is held.
+    """
+    if data_dir is None:
+        yield
+        return
+    with exclusive_file_lock(eviction_claim_lock_path(Path(data_dir), stable_id)):
+        yield
 
 
 def enforce(  # noqa: PLR0913 - each argument is one independent input to the decision
@@ -436,7 +613,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
             index=index,
             protected=protected,
             dry_run=dry_run,
-            remove=claim_and_remove,
+            remove=lambda bundle: claim_if_unchanged(bundle, data_dir, index, live_protected=live_protected),
             live_protected=live_protected,
         )
         if covered < need:
@@ -554,6 +731,7 @@ __all__ = [
     "DEFAULT_ENFORCE_INTERVAL_S",
     "DEFAULT_FLOOR_FRACTION",
     "DEFAULT_FLOOR_GIB",
+    "EVICTION_CLAIM_LOCK_DIR_NAME",
     "GIB",
     "IN_FLIGHT_MARKER",
     "REASON_CONTENT_DIFFERS",
@@ -566,14 +744,18 @@ __all__ = [
     "LocalBundle",
     "StemCacheSettings",
     "StemCacheSettingsError",
+    "claim_if_unchanged",
     "derived_budget_bytes",
     "enforce",
+    "eviction_claim_lock_path",
     "floor_bytes",
+    "hold_against_eviction",
     "index_gap",
     "load_settings",
     "load_upload_queue",
     "measure_disk",
     "merged_settings",
+    "read_barrier",
     "save_settings",
     "scan_bundles",
     "settings_from_mapping",

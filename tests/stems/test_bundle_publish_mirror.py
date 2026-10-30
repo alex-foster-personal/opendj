@@ -30,7 +30,14 @@ import pytest
 from apps.stems import bundle_publish
 
 FARM = Path(__file__).resolve().parents[2] / "scripts" / "modal_vocal_farm.py"
-MIRRORED_LITERALS = ("BAKED_MODELS", "DEMUCS_VERSION", "STEM_PARTS", "STEM_BUNDLE_SCHEMA")
+MIRRORED_LITERALS = (
+    "BAKED_MODELS",
+    "DEMUCS_VERSION",
+    "STEM_PARTS",
+    "STEM_BUNDLE_SCHEMA",
+    "STEM_LAYOUT",
+)
+ENCODER = FARM.with_name("farm_stem_encode.py")
 
 pytestmark = pytest.mark.requirement("STEM-52")
 
@@ -94,24 +101,102 @@ def test_constants_match_the_farm(name: str) -> None:
     )
 
 
-def _result() -> dict[str, Any]:
+def test_the_by_source_codec_name_matches_the_farm_encoder() -> None:
+    """The farm takes STEM_CODEC_BY_SOURCE from scripts/farm_stem_encode.py."""
+    tree = ast.parse(ENCODER.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "STEM_CODEC_BY_SOURCE"
+            and node.value is not None
+        ):
+            assert ast.literal_eval(node.value) == bundle_publish.STEM_CODEC_BY_SOURCE
+            return
+    raise AssertionError(f"STEM_CODEC_BY_SOURCE not found in {ENCODER}")
+
+
+def _result(codec: str = "flac") -> dict[str, Any]:
+    """One farm result per codec, in the shape ``_analyse`` returns (STEM-75):
+    MP3 carries a size policy and no bit depth, FLAC carries PCM_16."""
+    audio: dict[str, Any] = {"sample_rate": 44100, "frame_count": 88200, "channels": 2}
+    if codec == "flac":
+        audio["bit_depth"] = 16
+    audio["codec"] = codec
     return {
         "source_sha256": "0" * 64,
-        "stem_ext": "flac",
-        "audio": {"sample_rate": 44100, "frame_count": 88200, "channels": 2},
+        "stem_ext": codec,
+        "stem_codec": codec,
+        "audio": audio,
+        "size_policy": {
+            "source_bytes": 1000,
+            "source_kbps": 245.0,
+            "mp3_settings": (
+                {p: "lame_v0_vbr" for p in bundle_publish.STEM_PARTS}
+                if codec == "mp3"
+                else None
+            ),
+            "part_bytes": {p: 900 for p in bundle_publish.STEM_PARTS},
+            "violations": [],
+        },
         "stems": {part: f"{part}-bytes".encode() for part in bundle_publish.STEM_PARTS},
     }
 
 
-def test_manifest_matches_the_farm() -> None:
+@pytest.mark.parametrize("codec", ["flac", "mp3"])
+def test_manifest_matches_the_farm(codec: str) -> None:
+    _assert_manifest_matches_the_farm(codec)
+
+
+def _assert_manifest_matches_the_farm(codec: str) -> None:
     tree = _farm_tree()
     farm_manifest = _farm_function(tree, "_stem_manifest", _farm_namespace(tree))
     stamp = bundle_publish.PRESETS["hdemucs_mmi-ov0.25"].stamp()
-    args = ("sid-1", "/music/a.mp3", _result(), stamp)
+    args = ("sid-1", "/music/a.mp3", _result(codec), stamp)
     assert bundle_publish.stem_manifest(*args) == farm_manifest(*args)
 
 
-def test_bundle_bytes_match_the_farm(tmp_path: Path) -> None:
+@pytest.mark.requirement("STEM-75")
+def test_the_farm_manifest_is_v3_and_names_its_codec() -> None:
+    manifest = bundle_publish.stem_manifest(
+        "sid-1", "/music/a.mp3", _result("mp3"), bundle_publish.PRESETS["htdemucs-ov0.25"].stamp()
+    )
+    assert manifest["schema_version"] == 3
+    assert manifest["layout"] == "demucs4"
+    assert manifest["codec"] == "mp3"
+    assert set(manifest["files"].values()) == {
+        f"{p}.mp3" for p in bundle_publish.STEM_PARTS
+    }
+    assert manifest["size_policy"]["mp3_settings"]["vocals"] == "lame_v0_vbr"
+
+
+@pytest.mark.requirement("STEM-75")
+def test_a_result_that_does_not_name_its_codec_is_refused() -> None:
+    """No guessed extension: before STEM-75 a missing ``stem_ext`` silently
+    meant FLAC, which would name MP3 bytes ``.flac``."""
+    stamp = bundle_publish.PRESETS["htdemucs-ov0.25"].stamp()
+    for key in ("stem_ext", "stem_codec"):
+        result = _result("mp3")
+        del result[key]
+        with pytest.raises(KeyError):
+            bundle_publish.stem_manifest("sid-1", "/music/a.mp3", result, stamp)
+
+
+@pytest.mark.requirement("STEM-75")
+@pytest.mark.parametrize(
+    ("tier", "codec"), [("L", "flac"), ("M", "by-source"), ("S", "by-source")]
+)
+def test_routes_ask_for_flac_only_where_the_tier_is_flac(tier: str, codec: str) -> None:
+    """Tier L, the scored control arm, asks for FLAC explicitly; every other
+    Modal tier asks for the source-format policy (MP3 for an MP3 source)."""
+    from apps.stems.tiers import get_tier
+
+    assert bundle_publish.route_stem_codec(tier) == codec
+    assert (get_tier(tier).codec == "flac") == (codec == "flac")
+
+
+@pytest.mark.parametrize("codec", ["flac", "mp3"])
+def test_bundle_bytes_match_the_farm(tmp_path: Path, codec: str) -> None:
     tree = _farm_tree()
     namespace = _farm_namespace(tree)
     _farm_function(tree, "_stem_manifest", namespace)
@@ -119,9 +204,9 @@ def test_bundle_bytes_match_the_farm(tmp_path: Path) -> None:
     preset = bundle_publish.PRESETS["htdemucs-ov0.25"]
     audio = Path("/music/a.mp3")
 
-    farm_written, _ = farm_publish("sid-1", audio, _result(), preset, tmp_path / "farm")
+    farm_written, _ = farm_publish("sid-1", audio, _result(codec), preset, tmp_path / "farm")
     ours_written, _ = bundle_publish.publish_stems_local(
-        "sid-1", audio, _result(), preset, tmp_path / "ours"
+        "sid-1", audio, _result(codec), preset, tmp_path / "ours"
     )
     assert ours_written == farm_written > 0
     farm_bundle = tmp_path / "farm" / "state" / "stems" / "sid-1"
@@ -147,4 +232,4 @@ def test_negative_control_a_drifted_mirror_is_caught(
         test_presets_match_the_farm()
     monkeypatch.setattr(bundle_publish, "STEM_BUNDLE_SCHEMA", 99)
     with pytest.raises(AssertionError):
-        test_manifest_matches_the_farm()
+        _assert_manifest_matches_the_farm("mp3")

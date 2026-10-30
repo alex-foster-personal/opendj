@@ -485,7 +485,12 @@ dependencies = ["certifi"]
 """
     (project / "pyproject.toml").write_text(pyproject, encoding="utf-8")
 
-    subprocess.run(["uv", "lock"], cwd=project, check=True, env=offline | {"UV_OFFLINE": "0"})
+    locked = subprocess.run(
+        ["uv", "lock"], cwd=project, capture_output=True, text=True, env=offline | {"UV_OFFLINE": "0"}
+    )
+    if "Failed to fetch" in locked.stderr:
+        pytest.skip(f"this runner cannot reach the package index: {locked.stderr.strip()}")
+    assert locked.returncode == 0, locked.stderr
     subprocess.run(["uv", "sync"], cwd=project, check=True, env=offline | {"UV_OFFLINE": "0"})
 
     expected = _installed_distribution_names(project / ".venv" / "bin" / "python")

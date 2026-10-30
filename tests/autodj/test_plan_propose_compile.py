@@ -43,13 +43,27 @@ from tests.autodj.fixtures import DEFAULT_ARRANGEMENT, anlz_payload, profile, tr
 OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
 
 
+def _events(style_name: str, bars: int) -> list[dict[str, Any]]:
+    """A style's events over ``bars``. Tempo and handover tests use 8-bar windows, under the gated blends' minimum
+    (D11 intro + D12 body fade); for them the same law runs with a body fade that fits, since the law itself is tested
+    on its own in tests/autodj/test_bass_hit_gate.py."""
+    from apps.autodj.styles import HIT_GATED, MIN_INTRO_BARS, StyleParams, parametric_builder
+
+    chosen = style(style_name)
+    if chosen.hit == HIT_GATED and bars < chosen.min_bars:
+        short = StyleParams(volume=chosen.volume_lane, min_body_fade_bars=bars - MIN_INTRO_BARS)
+        return parametric_builder(short)(bars, 1, 2)
+    assert chosen.builder is not None
+    return chosen.builder(bars, 1, 2)
+
+
 def _plan(style_name: str = "bass_swap_blend", bars: int = 15, out_start: int = 113) -> dict[str, Any]:
-    events = [event for event in style(style_name).builder(bars, 1, 2)]  # type: ignore[misc]
     return {
         "out": {"deck": 1, "track": "trk-out", "window": {"start_bar": out_start, "bars": bars}},
         "in": {"deck": 2, "track": "trk-in", "window": {"start_bar": 1, "bars": bars}},
         "style": style_name,
-        "events": events,
+        "events": _events(style_name, bars),
+        "shape": "lull_then_drop" if style_name == "lull_then_drop" else None,
     }
 
 
@@ -246,11 +260,12 @@ def _live_with_sides(out_assign: str, in_assign: str, crossfader: float) -> dict
 
 
 def test_a_crossfader_move_that_closes_both_sides_counts_as_silence() -> None:
-    # Deck 1 on A, deck 2 on A, crossfader thrown to B at bar 2: neither deck passes.
+    # Deck 1 on A, deck 2 on A, crossfader thrown to B at bar 4 (deck 2 is audible from bar 3 as it rises to its
+    # pre-hit level): neither deck passes.
     document = _plan()
-    document["events"].append({"at_bar": 2, "deck": None, "set": {"crossfader": 1.0}})
+    document["events"].append({"at_bar": 4, "deck": None, "set": {"crossfader": 1.0}})
     validation = validate_plan(parse_plan(document), OUT, IN, live=_live_with_sides("A", "A", 0.0))
-    assert validation.metrics["silent_bars"] == 13
+    assert validation.metrics["silent_bars"] == 11
     assert any("neither deck audible" in error for error in validation.errors)
     # Control: the same plan with deck 2 on side B is heard every bar.
     control = validate_plan(parse_plan(document), OUT, IN, live=_live_with_sides("A", "B", 0.0))
@@ -346,9 +361,10 @@ def test_live_validation_refuses_an_incoming_deck_armed_for_a_launch() -> None:
 
 def test_simulate_follows_the_ramps() -> None:
     rows = simulate(parse_plan(_plan()))
-    # Round 5: the bass-swap blend holds both decks overlap_comp_db (-3 dB) down while they overlap.
-    assert rows[0].in_fader < 0.5 and rows[5].in_fader == pytest.approx(10 ** (-3 / 20), abs=1e-6)
-    assert rows[-1].out_fader < 0.5
+    # D11: the incoming deck rises to its pre-hit level (-6 dB) while the outgoing deck is untouched until the hit
+    # (bar 7 of this 15-bar blend); D12: from the hit the outgoing body fades out.
+    assert rows[0].in_fader < 0.1 and rows[6].in_fader == pytest.approx(0.5, abs=0.01)
+    assert rows[6].out_fader == 1.0 and rows[-1].out_fader < 0.1
 
 
 @pytest.mark.requirement("AGENT-29")
@@ -815,15 +831,21 @@ def test_an_outgoing_low_cut_on_the_mixer_counts_as_cut() -> None:
 
 
 def test_simulate_starts_each_channel_where_it_is_given() -> None:
+    from apps.autodj.styles import knob_amp
+
     rows = simulate(parse_plan(_plan()), channels=(ChannelStart(fader=0.4, low=0.1), ChannelStart(trim=0.3)))
-    # Deck 1's fader and low are untouched until bar 7; deck 2's trim never moves. The compensated blend's -3 dB level
-    # is above 0.4, so the cap keeps deck 1 at 0.4 (AGENT-35: never louder than the DJ left it).
+    # Deck 1's fader and low are untouched until the hit at bar 7; deck 2's trim never moves. The body fade's targets
+    # are capped at 0.4 (AGENT-35: never louder than the DJ left it).
     assert (rows[0].out_fader, rows[0].out_low, rows[0].in_trim) == (0.4, 0.1, 0.3)
-    # Control: from a full fader the same plan starts at the compensated level.
-    assert (rows[0].out_trim, simulate(parse_plan(_plan()))[0].out_fader) == (
-        0.5,
-        pytest.approx(10 ** (-3 / 20), abs=1e-6),
-    )
+    assert all(r.out_fader <= 0.4 + 1e-9 for r in rows)
+    # Control: from a full fader the outgoing deck stays full until the hit (no pre-dip, D11) and the plan must
+    # keep the low band at one deck after it (r5: correlated kicks sum in amplitude; 0.05 is the -26 dB knob floor).
+    full = simulate(parse_plan(_plan()))
+    assert rows[0].out_trim == 0.5
+    assert all(r.out_fader == 1.0 for r in full if r.bar < 7), "if the outgoing moves before the hit then D11 broke"
+    assert all(
+        r.out_fader * knob_amp(r.out_low) + r.in_fader * knob_amp(r.in_low) <= 1.0 + 0.05 for r in full if r.bar >= 8
+    ), "if the two lows sum above one full deck after the hit then the level law broke"
 
 
 def _live_tempo(out_bpm: float, range_pct: float | None) -> dict[str, Any]:
@@ -893,7 +915,7 @@ def test_silence_sees_two_ramps_cross_the_floor_inside_one_grid_cell() -> None:
     document["events"] = [event for event in document["events"] if "ramp" not in event or event["deck"] != 2]
     document["events"] += [
         {"at_bar": 0.6, "deck": 1, "ramp": {"fader": 0.0}, "over_bars": 0.2},
-        {"at_bar": 0.6, "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 0.5},
+                {"at_bar": 0.6, "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 2.0},
     ]
     assert validate_plan(parse_plan(document), OUT, IN).metrics["silent_bars"] >= 1
     # Control: an incoming rise that opens before the outgoing fade reaches the floor leaves no gap.
@@ -1144,6 +1166,7 @@ def test_the_trim_matches_the_incoming_track_to_the_outgoing_lufs() -> None:
     assert match_trim_db(out_p, in_p) == (-6.0, "match -3.0 to -9.0 LUFS: -6.0 dB")
     assert trim_knob(-6.0) == pytest.approx(10 ** (-6 / 20) / 2, abs=1e-6)
     proposals = propose_transition(out_p, in_p, out_deck=1, in_deck=2, intent="smooth")["proposals"]
+    # Offline, the outgoing deck is assumed loaded at unity (round 22), so the match is the plain -6 dB.
     assert proposals and all(row["plan"]["in"]["trim_db"] == -6.0 for row in proposals)
     order = compile_plan(parse_plan(proposals[0]["plan"]), in_p, plan_id="p", live=None)["plan"]
     assert {"type": "trim", "deck": 2, "value": trim_knob(-6.0)} in order["prepare"]
@@ -1188,35 +1211,6 @@ def _fader_at(events: list[dict[str, Any]], deck: int, bar: float) -> float:
         if e.get("deck") == deck and "fader" in e.get("ramp", {})
     ]
     return max((end for end in ends if end[0] <= bar + 1e-9), key=lambda end: end[0])[1]
-
-
-def test_equal_power_is_the_default_and_reads_0707_at_the_center() -> None:
-    """AGENT-34: [if] a crossfade is built with the default shape [then] both decks sit at 0.707 mid-fade, and the
-    linear shape (still available) sits at 0.5; each curve is a chain of linear ramps."""
-    from apps.autodj.styles import StyleParams, parametric_builder
-
-    events = style("crossfade").build(16, 1, 2)
-    assert _fader_at(events, 2, 8) == pytest.approx(0.707107, abs=1e-6)
-    assert _fader_at(events, 1, 8) == pytest.approx(0.707107, abs=1e-6)
-    linear = parametric_builder(StyleParams(volume="crossfade", fade_shape="linear"))(16, 1, 2)
-    assert _fader_at(linear, 2, 8) == pytest.approx(0.5)
-    with pytest.raises(ValueError, match="fade_shape"):
-        StyleParams(volume="crossfade", fade_shape="s_curve")
-
-
-def test_swap_position_moves_the_bass_swap_and_every_handover_resets_both_filters() -> None:
-    def swap_bar(name: str) -> float:
-        """The bar the incoming lows open: the bass swap."""
-        return next(
-            e["at_bar"] for e in style(name).build(16, 1, 2) if e.get("deck") == 2 and e.get("set") == {"eq_low": 0.5}
-        )
-
-    assert swap_bar("crossfade") == 8 and swap_bar("rise") == 16  # end = the transition's last downbeat (Sol P1)
-    for name in ("crossfade", "rise", "wave", "melt", "bass_swap_blend", "cut"):
-        events = style(name).build(STYLES[name].default_bars, 1, 2)
-        end = STYLES[name].clamp_bars(STYLES[name].default_bars)
-        resets = {e["deck"] for e in events if e["at_bar"] == end and e.get("set") == {"filter": 0.5}}
-        assert resets == {1, 2}, name
 
 
 def test_the_spotify_set_is_parameter_points_and_stems_stay_unavailable() -> None:
@@ -1371,78 +1365,7 @@ def test_a_non_text_trim_reason_is_refused_not_dropped() -> None:
         parse_plan(document)
 
 
-# ----- AGENT-34 round 4: overlap compensation, equal-power blends, new candidates -----
-
-
-def test_an_uncut_overlap_holds_both_decks_down_by_overlap_comp_db() -> None:
-    """Round 4 (spec 01): with no low-EQ kill, both decks sit -3 dB (0.708) through the overlap core and the incoming
-    deck is back at full by the end; with a bass swap (a kill active) there is no compensation (control)."""
-    from apps.autodj.styles import StyleParams, parametric_builder
-
-    events = parametric_builder(StyleParams(volume="overlap", swap_position=None))(16, 1, 2)
-    level = 10 ** (-3 / 20)
-    assert _fader_at(events, 2, 4) == pytest.approx(level, abs=1e-6)
-    assert _fader_at(events, 1, 4) == pytest.approx(level, abs=1e-6)
-    assert _fader_at(events, 2, 16) == pytest.approx(1.0)
-    plan = parse_plan(_plan("bass_swap_blend", bars=16, out_start=OUT.bars - 16) | {"events": events})
-    assert validate_plan(plan, OUT, IN).errors == []
-    # Spec 01's own rule (no compensation while a low kill is active) is one flag away; round 5 turns it on by default.
-    spec_rule = parametric_builder(StyleParams(volume="overlap", comp_with_low_kill=False))(16, 1, 2)
-    assert _fader_at(spec_rule, 2, 4) == pytest.approx(1.0)
-    swapped = parametric_builder(StyleParams(volume="overlap"))(16, 1, 2)
-    assert _fader_at(swapped, 2, 4) == pytest.approx(level, abs=1e-6)
-    with pytest.raises(ValueError, match="-6 to 0"):
-        StyleParams(volume="overlap", overlap_comp_db=-9.0)
-
-
-def test_the_older_blends_fade_on_the_equal_power_law() -> None:
-    """Round 4: bass_swap_blend and long_blend fade with the default equal-power shape (0.707 of the fade's top
-    mid-fade, not linear's 0.5); round 5 sets that top at the overlap level."""
-    level = 10 ** (-3 / 20)
-    events = style("bass_swap_blend").build(16, 1, 2)
-    assert _fader_at(events, 2, 2) == pytest.approx(level * 0.707107, abs=1e-5)  # its fade-in runs over 4 bars
-    long_events = style("long_blend").build(32, 1, 2)
-    assert _fader_at(long_events, 2, 8) == pytest.approx(level * 0.707107, abs=1e-5)
-
-
-def test_round_5_compensates_the_bass_swap_styles_too() -> None:
-    """Round 5 (departs from spec 01's no-kill rule after round 4's measured overs): every bass-swap blend holds both
-    decks -3 dB down while they overlap; a crossfade, constant power by its law, is not compensated (control)."""
-    level = 10 ** (-3 / 20)
-    for name, bar in (("bass_swap_blend", 6), ("long_blend", 16), ("wave", 6), ("rise", 6), ("melt", 8)):
-        events = style(name).build(STYLES[name].clamp_bars(16 if name != "long_blend" else 32), 1, 2)
-        assert _fader_at(events, 2, bar) == pytest.approx(level, abs=1e-6), name
-    # Control at a discriminating bar: mid-crossfade (bar 8 of 16) the incoming deck is at 0.707 uncompensated and
-    # would be 0.708 x 0.707 = 0.501 compensated.
-    crossfade = style("crossfade").build(16, 1, 2)
-    assert _fader_at(crossfade, 2, 8) == pytest.approx(0.707107, abs=1e-6)
-    assert _fader_at(crossfade, 2, 8) != pytest.approx(level * 0.707107, abs=1e-3)
-
-
-#: Round 5 (Sol P1, the class): every available style where both decks are heard together while a low kill is active,
-#: and whether it is compensated. Built from the catalog, so a new style must be classified here or the test fails.
-_COMP_CLASS = {
-    "bass_swap_blend": True,
-    "long_blend": True,
-    "filter_sweep": True,
-    "wave": True,
-    "rise": True,
-    "melt": True,
-    "crossfade": False,  # constant power by its law
-    "cut": False,
-    "drop_swap": False,  # no overlap: one deck at a time
-}
-
-
-@pytest.mark.parametrize("name", [name for name, s in STYLES.items() if s.available])
-def test_every_style_with_a_kill_overlap_is_compensated(name: str) -> None:
-    assert name in _COMP_CLASS, f"classify {name} in _COMP_CLASS"
-    bars = STYLES[name].clamp_bars(STYLES[name].default_bars)
-    level = round(10 ** (-3 / 20), 6)
-    out_targets = [
-        e["ramp"]["fader"] for e in style(name).build(bars, 1, 2) if e.get("deck") == 1 and "fader" in e.get("ramp", {})
-    ]
-    assert (level in out_targets) is _COMP_CLASS[name], f"{name}: outgoing held at the overlap level"
+# ----- AGENT-34: the parameter points as candidates; AGENT-35: a live outgoing fader -----
 
 
 def test_propose_offers_the_new_parameter_points_as_candidates() -> None:
@@ -1453,39 +1376,9 @@ def test_propose_offers_the_new_parameter_points_as_candidates() -> None:
     assert {"crossfade", "wave", "melt", "rise"} <= styles
 
 
-@pytest.mark.parametrize("name", sorted(name for name, compensated in _COMP_CLASS.items() if compensated))
-def test_a_compensated_overlap_never_sums_above_its_level(name: str) -> None:
-    """Round 5 follow-up (Sol P1, the class): replayed every 1/16 bar, the outgoing deck is at the compensated level
-    no later than the first moment the incoming deck is above silence, and while both are heard neither is above
-    the level and their sum never exceeds 2 x level."""
-    from apps.autodj.plan import SILENT_GAIN, state_at
-
-    bars = STYLES[name].clamp_bars(STYLES[name].default_bars)
-    level = 10 ** (-3 / 20)
-    plan = parse_plan(_plan(name, bars=bars, out_start=OUT.bars - bars) | {"events": style(name).build(bars, 1, 2)})
-    first_heard = None
-    for step in range(-16, bars * 16 + 1):
-        at = step / 16
-        row = state_at(plan, at, bar=math.floor(at))
-        in_heard = row.in_playing and row.in_fader * row.in_trim / 0.5 > SILENT_GAIN
-        out_heard = row.out_playing and row.out_fader * row.out_trim / 0.5 > SILENT_GAIN
-        if in_heard and first_heard is None:
-            first_heard = at
-            assert row.out_fader <= level + 1e-6, (
-                f"{name}: outgoing {row.out_fader:.3f} at bar {at} when the incoming is first heard"
-            )
-        if in_heard and out_heard:
-            assert row.in_fader <= level + 1e-6, f"{name}: incoming {row.in_fader:.3f} above the level at {at}"
-            assert row.out_fader <= level + 1e-6, f"{name}: outgoing {row.out_fader:.3f} above the level at {at}"
-            assert row.in_fader + row.out_fader <= 2 * level + 1e-6, (
-                f"{name}: sum {row.in_fader + row.out_fader:.3f} at {at}"
-            )
-    assert first_heard is not None
-
-
-@pytest.mark.parametrize("name", sorted(name for name, compensated in _COMP_CLASS.items() if compensated))
+@pytest.mark.parametrize("name", sorted(n for n, s in STYLES.items() if s.available and s.hit == "gated"))
 def test_a_live_outgoing_fader_left_down_is_never_raised(name: str) -> None:
-    """AGENT-35: with the DJ's outgoing fader at 0.4, no bar of any compensated style raises it (replayed every 1/16
+    """AGENT-35: with the DJ's outgoing fader at 0.4, no bar of any gated blend raises it (replayed every 1/16
     bar), and compile caps every outgoing fader target at 0.4. Control: from a full fader the plan does lower it."""
     from apps.autodj.plan import state_at
 
@@ -1716,20 +1609,6 @@ def test_validation_caps_the_outgoing_fader_once_per_replay_not_per_sample(monke
     assert 0 < calls <= 10, calls
 
 
-@pytest.mark.parametrize(
-    "name",
-    sorted(n for n, s in STYLES.items() if (p := getattr(s, "params", None)) is not None and p.swap_position == "end"),
-)
-def test_an_end_bass_swap_opens_the_incoming_lows_only_after_the_outgoing_deck_stops(name: str) -> None:
-    """[if] a style swaps the bass at the end [then] the incoming lows open after the outgoing stop in plan order, [else stop].
-
-    Sol P1 #7595: same-bar commands run in plan order, so opening first had both basslines up for that instant."""
-    events = style(name).builder(16, 1, 2)  # type: ignore[misc]
-    stop = next(i for i, e in enumerate(events) if e.get("do") == "stop" and e.get("deck") == 1)
-    opens = [i for i, e in enumerate(events) if e.get("deck") == 2 and (e.get("set") or {}).get("eq_low") == 0.5]
-    assert opens and min(opens) > stop, (stop, opens)
-
-
 def test_a_missing_or_malformed_fader_value_is_refused_not_read_as_a_kill() -> None:
     """[if] an outgoing fader event has no numeric value [then] capping refuses it rather than killing the deck, [else stop].
 
@@ -1757,7 +1636,9 @@ def test_a_synced_tempo_move_before_the_incoming_launch_is_refused() -> None:
     retime the follower, so it would start at the old tempo and drift. Controls: the same move after the launch, and
     the same plan unsynced, are accepted."""
     document = _plan()
-    document["events"] = [{**e, "at_bar": 2} if e.get("do") == "play" and e.get("deck") == 2 else e for e in document["events"]]
+    document["events"] = [
+        {**e, "at_bar": 2} if e.get("do") == "play" and e.get("deck") == 2 else e for e in document["events"]
+    ]
     live = _live_glide(128.0, 128.0 / 125.0)
     early = {**document, "events": [{"at_bar": 0, "deck": 2, "set": {"tempo": 1.02}}, *document["events"]]}
     assert any("before the incoming launch" in e for e in validate_plan(parse_plan(early), OUT, IN).errors)
@@ -1777,7 +1658,9 @@ def test_a_synced_tempo_move_after_the_play_command_but_before_its_downbeat_is_r
     Sol P1 #7594: the play is dispatched early and the deck starts on the next downbeat (play_start_bar), so a move
     between the two still runs while the follower is paused. Control: the same move on the launch downbeat is accepted."""
     document = _plan()
-    document["events"] = [{**e, "at_bar": 2.5} if e.get("do") == "play" and e.get("deck") == 2 else e for e in document["events"]]
+    document["events"] = [
+        {**e, "at_bar": 2.5} if e.get("do") == "play" and e.get("deck") == 2 else e for e in document["events"]
+    ]
     between = {**document, "events": [*document["events"], {"at_bar": 2.6, "deck": 2, "set": {"tempo": 1.02}}]}
     assert any("before the incoming launch" in e for e in validate_plan(parse_plan(between), OUT, IN).errors)
     on_start = {**document, "events": [*document["events"], {"at_bar": 3, "deck": 2, "set": {"tempo": 1.02}}]}
@@ -1810,7 +1693,9 @@ def test_a_partial_or_malformed_live_mixer_is_refused_never_read_as_unity_trim(l
 
 
 def test_unity_outgoing_trim_only_offline_or_without_a_mixer_and_always_with_its_reason() -> None:
-    """[if] there is no live mirror, or it carries no mixer [then] the outgoing trim is unity and the reason says so, [else stop]."""
+    """[if] there is no live mirror, or it carries no mixer [then] the outgoing trim is assumed, with its reason, [else stop].
+
+    Offline it is the trim decks load at, unity since round 22 (ADR-0135); a live mirror without a mixer stays unity."""
     from apps.autodj.profile import trim_knob
     from apps.autodj.propose import _outgoing_trim_db
 
@@ -1838,7 +1723,9 @@ def test_an_out_of_range_outgoing_fader_target_is_refused_whatever_the_live_ceil
 
 
 @pytest.mark.parametrize("live_fader", [None, 0.5])
-def test_compile_refuses_an_out_of_range_outgoing_fader_with_or_without_a_live_ceiling(live_fader: float | None) -> None:
+def test_compile_refuses_an_out_of_range_outgoing_fader_with_or_without_a_live_ceiling(
+    live_fader: float | None,
+) -> None:
     """[if] a planned outgoing fader is outside 0..1 [then] compile refuses it, also when the mirror has no live fader.
 
     Sol P1 #7595: the no-ceiling branch skipped the check. Control: with a live ceiling, a valid target is still capped."""
@@ -1989,7 +1876,6 @@ def test_trim_validation_replays_same_bar_transport_in_authored_order() -> None:
     event list about that bar, so a later stop made an earlier audible trim look safe."""
     from apps.autodj.plan import play_start_bar
 
-
     def trim_errors(*events: dict[str, Any]) -> list[str]:
         document = _plan()
         document["events"] = [
@@ -2008,7 +1894,9 @@ def test_trim_validation_replays_same_bar_transport_in_authored_order() -> None:
     late_play = {"at_bar": 16.1, "deck": 2, "do": "play"}
     assert play_start_bar(16.1, None) == 16.0
     assert trim_errors({"at_bar": 16.05, "deck": 2, "set": {"trim": 0.4}}, late_play)
-    assert trim_errors({"at_bar": 15.9, "deck": 2, "set": {"trim": 0.4}}, late_play) == []  # control: before the downbeat
+    assert (
+        trim_errors({"at_bar": 15.9, "deck": 2, "set": {"trim": 0.4}}, late_play) == []
+    )  # control: before the downbeat
 
 
 def test_a_trim_ramp_is_judged_across_its_span_as_the_fader_moves() -> None:
@@ -2027,7 +1915,9 @@ def test_a_trim_ramp_is_judged_across_its_span_as_the_fader_moves() -> None:
 
     ramp = {"at_bar": 0.5, "deck": 2, "ramp": {"trim": 0.3}, "over_bars": 6}
     play4 = {"at_bar": 4, "deck": 2, "do": "play"}  # starts on bar 4, inside the ramp
-    assert trim_errors(ramp, {"at_bar": 2, "deck": 2, "set": {"fader": 1.0}}, play4, fader=0.0)  # opened before the start
+    assert trim_errors(
+        ramp, {"at_bar": 2, "deck": 2, "set": {"fader": 1.0}}, play4, fader=0.0
+    )  # opened before the start
     assert trim_errors(ramp, {"at_bar": 2, "deck": 2, "set": {"fader": 0.0}}, play4, fader=1.0) == []  # closed first
     playing = {"at_bar": 0.25, "deck": 2, "do": "play"}  # playing from bar 1
     late_ramp = {"at_bar": 2, "deck": 2, "ramp": {"trim": 0.3}, "over_bars": 4}
@@ -2096,6 +1986,8 @@ def test_the_first_command_is_measured_where_the_page_dispatches_it() -> None:
     live = _live(position={"ms": OUT.time_of_bar(bar_now) * 1000})
     assert any("already at bar" in e for e in validate_plan(played, OUT, IN, live=live).errors)
     assert not any("already at bar" in e for e in validate_plan(plain, OUT, IN, live=live).errors)
+
+
 @pytest.mark.requirement("AGENT-29")
 def test_an_outgoing_tempo_set_before_the_launch_refreshes_the_incoming_tempo() -> None:
     """[if] the outgoing tempo changes before the incoming play [then] the incoming tempo is set again at that bar, [else stop]."""

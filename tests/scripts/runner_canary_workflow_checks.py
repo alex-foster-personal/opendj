@@ -53,6 +53,7 @@ CANARY_REF = "refs/heads/canary/" + "0" * 40
 #: canary does not have (ADR-NEW-trunk-flaky-quarantine-on); the canary instead keeps its
 #: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
 CI_ONLY_STEPS = (
+    "Name this shard's failing tests (annotations and job summary)",
     "Upload this shard's measured durations",
     "Upload the PR test selection record (DEVOPS-20 escape measurement)",
     "Stage this shard's JUnit report for the isolated CI Insights job",

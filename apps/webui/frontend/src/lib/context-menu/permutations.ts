@@ -47,7 +47,13 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		master: [false, true]
 	},
 	'hot-cue': { loaded: [false, true], filled: [false, true], moveLoses: ['nothing', 'color', 'loop'] },
-	waveform: { loaded: [false, true], looping: [false, true], vocalHit: [false, true] },
+	waveform: {
+		loaded: [false, true],
+		looping: [false, true],
+		vocalHit: [false, true],
+		cueAt: ['position', 'none', 'stick'],
+		outTargets: [[], [2]]
+	},
 	'mixer-channel': {
 		eqFlat: [false, true],
 		filterFlat: [false, true],
@@ -61,7 +67,9 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 const IMPOSSIBLE: { [K in MenuTargetKind]?: (ctx: MenuContextByKind[K]) => boolean } = {
 	deck: (c) => !c.loaded && (c.playing || c.looping || c.synced || c.master),
 	'hot-cue': (c) => (!c.loaded && c.filled) || (!c.filled && c.moveLoses !== 'nothing'),
-	waveform: (c) => !c.loaded && (c.looping || c.vocalHit)
+	// A vocal hit is resolved from the same click position the cue uses.
+	waveform: (c) =>
+		(!c.loaded && (c.looping || c.vocalHit || c.cueAt !== 'none')) || (c.vocalHit && c.cueAt === 'none')
 };
 
 /** The target each kind is rendered for. Track rows key their label on count. */

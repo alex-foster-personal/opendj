@@ -161,7 +161,7 @@ def register_dj_tools(
         needs beatmatching, the controls it moves, when to use it, and whether
         the app can perform it today (with the reason when not). ``params`` is a
         parametric style's settings (volume lane, fade_shape, swap_position,
-        filter, stems, overlap_comp_db, comp_with_low_kill), null for a fixed
+        filter, stems, min_body_fade_bars, pre_hit_db), null for a fixed
         style; ``spotify`` names the Spotify transition it mirrors, or null."""
         return {"styles": [s.model_dump(mode="json") for s in build_service().list_styles()]}
 

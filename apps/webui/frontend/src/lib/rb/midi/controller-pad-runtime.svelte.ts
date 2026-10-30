@@ -163,6 +163,11 @@ function _cmdLoopExit(deck: DeckId): void {
 	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
 }
 
+/** A dedicated EXIT ends the IN/OUT gesture, so the next IN starts a new loop. */
+export function clearControllerManualLoop(deck: DeckId, deviceId: string | undefined): void {
+	_loopGesture(deviceId, deck).inMs = null;
+}
+
 export function cycleControllerManualLoop(
 	deck: DeckId,
 	deviceId: string | undefined,

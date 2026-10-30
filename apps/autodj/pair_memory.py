@@ -1,0 +1,185 @@
+"""Transition memory: the saved transition for an ordered pair of tracks (MEMORY-01, ADR-0129).
+
+One row per ordered pair in ``pair_transitions``, most recent wins. :func:`record_played` is the save-on-run call: the
+executor makes it when a transition completes, so whatever ran is the pair's default next time. Every plan is parsed by
+``plan.py`` before it is stored, and a plan is stored only under the pair it names.
+
+Functions take an open connection and run inside the caller's write unit.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from apps.autodj.plan import PlanError, parse_plan
+from apps.shared.state.migrations_v25 import PAIR_TRANSITION_SOURCES
+
+_COLUMNS = "out_track_id, in_track_id, plan_json, source, style, created_at, updated_at, times_played"
+
+
+class PairNotFound(LookupError):
+    """No transition is saved for this pair."""
+
+
+@dataclass(frozen=True)
+class PairTransition:
+    out_track_id: str
+    in_track_id: str
+    plan: dict[str, Any]
+    source: str
+    style: str
+    created_at: str
+    updated_at: str
+    times_played: int
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "plan": self.plan,
+            "meta": {
+                "out_track_id": self.out_track_id,
+                "in_track_id": self.in_track_id,
+                "source": self.source,
+                "style": self.style,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+                "times_played": self.times_played,
+            },
+        }
+
+
+# ----- helpers -------------------------------------------------------------
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _row(row: tuple[Any, ...]) -> PairTransition:
+    return PairTransition(row[0], row[1], json.loads(row[2]), row[3], row[4], row[5], row[6], row[7])
+
+
+def _canonical(plan: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
+    """The plan as ``plan.py`` reads it, and its stored text; a document that is not a plan raises :class:`PlanError`."""
+    document = parse_plan(plan).to_json()
+    return document, json.dumps(document, sort_keys=True, separators=(",", ":"))
+
+
+def _checked_source(source: str) -> str:
+    if source not in PAIR_TRANSITION_SOURCES:
+        raise PlanError(f"source must be one of {list(PAIR_TRANSITION_SOURCES)}, got {source!r}")
+    return source
+
+
+def _write(
+    conn: sqlite3.Connection, document: dict[str, Any], text: str, *, source: str, style: str, played: int
+) -> None:
+    now = _now()
+    conn.execute(
+        f"INSERT INTO pair_transitions ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (out_track_id, in_track_id) DO UPDATE SET plan_json = excluded.plan_json, "
+        "source = excluded.source, style = excluded.style, updated_at = excluded.updated_at, "
+        "times_played = excluded.times_played",
+        (document["out"]["track"], document["in"]["track"], text, source, style, now, now, played),
+    )
+
+
+# ----- the store -----------------------------------------------------------
+
+
+def get_pair_transition(conn: sqlite3.Connection, out_track_id: str, in_track_id: str) -> PairTransition | None:
+    row = conn.execute(
+        f"SELECT {_COLUMNS} FROM pair_transitions WHERE out_track_id = ? AND in_track_id = ?",
+        (out_track_id, in_track_id),
+    ).fetchone()
+    return None if row is None else _row(row)
+
+
+def _saved(conn: sqlite3.Connection, out_track_id: str, in_track_id: str) -> PairTransition:
+    saved = get_pair_transition(conn, out_track_id, in_track_id)
+    if saved is None:
+        raise PairNotFound(f"no transition saved for {out_track_id} into {in_track_id}")
+    return saved
+
+
+def save_pair_transition(
+    conn: sqlite3.Connection, plan: Mapping[str, Any], *, source: str, style: str
+) -> PairTransition:
+    """Make ``plan`` the pair's default. A replaced plan's play count starts again: it counts THIS plan's runs."""
+    document, text = _canonical(plan)
+    _write(conn, document, text, source=_checked_source(source), style=style, played=0)
+    return _saved(conn, document["out"]["track"], document["in"]["track"])
+
+
+def clear_pair_transition(conn: sqlite3.Connection, out_track_id: str, in_track_id: str) -> bool:
+    cursor = conn.execute(
+        "DELETE FROM pair_transitions WHERE out_track_id = ? AND in_track_id = ?", (out_track_id, in_track_id)
+    )
+    return cursor.rowcount > 0
+
+
+def record_played(
+    conn: sqlite3.Connection,
+    out_track_id: str,
+    in_track_id: str,
+    *,
+    plan: Mapping[str, Any] | None = None,
+    source: str | None = None,
+    style: str | None = None,
+) -> PairTransition:
+    """Save-on-run: the transition between this pair just completed.
+
+    With ``plan`` (and its ``source`` and ``style``), that plan becomes the pair's default, unless it is the plan already
+    saved, which only counts another run and keeps its source. Without one, the saved plan ran again;
+    :class:`PairNotFound` when there is none.
+    """
+    if plan is None:
+        return _bumped(conn, _saved(conn, out_track_id, in_track_id))
+    if source is None or style is None:
+        raise PlanError("a played plan needs its source and style")
+    document, text = _canonical(plan)
+    if (document["out"]["track"], document["in"]["track"]) != (out_track_id, in_track_id):
+        raise PlanError(f"the plan is for {document['out']['track']} into {document['in']['track']}, not this pair")
+    saved = get_pair_transition(conn, out_track_id, in_track_id)
+    if saved is not None and _canonical(saved.plan)[1] == text:
+        return _bumped(conn, saved)
+    _write(conn, document, text, source=_checked_source(source), style=style, played=1)
+    return _saved(conn, out_track_id, in_track_id)
+
+
+def _bumped(conn: sqlite3.Connection, saved: PairTransition) -> PairTransition:
+    conn.execute(
+        "UPDATE pair_transitions SET times_played = times_played + 1, updated_at = ? "
+        "WHERE out_track_id = ? AND in_track_id = ?",
+        (_now(), saved.out_track_id, saved.in_track_id),
+    )
+    return _saved(conn, saved.out_track_id, saved.in_track_id)
+
+
+# ----- replaying on other decks --------------------------------------------
+
+
+def on_decks(plan: Mapping[str, Any], out_deck: int, in_deck: int) -> dict[str, Any]:
+    """The saved plan moved onto the decks the pair is loaded on now.
+
+    A pair saved on decks 1 and 2 may next play on 2 and 1, or 3 and 4. Odd decks sit left of the crossfader and even
+    decks right, so a move across it mirrors every crossfader value.
+    """
+    if out_deck == in_deck:
+        raise PlanError("out and in name the same deck")
+    parsed = parse_plan(plan)
+    document = parsed.to_json()
+    decks = {parsed.out.deck: out_deck, parsed.in_.deck: in_deck}
+    mirrored = parsed.out.deck % 2 != out_deck % 2
+    document["out"]["deck"], document["in"]["deck"] = out_deck, in_deck
+    for event in document["events"]:
+        event["deck"] = decks.get(event["deck"])
+        if mirrored and event["deck"] is None:
+            for kind in ("set", "ramp"):
+                if kind in event:
+                    event[kind] = {"crossfader": round(1.0 - event[kind]["crossfader"], 6)}
+    return parse_plan(document).to_json()

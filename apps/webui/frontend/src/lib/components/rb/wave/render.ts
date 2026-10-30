@@ -17,6 +17,7 @@ import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
+import { blockSnapApiFor, type BlockSnapApi } from './block-layout-lazy.svelte';
 import {
 	drawLoopCueBands,
 	drawPhraseMarkers,
@@ -125,6 +126,9 @@ const MID_BAND_SCALE = 0.85;
  * bottom baseline. Rendering style only, heights are the real data. */
 export const BLOCK_BAR_PX = 2;
 export const BLOCK_PITCH_PX = 3;
+/** The gap stays fixed when change-snapping varies a block's pitch
+ * (block-layout.ts): bar width = pitch - BLOCK_GAP_PX. */
+export const BLOCK_GAP_PX = BLOCK_PITCH_PX - BLOCK_BAR_PX;
 
 /** How a block's height is derived from its band data (skin preview).
  * Two curves, chosen by the waveform's ORIGIN (blocksCurveFor), never by its
@@ -176,7 +180,11 @@ export const BLOCKS_CFG = {
 	ONSET_FLOOR: 0.2,
 	/** contrast/onset/blend need a beat period; with no beat grid they paint
 	 * as 'max' (stated here, not hidden in the painter). */
-	NO_GRID_VARIANT: 'max' as BlocksVariant
+	NO_GRID_VARIANT: 'max' as BlocksVariant,
+	/** Snap block left edges to moderate-or-larger energy changes and to the
+	 * painted beat grid (block-layout.ts), so averaging into fixed-pitch
+	 * buckets never smears a hit's edge into the block before it. */
+	SNAP_DEFAULT: true
 } as const;
 
 /** Perceptual amplitude shaping (rendering only, the band DATA is never
@@ -220,6 +228,8 @@ interface WaveBandImage {
 interface BlockColumns {
 	heights: Float32Array;
 	shares: { low: Float32Array; mid: Float32Array; high: Float32Array } | null;
+	/** Snapped block edges (block-layout.ts); undefined = the fixed pitch. */
+	edges: Int32Array | undefined;
 }
 
 /**
@@ -239,8 +249,9 @@ export const BAND_CACHE_CFG = {
 	 * width of the whole track grew past what Chromium will paint: at 4 bars
 	 * on a 5-minute track it is about 45,000 px and the row drew as a flat
 	 * band. Tiles also mean a new zoom or tempo builds only the visible
-	 * span. A multiple of BLOCK_PITCH_PX so 'blocks' bars never straddle a
-	 * tile edge. */
+	 * span. A multiple of BLOCK_PITCH_PX so fixed-pitch 'blocks' bars never
+	 * straddle a tile edge; a snapped bar that does (DECKUX-42) paints its
+	 * part in each tile, at whole px, so the two halves meet edge to edge. */
 	TILE_PX: 4095
 } as const;
 
@@ -340,6 +351,8 @@ export interface WaveRowFrame {
 	 * the standard full row; false = one-sided from the bottom baseline,
 	 * which each half of a split row passes (split-row.ts). */
 	blocksMirrored?: boolean;
+	/** 'blocks' edges snapped to changes and beats; default BLOCKS_CFG.SNAP_DEFAULT. */
+	blocksSnap?: boolean;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
 	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
@@ -367,6 +380,11 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const pxPerS = w / trackWindowS;
 
 	const design = frame.waveformDesign ?? 'tri-band';
+	// DECKUX-42: snapped Gothic blocks blit at a whole pixel, and the grid
+	// rounds through the same offset, so a block edge and its beat line share
+	// a pixel while the row scrolls.
+	const originPx =
+		design === 'blocks' && (frame.blocksSnap ?? BLOCKS_CFG.SNAP_DEFAULT) ? Math.round(tLeft * pxPerS) : undefined;
 	// STRUCT-05: section bodies ride in the cached band image, under the
 	// waveform in every design (tri-band, mono, line, blocks); only the (crisp,
 	// sticky) labels paint per frame, after the master downbeat overlay.
@@ -382,9 +400,12 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			curve,
 			variant: frame.blocksVariant ?? _defaultVariant(curve),
 			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats),
-			mirrored: frame.blocksMirrored ?? true
+			mirrored: frame.blocksMirrored ?? true,
+			snap: frame.blocksSnap ?? BLOCKS_CFG.SNAP_DEFAULT,
+			// Only a grid the row paints: block edges then sit on its lines.
+			beats: shouldPaintBeatGrid(frame.anlz) ? frame.anlz.beatgrid.beats : null
 		};
-		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks);
+		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks, originPx);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
@@ -410,7 +431,8 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 				w,
 				h,
 				palette,
-				frame.anlz.beatgrid.bar_phase_untrusted === true
+				frame.anlz.beatgrid.bar_phase_untrusted === true,
+				originPx
 			);
 			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
 		}
@@ -511,8 +533,12 @@ function _drawCachedBands(
 	h: number,
 	palette: WavePalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec
+	blocks: BlocksSpec,
+	originPx?: number
 ): void {
+	// The snapper loads on first use (block-layout-lazy.svelte.ts); until then
+	// the row paints the fixed pitch and the key below rebuilds it once it lands.
+	const snapApi = blockSnapApiFor(design === 'blocks' && blocks.snap);
 	// Node painter tests intentionally provide only Path2D. Browser production
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
@@ -520,11 +546,15 @@ function _drawCachedBands(
 		if (sectionsApi !== null && sections !== null) {
 			sectionsApi.drawSectionBands(ctx, sections, tLeft, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
 		}
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
+		const cols = design === 'blocks' ? _blockColumns(waveform, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks)) : null;
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks, MARKER_BAND_PX, { x0: 0, x1: w, blockColumns: cols });
 		return;
 	}
 	const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
-	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
+	// Snapped edges follow the beat grid itself, not only its period, so a grid
+	// edit (a new beats array) rebuilds the image.
+	const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats);
+	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
 	let image = _bandImages.get(waveform);
 	if (
 		image === undefined ||
@@ -556,7 +586,7 @@ function _drawCachedBands(
 	for (let i = first; i <= last; i++) {
 		let canvas = image.tiles.get(i);
 		if (canvas === undefined) {
-			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks);
+			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks, snapApi);
 			image.tiles.set(i, canvas);
 		}
 		const x0 = i * tile;
@@ -566,7 +596,7 @@ function _drawCachedBands(
 		// tests/e2e/wave-band-tiles.spec.ts). Every tile shares the same
 		// fractional offset, so rounding moves them together, edge to edge.
 		if (scale === 1) {
-			ctx.drawImage(canvas, Math.round(x0 - tLeft * pxPerS), 0);
+			ctx.drawImage(canvas, originPx === undefined ? Math.round(x0 - tLeft * pxPerS) : x0 - originPx, 0);
 			continue;
 		}
 		// Scaled blit of only the visible part of this tile.
@@ -597,7 +627,8 @@ function _buildBandTile(
 	h: number,
 	palette: WavePalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec
+	blocks: BlocksSpec,
+	snapApi: BlockSnapApi | null
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -613,7 +644,7 @@ function _buildBandTile(
 		sectionsApi.drawSectionBands(ctx, sections, x0 / image.pxPerS, image.pxPerS, tileW, h, palette.sections, MARKER_BAND_PX);
 	}
 	if (design === 'blocks' && image.blocks === null) {
-		image.blocks = _blockColumns(waveform, image.pxPerS, image.fullW, design, blocks);
+		image.blocks = _blockColumns(waveform, image.pxPerS, image.fullW, design, blocks, _edgesFor(snapApi, waveform, image.pxPerS, durS, image.fullW, blocks));
 	}
 	_drawBands(ctx, waveform, image.pxPerS, durS, image.fullW, h, palette, design, blocks, MARKER_BAND_PX, {
 		x0,
@@ -629,7 +660,8 @@ function _buildBandTile(
  * shading path for every design x palette and cannot drift. `topPx` is the
  * empty band above the bands; the deck row reserves MARKER_BAND_PX there for
  * cue markers, a thumbnail passes 0. Blocks use the deck default for a
- * rekordbox-analysed waveform: true-peak curve, default variant, mirrored. */
+ * rekordbox-analysed waveform: true-peak curve, default variant, mirrored,
+ * on the fixed pitch: the thumbnail has no duration to find changes with. */
 export function drawWaveBands(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
@@ -655,7 +687,7 @@ function _drawBands(
 	h: number,
 	palette: BandPalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec = { curve: 'true-peak', variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true },
+	blocks: BlocksSpec = _DEFAULT_BLOCKS,
 	topPx: number = MARKER_BAND_PX,
 	span: BandSpan | null = null
 ): void {
@@ -678,9 +710,13 @@ function _drawBands(
 		// True peaks, not p99 (B5), for rekordbox waveforms: a block is a bucket
 		// MAX of several points, so p99 puts loud sections past full scale.
 		const cols = span?.blockColumns ?? _blockColumns(waveform, pxPerS, w, design, blocks);
-		const range = { from: Math.floor(x0 / BLOCK_PITCH_PX), to: Math.ceil(x1 / BLOCK_PITCH_PX), offsetPx: x0 };
-		if (blocks.mirrored) paintStackedBlocks(ctx, cols.heights, cols.shares, centerY, halfH, palette, true, range);
-		else paintStackedBlocks(ctx, cols.heights, cols.shares, h, h - topPx - 1, palette, false, range);
+		const e = cols.edges;
+		const range =
+			e === undefined
+				? { from: Math.floor(x0 / BLOCK_PITCH_PX), to: Math.ceil(x1 / BLOCK_PITCH_PX), offsetPx: x0 }
+				: { from: _blockAt(e, x0), to: _blockAt(e, x1 - 1) + 1, offsetPx: x0 };
+		if (blocks.mirrored) paintStackedBlocks(ctx, cols.heights, cols.shares, centerY, halfH, palette, true, range, e);
+		else paintStackedBlocks(ctx, cols.heights, cols.shares, h, h - topPx - 1, palette, false, range, e);
 		return;
 	}
 
@@ -783,15 +819,29 @@ function _blockColumns(
 	pxPerS: number,
 	w: number,
 	design: WaveformDesign,
-	blocks: BlocksSpec
+	blocks: BlocksSpec,
+	edges?: Int32Array
 ): BlockColumns {
 	const mono = design === 'mono' || waveform.kind === 'mono';
 	const divisors = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
 	const blocksPerBeat = blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
 	return {
-		heights: blockHeights(waveform.detail, w, divisors, blocks.variant, blocksPerBeat, blocks.curve),
-		shares: mono ? null : blockBandShares(waveform.detail, w, divisors)
+		heights: blockHeights(waveform.detail, w, divisors, blocks.variant, blocksPerBeat, blocks.curve, edges),
+		shares: mono ? null : blockBandShares(waveform.detail, w, divisors, edges),
+		edges
 	};
+}
+
+/** Last block whose left edge is at or before image px `x`. */
+function _blockAt(edges: Int32Array, x: number): number {
+	let lo = 0;
+	let hi = edges.length - 2;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if (edges[mid] <= x) lo = mid;
+		else hi = mid - 1;
+	}
+	return lo;
 }
 
 function _blocksDivisors(curve: BlocksCurve, waveform: AnlzWaveform, norms: BandNorms): BandNorms {
@@ -815,6 +865,46 @@ interface BlocksSpec {
 	beatPeriodS: number | null;
 	/** true = bars mirrored about the centerline; false = one-sided. */
 	mirrored: boolean;
+	/** Snap block edges to changes (and to `beats` when given). */
+	snap: boolean;
+	/** The painted beat grid, or null when the row paints none. */
+	beats: readonly AnlzBeat[] | null;
+}
+
+const _DEFAULT_BLOCKS: BlocksSpec = {
+	curve: 'true-peak',
+	variant: BLOCKS_CFG.VARIANT_DEFAULT,
+	beatPeriodS: null,
+	mirrored: true,
+	snap: false,
+	beats: null
+};
+
+/** Snapped block edges for a deck-row band surface `w` px wide at `pxPerS`
+ * (detail point i at i*w/n), or undefined for the fixed pitch (snapper not
+ * wanted or not loaded yet). Runs when a band image is BUILT, never per frame. */
+function _edgesFor(
+	api: BlockSnapApi | null,
+	waveform: AnlzWaveform,
+	pxPerS: number,
+	durS: number,
+	w: number,
+	blocks: BlocksSpec
+): Int32Array | undefined {
+	if (api === null) return undefined;
+	// Detect on the level the painter shows: its own divisors and clamp.
+	const d = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
+	const norm = { divisor: Math.max(d.low, d.mid, d.high), clampAtOne: blocks.curve === 'legacy-p99' };
+	return api.rowBlockEdges(waveform, durS, norm, w, blocks.beats, pxPerS);
+}
+
+/** The fixed-pitch layout: edge b at b x pitch, so the last block may run
+ * past widthPx exactly as the painter always drew it. */
+export function uniformBlockEdges(widthPx: number, pitchPx: number = BLOCK_PITCH_PX): Int32Array {
+	const count = Math.ceil(widthPx / pitchPx);
+	const edges = new Int32Array(count + 1);
+	for (let b = 0; b <= count; b++) edges[b] = b * pitchPx;
+	return edges;
 }
 
 /** Median beat period of the grid in seconds; null without a usable grid. */
@@ -858,21 +948,21 @@ export function blockHeights(
 	norms: { low: number; mid: number; high: number },
 	variant: BlocksVariant,
 	blocksPerBeat: number | null,
-	curve: BlocksCurve = 'true-peak'
+	curve: BlocksCurve = 'true-peak',
+	edges: Int32Array = uniformBlockEdges(widthPx, BLOCK_PITCH_PX)
 ): Float32Array {
 	// legacy-p99 clamps its >1 inputs exactly as the pre-B5 painter did;
 	// true-peak inputs never exceed 1, so it leaves them alone.
 	const clamp = curve === 'legacy-p99' ? (v: number) => Math.min(1, v) : (v: number) => v;
 	const n = bands.length;
-	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const count = edges.length - 1;
 	const low = new Float32Array(count);
 	const rest = new Float32Array(count);
 	const all = new Float32Array(count);
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
 	for (let b = 0; b < count; b++) {
-		const x = b * BLOCK_PITCH_PX;
-		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
-		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const p0 = Math.max(0, Math.floor((edges[b] / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil((edges[b + 1] / widthPx) * n) - 1));
 		const lo = _bucketMax(bands.low, p0, p1);
 		const mi = _bucketMax(bands.mid, p0, p1);
 		const hi = _bucketMax(bands.high, p0, p1);
@@ -888,8 +978,8 @@ export function blockHeights(
 	if (effective === 'max') {
 		for (let b = 0; b < count; b++) out[b] = all[b] > 0 ? Math.pow(all[b], AMP_GAMMA) : 0;
 	} else if (effective === 'blend') {
-		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat, curve);
-		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat, curve);
+		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat, curve, edges);
+		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat, curve, edges);
 		const k = BLOCKS_CFG.BLEND_CONTRAST;
 		for (let b = 0; b < count; b++) out[b] = (1 - k) * lifted[b] + k * stretched[b];
 	} else if (effective === 'kick') {
@@ -934,15 +1024,15 @@ export function blockHeights(
 export function blockBandShares(
 	bands: AnlzWaveform['detail'],
 	widthPx: number,
-	norms: { low: number; mid: number; high: number }
+	norms: { low: number; mid: number; high: number },
+	edges: Int32Array = uniformBlockEdges(widthPx, BLOCK_PITCH_PX)
 ): { low: Float32Array; mid: Float32Array; high: Float32Array } {
 	const n = bands.length;
-	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const count = edges.length - 1;
 	const out = { low: new Float32Array(count), mid: new Float32Array(count), high: new Float32Array(count) };
 	for (let b = 0; b < count; b++) {
-		const x = b * BLOCK_PITCH_PX;
-		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
-		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const p0 = Math.max(0, Math.floor((edges[b] / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil((edges[b + 1] / widthPx) * n) - 1));
 		const lo = Math.min(1, _bucketMax(bands.low, p0, p1) / norms.low);
 		const mi = Math.min(1, _bucketMax(bands.mid, p0, p1) / norms.mid);
 		const hi = Math.min(1, _bucketMax(bands.high, p0, p1) / norms.high);
@@ -960,7 +1050,8 @@ export function blockBandShares(
  * their share of it (scaled like the tri-band core). mirrored = false: bars
  * grow up from `anchorY` (the bottom baseline), at most `maxBarH` tall.
  * mirrored = true: `anchorY` is the centerline and each bar extends up to
- * `maxBarH` above AND below it. */
+ * `maxBarH` above AND below it. `edges` (block-layout.ts) places block b
+ * at edges[b], BLOCK_GAP_PX narrower than its pitch; default the fixed pitch. */
 export function paintStackedBlocks(
 	ctx: CanvasRenderingContext2D,
 	heights: Float32Array,
@@ -969,7 +1060,8 @@ export function paintStackedBlocks(
 	maxBarH: number,
 	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>,
 	mirrored: boolean,
-	range: { from: number; to: number; offsetPx: number } | null = null
+	range: { from: number; to: number; offsetPx: number } | null = null,
+	edges?: Int32Array
 ): void {
 	const from = range === null ? 0 : Math.max(0, range.from);
 	const to = range === null ? heights.length : Math.min(heights.length, range.to);
@@ -987,7 +1079,10 @@ export function paintStackedBlocks(
 		for (let b = from; b < to; b++) {
 			const frac = share === null ? 1 : share[b] * scale;
 			const barH = Math.round(heights[b] * frac * maxBarH);
-			if (barH > 0) path.rect(b * BLOCK_PITCH_PX - offsetPx, anchorY - barH, BLOCK_BAR_PX, mirrored ? barH * 2 : barH);
+			if (barH <= 0) continue;
+			const x = edges === undefined ? b * BLOCK_PITCH_PX : edges[b];
+			const barW = edges === undefined ? BLOCK_BAR_PX : edges[b + 1] - edges[b] - BLOCK_GAP_PX;
+			path.rect(x - offsetPx, anchorY - barH, barW, mirrored ? barH * 2 : barH);
 		}
 		ctx.fillStyle = color;
 		ctx.fill(path);
@@ -1033,10 +1128,11 @@ function _drawBeatGrid(
 	w: number,
 	h: number,
 	palette: WavePalette,
-	barPhaseUntrusted = false
+	barPhaseUntrusted = false,
+	originPx?: number
 ): void {
 	ctx.fillStyle = palette.tick;
-	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h, barPhaseUntrusted)) {
+	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h, barPhaseUntrusted, originPx)) {
 		// The low-alpha grid remains visible through the waveform. The original
 		// 8px/4px beat caps are then repainted at their stronger alpha.
 		ctx.globalAlpha = line.alpha;
@@ -1115,3 +1211,5 @@ export function resolvePaintPalette(deckId: number, palette: WavePalette): WaveP
 
 /** Test seam: the uncached band painter (no DOM canvas needed). */
 export const __test_drawBands = _drawBands;
+/** Test seam: await the lazily loaded block snapper (DECKUX-42). */
+export { loadBlockSnapApi as __test_loadBlockSnap } from './block-layout-lazy.svelte';

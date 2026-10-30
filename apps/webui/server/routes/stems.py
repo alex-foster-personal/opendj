@@ -15,9 +15,10 @@ import re
 import stat
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BufferedReader
@@ -45,13 +46,23 @@ from apps.cloud.stem_source import (
     StemSourceError,
     hub_transport_failure_kind,
 )
+from apps.shared.shared_read_open import open_read_shared
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
     StemBundle,
     StemBundleNotFoundError,
     load_stem_bundle,
+    stem_roots,
 )
+from apps.stems.bundle_lock import (
+    held_for_read,
+    is_shared_store_bundle,
+    readers_held_off,
+    restore_orphaned_swap,
+    swap_backup_path,
+)
+from apps.stems.recompress import restore_orphaned_recompress_swap, swap_journal_path
 from apps.sync_hub.entitlement_gate import GateErrorResponse
 from apps.webui.server.routes.sync_hub_route_errors import (
     HubErrorResponse,
@@ -243,6 +254,97 @@ def _stem_roots(request: Request) -> tuple[Path, ...] | None:
     if configured is None:
         return None
     return tuple(Path(root) for root in configured)
+
+
+def _hold_for_deck(stable_id: str, request: Request, *, deck_open: bool = False) -> Callable[[], None]:
+    """Protect ``stable_id`` from eviction BEFORE this route reads its bundle.
+
+    Marks the deck registry, then waits out any eviction claim already
+    under way (:func:`stem_cache_budget.hold_against_eviction`; never a
+    hydration's R2 fetch),
+    so a claim can never remove a bundle this request goes on to read
+    (Codex P1 on #6820). Only an app built on a data dir runs eviction
+    (``stem_cache_data_dir``); a bare router app has none to wait for.
+
+    Returns the undo for a read that then fails: a request that served no
+    bytes must not keep a corrupt bundle from eviction for the served TTL
+    (Codex on #6820). A deck-open is the caller's own explicit hold and has
+    nothing to undo.
+    """
+    registry = stem_hydration.OPEN_DECKS
+    withdraw: list[Callable[[], None]] = []
+
+    def mark() -> None:
+        if deck_open:
+            registry.mark_open(stable_id)
+        else:
+            withdraw.append(registry.mark_served_for_read(stable_id))
+
+    data_dir = getattr(request.app.state, "stem_cache_data_dir", None)
+    if data_dir is None:
+        mark()
+    else:
+        stem_cache_budget.hold_against_eviction(mark, Path(data_dir), stable_id)
+    return withdraw[0] if withdraw else (lambda: None)
+
+
+def _read_barrier(stable_id: str, request: Request) -> AbstractContextManager[None]:
+    """Hold off swaps and eviction claims while this request resolves and opens its bundle.
+
+    ``_hold_for_deck`` only waits out a claim already under way, then lets
+    go; a swap that starts after it and before the route opens its files
+    would empty the bundle path under the read (Codex on #6820). See
+    :func:`stem_cache_budget.read_barrier`. Never held across an R2 wait.
+    """
+    data_dir = getattr(request.app.state, "stem_cache_data_dir", None)
+    if data_dir is None:
+        return stem_cache_budget.read_barrier(None, stable_id)
+    return _restoring_read_barrier(Path(data_dir), stable_id, request)
+
+
+@contextmanager
+def _restoring_read_barrier(data_dir: Path, stable_id: str, request: Request) -> Iterator[None]:
+    """The read barrier, after putting back a bundle an interrupted swap left aside.
+
+    A publisher killed between a swap's two renames leaves the only good
+    copy at its swap backup, and the track read as missing until another
+    publish (Codex on #6820). The root stays lexical: a stem root symlinked
+    to another volume resolves outside ``<data>/state``, where the swap's
+    backup is not looked for (Codex on #6820). The backup helper resolves
+    only where it must.
+    """
+    roots = _stem_roots(request)
+    for root in roots if roots is not None else stem_roots(_stems_dir(request)):
+        _restore_interrupted_swap(Path(root) / stable_id, data_dir)
+    with stem_cache_budget.read_barrier(data_dir, stable_id):
+        yield
+
+
+def _restore_interrupted_swap(dest: Path, data_dir: Path) -> None:
+    """Put back ``dest`` from a dead swap's backup, as a writer: bundle lock, then the barrier.
+
+    The restore is a rename into the live path, so it takes the bundle lock
+    every writer holds, then the claim lock, in the order a swap takes
+    them. Under the barrier alone it could land while a publisher holding
+    the bundle lock had already seen no bundle there, and that publish then
+    replaced what was restored without carrying its files over (Sol on
+    #6820). With both held no live swap is mid-rename, so a backup with no
+    bundle in place is a dead writer's.
+    """
+    if dest.exists():
+        return  # the common case: one stat, no lock
+    if not is_shared_store_bundle(dest):
+        return  # outside <data>/state no swap holds the store's locks, and none leaves a backup to restore
+    if not swap_backup_path(dest).is_dir() and not swap_journal_path(dest).is_file():
+        # Nothing a dead swap left. A missing bundle is usually one a
+        # hydration is fetching under the bundle lock, and the manifest
+        # route must answer that poll at once (Codex P1 on #6821).
+        return
+    with held_for_read(data_dir, dest.name), readers_held_off(dest):
+        restore_orphaned_swap(dest, data_dir)
+        # A recompression keeps its backup under its own journal, not the
+        # swap backup above (Codex on #6820).
+        restore_orphaned_recompress_swap(dest, data_dir)
 
 
 def _load_or_http_error(stable_id: str, request: Request) -> StemBundle:
@@ -837,9 +939,12 @@ def _manifest_out(bundle: StemBundle) -> StemManifestOut:
 
 
 def _open_validated_stem(path: Path) -> BufferedReader:
-    """Open one validated file without a pathname-reopen race."""
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
+    """Open one validated file without a pathname-reopen race.
+
+    The descriptor never blocks a later swap from renaming the bundle or
+    deleting its backup, on Windows too (:func:`open_read_shared`).
+    """
+    descriptor = open_read_shared(path)
     try:
         opened_stat = os.fstat(descriptor)
         current_stat = path.lstat()
@@ -865,28 +970,14 @@ def _stream_file(source: BufferedReader) -> Iterator[bytes]:
             yield chunk
 
 
-@router.get(
-    "/{stable_id}/stems",
-    response_model=StemManifestOut | StemUnavailableOut,
-    responses=STEM_HYDRATION_ERROR_RESPONSES,
-)
-def get_stem_manifest(
-    stable_id: str, request: Request
-) -> StemManifestOut | StemUnavailableOut:
-    """Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
-
-    Never blocks on R2: if the bundle is missing locally but the R2 index
-    has it, this ENQUEUES a background hydration and returns immediately
-    with ``hydrating=True`` (D2). A prior hydration attempt that already
-    failed is reported LOUD as HTTP 502, never silently folded into the
-    ordinary "no bundle" empty state.
-    """
+def _stem_manifest_response(stable_id: str, request: Request) -> StemManifestOut | StemUnavailableOut:
     try:
-        bundle = load_stem_bundle(
-            stable_id,
-            stems_dir=_stems_dir(request),
-            roots=_stem_roots(request),
-        )
+        with _read_barrier(stable_id, request):
+            bundle = load_stem_bundle(
+                stable_id,
+                stems_dir=_stems_dir(request),
+                roots=_stem_roots(request),
+            )
     except StemBundleNotFoundError as exc:
         recorded_error = _recorded_hydration_error(stable_id)
         if recorded_error is not None:
@@ -906,8 +997,38 @@ def get_stem_manifest(
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
-    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return _manifest_out(bundle)
+
+
+@router.get(
+    "/{stable_id}/stems",
+    response_model=StemManifestOut | StemUnavailableOut,
+    responses=STEM_HYDRATION_ERROR_RESPONSES,
+)
+def get_stem_manifest(
+    stable_id: str, request: Request
+) -> StemManifestOut | StemUnavailableOut:
+    """Return a stored v1 manifest after alignment, or HTTP 200 unavailable when none exists.
+
+    Never blocks on R2: if the bundle is missing locally but the R2 index
+    has it, this ENQUEUES a background hydration and returns immediately
+    with ``hydrating=True`` (D2). A prior hydration attempt that already
+    failed is reported LOUD as HTTP 502, never silently folded into the
+    ordinary "no bundle" empty state.
+    """
+    withdraw = _hold_for_deck(stable_id, request)
+    try:
+        out = _stem_manifest_response(stable_id, request)
+    except BaseException:
+        withdraw()
+        raise
+    if isinstance(out, StemUnavailableOut):
+        # No bundle was served, so this read holds none. A hydration it
+        # enqueued hands its own served lease to the deck that asked once the
+        # bundle lands (``hand_off_to_deck``); that one is the deck load's
+        # (Codex on #6820).
+        withdraw()
+    return out
 
 
 @router.get("/{stable_id}/stems/state", response_model=StemStateOut)
@@ -964,25 +1085,46 @@ def hydrate_stem_bundle(stable_id: str, request: Request) -> StemStateOut:
     return _stem_state(stable_id, request)
 
 
-@router.get(
-    "/{stable_id}/stems/{part}",
-    response_class=StreamingResponse,
-    responses=STEM_PART_RESPONSES,
-)
-def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
-    """Stream one validated stem part using the bundle's container media type.
+def _open_stem_part(stable_id: str, part: str, request: Request) -> tuple[StemBundle, BufferedReader]:
+    """Resolve the bundle and open ``part`` inside one :func:`_read_barrier` hold.
 
-    Unlike the manifest route, this one DOES wait (bounded) for an in-flight
-    hydration: a part request means the caller already decided it wants
-    these bytes. A prior failure is surfaced immediately as HTTP 502; a
-    fresh attempt that does not finish within
-    :data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can
-    retry rather than hang forever on this one request.
+    The opened descriptor keeps the file a swap later moves away, so the
+    stream that follows needs no lock.
     """
-    try:
+    with _read_barrier(stable_id, request):
         bundle = _load_or_http_error(stable_id, request)
+        if part not in bundle.parts:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "STEM_PART_NOT_FOUND",
+                    "message": (
+                        f"unknown stem part {part!r} for a {bundle.layout} bundle; "
+                        f"it has {bundle.parts}"
+                    ),
+                },
+            )
+        try:
+            return bundle, _open_validated_stem(bundle.files[part])
+        except (OSError, StemArtifactError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
+            ) from exc
+
+
+def _http_error_code(exc: HTTPException) -> str | None:
+    detail = exc.detail
+    return detail.get("code") if isinstance(detail, dict) else None
+
+
+def _stem_file_response(stable_id: str, part: str, request: Request) -> StreamingResponse:
+    try:
+        bundle, source = _open_stem_part(stable_id, part, request)
     except HTTPException as http_exc:
-        if http_exc.status_code != 404:
+        # Only a missing bundle can be hydrated: a local bundle without the
+        # asked part keeps its own 404 STEM_PART_NOT_FOUND (Codex on #6821).
+        if _http_error_code(http_exc) != "STEM_BUNDLE_NOT_FOUND":
             raise
         recorded_error = _recorded_hydration_error(stable_id)
         if recorded_error is not None:
@@ -1015,26 +1157,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             if recorded is not None:
                 _raise_hydrate_error(recorded)
             _raise_hydration_failed(outcome.reason or "hydration failed")
-        bundle = _load_or_http_error(stable_id, request)
-    if part not in bundle.parts:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "STEM_PART_NOT_FOUND",
-                "message": (
-                    f"unknown stem part {part!r} for a {bundle.layout} bundle; "
-                    f"it has {bundle.parts}"
-                ),
-            },
-        )
-    try:
-        source = _open_validated_stem(bundle.files[part])
-    except (OSError, StemArtifactError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
-        ) from exc
-    stem_hydration.OPEN_DECKS.mark_served(stable_id)
+        bundle, source = _open_stem_part(stable_id, part, request)
     return StreamingResponse(
         _stream_file(source),
         media_type=bundle.media_type,
@@ -1043,6 +1166,29 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
             "Content-Length": str(os.fstat(source.fileno()).st_size),
         },
     )
+
+
+@router.get(
+    "/{stable_id}/stems/{part}",
+    response_class=StreamingResponse,
+    responses=STEM_PART_RESPONSES,
+)
+def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
+    """Stream one validated stem part using the bundle's container media type.
+
+    Unlike the manifest route, this one DOES wait (bounded) for an in-flight
+    hydration: a part request means the caller already decided it wants
+    these bytes. A prior failure is surfaced immediately as HTTP 502; a
+    fresh attempt that does not finish within
+    :data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can
+    retry rather than hang forever on this one request.
+    """
+    withdraw = _hold_for_deck(stable_id, request)
+    try:
+        return _stem_file_response(stable_id, part, request)
+    except BaseException:
+        withdraw()
+        raise
 
 
 class StemWaveformOut(BaseModel):
@@ -1066,23 +1212,108 @@ def _stem_waveform_cache_root(request: Request) -> Path:
     return root / "state" / "stem-waveform-cache"
 
 
-@router.get(
-    "/{stable_id}/stems/{part}/waveform",
-    response_model=StemWaveformOut,
-    responses=STEM_PART_RESPONSES,
-)
-def get_stem_waveform(stable_id: str, part: str, request: Request) -> StemWaveformOut:
-    """Return a downsampled mono peak envelope for one validated stem part."""
-    from apps.stems.stem_waveform import load_stem_waveform_payload
+# Resolves after the first that a waveform request makes when swaps keep
+# landing under its decode; the last attempt's error is the answer.
+_WAVEFORM_SWAP_RETRIES = 3
+
+
+# What the read barrier saw: the bundle, the pin scratch dir (or None), the
+# pinned links, the stat of every part the decode reads, and the envelope
+# when nothing could be pinned and it was built under the barrier.
+_ResolvedWaveform = tuple[Any, Path | None, dict[Path, Path], dict[Path, os.stat_result], dict[str, Any] | None]
+
+
+def _retry_swaps(attempt: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Run ``attempt`` again only when a swap landed under it, a bounded number of times.
+
+    Only what a swap landing under the decode raises is retried: the
+    builder's identity check, or a part path that vanished. A decode that
+    fails or times out on its own fails once (Codex on #6821). The last
+    attempt's error is the answer.
+    """
+    from apps.stems.stem_waveform import StemPartChangedError
+
+    for _ in range(_WAVEFORM_SWAP_RETRIES):
+        try:
+            return attempt()
+        except (StemPartChangedError, FileNotFoundError):
+            continue
+    return attempt()
+
+
+def _resolve_waveform_inputs(
+    stable_id: str, part: str, request: Request
+) -> _ResolvedWaveform:
+    """Resolve the bundle and pin the parts the decode reads, under :func:`_read_barrier`.
+
+    Where the parts cannot be pinned the envelope is built here, still
+    under the barrier: decoding the canonical paths after it, a swap and its
+    rollback (which puts the same inodes back) could land between the bass
+    and other decodes and leave every stat as it was, so a mixed envelope
+    would pass the identity check and be cached (Sol on #6820). That holds
+    writers off for the decode, on volumes that cannot hard-link only.
+    """
+    from apps.stems.stem_waveform import build_stem_waveform_payload, pin_waveform_inputs
+
+    with _read_barrier(stable_id, request):
+        bundle = load_stem_bundle(stable_id, stems_dir=_stems_dir(request), roots=_stem_roots(request))
+        scratch, pinned, seen = pin_waveform_inputs(bundle, part)
+        if scratch is None:
+            payload = build_stem_waveform_payload(
+                bundle, part, cache_root=_stem_waveform_cache_root(request), pinned={}, seen=seen
+            )
+            return bundle, None, {}, seen, payload
+    return bundle, scratch, pinned, seen, None
+
+
+def _build_resolved_waveform(
+    resolved: _ResolvedWaveform,
+    part: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Build the envelope from what :func:`_resolve_waveform_inputs` saw, then drop its pins.
+
+    An unpinned resolve already built it under the barrier."""
+    from apps.stems.stem_waveform import build_stem_waveform_payload, remove_waveform_pins
+
+    bundle, scratch, pinned, seen, built = resolved
+    if built is not None:
+        return built
+    try:
+        return build_stem_waveform_payload(
+            bundle, part, cache_root=_stem_waveform_cache_root(request), pinned=pinned, seen=seen
+        )
+    finally:
+        if scratch is not None:
+            remove_waveform_pins(scratch)  # raises StemPinCleanupError by name (Sol on #6820)
+
+
+def _stem_waveform_payload(stable_id: str, part: str, request: Request) -> dict[str, Any]:
+    """Resolve the bundle under :func:`_read_barrier`, then build the envelope outside it.
+
+    A cold envelope decodes a whole part, too long to hold writers off, so
+    the barrier covers only the resolve and hard-linking the parts the
+    decode reads (``pin_waveform_inputs``). The decode then reads the
+    version the barrier saw even if a swap lands under it, and an
+    instrumental envelope never mixes two versions (Codex on #6820). Where
+    the parts could not be linked, none is pinned, and the envelope is
+    built under the barrier instead (Sol on #6820).
+    """
+    return _retry_swaps(
+        lambda: _build_resolved_waveform(_resolve_waveform_inputs(stable_id, part, request), part, request)
+    )
+
+
+def _stem_waveform_response(stable_id: str, part: str, request: Request) -> StemWaveformOut:
+    from apps.stems.stem_waveform import StemPinCleanupError
 
     try:
-        payload = load_stem_waveform_payload(
-            stable_id,
-            part,
-            stems_dir=_stems_dir(request),
-            cache_root=_stem_waveform_cache_root(request),
-            roots=_stem_roots(request),
-        )
+        payload = _stem_waveform_payload(stable_id, part, request)
+    except StemPinCleanupError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "STEM_PIN_CLEANUP_FAILED", "message": str(exc)},
+        ) from exc
     except StemBundleNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -1093,12 +1324,26 @@ def get_stem_waveform(stable_id: str, part: str, request: Request) -> StemWavefo
             status_code=404,
             detail={"code": "STEM_PART_NOT_FOUND", "message": str(exc)},
         ) from exc
-    stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return StemWaveformOut(**payload)
 
 
+@router.get(
+    "/{stable_id}/stems/{part}/waveform",
+    response_model=StemWaveformOut,
+    responses=STEM_PART_RESPONSES,
+)
+def get_stem_waveform(stable_id: str, part: str, request: Request) -> StemWaveformOut:
+    """Return a downsampled mono peak envelope for one validated stem part."""
+    withdraw = _hold_for_deck(stable_id, request)
+    try:
+        return _stem_waveform_response(stable_id, part, request)
+    except BaseException:
+        withdraw()
+        raise
+
+
 @router.post("/{stable_id}/stems/deck-open")
-def mark_stem_deck_open(stable_id: str) -> dict[str, str]:
+def mark_stem_deck_open(stable_id: str, request: Request) -> dict[str, str]:
     """A deck has this bundle open. Protects it from eviction until closed.
 
     Agent-native parity for the deck-load lifecycle: there is no other
@@ -1107,7 +1352,7 @@ def mark_stem_deck_open(stable_id: str) -> dict[str, str]:
     (:class:`apps.cloud.stem_hydration.OpenDeckRegistry`), so two open
     references (e.g. two decks on the same track) both need closing.
     """
-    stem_hydration.OPEN_DECKS.mark_open(stable_id)
+    _hold_for_deck(stable_id, request, deck_open=True)
     return {"status": "ok", "stable_id": stable_id, "open": "true"}
 
 

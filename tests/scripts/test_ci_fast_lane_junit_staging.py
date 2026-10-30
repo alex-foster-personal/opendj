@@ -218,7 +218,7 @@ def test_a_staging_failure_suppresses_the_upload() -> None:
     """if the upload ignores staging then a failed cleanup publishes stale data."""
     upload = None
     for step in _steps(SHARD_JOB):
-        if str(step.get("uses", "")).startswith("actions/upload-artifact@") and (
+        if str(step.get("uses", "")) == "./.github/actions/r2-artifact" and (
             "ci-insights" in str(step.get("with", {}).get("name", ""))
         ):
             upload = step
@@ -338,7 +338,7 @@ def test_the_junit_filename_is_what_the_upload_glob_sends() -> None:
     for shard in INSIGHTS_SHARDS:
         glob = _step_by_id(_insights_id(UPLOAD_STEP_ID, shard))["with"]["junit-paths"]
         pattern = re.compile("^" + re.escape(glob).replace(r"\*", "[^/]*") + "$")
-        path = _step_by_id(_insights_id(DOWNLOAD_STEP_ID, shard))["with"]["path"]
+        path = _step_by_id(_insights_id(DOWNLOAD_STEP_ID, shard))["env"]["DEST"]
         name = written_name_template.replace("${{ matrix.shard }}", str(shard))
         assert pattern.match(f"{path}/{name}"), (
             f"pytest writes {name!r} for shard {shard} and it is downloaded into "

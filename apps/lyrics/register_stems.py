@@ -47,6 +47,7 @@ from apps.shared.paths import STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
 from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.bundle_lock import readers_held_off, remove_staging, store_writer_lock
 
 if TYPE_CHECKING:
     from apps.cloud.asset_store import AssetS3Client
@@ -162,6 +163,32 @@ def _storage_for_register_pair(
     return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
 
 
+def _publish_staged(tmp_dir: Path, out_dir: Path) -> None:
+    """Rename the staged bundle into place and strict-read it back.
+
+    Under the bundle lock every writer of this directory holds: the STEM-58
+    re-compress swap and eviction rewrite this root too (Codex P1 on #6820
+    and #6821). Readers are held off from the rename until the strict read
+    back passes or the refused bundle is gone again, so no deck read sees a
+    bundle this call then removes (Sol on #6820). A failed rename removes the
+    staging dir, so no partial bundle is left behind.
+    """
+    with store_writer_lock(out_dir), readers_held_off(out_dir):
+        try:
+            tmp_dir.rename(out_dir)
+        except BaseException:
+            remove_staging(tmp_dir, "RoFormer staging directory")
+            raise
+        try:
+            load_stem_bundle(out_dir.name, stems_dir=out_dir.parent)
+        except BaseException:
+            # Strict: a rejected bundle left at the live path would be read as
+            # published. A failed removal names the path and keeps the
+            # validation error as its context (Sol on #6820).
+            remove_staging(out_dir, "rejected RoFormer bundle")
+            raise
+
+
 def register_pair(
     *,
     stable_id: str,
@@ -242,17 +269,12 @@ def register_pair(
             part: sha256_file_hex(tmp_dir / rel) for part, rel in manifest["files"].items()
         }
         (tmp_dir / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
-        tmp_dir.rename(out_dir)
     except BaseException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        remove_staging(tmp_dir, "RoFormer staging directory")
         raise
-    try:
-        load_stem_bundle(stable_id, stems_dir=root)
-    except BaseException:
-        shutil.rmtree(out_dir, ignore_errors=True)
-        raise
+    _publish_staged(tmp_dir, out_dir)
 
     if policy.CFG.mode == "cloud":
         client: AssetS3Client

@@ -133,6 +133,31 @@ REG  Q-13 Enforce sync-schema drift as a hard gate (no ratchet) via
            the run aborts rather than scoring 0 violations]
           [if a drift check stops being emitted at all then the evaluator
            raises rather than reporting the remaining zeros]
+REG  Q-14 Report a 1000-line soft file count and the files in it, and never
+          fail on that count.
+          [if a file is over the 1000-line soft limit then
+           file_size.soft_over_* reports the count and the file, and the run
+           exits 0]
+          [if a file is over 1500 lines and the strict count is past its
+           slack then file_size.over_limit_* fails the run]
+          [if --update-baseline rewrites baseline.json then
+           file_size.soft_over_python and file_size.soft_over_frontend are
+           absent from it]
+REG  Q-15 Ratchet agent skill size and reference depth via
+          scripts/skill_tree_lint.py: SKILL.md files at 500 lines or more, the
+          deepest file chain inside one skill, the deepest chain of skills
+          naming skills, skill reference cycles, and rule files at 200
+          lines or more, with the count of skills scanned as an ungated control.
+          [if a SKILL.md grows to 500 lines then skills.over_line_limit
+           rises and the run exits 1]
+          [if a reference file links a further file then
+           skills.file_ref_depth_max rises]
+          [if a second deep chain appears beside the deepest one then
+           skills.file_ref_deep_edges or skills.skill_ref_deep_edges rises]
+          [if an already-long rule file grows then skills.rules_over_excess
+           rises and the run exits 1]
+          [if fewer than 10 skills are found then the run aborts rather than
+           scoring 0]
 
 Usage:
     python -m scripts.quality_gate                       # gate against baseline
@@ -157,8 +182,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
+
+if TYPE_CHECKING:
+    from scripts import skill_tree_lint
 
 try:
     from scripts import quality_latency, shell_construct_lint
@@ -196,9 +224,19 @@ class CFG:
     PY_LINT_PATHS: tuple[str, ...] = ("apps", "tests", "scripts", "conftest.py")
     # Must match [tool.ruff.lint.mccabe] max-complexity in pyproject.toml.
     MAX_COMPLEXITY: int = 12
-    # "This file is too long to hold in your head" line, per language.
+    # Strict file-length line, per language. file_size.over_limit_* counts
+    # files past it. That count is ratcheted against baseline.json and can
+    # fail the gate.
     PY_FILE_LIMIT: int = 1500
     FE_FILE_LIMIT: int = 1500
+    # Soft file-length line, per language. file_size.soft_over_* counts files
+    # past it and names them. Report only: printed, never fails, never
+    # written to baseline.json.
+    PY_FILE_SOFT_LIMIT: int = 1000
+    FE_FILE_SOFT_LIMIT: int = 1000
+    # Names kept on a soft-over detail before the rest collapses to "+K more".
+    # The count itself is the true total, not the length of this list.
+    SOFT_LIST_MAX: int = 40
     # jscpd: a clone has to be this big before it is worth naming.
     DUP_MIN_LINES: int = 30
     DUP_MIN_TOKENS: int = 100
@@ -239,9 +277,15 @@ class CFG:
     # drift on every PR, and restoring the 150 missing endpoints moved
     # duplication.percent from 0.31 to 0.39. The gate would have blocked the
     # repair of its own trunk. Scored without these two: 0.21.
+    # The e2e footprint map (TEST-BUDGET round 3, DEVOPS-28) is the same
+    # class: CI writes it from a full green main run, and every spec's file
+    # index list repeats the boot path's indices by construction. Scored, the
+    # seed map alone read as 202 clones and 5.62 % against main's 0.22
+    # (PR #7948, Fri 30 Oct 2026).
     GENERATED_CONTRACT_GLOBS: tuple[str, ...] = (
         "**/webui/openapi.json",
         "**/src/lib/api-types.ts",
+        "**/tests/e2e/.spec_footprints.json",
     )
     # Paths excluded from size/complexity scoring: vendored, not ours.
     #
@@ -345,11 +389,23 @@ HARD_ZERO: frozenset[str] = frozenset({
 # assert_checks_wired refuses to run when a check defined there is not
 # dispatched, and _eval_sync_drift below refuses to return unless every
 # hard-zero sync_drift key in this file was emitted.
+#
+# file_size.soft_over_python and file_size.soft_over_frontend are the fifth.
+# The strict 1500-line counts stay ratcheted and can fail. The 1000-line
+# counts name the files past the soft line so that burn-down is visible, and
+# they have no allowance: a run prints them, --json and the markdown report
+# include them, and _write_baseline leaves them out of baseline.json (Q-14).
+# skills.scanned is the sixth, a control like shell.files_scanned: it shows the
+# skill ratchets were measured over real skills. Its floor is enforced in
+# scripts/skill_tree_lint.measure, which aborts below CFG.MIN_SKILLS.
 REPORT_ONLY: frozenset[str] = frozenset({
     "deps.issues",
     "shell.files_scanned",
     "mypy.files_checked",
     "sync_drift.checks_run",
+    "file_size.soft_over_python",
+    "file_size.soft_over_frontend",
+    "skills.scanned",
 })
 
 
@@ -1256,26 +1312,127 @@ def _jscpd_duplication(repo: Path, roots: tuple[str, ...] = ("apps",)) -> Metric
     )
 
 
-def _eval_size() -> list[Metric]:
-    def _measure(files: list[Path], limit: int) -> tuple[int, str, int]:
-        sizes = sorted(
-            ((len(p.read_text(encoding="utf-8", errors="replace").splitlines()), p) for p in files),
-            reverse=True,
-        )
-        if not sizes:
-            raise RuntimeError("no files found to size; the path config is wrong")
-        return sizes[0][0], sizes[0][1].relative_to(REPO).as_posix(), sum(
-            1 for n, _ in sizes if n > limit
-        )
+def _line_counts(files: list[Path]) -> list[tuple[int, Path]]:
+    """Line counts, longest first. One read per file.
 
-    py_max, py_worst, py_over = _measure(_python_files(), CFG.PY_FILE_LIMIT)
-    fe_max, fe_worst, fe_over = _measure(_frontend_files(), CFG.FE_FILE_LIMIT)
+    An empty list is a broken scan reporting as a clean tree, same as the
+    old per-language measure.
+    """
+    sizes = sorted(
+        (
+            (len(path.read_text(encoding="utf-8", errors="replace").splitlines()), path)
+            for path in files
+        ),
+        reverse=True,
+    )
+    if not sizes:
+        raise RuntimeError("no files found to size; the path config is wrong")
+    return sizes
 
+
+def _soft_over_detail(
+    sizes: list[tuple[int, Path]],
+    limit: int,
+    *,
+    repo: Path,
+    list_max: int,
+) -> tuple[int, str]:
+    """Count of files past `limit`, plus a longest-first name list.
+
+    The list keeps `list_max` names, relative to `repo`, and then ends with
+    "+K more". The count is the true total. Callers print this string in
+    full; nothing downstream truncates it.
+    """
+    if list_max < 1:
+        raise ValueError(f"soft list cap must be at least 1, got {list_max}")
+    over = [(count, path) for count, path in sizes if count > limit]
+    shown = over[:list_max]
+    parts = [
+        f"{path.relative_to(repo).as_posix()} ({count} lines)" for count, path in shown
+    ]
+    hidden = len(over) - len(shown)
+    if hidden:
+        parts.append(f"+{hidden} more")
+    return len(over), "; ".join(parts)
+
+
+def _language_size_metrics(
+    files: list[Path],
+    *,
+    language: str,
+    strict_limit: int,
+    soft_limit: int,
+    repo: Path,
+    list_max: int,
+) -> list[Metric]:
+    """Max, strict-over count, and report-only soft-over count for one language.
+
+    Strict and soft share one sorted read, so the two limits cannot disagree
+    about how long a file is. Paths in the details are relative to `repo`.
+    """
+    sizes = _line_counts(files)
+    worst_count, worst = sizes[0]
+    strict_over = sum(1 for count, _path in sizes if count > strict_limit)
+    soft_over, soft_detail = _soft_over_detail(
+        sizes, soft_limit, repo=repo, list_max=list_max
+    )
     return [
-        Metric("file_size.max_python", py_max, "lines", py_worst),
-        Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
-        Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
-        Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
+        Metric(
+            f"file_size.max_{language}",
+            worst_count,
+            "lines",
+            worst.relative_to(repo).as_posix(),
+        ),
+        Metric(
+            f"file_size.over_limit_{language}",
+            strict_over,
+            f"files > {strict_limit} lines",
+        ),
+        Metric(
+            f"file_size.soft_over_{language}",
+            soft_over,
+            f"files > {soft_limit} lines (soft)",
+            soft_detail,
+        ),
+    ]
+
+
+def _file_size_metrics(
+    python_files: list[Path],
+    frontend_files: list[Path],
+    *,
+    repo: Path,
+    list_max: int,
+) -> list[Metric]:
+    """File-length metrics for both languages. Duplication is measured apart."""
+    return [
+        *_language_size_metrics(
+            python_files,
+            language="python",
+            strict_limit=CFG.PY_FILE_LIMIT,
+            soft_limit=CFG.PY_FILE_SOFT_LIMIT,
+            repo=repo,
+            list_max=list_max,
+        ),
+        *_language_size_metrics(
+            frontend_files,
+            language="frontend",
+            strict_limit=CFG.FE_FILE_LIMIT,
+            soft_limit=CFG.FE_FILE_SOFT_LIMIT,
+            repo=repo,
+            list_max=list_max,
+        ),
+    ]
+
+
+def _eval_size() -> list[Metric]:
+    return [
+        *_file_size_metrics(
+            _python_files(),
+            _frontend_files(),
+            repo=REPO,
+            list_max=CFG.SOFT_LIST_MAX,
+        ),
         _jscpd_duplication(REPO),
     ]
 
@@ -1316,6 +1473,72 @@ def _eval_shell() -> list[Metric]:
             )
         )
     return metrics
+
+
+# ----- evaluator: agent skills ---------------------------------------------
+
+
+def _skills_report(out: str) -> skill_tree_lint.Report:
+    """The lint's `--json` stdout as a Report. Anything else on stdout (a uv
+    notice, a stray print) raises instead of being scored."""
+    from scripts import skill_tree_lint
+
+    return skill_tree_lint.Report(**json.loads(out))
+
+
+def _eval_skills() -> list[Metric]:
+    """Skill size and reference depth (Q-15) of this checkout."""
+    return _skills_metrics(REPO)
+
+
+def _skills_metrics(repo: Path) -> list[Metric]:
+    """Skill size and reference depth (Q-15) of the tree at `repo`, as scored
+    by THIS checkout's scripts/skill_tree_lint.py.
+
+    Ratchets, not hard zeros: main already carries two long skills and a few
+    deep chains, and the point is that they only ever shrink. The limits and
+    where they come from are in the lint module's docstring. measure() aborts
+    on a scan below its floor, so an empty skill set can never read as clean.
+
+    The measurement runs in the pinned ops/quality/requirements.txt env, not
+    in-process, because it reads links with markdown-it-py and `just quality`
+    starts this gate with no packages at all. A failed run raises rather than
+    scoring, so a missing parser can never read as zero findings.
+
+    The lint is imported here, not at module level, so the gate still loads
+    when `_measure_owners_at_base` overlays it onto a merge base that predates
+    the lint and runs only other evaluators there. That function measures the
+    base's skills by calling this one with the base tree as `repo`: the lint
+    is the instrument and the skill trees are the subject, so both sides are
+    read by the same scanner, even on a base that has none of its own.
+    """
+    from scripts import skill_tree_lint
+
+    _, out = _uv("python", "-m", "scripts.skill_tree_lint", "--json", "--repo", str(repo), isolated=True)
+    report = _skills_report(out)
+    cfg = skill_tree_lint.CFG
+    return [
+        Metric("skills.scanned", report.skills_scanned, "skills",
+               "control: the gates below are measured over this set"),
+        Metric("skills.over_line_limit", len(report.over_line_limit),
+               f"SKILL.md >= {cfg.SKILL_MAX_LINES} lines", "; ".join(report.over_line_limit)),
+        Metric("skills.over_line_excess", report.over_line_excess,
+               f"lines past {cfg.SKILL_MAX_LINES - 1} across those SKILL.md files", ""),
+        Metric("skills.file_ref_depth_max", report.file_ref_depth_max,
+               "files deep from SKILL.md", " -> ".join(report.file_ref_worst)),
+        Metric("skills.skill_ref_depth_max", report.skill_ref_depth_max,
+               "skills deep", " -> ".join(report.skill_ref_worst)),
+        Metric("skills.file_ref_deep_edges", report.file_ref_deep_edges,
+               "file references below the first level", ""),
+        Metric("skills.skill_ref_deep_edges", report.skill_ref_deep_edges,
+               "skill handoffs below the first level", ""),
+        Metric("skills.cyclic_skill_refs", report.cyclic_skill_refs,
+               "skill references on a cycle", "; ".join(report.skill_ref_cycles)),
+        Metric("skills.rules_over_limit", len(report.rules_over_limit),
+               f"rule files >= {cfg.RULE_MAX_LINES} lines", "; ".join(report.rules_over_limit)),
+        Metric("skills.rules_over_excess", report.rules_over_excess,
+               f"lines past {cfg.RULE_MAX_LINES - 1} across those rule files", ""),
+    ]
 
 
 # ----- evaluator: sync-schema drift ----------------------------------------
@@ -1433,6 +1656,7 @@ EVALUATORS: tuple[Evaluator, ...] = (
     Evaluator("frontend", "Frontend coupling and dead code", _eval_frontend, needs_node=True),
     Evaluator("size", "File bloat and duplication", _eval_size, needs_node=True),
     Evaluator("shell", "Shell constructs that fail silently", _eval_shell),
+    Evaluator("skills", "Agent skill size and reference depth", _eval_skills),
     Evaluator("sync-drift", "Sync-schema omissions that never raise", _eval_sync_drift),
     Evaluator("latency", "Declared input-to-applied latency floor", _eval_latency),
 )
@@ -1758,6 +1982,10 @@ def _measure_owners_at_base(
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
                 _link_node_modules(base_fe, FRONTEND / "node_modules")
+        values, gate_owners, why = _skills_at_base(base_dir, owners, sha)
+        if gate_owners is None:
+            return values, why
+        owners = gate_owners
         out_json = base_dir / "metrics.json"
         cmd = [
             sys.executable, "-m", "scripts.quality_gate",
@@ -1777,7 +2005,7 @@ def _measure_owners_at_base(
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "
                 f"without metrics: {proc.stderr.strip()[-300:]}"
             )
-        return json.loads(out_json.read_text()), ""
+        return {**values, **json.loads(out_json.read_text())}, ""
     finally:
         # Drop the node_modules link first so neither git nor rmtree can walk
         # into the real install, then remove the worktree entry so the shared
@@ -1789,6 +2017,29 @@ def _measure_owners_at_base(
             cwd=repo, capture_output=True, text=True, check=False,
         )
         shutil.rmtree(base_dir, ignore_errors=True)
+
+
+def _skills_at_base(
+    base_dir: Path, owners: list[str], sha: str
+) -> tuple[dict[str, float] | None, list[str] | None, str]:
+    """`skills` at the merge base: (metrics or None, owners for the base gate, why not).
+
+    Scored by this run's lint, never the base's gate: a base that predates
+    the lint has no `skills` evaluator, so asking its gate for one fails the
+    whole re-measure, and overlaying the lint's files instead would also
+    change what `size` measures under scripts/ and which pins every other
+    owner runs with. The owners left over still go to the base's own gate;
+    None means there is no base gate run to make, because the lint failed or
+    `skills` was the only owner asked for.
+    """
+    if "skills" not in owners:
+        return {}, owners, ""
+    try:
+        values = {m.key: m.value for m in _skills_metrics(base_dir)}
+    except (RuntimeError, ValueError, TypeError) as exc:
+        return None, None, f"skills at merge base {sha[:10]}: {exc}"
+    rest = [owner for owner in owners if owner != "skills"]
+    return values, rest or None, ""
 
 
 def _inherited_classification(

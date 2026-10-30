@@ -29,7 +29,13 @@ import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { artworkUrl } from './artwork-url';
-import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
+import {
+	isUsbTrackId,
+	loadStickSessionEdits,
+	refuseStickRead,
+	refuseStickWrite,
+	trackApiPath
+} from './track-source';
 import { beginStemWork } from './stem-decode-policy';
 import type { StemFetchProgress } from './stem-types';
 
@@ -1037,6 +1043,22 @@ export async function restoreHotCue(
 		{ reversal_id },
 		revision
 	);
+}
+
+// ------------------------------------------ transition-in cue (AGENT-51)
+// One per track, kind 'transition_in' in the own cue store: where the user
+// expects an incoming transition to land. The engine snaps it to the nearest
+// downbeat of the grid /anlz serves. CLI: `opendj track transition-in`.
+
+export type TransitionInCue = { kind: 'transition_in'; in_ms: number };
+export type TransitionInSet = { cue: TransitionInCue; requested_ms: number; bar: number };
+
+/** PUT /tracks/{sid}/transition-in: set (or move) the cue at a track time. */
+export async function setTransitionInCue(stable_id: string, in_ms: number): Promise<TransitionInSet> {
+	refuseStickWrite(stable_id, 'set transition-in cue');
+	return _putJson<TransitionInSet>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/transition-in`, {
+		in_ms: Math.max(0, Math.round(in_ms))
+	});
 }
 
 /** URL for GET /tracks/{sid}/artwork: see artwork-url.ts, its leaf home. */

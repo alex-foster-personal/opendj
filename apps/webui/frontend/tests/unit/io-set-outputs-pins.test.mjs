@@ -189,13 +189,21 @@ test('SET OUTPUTS is a double-height button bound to the alert, marking the clic
 test('the alert glows red and pulses, and reduced motion keeps the glow without the pulse', () => {
 	const alert = CLUSTER.match(/\t\.hp-btn-io\.io-alert \{([^}]*)\}/);
 	assert.ok(alert, '.hp-btn-io.io-alert rule must exist');
-	assert.match(alert[1], /box-shadow: 0 0 6px/);
+	assert.match(alert[1], /box-shadow: 0 0 3px/);
 	assert.match(alert[1], /--rb-red/);
-	assert.match(alert[1], /animation: io-alert-pulse/);
-	assert.match(CLUSTER, /@keyframes io-alert-pulse/);
+	const glow = CLUSTER.match(/\t\.hp-btn-io\.io-alert::after \{([^}]*)\}/);
+	assert.ok(glow, 'the pulsing glow layer must exist');
+	assert.match(glow[1], /animation: io-alert-pulse/);
+	// The pulse must stay on the compositor: an animated box-shadow repaints on
+	// the main thread every frame while the alert stands (two-deck frame drops,
+	// Fri 9 Oct 2026). Only opacity may move.
+	const frames = CLUSTER.match(/@keyframes io-alert-pulse \{([\s\S]*?)\n\t\}/);
+	assert.ok(frames, '@keyframes io-alert-pulse must exist');
+	assert.match(frames[1], /opacity:/);
+	assert.doesNotMatch(frames[1], /box-shadow|filter|width|height/);
 	const reduced = CLUSTER.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\t\}/);
 	assert.ok(reduced, 'reduced-motion block must exist');
-	assert.match(reduced[1], /\.hp-btn-io\.io-alert \{\s*animation: none;\s*\}/);
+	assert.match(reduced[1], /\.hp-btn-io\.io-alert::after \{\s*animation: none;\s*opacity: 0\.5;\s*\}/);
 	assert.doesNotMatch(reduced[1], /box-shadow: none/, 'reduced motion keeps the glow');
 });
 

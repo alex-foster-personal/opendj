@@ -183,8 +183,11 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
 	assert.match(tree, /non-broken tracks, \$\{node\.broken_count\} broken tracks/);
-	assert.match(tree, /loading non-broken and broken track counts/);
-	assert.match(tree, /non-broken count unavailable:/);
+	assert.match(tree, /track count unavailable:/);
+	assert.match(
+		source('src/lib/components/rb/browser/all-tracks-badge.ts'),
+		/loading non-broken and broken track counts/
+	);
 	assert.match(tree, /\$\{node\.track_count - node\.broken_count\} non-broken tracks/);
 	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
 });

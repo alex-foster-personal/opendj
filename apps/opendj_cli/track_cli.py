@@ -49,6 +49,9 @@ _FIT_FILTERS = ("findings", "wrong_bpm", "off_beat", "shifted", "no_verdict", "f
 #: AUTOGAIN-06: the CLI twin of `/api/v1/auto-gain` (the deck's AG readout).
 AUTO_GAIN_VERB = "auto-gain"
 _AUTO_GAIN_PATH = "/api/v1/auto-gain/tracks"
+#: AGENT-51: the CLI twin of `/api/v1/tracks/{id}/transition-in` (the deck
+#: waveform's "Transition in around here"). The engine snaps to its own grid.
+TRANSITION_IN_VERB = "transition-in"
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 #: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
 #: letter). Same rule as the grid verbs: the engine owns the scan, so these
@@ -71,7 +74,8 @@ _USAGE = (
     "       opendj track quality [all|A|B|C|D|unchecked|issues|failed] [limit N]\n"
     "       opendj track quality-scan [limit N] | quality-scan status | quality-scan stop\n"
     "       opendj track quality-of <stable_id>\n"
-    "       opendj track auto-gain <stable_id> [set <dB>|clear]"
+    "       opendj track auto-gain <stable_id> [set <dB>|clear]\n"
+    "       opendj track transition-in <stable_id> [set <ms>|clear]"
 )
 
 
@@ -259,6 +263,18 @@ def _auto_gain(args: Sequence[str]) -> int:
     )
 
 
+def _transition_in(args: Sequence[str]) -> int:
+    """`GET` one track's transition-in cue, `PUT` it at a time (snapped), or `DELETE` it."""
+    path = f"/api/v1/tracks/{args[0]}/transition-in" if args else ""
+    if len(args) == 1:
+        return api_cli.run(["GET", path], as_json=True)
+    if len(args) == 2 and args[1] == "clear":
+        return api_cli.run(["DELETE", path], as_json=True)
+    if len(args) == 3 and args[1] == "set" and args[2].isdigit():
+        return api_cli.run(["PUT", path, "--json", json.dumps({"in_ms": int(args[2])})], as_json=True)
+    return _usage_error()
+
+
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
 
 #: ``MDT_DATA_DIR`` is the repo-wide explicit override (apps/adapters/
@@ -393,6 +409,7 @@ __all__ = [
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",
     "KEY_SEGMENTS_VERB",
+    "TRANSITION_IN_VERB",
     "run",
 ]
 
@@ -409,4 +426,5 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     QUALITY_SCAN_VERB: _quality_scan,
     QUALITY_OF_VERB: _quality_of,
     AUTO_GAIN_VERB: _auto_gain,
+    TRANSITION_IN_VERB: _transition_in,
 }

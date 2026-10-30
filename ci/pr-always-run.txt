@@ -57,6 +57,10 @@ tests/scripts/test_node_test_tap_reporter.py
 # It is the one entry over the 8 s admission line (about 14 s locally): the list stays complete
 # only if it runs on every narrowed head.
 (private path)
+# TEST-BUDGET round 4: sweeps every frontend unit-test source under apps/webui/frontend/tests/unit
+# and the repository root for the files those tests read outside their tree, so no import or
+# coupling link from a change reaches it ((private path)).
+(private path)
 
 # Subtree scans of every `apps/**/*.py`: vendored licenses, native tool paths, GPL tag
 # libraries, rekordbox writeback surfaces, function-body `scripts` imports. Of 12 sampled
@@ -148,8 +152,18 @@ tests/scripts/test_runner_toolset_repo_pins.py
 # the derived check on merge. 1.3 s.
 (private path)
 
+# The skill-tree lint test scans every SKILL.md and markdown file under the repo's skill roots
+# (test_the_real_repo_is_scanned), so a PR that adds or edits a skill reaches it by no import
+# link. Added with the lint itself on #3846, caught by the derived index-reader check. 15 s for the
+# module in a Linux cloud container (Thu 15 Oct 2026), 8.3 s of it the real-repo scan.
+(private path)
+
 # Every job in .github/workflows/*.yml is pinned to a self-hosted route or allowlisted as hosted
 # with a reason (ADR-NEW-hosted-runner-exit). It globs the whole workflow directory, so a new
 # workflow job selects nothing that reaches it. Arrived from main on Thu 15 Oct 2026, caught by
 # the derived check on merge.
 tests/quality/test_hosted_runner_pins_are_allowlisted.py
+
+# The labelled title-fix eval sets are owner-library rows (licensing rule R14): nothing under
+# tests/fixtures/title_fix may be tracked, and the default fixture directory is not under tests/.
+(private path)

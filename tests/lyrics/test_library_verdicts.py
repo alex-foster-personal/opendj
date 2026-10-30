@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import wave
 from pathlib import Path
 
@@ -45,6 +46,7 @@ from apps.webui.server.stem_artifacts import (
     StemBundle,
     load_stem_bundle,
 )
+from tests.stems import fifo_part
 
 from .conftest import seed_track
 
@@ -627,6 +629,7 @@ def _seed_matching_cache(
                     "derived_from_stems": True,
                     "bundle_layout": bundle.layout,
                     "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                    "bundle_generation_marks": vfrom_stems.generation_marks_record(bundle),
                 },
             }
         ),
@@ -857,6 +860,213 @@ def test_write_candidate_reports_a_vanished_part_as_a_failure_not_an_abort(
     assert store.get_verdict(conn, "sid-vanish-write-001") is None
 
 
+@pytest.mark.requirement("STEM-58")
+def test_write_candidate_refuses_a_bundle_replaced_after_the_scan(conn, data_dir) -> None:
+    """[if] a publisher replaces the bundle between the scan and the write [then] nothing is written under the scanned label, [else stop].
+
+    The scan captures ``bundle`` and ``expected_source`` without the lock; a
+    re-separation that lands before the write would have its stems measured
+    and stored under the old generation's identity (Codex on #6820). The new
+    generation here carries a matching vocal-cache entry, so without the
+    check its coverage is written straight away. Control: a fresh scan of the
+    new generation writes it, under its own label.
+
+    MUTATION TARGET: drop the ``_source_label(bundle, identity) !=
+    expected_source`` check in ``coverage_pct_for_bundle``.
+    """
+    sid = "sid-replaced-after-scan-001"
+    seed_track(conn, sid)
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, sid, source_sha256="7" * 64)
+    scanned = load_stem_bundle(sid, stems_dir=stems_root)
+    scanned_source = library_verdicts._bundle_source_label(scanned)
+
+    _mutate_manifest_model_version(bundle_dir, "9.9.9")  # a re-separation lands
+    replaced = load_stem_bundle(sid, stems_dir=stems_root)
+    _seed_matching_cache(data_dir, sid, replaced, coverage_pct=88.0)
+
+    outcome = library_verdicts._write_candidate(conn, data_dir, sid, scanned, scanned_source)
+    assert outcome.fail_reason is not None and "changed since the scan" in outcome.fail_reason
+    assert store.get_verdict(conn, sid) is None
+
+    replaced_source = library_verdicts._bundle_source_label(replaced)
+    assert replaced_source != scanned_source
+    rescanned = library_verdicts._write_candidate(conn, data_dir, sid, replaced, replaced_source)
+    assert rescanned.fail_reason is None and rescanned.reused_cache is True
+    verdict = store.get_verdict(conn, sid)
+    assert verdict is not None and verdict.source == replaced_source, (
+        "control: the new generation is written under its own label"
+    )
+
+
+@pytest.mark.requirement("STEM-58")
+@pytest.mark.parametrize(
+    "path", ["cached", pytest.param("derived", marks=pytest.mark.requires_audio_stack)]
+)
+def test_the_verdict_is_written_before_a_waiting_swap_can_land(conn, data_dir, tmp_path, monkeypatch, path) -> None:
+    """[if] a swap can land between the last generation check and the verdict upsert [then] fail, [else stop].
+
+    Control: the swap lands right after the upsert returns.
+
+    A swap that landed there stored the old generation's verdict while the
+    new stems were live, and the library rows read ``lyric_verdict`` without
+    comparing its source to the bundle (Codex on #6820). Here a real writer
+    starts a swap the moment the upsert is reached and is given time to land
+    before the row is written; the row must still describe the bundle on
+    disk at that instant, and the swap must land once the upsert returns.
+
+    MUTATION TARGET: write the verdict after ``publish_coverage_for_bundle``
+    returns (outside the bundle lock) and the swap lands first, on both the
+    cached and the derived path.
+    """
+    import threading
+    import time
+
+    from apps.stems.bundle_lock import bundle_lock, replace_bundle_dir
+
+    sid = f"sid-swap-at-upsert-{path}"
+    seed_track(conn, sid)
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, sid)
+    fresh = _write_wav_bundle(tmp_path / "fresh", sid)
+    _mutate_manifest_model_version(fresh, "9.9.9")
+    bundle = load_stem_bundle(sid, stems_dir=stems_root)
+    source = library_verdicts._bundle_source_label(bundle)
+    if path == "cached":
+        _seed_matching_cache(data_dir, sid, bundle, coverage_pct=12.0)
+
+    def swap() -> None:
+        with bundle_lock(bundle_dir):
+            replace_bundle_dir(fresh, bundle_dir)
+
+    writer = threading.Thread(target=swap)
+    live_at_upsert: list[str] = []
+    real_upsert = store.upsert_stem_coverage_verdict
+
+    def upsert_as_a_swap_waits(*args, **kwargs):
+        writer.start()
+        time.sleep(0.5)  # the swap's chance to land, if nothing holds it off
+        live_at_upsert.append(library_verdicts._bundle_source_label(load_stem_bundle(sid, stems_dir=stems_root)))
+        return real_upsert(*args, **kwargs)
+
+    monkeypatch.setattr(store, "upsert_stem_coverage_verdict", upsert_as_a_swap_waits)
+    outcome = library_verdicts._write_candidate(conn, data_dir, sid, bundle, source)
+    writer.join(timeout=30)
+
+    assert outcome.fail_reason is None and outcome.reused_cache is (path == "cached")
+    assert live_at_upsert == [source], "the swap landed between the generation check and the verdict"
+    verdict = store.get_verdict(conn, sid)
+    assert verdict is not None and verdict.source == source
+    # Control: the swap was only held off, not lost.
+    assert not writer.is_alive()
+    assert library_verdicts._bundle_source_label(load_stem_bundle(sid, stems_dir=stems_root)) != source
+
+
+@pytest.mark.requirement("STEM-58")
+@pytest.mark.requires_audio_stack
+@pytest.mark.skipif(not fifo_part.HAS_FIFO, reason=fifo_part.SKIP_REASON)
+def test_coverage_decodes_outside_the_lock_and_refuses_a_bundle_replaced_mid_decode(data_dir, tmp_path) -> None:
+    """[if] a writer replaces the bundle while its parts decode [then] no coverage is returned for it, [else stop].
+
+    The decode no longer holds the bundle lock, so an id sharing its stripe
+    is not held up for a whole decode (Codex on #6821); the identity is
+    re-read under the lock afterward instead (Codex on #6820). The scanned
+    bundle's ``other`` part is a FIFO, so the real decoder waits inside the
+    bundle until fed, and a real writer swaps a new generation in at that
+    moment if the lock is free (tests/stems/fifo_part.py). Control: the same
+    bundle with no writer is measured.
+
+    MUTATION TARGETS: hold ``held_for_read`` around the decode (the writer
+    never runs); drop the re-check in ``derive_from_generation`` (the
+    replaced bundle's coverage is returned).
+    """
+    from apps.stems.bundle_lock import bundle_lock, bundle_lock_path, replace_bundle_dir
+
+    sid = "sid-replaced-mid-decode-001"
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, sid)
+    fresh = _write_wav_bundle(tmp_path / "fresh", sid)
+    bundle = load_stem_bundle(sid, stems_dir=stems_root)
+    held = fifo_part.make_fifo(bundle_dir / "other.wav")
+    source = library_verdicts._bundle_source_label(bundle)
+    lock_path = bundle_lock_path(data_dir, sid)
+
+    with fifo_part.serving(bundle_dir / "other.wav", held, lock_path, []) as served:
+        coverage, reused = library_verdicts.coverage_pct_for_bundle(data_dir, sid, bundle, expected_source=source)
+    assert not served.errors and served.opens_under_lock == 0
+    assert reused is False and coverage == 0.0, "control: a bundle nobody replaces is measured"
+
+    def replace() -> None:
+        with bundle_lock(bundle_dir):
+            replace_bundle_dir(fresh, bundle_dir)
+
+    with (
+        fifo_part.serving(bundle_dir / "other.wav", held, lock_path, [replace]) as served,
+        pytest.raises(RuntimeError, match="changed while it was measured"),
+    ):
+        library_verdicts.coverage_pct_for_bundle(data_dir, sid, bundle, expected_source=source)
+    assert not served.errors, served.errors
+    assert served.writers_run == 1, "the decode held the bundle lock, so no writer could run"
+
+
+def _wait_past_ctime_of(directory: Path, probe: Path) -> None:
+    """Return once the clock stamps a fresh change later than ``directory``'s ctime.
+
+    A kernel without fine-grained timestamps (the WSL runners) stamps ctime
+    from a clock that ticks every few milliseconds, so renames landing in the
+    tick that last changed the directory leave its ctime as it was, and the
+    round trip below would be invisible for that reason alone.
+    """
+    floor = directory.stat().st_ctime_ns
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        probe.write_bytes(b"tick")
+        if probe.stat().st_ctime_ns > floor:
+            return
+    raise AssertionError(f"the clock never stamped a ctime past {directory}'s in 5 s")
+
+
+@pytest.mark.skipif(not fifo_part.HAS_FIFO, reason=fifo_part.SKIP_REASON)
+def test_coverage_refuses_a_bundle_swapped_out_and_back_mid_decode(data_dir, tmp_path) -> None:
+    """[if] a writer swaps another generation in and the original back while the parts decode [then] no coverage is returned, [else stop].
+
+    Sol on #6820: after A -> B -> A every size, mtime and the manifest are
+    A's again, so the identity alone matches, though a part read while B
+    was in place came from B. The original directory's ctime moved with
+    its renames, which ``_generation_marks`` compares.
+
+    MUTATION TARGET: compare only ``bundle_stem_identity`` after the decode
+    (the pre-fix check) and the round trip's coverage is returned.
+    """
+    from apps.stems.bundle_lock import bundle_lock, bundle_lock_path
+
+    sid = "sid-swapped-and-back-001"
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, sid)
+    other = _write_wav_bundle(tmp_path / "other", sid)
+    bundle = load_stem_bundle(sid, stems_dir=stems_root)
+    held = fifo_part.make_fifo(bundle_dir / "other.wav")
+    source = library_verdicts._bundle_source_label(bundle)
+    aside = tmp_path / "aside"
+
+    def there_and_back() -> None:
+        with bundle_lock(bundle_dir):
+            _wait_past_ctime_of(bundle_dir, tmp_path / "clock-probe")
+            bundle_dir.rename(aside)
+            other.rename(bundle_dir)
+            bundle_dir.rename(other)
+            aside.rename(bundle_dir)
+
+    with (
+        fifo_part.serving(bundle_dir / "other.wav", held, bundle_lock_path(data_dir, sid), [there_and_back]) as served,
+        pytest.raises(RuntimeError, match="changed while it was measured"),
+    ):
+        library_verdicts.coverage_pct_for_bundle(data_dir, sid, bundle, expected_source=source)
+    assert not served.errors, served.errors
+    assert served.writers_run == 1
+    assert library_verdicts._bundle_source_label(bundle) == source, "control: the identity is A's again"
+
+
 def test_backfill_continues_past_one_candidates_real_filesystem_fault(
     conn, data_dir
 ) -> None:
@@ -953,6 +1163,7 @@ def test_cached_coverage_pct_reuses_a_matching_bundle_identity(data_dir) -> None
                     "derived_from_stems": True,
                     "bundle_layout": bundle.layout,
                     "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                    "bundle_generation_marks": vfrom_stems.generation_marks_record(bundle),
                 },
             }
         ),
@@ -1019,6 +1230,64 @@ def test_cached_coverage_pct_rejects_a_replaced_bundle(data_dir) -> None:
     )
 
 
+def test_cached_coverage_pct_rejects_a_lookalike_generation(data_dir) -> None:
+    """[if] a republish repeats the manifest, names, sizes and mtimes of the cached generation [then] its cache entry is not reused, [else stop].
+
+    A same-codec republish on a coarse-timestamp volume (FAT, HFS+) can do
+    exactly that, so ``bundle_stem_identity`` matches and the old coverage was
+    served for new stems without a decode (Codex on #6821). The lookalike is
+    a real directory swapped in, as a publish does. Control: the entry for
+    the generation on disk is reused.
+
+    MUTATION TARGET: drop the ``bundle_generation_marks`` comparison.
+    """
+    import shutil
+
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-cache-lookalike-001", source_sha256="7" * 64)
+    bundle = load_stem_bundle("sid-cache-lookalike-001", stems_dir=stems_root)
+    _seed_matching_cache(data_dir, "sid-cache-lookalike-001", bundle, coverage_pct=33.0)
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-lookalike-001", bundle) == 33.0
+
+    live = stems_root / "sid-cache-lookalike-001"
+    staged = data_dir / "staged-lookalike"
+    shutil.copytree(live, staged, copy_function=shutil.copy2)
+    shutil.rmtree(live)
+    staged.rename(live)
+    republished = load_stem_bundle("sid-cache-lookalike-001", stems_dir=stems_root)
+    assert vfrom_stems.bundle_stem_identity(republished) == vfrom_stems.bundle_stem_identity(bundle), (
+        "precondition: the identity cannot tell the republish apart"
+    )
+
+    assert library_verdicts._cached_coverage_pct(data_dir, "sid-cache-lookalike-001", republished) is None
+
+
+@pytest.mark.parametrize("linkable", [True, False], ids=["pinned", "no-hard-links"])
+def test_a_derived_result_records_the_generation_it_was_decoded_from(data_dir, monkeypatch, linkable: bool) -> None:
+    """[if] a decode is proven against a generation [then] its vocal-cache params name that generation's marks, [else stop].
+
+    Without them no entry could ever pass the reuse check above. Runs the
+    real decode on a real WAV bundle, pinned, and as on a volume without
+    hard links, where the pin is the one dependency doubled (it reports that
+    nothing could be linked, as ``pin_files`` does on exFAT).
+
+    MUTATION TARGET: return either path's result without ``_stamped``.
+    """
+    if not linkable:
+        from apps.stems import stem_waveform
+
+        monkeypatch.setattr(stem_waveform, "pin_files", lambda _inputs: (None, {}))
+    stems_root = _stems_root(data_dir)
+    _write_wav_bundle(stems_root, "sid-stamp-001", source_sha256="8" * 64)
+    bundle = load_stem_bundle("sid-stamp-001", stems_dir=stems_root)
+    identity = vfrom_stems.bundle_stem_identity(bundle)
+
+    result = vfrom_stems.derive_from_generation(data_dir, "sid-stamp-001", bundle, identity)
+
+    assert result["params"]["bundle_generation_marks"] == vfrom_stems.generation_marks_record(bundle)
+    assert result["params"]["bundle_stem_sha256"] == identity
+
+
 def test_cached_coverage_pct_rejects_non_finite_and_out_of_range_values(data_dir) -> None:
     """P1 BLOCKING fix (Sol follow-up review, PR #2611, library_verdicts.py:210):
     ``json.loads`` happily parses ``NaN``/``Infinity`` (valid JS, invalid
@@ -1031,6 +1300,7 @@ def test_cached_coverage_pct_rejects_non_finite_and_out_of_range_values(data_dir
     _write_wav_bundle(stems_root, "sid-cache-nonfinite-001", source_sha256="6" * 64)
     bundle = load_stem_bundle("sid-cache-nonfinite-001", stems_dir=stems_root)
     identity = vfrom_stems.bundle_stem_identity(bundle)
+    marks = vfrom_stems.generation_marks_record(bundle)
     cache_path = vcache.cache_path(data_dir, "sid-cache-nonfinite-001")
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1042,7 +1312,8 @@ def test_cached_coverage_pct_rejects_non_finite_and_out_of_range_values(data_dir
         return (
             f'{{"schema": {vcache.VOCAL_CACHE_SCHEMA}, "coverage_pct": {coverage_pct}, '
             f'"duration_s": {duration_s}, "params": {{"derived_from_stems": true, '
-            f'"bundle_layout": "{bundle.layout}", "bundle_stem_sha256": "{identity}"}}}}'
+            f'"bundle_layout": "{bundle.layout}", "bundle_stem_sha256": "{identity}", '
+            f'"bundle_generation_marks": {json.dumps(marks)}}}}}'
         )
 
     real_duration = library_verdicts._bundle_duration_s(bundle)
@@ -1263,6 +1534,7 @@ def test_backfill_reuses_a_readable_cache_entry_as_the_opposite_direction_contro
                     "derived_from_stems": True,
                     "bundle_layout": bundle.layout,
                     "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                    "bundle_generation_marks": vfrom_stems.generation_marks_record(bundle),
                 },
             }
         ),
@@ -1533,6 +1805,7 @@ def test_backfill_updates_a_coverage_only_row(conn, data_dir) -> None:
                     "derived_from_stems": True,
                     "bundle_layout": bundle.layout,
                     "bundle_stem_sha256": vfrom_stems.bundle_stem_identity(bundle),
+                    "bundle_generation_marks": vfrom_stems.generation_marks_record(bundle),
                 },
             }
         ),

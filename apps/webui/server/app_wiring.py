@@ -100,7 +100,9 @@ from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import dj_transition as dj_transition_routes
 from .routes import dj_try as dj_try_routes
+from .routes import pair_transition as pair_transition_routes
 from .routes import energy as energy_routes
 from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
@@ -165,9 +167,11 @@ from .routes import stems_assets as stems_assets_routes
 from .routes import sync_billing_proxy as sync_billing_proxy_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
+from .routes import title_fix as title_fix_routes
 from .routes import track_handoff as track_handoff_routes
 from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
+from .routes import transition_in_cue as transition_in_cue_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_eject as usb_eject_routes
 from .routes import usb_export as usb_export_routes
@@ -643,6 +647,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         bench_routes.router,
         bulk_edit_routes.router,
         find_replace_routes.router,
+        title_fix_routes.router,
         mytag_routes.router,
         playlists_routes.router,
         playlist_write_routes.router,
@@ -667,6 +672,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         grid_provenance_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
+        transition_in_cue_routes.router,
         track_plays_routes.router,
         progress_routes.router,
         quality_routes.router,
@@ -712,6 +718,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         state_routes.router,
         commands_routes.router,
         dj_try_routes.router,
+        dj_transition_routes.router,
+        pair_transition_routes.router,
         shell_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,

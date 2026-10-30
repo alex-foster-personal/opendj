@@ -55,6 +55,7 @@ import {
 	chKey as _chKey,
 	combine14,
 	decodeRelative,
+	decodeRelativeCentered,
 	decodeSource
 } from '$lib/rb/midi/decode';
 import { djioRedirectTarget } from '$lib/rb/audio-output-topology';
@@ -62,7 +63,7 @@ import { nativeShellKind } from '$lib/shell/native-shell';
 
 // The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
 // limit). Re-exported here so callers and tests keep their import path.
-export { combine14, decodeRelative, decodeSource };
+export { combine14, decodeRelative, decodeRelativeCentered, decodeSource };
 
 // -------------------------------------------------------------- constants
 
@@ -389,8 +390,9 @@ function _valueFor(binding: MidiBinding, src: MidiSource, status: number, d2: nu
 		// 14-bit in one message: d1 = LSB, d2 = MSB (handled by caller raw).
 		throw new Error('pitchbend values are built in _dispatch, not _valueFor');
 	}
+	if (binding.ccButton === true) return { kind: 'button', pressed: d2 > 0, velocity: d2 };
 	if (binding.relative === true) {
-		const decoded = decodeRelative(d2);
+		const decoded = binding.relativeCentered === true ? decodeRelativeCentered(d2) : decodeRelative(d2);
 		const unit = binding.relativeUnit === true && decoded !== 0 ? Math.sign(decoded) : decoded;
 		return { kind: 'relative', delta: binding.invert === true ? -unit : unit };
 	}

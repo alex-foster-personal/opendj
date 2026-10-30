@@ -61,8 +61,10 @@ from .analysis_overlay import lane_owned_fields as _lane_owned_fields
 from .analysis_overlay import selection_tag as _selection_tag
 from .backend import (
     MAX_LIMIT,
+    AppliedState,
     BackendError,
     BatchConflictError,
+    CommittedReadbackError,
     ConflictError,
     InMemoryBackend,
     MyTagMergeConfirmationRequiredError,
@@ -81,11 +83,15 @@ from .backend import (
     TrackFilter,
     TrackPlaylistHit,
     TrackUpdate,
+    applied_state_of,
+    artists_from_json,
     compute_library_revision_summary,
     compute_mytag_catalog_revision,
+    identity_patch,
     resolve_auto_gain_user_db_write,
     resolve_grid_flag_dismissed_write,
     resolve_tempo_pref_write,
+    tag_cas_conflicts,
 )
 from .etag import compute_etag, strip_quotes
 from .pairings_sqlite import (
@@ -622,6 +628,19 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
     return writes
 
 
+def _applied_state_in_txn(conn: sqlite3.Connection, stable_ids: list[str]) -> dict[str, AppliedState]:
+    """Each written track's ETag and tag set, read on the writing connection BEFORE its COMMIT."""
+    out: dict[str, AppliedState] = {}
+    for stable_id in stable_ids:
+        row = conn.execute(
+            "SELECT stable_id, stable_id_tier, title, artists_json, album, isrc, "
+            "duration_ms, file_path, content_hash, created_at, updated_at FROM tracks WHERE stable_id = ?",
+            (stable_id,),
+        ).fetchone()
+        out[stable_id] = applied_state_of(_row_to_track(row, _fetch_fields(conn, [stable_id]).get(stable_id, {})))
+    return out
+
+
 class SqliteBackend:
     """StateBackend backed by Phase 5's ``state.db``.
 
@@ -1059,6 +1078,7 @@ class SqliteBackend:
     def update_tracks(
         self, updates: Sequence[TrackUpdate], *, source: Source = "webui",
         mutation_guard: Callable[[], None] | None = None,
+        applied_state: dict[str, AppliedState] | None = None,
     ) -> list[Track]:
         """Atomically compare-and-swap and persist every requested update.
 
@@ -1093,7 +1113,9 @@ class SqliteBackend:
                     current = _row_to_track(row, fields.get(update.stable_id, {}))
                     current_rows.append(current)
                     current_etag = compute_etag(current.stable_id, current.updated_at, current.selection_tag)
-                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag) or tag_cas_conflicts(
+                        update, current
+                    ):
                         conflicts.append({
                             "stable_id": update.stable_id,
                             "current_etag": current_etag,
@@ -1105,31 +1127,28 @@ class SqliteBackend:
                     _field_writes(current, update.patch)
                     for current, update in zip(current_rows, updates, strict=False)
                 ]
-                file_paths: list[str | None] = []
-                for update in updates:
-                    if "file_path" not in update.patch:
-                        file_paths.append(None)
-                        continue
-                    file_path = update.patch["file_path"]
-                    if not isinstance(file_path, str) or not file_path:
-                        raise BackendError("file_path must be a non-empty string")
-                    file_paths.append(file_path)
+                identity_patches = [
+                    identity_patch(
+                        update.patch, allow_blank_title=update.allow_blank_title,
+                        allow_blank_artist_members=update.allow_blank_artist_members)
+                    for update in updates
+                ]
                 now = datetime.now(UTC).isoformat()
                 if mutation_guard is not None:
                     mutation_guard()
-                with StateWriter(conn, actor="webui") as writer:
-                    for current, update, field_writes, file_path in zip(
-                        current_rows, updates, writes, file_paths, strict=False,
+                with StateWriter(conn, actor=source) as writer:  # identity writes carry no per-field source
+                    for current, update, field_writes, identity in zip(
+                        current_rows, updates, writes, identity_patches, strict=False,
                     ):
                         for field_name, value in field_writes.items():
                             writer.set_field(
                                 update.stable_id, field_name, value,
                                 source=source, modified_at=now, confidence=1.0,
                             )
-                        if file_path is not None:
+                        if identity:
                             row = conn.execute(
                                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                                "duration_ms, content_hash FROM tracks "
+                                "duration_ms, file_path, content_hash, audio_hash FROM tracks "
                                 "WHERE stable_id = ? AND deleted_at IS NULL",
                                 (current.stable_id,),
                             ).fetchone()
@@ -1140,18 +1159,17 @@ class SqliteBackend:
                             writer.upsert_track(
                                 stable_id=current.stable_id,
                                 stable_id_tier=row["stable_id_tier"],
-                                title=row["title"],
-                                artists=(
-                                    json.loads(row["artists_json"])
-                                    if row["artists_json"]
-                                    else []
-                                ),
+                                title=identity.get("title", row["title"]),
+                                artists=identity.get("artists", artists_from_json(row["artists_json"])),
                                 album=row["album"],
                                 isrc=row["isrc"],
                                 duration_ms=row["duration_ms"],
-                                file_path=file_path,
+                                file_path=identity.get("file_path", row["file_path"]),
                                 content_hash=row["content_hash"],
+                                audio_hash=row["audio_hash"],
                             )
+                if applied_state is not None:
+                    applied_state.update(_applied_state_in_txn(conn, [u.stable_id for u in updates]))
                 if mutation_guard is not None:
                     mutation_guard()
                 conn.execute("COMMIT")
@@ -1163,7 +1181,10 @@ class SqliteBackend:
                 conn.close()
 
             self._sqlite_last_writer = (source, now)
-            return [self.get_track(update.stable_id) for update in updates]
+            try:
+                return [self.get_track(update.stable_id) for update in updates]
+            except Exception as exc:
+                raise CommittedReadbackError(f"the write committed but re-reading its result failed: {exc}") from exc
 
     def update_tag_members(
         self, old_name: str, new_name: str | None, *,

@@ -202,6 +202,49 @@ trackers directly informed our implementation and are the references we
 return to when something does not match.
 
 --------------------------------------------------------------------------
+THIRD_PARTY_NOTICES: data and rules ported into apps/tags/title_fix.py
+--------------------------------------------------------------------------
+
+The track title auto-fixer (apps/tags/title_fix.py, apps/tags/title_fix_vocab.json)
+ports vocabulary and a few regex rules from the MIT-licensed projects below. The
+private evaluation set prior_art (kept outside the repository in a gitignored directory, never
+distributed) reuses input strings from their test corpora; the expected outputs are our own labels.
+
+* 4matic/trackparse (MIT)
+    https://github.com/4matic/trackparse (commit a19642df2)
+    Copyright (c) 2026 Maksim Maksimov
+    Ported as data: spec/data/descriptors.json, version-keywords.json
+    (heads and typeCapableModifiers) and genres.json, into
+    apps/tags/title_fix_vocab.json and the VERSION_TAGS head words.
+
+* web-scrobbler/metadata-filter (MIT)
+    https://github.com/web-scrobbler/metadata-filter
+    Copyright (c) 2020-2021 Web Scrobbler Team
+    Ported rules: "**NEW**" promo markers and full-width brackets from
+    YOUTUBE_TRACK_FILTER_RULES; version heads ((re)mix, edit, dub, vip) from
+    the remix normalization rule.
+
+MIT License text (applies to each project above, with its own copyright line):
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+--------------------------------------------------------------------------
 Third-party source snippets vendored into this repository
 --------------------------------------------------------------------------
 

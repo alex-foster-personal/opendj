@@ -48,7 +48,7 @@ permissions:
 env:
   # Keep .pyc out of the persistent self-hosted workspace: root-owned bytecode
   # is what made actions/checkout fail with EACCES and skip every later step
-  # (#1338). Pinned by tests/quality/test_workspace_ownership_hygiene.py.
+  # (#1338). Pinned by (private path).
   PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
@@ -114,7 +114,7 @@ jobs:
           fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).

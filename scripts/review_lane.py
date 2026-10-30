@@ -308,11 +308,20 @@ def pr_title_and_body(pr: str) -> tuple[str, str]:
 # diff (ci.yml "Contract drift - openapi.json" and "Contract drift - TS
 # client"), so nothing here is unread by a mechanical check; it is only
 # unread by the LLM reviewers, which is what this set exists to declare.
+#
+# apps/webui/frontend/tests/e2e/.spec_footprints.json is the third instance
+# (PR #7948, Fri 30 Oct 2026): the e2e footprint map that
+# scripts/e2e_footprints_refresh.py writes from CI runs, ~800 KB of recorded
+# source reads per spec, which alone put the PR that seeded it over every
+# lane's diff cap. scripts/ci_e2e_selection.py validates it mechanically on
+# every PR (schema, freshness against the merge commit, fallback to FULL),
+# the same way CI consumes .test_durations.
 GENERATED_DATA_PATHS: frozenset[str] = frozenset(
     {
         ".test_durations",
         "apps/webui/openapi.json",
         "apps/webui/frontend/src/lib/api-types.ts",
+        "apps/webui/frontend/tests/e2e/.spec_footprints.json",
     }
 )
 

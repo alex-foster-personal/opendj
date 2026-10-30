@@ -3512,6 +3512,7 @@
 				allTracksCount={allTracksNonBrokenCount}
 				allTracksBrokenCount={allTracksBrokenCount}
 				allTracksError={allTracksReconcileError}
+				allTracksAvailability={libraryAvailability}
 				selectedId={pane.playlist_id}
 				trackSelectedId={pane.selected_id}
 				{deckLoadedPlaylistIds}

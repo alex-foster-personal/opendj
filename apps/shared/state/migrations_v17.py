@@ -187,13 +187,13 @@ def repair_hub_changelog_stamps(
     candidates = _scan_stamp_mismatch_candidates(conn)
     received_at = sync_stamp.canonical_now()
 
+    logged = 0
     with sync_stamp.stamped_transaction(conn):
-        if schema_markers.has_marker(conn, REPAIR_MARKER):
-            return 0
-        logged = _append_repair_changelog_rows(
-            conn, candidates, received_at=received_at
-        )
-        schema_markers.insert_marker(conn, REPAIR_MARKER)
+        if not schema_markers.has_marker(conn, REPAIR_MARKER):
+            logged = _append_repair_changelog_rows(
+                conn, candidates, received_at=received_at
+            )
+            schema_markers.insert_marker(conn, REPAIR_MARKER)
     return logged
 
 

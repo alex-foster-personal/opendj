@@ -70,6 +70,7 @@ def _result_for(track: Any) -> dict[str, Any]:
         # bundle written this way.
         "stems": {part: payload for part in STEM_PARTS},
         "stem_ext": "flac",
+        "stem_codec": "flac",
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "audio": probed,
         "container_s": 0.0,

@@ -2,12 +2,12 @@ name: License gate
 
 # Every locked dependency, in every ecosystem that ships (uv.lock, the payload
 # runner's script lock, the CI pylocks, every pnpm/npm lock, every Cargo.lock),
-# must be declared in licenses/register.json with a license that
-# licenses/policy.json allows, or carry a reasoned exception there. rbox went
+# must be declared in (private path) with a license that
+# (private path) allows, or carry a reasoned exception there. rbox went
 # GPL-3.0-only at 0.1.6 and jsonschema[format] pulled GPL rfc3987 into the
 # payload without anyone noticing (Wed 1 Oct 2026); this is the gate that
 # notices. Weights files the payload builders ship must be declared in
-# licenses/models.json. Docs: docs/security/licenses.md.
+# (private path). Docs: docs/security/licenses.md.
 #
 # Fix a red run with `python -m scripts.license_gate update` (network: reads
 # PyPI, npm and cargo metadata for new name@version entries), review the
@@ -112,7 +112,7 @@ jobs:
       # Full history so origin/main is current enough for the ancestry guard
       # (issue #3513). edited below re-runs body declarations; ancestry catches
       # stale synthetic merge refs that predate trunk ADR fixes.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           fetch-depth: 0

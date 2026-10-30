@@ -31,11 +31,7 @@ SOURCE = "src/lib/rb/audio-output-topology.ts"
 CONFIG = "tests/e2e/playwright.audio-output-topology.config.ts"
 SPEC = "tests/e2e/audio-output-topology.spec.ts"
 FEATURE = (SOURCE, CONFIG, SPEC)
-PARTIAL = [
-    present
-    for size in (1, 2)
-    for present in itertools.combinations(FEATURE, size)
-]
+PARTIAL = [present for size in (1, 2) for present in itertools.combinations(FEATURE, size)]
 
 
 def _run_gate(frontend: Path, present: tuple[str, ...], pnpm_exit: int) -> subprocess.CompletedProcess[str]:
@@ -49,9 +45,7 @@ def _run_gate(frontend: Path, present: tuple[str, ...], pnpm_exit: int) -> subpr
     pnpm.write_text(f'#!/bin/sh\necho "pnpm-ran $*"\nexit {pnpm_exit}\n')
     pnpm.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-    return subprocess.run(
-        ["bash", str(SCRIPT), str(frontend)], env=env, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(["bash", str(SCRIPT), str(frontend)], env=env, capture_output=True, text=True, check=False)
 
 
 def test_the_gate_skips_and_says_so_only_when_the_whole_feature_is_absent(tmp_path: Path) -> None:
@@ -86,7 +80,13 @@ def test_the_e2e_step_is_this_script_and_nothing_softens_it() -> None:
     step = found[0]
     assert step["run"].strip() == f"bash scripts/ci_output_topology_gate.sh {FRONTEND}"
     assert "continue-on-error" not in step and "working-directory" not in step
-    assert step["if"] == "${{ !cancelled() }}"
+    # The e2e spec selection (TEST-BUDGET round 3, tests/scripts/test_ci_e2e_selection_wiring.py)
+    # skips this static gate only when the scope job's selection leaves it out: an empty
+    # e2e_gates (every non-PR event) and a FULL selection both run it.
+    assert step["if"] == (
+        "${{ !cancelled() && (needs.scope.outputs.e2e_gates == '' "
+        "|| contains(needs.scope.outputs.e2e_gates, ' master12 ')) }}"
+    )
 
 
 def test_this_tree_holds_the_whole_feature_or_none_of_it() -> None:

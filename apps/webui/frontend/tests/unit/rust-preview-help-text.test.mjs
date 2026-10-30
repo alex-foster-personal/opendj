@@ -27,7 +27,7 @@ const CLAIMABLE = {
 	slip: ['slip'],
 	stems: ['stem_load', 'stem_separate', 'stem_mute', 'stem_solo', 'stem_gain', 'stem_eq_mode'],
 	'safety loops': ['safety_loop_save', 'safety_loop_arm', 'safety_loop_clear'],
-	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel'],
+	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel', 'auto_play_decide_now'],
 	'the headphone cue bus': ['channel_cue', 'headphone_mix', 'headphone_level', 'head_delay_ms'],
 	'headphone devices': [
 		'headphone_outputs_refresh',

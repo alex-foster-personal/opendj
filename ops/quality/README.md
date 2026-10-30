@@ -145,7 +145,7 @@ The bands, and why each is that size:
 | `frontend.unused_exports`              |     3 | A new module usually exports a little more than its first caller consumes.                                                                        |
 | `frontend.unused_files` / `unused_deps` |    0 | An orphaned module or an unused package is a mistake to fix, not a cost to absorb.                                                               |
 | `file_size.max_python`                 |    60 | About 1.5% of the current worst file, and the size of one feature's worth of lines in an already-long module.                                     |
-| `file_size.over_limit_python`          |     1 | One file crossing the 600-line review threshold.                                                                                                  |
+| `file_size.over_limit_python`          |     1 | One file crossing the strict 1500-line limit (`CFG.PY_FILE_LIMIT` / `CFG.FE_FILE_LIMIT`).                                                       |
 | `file_size.max_frontend`               |    60 | Same as the Python band, against a 4042-line worst offender.                                                                                      |
 | `file_size.over_limit_frontend`        |     1 | One file crossing the frontend threshold.                                                                                                         |
 | `duplication.percent`                  |  0.05 | Smaller than the 0.03 a fourth device map cost (row above), scaled to leave room for one such file without covering a copy-pasted module.          |
@@ -258,7 +258,7 @@ could reproduce.
 
 `--isolated` is what actually empties the environment. Verified by measuring the
 same commit in a worktree with a `.venv` and in one without: 157 / 215 / 106
-both times. `tests/test_quality_gate.py` now fails if that flag is dropped.
+both times. `(private path)` now fails if that flag is dropped.
 
 The same leak applies in principle to any tool here that resolves imports.
 ruff and radon parse rather than resolve, and import-linter scores only
@@ -294,7 +294,7 @@ cloudsync work), on top of the entries below. All were raised deliberately in
 the diff that found them, and each is a debt with a named owner rather than a
 number that drifted.
 
-Round 4's quality-gate ratchet (`.planning/cloudsync-round3-adversarial.md`
+Round 4's quality-gate ratchet (`(private path)`
 Part 3 item 8) traced round 3's cloudsync work pushing `ruff.complexity` from
 144 to 145 to one line: `apps/shared/state/locations.py:231`,
 `upsert_location`, PLR0913 (9 args > 8). N1b (round 2) fixed
@@ -302,7 +302,7 @@ Part 3 item 8) traced round 3's cloudsync work pushing `ruff.complexity` from
 through the same call as the rest of the natural key -- the ninth parameter is
 `machine_id`. Bundling parameters to dodge the threshold would touch four call
 sites, two of them test modules owned by other round 4 lanes, for a signature
-`specs/design_decision_08.md` point 1 already documents. See
+`(private path)` point 1 already documents. See
 `baseline.json`'s `CLOUDSYNC_MACHINE_SCOPE` entry. Paid back only if
 `upsert_location` grows a tenth parameter.
 
@@ -352,7 +352,7 @@ file is a self-contained, citable transcription of a vendor PDF. That trade was
 not worth making for 0.03%.
 
 Paying this down is not a refactor of these two files, it is the runtime device
-document in `specs/controller-onboarding.md` section 3.1. Once a controller is
+document in `(private path)` section 3.1. Once a controller is
 JSON data plus provenance rather than a fourth copy of the same builder, both
 numbers fall and neither grows again per device. Re-record them the moment that
 lands, and do not raise either again without adding a row above.
@@ -405,10 +405,22 @@ same split that #677 names for `client.ts` applies to `api-rb.ts`.
 | `frontend`   | knip + a local import graph | Import cycles across `.ts` **and** `.svelte`, worst fan-in and fan-out, orphaned modules, unreferenced exports and packages, and `as unknown as` double-casts (the one assertion the compiler cannot check).                                                         |
 | `size`       | local + jscpd               | Longest file per language, count over the review threshold, percentage of duplicated lines.                                                                                          |
 | `mypy`       | mypy (pinned, own env)      | How many type errors in `apps/`, in `tests/` and in `scripts/`, plus how many modules were actually checked. Split three ways so test-fixture debt cannot mask a production regression. |
+| `skills`     | `scripts/skill_tree_lint.py` | SKILL.md files at or over 500 lines, the deepest file chain inside one skill, the deepest chain of skills naming skills, every reference made below the first level of either (so a second deep chain counts even when the deepest one does not grow), skill reference cycles of any length, and `(private path)` files at or over 200 lines. Every one of these is a ratchet in `baseline.json`, the cycle count (`skills.cyclic_skill_refs`) and the two deep-edge counts included, so none of them may grow. Limits from Anthropic's skill authoring guide; see the module docstring. |
 
 Plus a **hotspot** table in the report: git churn multiplied by file size over
 90 days, never gated. A 2000-line file nobody touches is not urgent; a
 600-line file edited 40 times is where refactoring actually pays.
+
+## File length: strict 1500, soft 1000
+
+The strict limit is 1500 lines (`CFG.PY_FILE_LIMIT` / `CFG.FE_FILE_LIMIT`).
+`file_size.over_limit_python` and `file_size.over_limit_frontend` count files
+over that limit. The count is ratcheted and can fail the gate.
+
+The soft limit is 1000 lines. `file_size.soft_over_python` and
+`file_size.soft_over_frontend` are report only: the gate prints them with the
+list of files, and they appear in the `--json` and markdown report. They never
+fail the gate and are never written to `baseline.json`.
 
 ## Why the frontend graph is hand-rolled
 
@@ -423,7 +435,7 @@ The replacement lives in `scripts/quality_gate.py` (`_fe_resolve`, `_fe_graph`,
 `_strongly_connected`) and found a genuine cycle on its first run:
 `performance-ipc.svelte.ts <-> performance-preset.ts`. Because it is our code
 rather than a vendor's, it carries regression tests in
-`tests/test_quality_gate.py`, including one that fails if the graph ever goes
+`(private path)`, including one that fails if the graph ever goes
 empty again.
 
 ## Pins, and why they are exact

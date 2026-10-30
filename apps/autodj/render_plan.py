@@ -41,7 +41,7 @@ from apps.autodj.plan import (
     pair_beat_sync_fold,
     play_start_bar,
 )
-from apps.autodj.profile import TrackProfile, trim_knob
+from apps.autodj.profile import DECK_LOAD_TRIM_DB, TrackProfile, trim_knob
 
 #: The renderer's rate; 48 kHz matches the engine's default and the page.
 RENDER_SAMPLE_RATE = 48000
@@ -344,6 +344,13 @@ def compile_render_plan(
         {"at": at0, "cmd": {"type": "tempo", "deck": in_deck, "ratio": round(layout.in_ratio, 9)}},
         {"at": at0, "cmd": {"type": "play", "deck": out_deck, "playing": True}},
     ]
+    # ADR-0135 (opt-in since round 22): a non-unity load trim is set at time zero, before the outgoing deck plays, so
+    # it is never a step on a playing deck.
+    if DECK_LOAD_TRIM_DB != 0.0:
+        events.insert(
+            len(events) - 1,
+            {"at": at0, "cmd": {"type": "trim", "deck": out_deck, "value": trim_knob(DECK_LOAD_TRIM_DB)}},
+        )
     trim = incoming_trim_command(plan)
     if trim is not None:
         events.insert(len(events) - 1, {"at": at0, "cmd": trim})

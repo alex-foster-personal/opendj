@@ -20,6 +20,7 @@
  * tracks / mapping 404s cannot permanently disarm AutoPlay for the source -
  * but ONLY while nothing has landed on the follower deck (matrix rows 16/17).
  */
+import { untrack } from 'svelte';
 import {
 	DECK_IDS,
 	deckAudioClockPositionMs,
@@ -87,6 +88,14 @@ import {
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import { runAutoPlayHandoff } from '$lib/rb/auto-play-handoff';
+import {
+	autoPlayDecisionCuedTrack,
+	autoPlayDecisionLoading,
+	autoPlayFallbackReason,
+	cancelAutoPlayDecision,
+	pollAutoPlayDecision,
+	syncAutoPlayDecision
+} from '$lib/rb/auto-play-early.svelte';
 import { autoPlayYieldsNow, registerAutoPlayHandoffInFlight } from '$lib/rb/auto-play-plan-gate';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autoplay-status';
@@ -142,7 +151,7 @@ export function readAutoPlayHandoffInFlight(): boolean {
 }
 
 // AGENT-29: a plan accepted while a handoff or a master promotion is loading, starting or moving a deck would share it, so the plan runner asks here.
-registerAutoPlayHandoffInFlight(() => _inFlight || _promoting);
+registerAutoPlayHandoffInFlight(() => _inFlight || _promoting || autoPlayDecisionLoading());
 
 /**
  * AGENT-20: what the UI-mirror publishes about AutoPlay. Read-only: it uses
@@ -341,6 +350,54 @@ function _noteNoPlayingMaster(noSource: boolean, snaps: readonly AutoPlayDeckSna
 	}
 }
 
+/** The next track for this master by AutoPlay's rules: key and tempo, played set, order, reach. */
+function _pickNext(source: AutoPlayDeckSnap, follower: DeckId, excludeIds: ReadonlySet<string>): string | null {
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
+	const sourceDeck = deckStates[source.id];
+	return pickNextStableId({
+		playlist: getAutoPlayPlaylist(),
+		current_stable_id: source.stable_id!,
+		current_key: sourceDeck.key,
+		current_bpm: sourceDeck.bpm,
+		exclude_ids: excludeIds,
+		played_ids: _playedIds,
+		enforce_play_order: uiPrefs.auto_play_enforce_order,
+		min_tempo_ratio: bounds.min,
+		max_tempo_ratio: bounds.max,
+		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
+		exclude_identities: deckSongIdentities()
+	});
+}
+
+/** AUTOPLAN-01: true while a decision holds the follower. */
+function _pollEarlyDecision(
+	source: AutoPlayDeckSnap,
+	snaps: readonly AutoPlayDeckSnap[],
+	excludeIds: ReadonlySet<string>
+): boolean {
+	const generation = _generation;
+	const follower = pickFollowerDeck(snaps, source.id, uiPrefs.auto_play_two_deck);
+	return pollAutoPlayDecision({
+		source: {
+			deck: source.id,
+			stable_id: source.stable_id!,
+			position_ms: source.position_ms,
+			duration_ms: source.duration_ms,
+			playing: source.playing,
+			bpm: deckStates[source.id].bpm
+		},
+		follower,
+		pick: (taken) =>
+			follower === null ? null : _pickNext(source, follower, new Set([...excludeIds, ...taken])),
+		claim: (sourceId, track) => {
+			_claimedIds.add(track);
+			_playedIds.add(sourceId);
+			_playedIds.add(track);
+		},
+		stillArmed: () => _armedAt(generation)
+	});
+}
+
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
 		_clearChartedOrder();
@@ -348,6 +405,8 @@ async function _tick(): Promise<void> {
 		resetAutoPlayIdleClock();
 		return;
 	}
+	// AUTOPLAN-04: before the yield, because the plan it follows is the one AutoPlay is yielding to.
+	syncAutoPlayDecision();
 	// AGENT-29: a scheduled or running agent plan owns the mix: no promotion and no handoff until it ends.
 	if (autoPlayYieldsNow()) return;
 	// Row 18: runs on every poll, including while a handoff is in flight.
@@ -424,6 +483,7 @@ async function _tick(): Promise<void> {
 	retireAutoPlayStallIfAudible(source.stable_id, deckStates[source.id].audible);
 	const excludeIds = autoPlayExcludeIds(source.id, snaps, _claimedIds, _unplayableIds);
 	_refreshChartedOrder(source, snaps, excludeIds);
+	if (uiPrefs.auto_play_early_planning && _pollEarlyDecision(source, snaps, excludeIds)) return;
 
 	const rem =
 		resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
@@ -463,21 +523,9 @@ async function _tick(): Promise<void> {
 	}
 	_waitingFollowerFor = null;
 
-	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
-	const sourceDeck = deckStates[source.id];
-	const nextId = pickNextStableId({
-		playlist: getAutoPlayPlaylist(),
-		current_stable_id: source.stable_id,
-		current_key: sourceDeck.key,
-		current_bpm: sourceDeck.bpm,
-		exclude_ids: excludeIds,
-		played_ids: _playedIds,
-		enforce_play_order: uiPrefs.auto_play_enforce_order,
-		min_tempo_ratio: bounds.min,
-		max_tempo_ratio: bounds.max,
-		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
-		exclude_identities: deckSongIdentities()
-	});
+	// AUTOPLAN-04: a plan owns the handoff, so reaching here means there is none, and it says why.
+	console.info(`[autoplay] end-of-track handoff: ${autoPlayFallbackReason()}`);
+	const nextId = autoPlayDecisionCuedTrack(follower) ?? _pickNext(source, follower, excludeIds);
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
 		const remaining = remainingAutoPlayCandidates({
@@ -663,6 +711,8 @@ export function installAutoPlay(): () => void {
 				_chartKeyRef.current = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
+				// AUTOPLAN-05: off means no automatic transition, unless one is already sounding.
+				untrack(() => void cancelAutoPlayDecision());
 				// PLAY-18: only a user turns AutoPlay off, so a stall has
 				// nothing left to explain once they have.
 				clearAutoPlayStall();
@@ -675,6 +725,7 @@ export function installAutoPlay(): () => void {
 		_stopArmWatcher?.();
 		_stopArmWatcher = null;
 		_stopPoll();
+		void cancelAutoPlayDecision();
 		_inFlight = false;
 		_triggeredFor = null;
 		_exhaustedFeedEpoch = null;

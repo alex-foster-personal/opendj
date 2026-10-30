@@ -87,6 +87,11 @@ pub fn decode_relative(raw: u8) -> i32 {
     }
 }
 
+/// `decode.ts` `decodeRelativeCentered`: Pioneer jog ticks centre on 64.
+pub fn decode_relative_centered(raw: u8) -> i32 {
+    raw as i32 - 64
+}
+
 /// `decode.ts` `combine14`.
 pub fn combine14(msb: u8, lsb: u8) -> u16 {
     ((msb as u16) << 7) | lsb as u16
@@ -140,6 +145,7 @@ const PAGE_ACTIONS: &[&str] = &[
     "deck_loop_scale",
     "deck_key_nudge",
     "deck_tempo_nudge",
+    "deck_jog",
     "deck_stem_eq_toggle",
     "controller_pad_mode",
     "controller_pad",
@@ -151,6 +157,9 @@ pub struct Binding {
     pub shift: bool,
     pub invert: bool,
     pub relative: bool,
+    pub relative_centered: bool,
+    /// A CC that is a button: 0 is release, anything else is press.
+    pub cc_button: bool,
     pub action: Action,
     /// The action exactly as the map wrote it, forwarded verbatim so the
     /// page can hand it to its own `handleMidiAction`.
@@ -309,6 +318,8 @@ impl DeviceMap {
                 shift: flag(bo, &ctx, "shift")?,
                 invert: flag(bo, &ctx, "invert")?,
                 relative: flag(bo, &ctx, "relative")?,
+                relative_centered: flag(bo, &ctx, "relativeCentered")?,
+                cc_button: flag(bo, &ctx, "ccButton")?,
                 action,
                 raw,
             };
@@ -613,6 +624,8 @@ impl Router {
                 Input::Continuous14 { value01: if b.invert { 1.0 - v } else { v }, raw }
             }
             Kind::Note => Input::Button { pressed: status & 0xf0 == 0x90 && d2 > 0, velocity: d2 },
+            Kind::Cc if b.cc_button => Input::Button { pressed: d2 > 0, velocity: d2 },
+            Kind::Cc if b.relative && b.relative_centered => Input::Relative { delta: decode_relative_centered(d2) },
             Kind::Cc if b.relative => Input::Relative { delta: decode_relative(d2) },
             Kind::Cc => {
                 let v = d2 as f64 / 127.0;
@@ -754,7 +767,7 @@ mod tests {
     fn the_builtin_export_holds_every_page_map() {
         let m = MapSet::builtin().unwrap();
         let names: Vec<&str> = m.builtin.iter().map(|m| m.name_match.as_str()).collect();
-        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", PRO, CLASSIC, "DDJ-FLX4"]);
+        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", PRO, CLASSIC, "DDJ-FLX4", "XDJ-RX3", "XDJ-AZ"]);
         // Every binding in the export loaded (none silently skipped).
         let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
         for (map, raw) in m.builtin.iter().zip(v["maps"].as_array().unwrap()) {
@@ -1064,6 +1077,33 @@ mod tests {
         ]));
         assert!(note(&feed(&mut r, FLX4, &[0xb0, 0x0b, 0x7f])[0]).starts_with("handler error"));
         assert!(note(&feed(&mut r, FLX4, &[0x90, 0x13, 0x7f])[0]).starts_with("handler error"));
+    }
+
+    #[test]
+    fn a_cc_button_presses_on_non_zero_and_releases_on_zero() {
+        let mut r = custom(json!([
+            {"source": {"ch": 5, "kind": "cc", "id": 70}, "action": {"type": "channel_cue", "deck": 1}, "ccButton": true}
+        ]));
+        let action = json!({"type": "channel_cue", "deck": 1});
+        same(
+            feed(&mut r, FLX4, &[0xb4, 70, 0x7f]),
+            vec![Routed::Page { action: action.clone(), value: Input::Button { pressed: true, velocity: 0x7f } }],
+        );
+        same(
+            feed(&mut r, FLX4, &[0xb4, 70, 0x00]),
+            vec![Routed::Page { action, value: Input::Button { pressed: false, velocity: 0x00 } }],
+        );
+    }
+
+    #[test]
+    fn a_centred_jog_binding_decodes_around_64() {
+        let mut r = custom(json!([
+            {"source": {"ch": 1, "kind": "cc", "id": 34}, "action": {"type": "deck_jog", "deck": 1}, "relative": true, "relativeCentered": true}
+        ]));
+        for (raw, want) in [(0x41, 1), (0x3f, -1)] {
+            let got = feed(&mut r, FLX4, &[0xb0, 34, raw]);
+            same(got, vec![Routed::Page { action: json!({"type": "deck_jog", "deck": 1}), value: Input::Relative { delta: want } }]);
+        }
     }
 
     /// Dispatch cost per message, printed, for 20-VERIFICATION.md. Run with

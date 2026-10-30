@@ -143,6 +143,51 @@ test('a resource load failure is reported as resource-error', async () => {
 	assert.equal(posted[0].context.tag, 'SCRIPT');
 });
 
+const ISSUE_5612_ARTWORK_URL =
+	'http://127.0.0.1:5273/api/v1/tracks/1bff50d66244e81df4c11ba81e375cec3d394e8d/artwork?size=orig&online=true';
+// A DIFFERENT track's artwork for the unmarked control. The reporter dedupes on
+// kind + source + message for 10 s, and the message embeds the URL, so a control
+// sharing the marked URL would be suppressed as a duplicate whenever the marked
+// event got through, and the test could not tell the two apart (PR #5614 review).
+const UNMARKED_ARTWORK_URL =
+	'http://127.0.0.1:5273/api/v1/tracks/0000000000000000000000000000000000005612/artwork?size=orig&online=true';
+
+test('marked deck artwork img 404 does not POST resource-error (issue #5612)', async () => {
+	const posted = [];
+	globalThis.fetch = async (input) => {
+		posted.push(await input.clone().json());
+		return new Response(JSON.stringify({ event_id: 'e5612', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	reporting.installClientErrorReporting();
+	const markedTarget = {
+		tagName: 'IMG',
+		src: ISSUE_5612_ARTWORK_URL,
+		hasAttribute: (name) => name === 'data-expected-resource-error'
+	};
+	fire('error', { target: markedTarget, message: 'Failed to load resource' }, true);
+	const unmarkedTarget = {
+		tagName: 'IMG',
+		src: UNMARKED_ARTWORK_URL
+	};
+	fire('error', { target: unmarkedTarget, message: 'Failed to load resource' }, true);
+	await waitFor(
+		() => posted.some((row) => row.context?.resource === UNMARKED_ARTWORK_URL),
+		'unmarked img resource-error POST'
+	);
+	// Positive control: the unmarked img, fired AFTER the marked one, is reported.
+	const [row] = posted.filter((r) => r.context?.resource === UNMARKED_ARTWORK_URL);
+	assert.equal(row.kind, 'resource-error');
+	assert.equal(row.message, `Failed to load img: ${UNMARKED_ARTWORK_URL}`);
+	assert.deepEqual(
+		posted.map((r) => r.context?.resource),
+		[UNMARKED_ARTWORK_URL],
+		'the marked deck artwork must not POST; only the unmarked control may'
+	);
+});
+
 test('a CSP violation is reported as csp-violation', async () => {
 	const posted = [];
 	globalThis.fetch = async (input) => {

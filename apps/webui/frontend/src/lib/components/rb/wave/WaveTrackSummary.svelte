@@ -65,6 +65,7 @@
 				class:loaded={artworkLoaded}
 				src={artworkSrc}
 				alt=""
+				data-expected-resource-error
 				onload={() => {
 					artworkLoaded = true;
 				}}

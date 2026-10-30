@@ -107,7 +107,15 @@ export function flx10PadColorVelocity(colorTableIndex: number | null): number {
 function _deckBindings(deck: DeckId): MidiBinding[] {
 	// [PDF] p.2 D16 +SHIFT: 9n note 80 (0x50) - hardware-encoded shift twin
 	// of 4 BEAT/EXIT. Software semantics (ours): loop exit.
-	return pioneerDeckBindings(deck, 0x50);
+	const ch = pioneerDeckChannel(deck);
+	const jog = (cc: number): MidiBinding => ({
+		source: pioneerCc(ch, cc),
+		action: { type: 'deck_jog', deck },
+		relative: true,
+		relativeCentered: true
+	});
+	// [PDF] D3 JOG: platter CC 34 (vinyl on), 35 (vinyl off), wheel side CC 33.
+	return [...pioneerDeckBindings(deck, 0x50), jog(0x22), jog(0x23), jog(0x21)];
 }
 
 // -------------------------------------------------- per-deck mixer section

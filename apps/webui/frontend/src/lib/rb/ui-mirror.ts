@@ -5,6 +5,9 @@ import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState, outputDeviceLivenessState } from './master-silence-report';
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { readAutoPlayMirrorStatus } from './auto-play.svelte';
+import { readAutoPlayDecisionMirror } from './auto-play-early.svelte';
+import { readAutoPlayNextMirror } from './auto-play-next.svelte';
+import { autoPlayHandoffInFlight } from './auto-play-plan-gate';
 import { readLastDeckStop } from './deck-stop-log';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll, readAgentPlanMirror } from './agent-orders';
@@ -102,6 +105,11 @@ export function buildUiMirror(): Record<string, unknown> {
 		master_reason: state.master_reason,
 		transition: state.transition,
 		agent_plan: readAgentPlanMirror(),
+		// AGENT-48: whether the last AutoPlay Next ran the planner or the fixed loop, and why.
+		auto_play_next: readAutoPlayNextMirror(),
+		// AUTOPLAN-06: AutoPlay's next decision. AUTOPLAN-05: what `dj schedule` must wait for.
+		autoplay_decision: readAutoPlayDecisionMirror(),
+		autoplay_handoff_in_flight: autoPlayHandoffInFlight(),
 		context_state: audioContextState(),
 		// IOPIN-12 parity with the I/O panel notice: what djio asked for, what the
 		// graph actually wired, and the stereo-fallback reason when they differ.

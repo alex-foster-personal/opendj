@@ -32,6 +32,7 @@
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
+	import { allTracksBadge } from './all-tracks-badge';
 	import { collapse } from '$lib/motion/collapse';
 
 	let {
@@ -43,6 +44,7 @@
 		allTracksCount,
 		allTracksBrokenCount,
 		allTracksError,
+		allTracksAvailability,
 		selectedId,
 		trackSelectedId,
 		deckLoadedPlaylistIds = new Set(),
@@ -202,12 +204,12 @@
 		children: []
 	});
 
+	// #3934: the same playable predicate as the playlist badges below it.
+	const allBadge = $derived(allTracksBadge(allTracksCount, allTracksBrokenCount, allTracksAvailability));
+
 	function _allTracksCountTitle(): string {
-		if (allTracksError !== null) return `non-broken count unavailable: ${allTracksError}`;
-		if (allTracksCount === null || allTracksBrokenCount === null) {
-			return 'loading non-broken and broken track counts';
-		}
-		return `${allTracksCount} unique library-wide non-broken tracks, ${allTracksBrokenCount} broken tracks`;
+		if (allTracksError !== null) return `track count unavailable: ${allTracksError}`;
+		return allBadge.title;
 	}
 
 	function _playlistCountTitle(node: PlaylistNode): string {
@@ -282,7 +284,7 @@
 				/>
 			</svg>
 			<span class="name">All Tracks</span>
-			<span class="count" title={_allTracksCountTitle()}>{allTracksError === null ? allTracksCount ?? '...' : '!'}</span>
+			<span class="count" title={_allTracksCountTitle()}>{allTracksError === null && allBadge.error === null ? allBadge.count ?? '...' : '!'}</span>
 		</div>
 		<div
 			class="row folder"

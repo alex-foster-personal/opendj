@@ -146,3 +146,306 @@ test('outgoing deck unload releases the engaged loop', async () => {
 	assert.ok(releases.length >= 1);
 	assert.equal(entry.autoPlayNextState.armed, false);
 });
+
+// requirement: AGENT-48
+function _planner(harness, answer) {
+	const calls = { scheduled: [], aborted: [], requests: [], played: [] };
+	const state = { status: { id: 'plan-1', status: 'scheduled' } };
+	const unregister = harness.registerAutoPlayNextPlanRunner({
+		schedule: async (plan) => {
+			calls.scheduled.push(plan);
+			return { failed: answer.refuse ?? null };
+		},
+		abort: async (id) => {
+			calls.aborted.push(id);
+		},
+		status: () => state.status
+	});
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = async (url, init) => {
+		if (String(url).endsWith('/pair-transition/played')) {
+			calls.played.push(JSON.parse(init.body));
+			return new Response('{}', { status: 200 });
+		}
+		calls.requests.push(JSON.parse(init.body));
+		if (answer.hold) await answer.hold;
+		return new Response(
+			JSON.stringify({
+				order: answer.noOrder ? null : { plan: { id: 'plan-1' } },
+				reason: answer.noOrder ? 'nothing eligible' : 'intent smooth',
+				intent: 'smooth',
+				pick: answer.noOrder
+					? null
+					: { candidate: 'c1', style: 'long_blend', bars: 32, score: 0.4, out_start_bar: 9, rationale: 'r' },
+				out_bar_now: 1,
+				considered: 4,
+				rendered: 4,
+				propose_ms: 1,
+				render_ms: 1,
+				scored: true,
+				plan_ms: 1,
+				saved: answer.saved === true,
+				plan: { id: 'doc' }
+			}),
+			{ status: 200 }
+		);
+	};
+	return {
+		calls,
+		state,
+		restore: () => {
+			unregister();
+			globalThis.fetch = realFetch;
+		}
+	};
+}
+
+test('a planned answer runs on the plan runner, not the loop, and its style joins the variety memory', async () => {
+	_setupLoadedDecks(entry);
+	const planner = _planner(entry, {});
+	try {
+		assert.equal(await entry.armAutoPlayNext({ intent: 'energy_up' }), true);
+		assert.deepEqual(planner.calls.scheduled, [{ id: 'plan-1' }]);
+		assert.equal(planner.calls.requests[0].intent, 'energy_up');
+		assert.equal(entry.autoPlayNextState.phase, 'planned');
+		assert.equal(entry.autoPlayNextState.run.path, 'planner');
+		assert.equal(entry.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'beat_loop'), false);
+		planner.state.status = { id: 'plan-1', status: 'done' };
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.equal(entry.autoPlayNextState.armed, false);
+		assert.equal(entry.autoPlayNextState.run.style, 'long_blend', 'the readout outlives the arm');
+		assert.equal(await entry.armAutoPlayNext(), true);
+		assert.ok(planner.calls.requests[1].recent_styles.includes('long_blend'));
+	} finally {
+		planner.state.status = { id: 'plan-1', status: 'done' };
+		await entry.cancelAutoPlayNext();
+		planner.restore();
+	}
+});
+
+test('no eligible pick and a refused plan both fall back to the loop and say why', async () => {
+	_setupLoadedDecks(entry);
+	let planner = _planner(entry, { noOrder: true });
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		assert.equal(entry.autoPlayNextState.run.path, 'featurette');
+		assert.equal(entry.autoPlayNextState.run.reason, 'nothing eligible');
+		assert.ok(entry.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'beat_loop'));
+		await entry.cancelAutoPlayNext();
+	} finally {
+		planner.restore();
+	}
+	planner = _planner(entry, { refuse: 'no_grid: deck 1 has no downbeats' });
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		assert.equal(entry.autoPlayNextState.run.path, 'featurette');
+		assert.match(entry.autoPlayNextState.run.reason, /plan refused: no_grid/);
+	} finally {
+		planner.restore();
+	}
+});
+
+test('cancel while planning drops the late answer: no plan, no loop', async () => {
+	_setupLoadedDecks(entry);
+	let release;
+	const hold = new Promise((resolve) => {
+		release = resolve;
+	});
+	const planner = _planner(entry, { hold });
+	try {
+		const arming = entry.armAutoPlayNext();
+		await Promise.resolve();
+		assert.equal(entry.autoPlayNextState.phase, 'planning');
+		await entry.cancelAutoPlayNext();
+		release();
+		assert.equal(await arming, false);
+		assert.deepEqual(planner.calls.scheduled, []);
+		assert.equal(entry.getDispatchPerformanceCommandCalls().length, 0);
+		assert.equal(entry.autoPlayNextState.armed, false);
+	} finally {
+		planner.restore();
+	}
+});
+
+test('cancel of a planned transition aborts that plan', async () => {
+	_setupLoadedDecks(entry);
+	const planner = _planner(entry, {});
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		await entry.cancelAutoPlayNext();
+		assert.deepEqual(planner.calls.aborted, ['plan-1']);
+		assert.equal(entry.autoPlayNextState.armed, false);
+	} finally {
+		planner.restore();
+	}
+});
+
+test('a fallback that throws never leaves the button armed', async () => {
+	_setupLoadedDecks(entry);
+	entry.deckStates[1].anlz = { ...entry.deckStates[1].anlz, beatgrid: { beats: [] } };
+	const planner = _planner(entry, { noOrder: true });
+	try {
+		await assert.rejects(entry.armAutoPlayNext(), /beats must be non-empty/);
+		assert.equal(entry.autoPlayNextState.armed, false);
+		assert.equal(entry.autoPlayNextState.phase, 'idle');
+		assert.equal(entry.autoPlayNextState.run.reason, 'nothing eligible');
+	} finally {
+		planner.restore();
+	}
+});
+
+test('cancel while the runner is taking the plan aborts the plan it armed', async () => {
+	_setupLoadedDecks(entry);
+	const planner = _planner(entry, {});
+	let take;
+	const taking = new Promise((resolve) => {
+		take = resolve;
+	});
+	const unregister = entry.registerAutoPlayNextPlanRunner({
+		schedule: async () => {
+			await taking;
+			return { failed: null };
+		},
+		abort: async (id) => {
+			planner.calls.aborted.push(id);
+		},
+		status: () => planner.state.status
+	});
+	try {
+		const arming = entry.armAutoPlayNext();
+		while (entry.autoPlayNextState.run === null) await new Promise((resolve) => setTimeout(resolve, 5));
+		await entry.cancelAutoPlayNext();
+		take();
+		assert.equal(await arming, false);
+		assert.deepEqual(planner.calls.aborted, ['plan-1']);
+		assert.equal(entry.autoPlayNextState.armed, false);
+	} finally {
+		unregister();
+		planner.restore();
+	}
+});
+
+// requirement: AGENT-50
+test('a named point plans between the named decks, takes a playing deck, and never falls back to the loop', async () => {
+	_setupLoadedDecks(entry);
+	entry.deckStates[3].stable_id = 'third-track';
+	entry.deckStates[3].playing = true;
+	entry.deckStates[3].duration_ms = 200_000;
+	let planner = _planner(entry, {});
+	try {
+		assert.equal(await entry.armAutoPlayNext({ outDeck: 1, inDeck: 3, fromMs: 61_000 }), true);
+		const sent = planner.calls.requests[0];
+		assert.equal(sent.out_deck, 1);
+		assert.equal(sent.in_deck, 3);
+		assert.equal(sent.from_ms, 61_000);
+		assert.equal(sent.take_incoming, true);
+		const stops = entry.getDispatchPerformanceCommandCalls().filter((cmd) => cmd.type === 'play' && cmd.deck === 3);
+		assert.deepEqual(stops.map((cmd) => cmd.playing), [false], 'the taken deck is stopped once, before the plan');
+		await entry.cancelAutoPlayNext();
+	} finally {
+		planner.restore();
+	}
+	entry.resetDispatchPerformanceCommandStub();
+	entry.setDispatchPerformanceCommandStub(async () => {});
+	planner = _planner(entry, { noOrder: true });
+	try {
+		assert.equal(await entry.armAutoPlayNext({ outDeck: 1, inDeck: 2, fromMs: 61_000 }), false);
+		assert.equal(entry.autoPlayNextState.run.path, 'none');
+		assert.match(entry.autoPlayNextState.run.reason, /no planned transition here: nothing eligible/);
+		assert.equal(entry.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'beat_loop'), false);
+		assert.equal(entry.autoPlayNextState.armed, false);
+		// Control: the >| button with no named point still falls back to the loop.
+		assert.equal(await entry.armAutoPlayNext(), true);
+		assert.ok(entry.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'beat_loop'));
+	} finally {
+		planner.restore();
+	}
+});
+
+test('a played-out or empty deck is no transition target, a playing one is', () => {
+	_setupLoadedDecks(entry);
+	assert.equal(entry.transitionTargetOk(2), true);
+	assert.equal(entry.transitionTargetOk(4), false);
+	entry.deckStates[2].position_ms = entry.deckStates[2].duration_ms;
+	assert.equal(entry.transitionTargetOk(2), false);
+	entry.deckStates[2].playing = true;
+	assert.equal(entry.transitionTargetOk(2), true);
+});
+
+test('>| never takes a playing deck, and a failed plan gives a taken deck back', async () => {
+	_setupLoadedDecks(entry);
+	entry.deckStates[2].playing = true;
+	let planner = _planner(entry, {});
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		assert.equal(planner.calls.requests[0].take_incoming, undefined);
+		assert.equal(entry.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'play'), false);
+		await entry.cancelAutoPlayNext();
+	} finally {
+		planner.restore();
+	}
+	planner = _planner(entry, { refuse: 'no_grid' });
+	try {
+		assert.equal(await entry.armAutoPlayNext({ outDeck: 1, inDeck: 2, fromMs: 1000 }), false);
+		const plays = entry.getDispatchPerformanceCommandCalls().filter((cmd) => cmd.type === 'play' && cmd.deck === 2);
+		assert.deepEqual(plays.map((cmd) => cmd.playing), [false, true]);
+	} finally {
+		planner.restore();
+	}
+});
+
+test('a refused abort leaves the plan cancellable', async () => {
+	_setupLoadedDecks(entry);
+	const planner = _planner(entry, {});
+	let refuse = true;
+	const unregister = entry.registerAutoPlayNextPlanRunner({
+		schedule: async () => ({ failed: null }),
+		abort: async (id) => {
+			if (refuse) throw new Error('abort refused');
+			planner.calls.aborted.push(id);
+		},
+		status: () => planner.state.status
+	});
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		await assert.rejects(entry.cancelAutoPlayNext(), /abort refused/);
+		assert.equal(entry.autoPlayNextState.armed, true);
+		refuse = false;
+		await entry.cancelAutoPlayNext();
+		assert.deepEqual(planner.calls.aborted, ['plan-1']);
+		assert.equal(entry.autoPlayNextState.armed, false);
+	} finally {
+		unregister();
+		planner.restore();
+	}
+});
+
+// requirement: AGENT-49
+test('only a completed plan is saved, and a replay sends no plan', async () => {
+	_setupLoadedDecks(entry);
+	let planner = _planner(entry, {});
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		planner.state.status = { id: 'plan-1', status: 'aborted' };
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.deepEqual(planner.calls.played, [], 'an aborted plan is not saved');
+		planner.state.status = { id: 'plan-1', status: 'scheduled' };
+		assert.equal(await entry.armAutoPlayNext(), true);
+		planner.state.status = { id: 'plan-1', status: 'done' };
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.deepEqual(planner.calls.played, [
+			{ out: 'outgoing-track', in: 'incoming-track', plan: { id: 'doc' }, source: 'planner', style: 'long_blend' }
+		]);
+	} finally {
+		planner.restore();
+	}
+	planner = _planner(entry, { saved: true });
+	try {
+		assert.equal(await entry.armAutoPlayNext(), true);
+		planner.state.status = { id: 'plan-1', status: 'done' };
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.deepEqual(planner.calls.played, [{ out: 'outgoing-track', in: 'incoming-track' }]);
+	} finally {
+		planner.restore();
+	}
+});

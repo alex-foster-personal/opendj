@@ -9,6 +9,9 @@ CONTRACT this router owns (mounted under ``/api/v1``):
          scored, no veto) or null, with ``best_reason`` saying why; stored with the job.
   GET    /dj/try/{job}                             200 TryJobOut (pick filled when one is stored)
   GET    /dj/try/{job}/candidates/{cid}/audio      200 audio/wav, the candidate's render
+  GET    /dj/try/{job}/candidates/{cid}/lanes?columns=800
+         200 TryLanesOut {duration_s, decks: [{deck, peaks, curves{fader, eq_low, filter}, playing, beats}]}:
+         each deck's waveform and the knob lines the renderer applied, on the render clock (TRYER-16)
   POST   /dj/try/{job}/pick   If-Match: <etag>     {candidate} -> 200 TryJobOut
   DELETE /dj/try/{job}/pick   If-Match: <etag>     -> 200 TryJobOut (pick back to null)
 
@@ -46,11 +49,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.autodj import try_picks
+from apps.autodj.plan import parse_plan
 from apps.autodj.profile import TrackProfile
+from apps.autodj.render_plan import RenderPlanError, compile_render_plan, layout_of
 from apps.shared import file_lock
 from apps.shared.engine_origin import EngineOrigin
 from apps.transition_score import SCORER_VERSION, Candidate, TryResult, best_candidate, try_pair
-from apps.transition_score.tryer import AudioUnavailable, EngineProfiles, EngineTrackSource, TryError
+from apps.transition_score.lanes import MAX_COLUMNS, LaneError, Lanes, build_lanes
+from apps.transition_score.tryer import (
+    AudioUnavailable,
+    EngineProfiles,
+    EngineTrackSource,
+    TryError,
+    shared_start_out_bar,
+)
 
 from ..deps import get_library_data_dir, get_library_state_db
 from ..errors import ErrorBody
@@ -160,6 +172,23 @@ class TryJobOut(BaseModel):
     best: str | None
     best_reason: str
     pick: PickOut | None
+
+
+class DeckLaneOut(BaseModel):
+    deck: int
+    #: Per-column peak of |sample|, 0..1 of full scale.
+    peaks: list[float]
+    #: Knob name to (seconds, value) breakpoints from render time zero.
+    curves: dict[str, list[tuple[float, float]]]
+    playing: list[tuple[float, float]]
+    #: (seconds, n) per beat the deck plays, n = 1 on a downbeat.
+    beats: list[tuple[float, int]]
+
+
+class TryLanesOut(BaseModel):
+    candidate: str
+    duration_s: float
+    decks: list[DeckLaneOut]
 
 
 class TrackUnavailable(TryError):
@@ -519,6 +548,82 @@ def candidate_audio(
         _log.warning("try job %s candidate %s render missing at %s", job_id, candidate_id, render)
         return _error(404, "render_missing", f"candidate {candidate_id!r} render is not on disk; render the pair again")
     return FileResponse(render, media_type="audio/wav")
+
+
+def _kept_render(
+    job: try_picks.TryJob, candidate_id: str, data_dir: Path
+) -> tuple[dict[str, Any], Path] | JSONResponse:
+    """The candidate and its kept render on disk, or the 404 that says which is missing."""
+    candidate = next((c for c in job.candidates if c["id"] == candidate_id), None)
+    if candidate is None:
+        return _error(404, "candidate_not_found", f"try job {job.job_id!r} has no candidate {candidate_id!r}")
+    kept = candidate.get("render_path")
+    if kept is None or not _inside(kept, data_dir / TRY_JOB_RENDERS / job.job_id) or not Path(kept).is_file():
+        _log.warning("try job %s candidate %s render missing at %s", job.job_id, candidate_id, kept)
+        return _error(404, "render_missing", f"candidate {candidate_id!r} render is not on disk; render the pair again")
+    return candidate, Path(kept)
+
+
+def _candidate_lanes(
+    job: try_picks.TryJob, candidate: dict[str, Any], kept: Path, source: ServingTrackSource, columns: int
+) -> Lanes | JSONResponse:
+    """The lanes of one kept render, or the 422 that says why they cannot be drawn."""
+    try:
+        plan = parse_plan(candidate["plan"])
+        out_profile, in_profile = source.profile(job.out_id), source.profile(job.in_id)
+        # Every render of the job starts at the bar its earliest plan needs (try_plans), not at this plan's own.
+        start = shared_start_out_bar(
+            [parse_plan(c["plan"]) for c in job.candidates], out_profile, in_profile, job.context_bars
+        )
+        layout = layout_of(plan, out_profile, in_profile, job.context_bars, start_out_bar=start)
+        # The audio paths only have to be absolute here: the document is read for its timing, never rendered.
+        anchor = Path(Path.cwd().anchor)
+        document = compile_render_plan(
+            plan, out_profile, in_profile, job.context_bars, out_audio=anchor, in_audio=anchor, start_out_bar=start
+        )
+        lanes = build_lanes(kept.parent, document, plan.out.deck, out_profile, layout, columns)
+    except TrackUnavailable as error:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "track_unavailable", str(error))
+    except (RenderPlanError, LaneError) as error:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "lanes_failed", str(error))
+    return lanes
+
+
+@router.get(
+    "/{job_id}/candidates/{candidate_id}/lanes",
+    response_model=TryLanesOut,
+    responses={404: {"model": ErrorBody}, 422: {"model": ErrorBody}},
+)
+def candidate_lanes(
+    request: Request,
+    job_id: str,
+    candidate_id: str,
+    columns: int = 800,
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> JSONResponse:
+    """Both decks' waveforms and knob lines for one candidate's kept render (TRYER-16)."""
+    if not 1 <= columns <= MAX_COLUMNS:
+        return _error(422, "invalid_columns", f"columns must be 1..{MAX_COLUMNS}, got {columns}")
+    with _store(state_db) as conn:
+        try:
+            job = try_picks.get_job(conn, job_id)
+        except try_picks.TryStoreError as error:
+            return _store_error(error)
+    found = _kept_render(job, candidate_id, data_dir)
+    if isinstance(found, JSONResponse):
+        return found
+    candidate, kept = found
+    source = ServingTrackSource(data_dir, origin=_serving_origin(request, state_db), state_db=state_db)
+    lanes = _candidate_lanes(job, candidate, kept, source, columns)
+    if isinstance(lanes, JSONResponse):
+        return lanes
+    body = TryLanesOut(
+        candidate=candidate_id,
+        duration_s=lanes.duration_s,
+        decks=[DeckLaneOut(**dataclasses.asdict(lane)) for lane in lanes.decks],
+    )
+    return JSONResponse(content=body.model_dump(mode="json"))
 
 
 @router.post("/{job_id}/pick", response_model=TryJobOut, responses=_PICK_ERRORS)

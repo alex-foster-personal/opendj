@@ -20,12 +20,16 @@
 	import {
 		fetchStemEstimates,
 		fetchStemTiers,
+		setTransitionInCue,
 		startStemGeneration,
 		type StemTier
 	} from '$lib/rb/api-rb';
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalFixMenuItem } from './vocal-correction-menu';
+	import { waveClickAt } from './wave-click';
+	import { transitionTargetOk } from '$lib/rb/auto-play-next.svelte';
+	import { isUsbTrackId } from '$lib/rb/track-source';
 	import { menuStemTiers } from '$lib/rb/stem-tier-menu';
 	import { menuFor, type CueSlot, type MenuTarget, type ResolvedMenuItem } from '$lib/context-menu/registry';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
@@ -286,7 +290,31 @@
 			}).map((item) => _toCtxItem(item, runners[item.id]));
 		}
 		const vocal = event !== null ? vocalFixMenuItem(event, eventTarget) : null;
-		return menuFor(target, { loaded, looping: state.loop !== null, vocalHit: vocal !== null }).map((item) => {
+		const click = event !== null ? waveClickAt(event, eventTarget) : null;
+		const cueAt = click === null ? 'none' : isUsbTrackId(click.stableId) ? 'stick' : 'position';
+		if (click !== null) {
+			// AGENT-51: the engine snaps the click to the nearest downbeat and says which bar.
+			// A refusal (no beatgrid, unknown track) is toasted, never swallowed.
+			runners['transition-in'] = async () => {
+				try {
+					const set = await setTransitionInCue(click.stableId, click.timeS * 1000);
+					pushToast(`Transition-in cue set at bar ${set.bar}`, 'info');
+				} catch (e) {
+					pushToast(`Transition-in cue not set: ${e instanceof Error ? e.message : String(e)}`, 'error');
+				}
+			};
+		}
+		const outTargets = DECK_IDS.filter((other) => other !== deck && transitionTargetOk(other));
+		if (click !== null) {
+			for (const other of outTargets) {
+				runners[`transition-out-${other}`] = (pressT0Ms) =>
+					runPerformanceCommandFromUi(
+						{ type: 'auto_play_next_arm', out_deck: deck, in_deck: other, from_ms: click.timeS * 1000 },
+						pressT0Ms
+					).then(() => {});
+			}
+		}
+		return menuFor(target, { loaded, looping: state.loop !== null, vocalHit: vocal !== null, cueAt, outTargets }).map((item) => {
 			if (item.id !== 'vocal-fix-comment' || vocal === null) return _toCtxItem(item, runners[item.id]);
 			// The vocal item keeps its own live probe of the feedback API.
 			const ctxItem = _toCtxItem(item, vocal.run);

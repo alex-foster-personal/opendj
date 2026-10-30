@@ -474,3 +474,31 @@ def test_would_evict_matches_what_enforce_then_evicts(tmp_path: Path):
     assert predicted["would_evict_count"] == len(report.evicted_stable_ids)
     assert predicted["would_evict_bytes"] == report.bytes_freed
 
+
+
+@pytest.mark.requirement("STEM-40")
+def test_the_eviction_hash_reads_a_part_through_the_shared_read_seam(tmp_path: Path):
+    """[if] a part is a symlink [then] the eviction hash refuses it rather than hashing its target, [else stop].
+
+    The hash runs outside the bundle lock, so it opens each part through
+    ``open_read_shared`` (Codex on #6820): on Windows a plain open would
+    make a publisher's swap fail with a sharing violation mid-hash. That
+    half needs Windows; on every platform the seam refuses a symlink, which
+    is what this test can see. Control: the same bundle with real files is
+    confirmed and evicted.
+
+    MUTATION TARGET: open the part with ``path.open("rb")`` in ``_sha256_of``.
+    """
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    entry = make_bundle(stems_dir, "real", atime=1_000_000)
+    report = enforce(stems_dir, data_dir, index={"real": entry}, disk=disk_usage(free=0))
+    assert report.evicted_stable_ids == ("real",), "control: a confirmed bundle of real files is evicted"
+
+    entry = make_bundle(stems_dir, "linked", atime=1_000_000)
+    part = stems_dir / "linked" / "vocals.wav"
+    target = tmp_path / "elsewhere.wav"
+    part.rename(target)
+    part.symlink_to(target)
+    with pytest.raises(OSError):
+        enforce(stems_dir, data_dir, index={"linked": entry}, disk=disk_usage(free=0))
+    assert part.is_symlink() and target.exists()

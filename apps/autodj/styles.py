@@ -7,6 +7,12 @@ ends at ``bars``. Builders only emit controls the page executor can move
 does not have yet (FX DSP, stems in plan execution) is listed with
 ``available: false`` and the reason, never faked.
 
+Every style gives way around the incoming track's bass hit (D11, D12 in
+(private path)): nothing on the outgoing deck (a low kill, a body
+fade, a filter, a cut) happens before the incoming bass has landed; the
+outgoing body then fades over at least ``min_body_fade_bars`` with an
+equal-power law, so the two decks never sum above one full deck.
+
 Values are bus control units: 0..1 with 0.5 flat for EQ, TRIM and FILTER;
 FILTER below 0.5 sweeps a lowpass closed, above 0.5 a highpass
 (``apps/webui/frontend/src/lib/rb/mixer-types.ts``).
@@ -15,12 +21,17 @@ FILTER below 0.5 sweeps a lowpass closed, above 0.5 a highpass
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 Event = dict[str, Any]
-Builder = Callable[[int, int, int], list[Event]]
+
+
+class Builder(Protocol):
+    """A style's event builder; ``hit_bar`` is the plan bar the incoming bass lands on (D11), None for the style's own."""
+
+    def __call__(self, bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None, /) -> list[Event]: ...
+
 
 FLAT = 0.5
 KILL = 0.0
@@ -28,6 +39,8 @@ HIGHPASS_SWEEP = 0.85
 #: The lowpass end of a sweep, mirrored about FLAT. Hygiene, mimicked: the FILTER knob's taper is the in-repo law
 #: that tracks Mixxx's ((private path)), so 0.15 and 0.85 are equally deep cuts each way.
 LOWPASS_SWEEP = 0.15
+#: The highs a long blend eases: the incoming deck's in from here by the hit, the outgoing deck's out to here.
+EASED_HIGHS = 0.35
 #: Linear ramp segments one shaped fade compiles to (no schema change: a curve is a chain of ``ramp`` events).
 #: Eight puts a breakpoint on the midpoint, so an equal-power fade reads exactly cos(pi/4) = 0.707 there.
 CURVE_SEGMENTS = 8
@@ -38,29 +51,67 @@ CURVE_SEGMENTS = 8
 FADE_SHAPES = ("equal_power", "linear")
 #: The fade every built-in blend uses (AGENT-34 round 4): the old hand-built blends too, not only parameter points.
 DEFAULT_FADE_SHAPE = "equal_power"
-#: Overlap compensation, hygiene mimicked from transitions spec 01 (01-volume-lane-transitions.md, parameters table
-#: and trap 4, research SHA 3336884c1e): -3 dB on BOTH decks while two full-band decks overlap with no low-EQ kill
-#: active, because the page has no limiter (only the #1475 static ceiling) and two summed masters run over 0 dBTP.
-DEFAULT_OVERLAP_COMP_DB = -3.0
-#: Round 5 of the try-er experiment log ((private path)): compensate bass-swap overlaps too. This DEPARTS
-#: from spec 01, which compensates only while no low-EQ kill is active, because the round 4 bench on the real smoke pair
-#: (n = 24) still measured +1.08 to +1.99 dBTP overs on every bass-swap style: with the lows of one deck killed, the
-#: two decks' mids and highs still sum over the ceiling. A parameter, so the spec's rule is one flag away.
-COMP_WITH_LOW_KILL = True
-#: How far before the window the outgoing deck eases down to the compensated level: one bar, the plan's earliest bar
-#: (``plan.EARLIEST_BAR``), so it is there before the incoming deck is heard.
-PRE_COMP_LEAD_BARS = 1.0
-#: Volume lanes where both decks sit near full together, so the sum needs compensation (a crossfade is already
-#: constant power by its law).
-COMPENSATED_LANES = ("overlap", "fade_in_fade_out")
-#: Volume lanes, named as docs/glossary.md "Transitions and mixing" (Spotify's Volume options).
+#: Volume lanes, named as docs/glossary.md "Transitions and mixing" (Spotify's Volume options). Under D11 a lane only
+#: says where the bass hit lands when the incoming bass is already there (``_LANE_HIT``); every lane fades the
+#: outgoing body from the hit to the handover (D12).
 VOLUME_LANES = ("crossfade", "overlap", "fade_in_fade_out")
-#: Where the bass swap lands: the region's center (mix point) or its end (Spotify "Centre"/"End bass swap").
+#: Where the incoming bass lands: "center" gates it inside the blend (D11), "end" lands it ON the handover with the
+#: outgoing deck held in its lull until then (lull_then_drop, D13).
 SWAP_POSITIONS = ("center", "end")
-#: Filter primitives: which deck is swept and which way (glossary: low-pass in, high-pass out, ...).
-FILTER_MOVES = ("lp_in_hp_out", "lp_both", "hp_both")
+#: Filter primitives: which deck is swept and which way (glossary: low-pass in, high-pass out, ...). ``hp_out``
+#: sweeps only the outgoing deck (filter_sweep).
+FILTER_MOVES = ("lp_in_hp_out", "lp_both", "hp_both", "hp_out")
 #: Stem moves: a parameter, but no style with one is available until stems are part of plan execution.
 STEM_MOVES = ("vocals_swap",)
+
+# ----- the bass-hit gate (D11) and the body fade law (D12) --------------------------------------------------------
+#: D11: the incoming fader before its bass hit, lows killed: a little of the incoming, never a dip of the outgoing.
+#: The one taste knob of the law: it trades headroom before the hit (two masters summed) against the low end on the
+#: hit (the incoming lows land at this level and rise). Starts at -6 dB, each deck's level at a linear crossfader's
+#: midpoint; calibrated against the maintainer's verdicts in the try-er rounds.
+DEFAULT_PRE_HIT_DB = -6.0
+#: D13: lull_then_drop brings in only a little of the incoming while the outgoing deck idles in its lull.
+LULL_PRE_HIT_DB = -9.0
+#: D12 (the maintainer on p09 and p11, Thu 29 Oct 2026: the outgoing core crossfaded "over a small time"): the outgoing body
+#: (fader, filters, highs) fades over at least this many bars, from the hit to the handover.
+DEFAULT_MIN_BODY_FADE_BARS = 8
+#: D14, the maintainer's low-EQ rule, verbatim (Thu 29 Oct 2026): "my normal rule is to reduce incoming LO eq by 1/3 of a dial
+#: turn (1/6 of a full turn, 1/3 of a half turn) and bring that up to 1 by the time outgoing is down to 2/3 (where
+#: incomign just was). always bass-swappingwill get old fast." On our knob (0.5 flat, 0 = -26 dB, linear in dB) a third
+#: of the half turn below flat is 1/3, about -8.7 dB: the incoming LO waits there before the hit, not killed.
+PRE_HIT_LOW = round(FLAT - FLAT / 3, 6)
+#: D14: from the hit the incoming LO rises to flat while the outgoing LO falls to PRE_HIT_LOW ("down to 2/3, where
+#: incoming just was"), over the share of the body fade in which a linear fade loses its first third, never under
+#: CROSSOVER_MIN_BARS; after it the outgoing LO keeps falling with the body fade. Both lows partly present is intended.
+CROSSOVER_SHARE = 1 / 3
+CROSSOVER_MIN_BARS = 2.0
+#: How a gated blend hands the lows over (D14, the maintainer: "bass swap is one option and can sound great ... the bass-fade I
+#: described is a safer default, but our goal is to have variance as well"). The crossover is the default; the swap
+#: stays a first-class choice (bass_swap_blend): incoming lows killed until the hit, open ON it, the outgoing lows
+#: edging down over SWAP_EDGE_BARS.
+HANDOFF_CROSSOVER = "crossover"
+HANDOFF_SWAP = "swap"
+SWAP_EDGE_BARS = 1.0
+#: D11: the incoming deck is heard, lows out, for at least this long before its bass may land.
+MIN_INTRO_BARS = 2
+#: Where a lane lands the hit when the incoming bass is already there, as a fraction of the bars (then clamped to
+#: ``hit_bounds``): a crossfade gives way early and fades long, an overlap late, fade-in-fade-out halfway.
+_LANE_HIT = {"crossfade": 0.25, "overlap": 0.75, "fade_in_fade_out": 0.5}
+#: How a style's outgoing deck gives way relative to the incoming bass (D11).
+HIT_ON_START = "start"  # a cut: the incoming enters on its bass, the outgoing goes on bar 0
+HIT_GATED = "gated"  # a blend: nothing on the outgoing before the hit, the body fades from it to the handover
+HIT_ON_HANDOVER = "handover"  # lull_then_drop: the outgoing holds to the handover, where the incoming drop lands
+
+
+def hit_bounds(bars: int, min_body: int) -> tuple[float, float]:
+    """The plan bars a blend's bass hit may land on: after the intro, early enough for the whole body fade."""
+    return float(MIN_INTRO_BARS), float(bars - min_body)
+
+
+def default_hit_bar(volume: str, bars: int, min_body: int) -> float:
+    """Where a blend lands the hit when the incoming bass is already there by then (its lows held out until it)."""
+    low, high = hit_bounds(bars, min_body)
+    return min(high, max(low, float(round(_LANE_HIT[volume] * bars))))
 
 
 @dataclass(frozen=True)
@@ -82,14 +133,42 @@ class Style:
     params: StyleParams | None = None
     #: The Spotify preset this style reproduces (docs/glossary.md), or None.
     spotify: str | None = None
+    #: How the outgoing deck gives way relative to the incoming bass hit (D11): HIT_ON_START, HIT_GATED or
+    #: HIT_ON_HANDOVER.
+    hit: str = HIT_GATED
+    #: A hand-built blend's lane, for its default hit bar (a parametric style reads its params).
+    lane: str = "overlap"
 
     def clamp_bars(self, bars: int) -> int:
         return max(self.min_bars, min(self.max_bars, bars))
 
-    def build(self, bars: int, out_deck: int, in_deck: int) -> list[Event]:
+    @property
+    def min_body_fade_bars(self) -> int:
+        return DEFAULT_MIN_BODY_FADE_BARS if self.params is None else self.params.min_body_fade_bars
+
+    @property
+    def volume_lane(self) -> str:
+        return self.lane if self.params is None else self.params.volume
+
+    def build(self, bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None) -> list[Event]:
+        """The style's events over ``bars``; ``hit_bar`` is where the incoming bass lands (the proposer sets it from
+        the incoming track's bass entry, D11), and a style refuses a hit it cannot honor."""
         if not self.available or self.builder is None:
             raise ValueError(f"style {self.name!r} is not available: {self.unavailable_reason}")
-        return self.builder(self.clamp_bars(bars), out_deck, in_deck)
+        clamped = self.clamp_bars(bars)
+        if hit_bar is not None:
+            if self.hit == HIT_ON_START and hit_bar != 0.0:
+                raise ValueError(f"style {self.name!r} gives way on bar 0, so its incoming bass must land there")
+            if self.hit == HIT_ON_HANDOVER and hit_bar != float(clamped):
+                raise ValueError(f"style {self.name!r} lands the incoming drop on the handover, bar {clamped}")
+            if self.hit == HIT_GATED:
+                low, high = hit_bounds(clamped, self.min_body_fade_bars)
+                if not low <= hit_bar <= high:
+                    raise ValueError(
+                        f"bass hit at bar {hit_bar} is outside {low:g}..{high:g} for a {clamped}-bar {self.name}"
+                        f" (intro {MIN_INTRO_BARS} bars, body fade {self.min_body_fade_bars})"
+                    )
+        return self.builder(clamped, out_deck, in_deck, hit_bar)
 
     def summary_doc(self) -> dict[str, Any]:
         return {
@@ -135,7 +214,12 @@ def _handover(bars: int, out_deck: int, in_deck: int) -> list[Event]:
     ]
 
 
-def _cut(bars: int, out_deck: int, in_deck: int) -> list[Event]:
+def handover_events(bars: int, out_deck: int, in_deck: int) -> list[Event]:
+    """The handover every style ends on, for a plan built outside the catalog (a captured hand mix)."""
+    return _handover(bars, out_deck, in_deck)
+
+
+def _cut(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, /) -> list[Event]:
     return [
         _set(0, in_deck, "fader", 1.0),
         _set(0, in_deck, "eq_low", FLAT),
@@ -145,64 +229,7 @@ def _cut(bars: int, out_deck: int, in_deck: int) -> list[Event]:
     ]
 
 
-def _filter_sweep(bars: int, out_deck: int, in_deck: int) -> list[Event]:
-    half = max(1, bars // 2)
-    return [
-        _set(0, in_deck, "fader", KILL),
-        _set(0, in_deck, "eq_low", KILL),
-        _do(0, in_deck, "play"),
-        *_fader_moves((in_deck, out_deck), ((0, half), (half, bars - half)), DEFAULT_FADE_SHAPE, _hand_built_comp()),
-        _ramp(0, out_deck, "filter", HIGHPASS_SWEEP, bars),
-        _set(half, in_deck, "eq_low", FLAT),
-        _set(half, out_deck, "eq_low", KILL),
-        *_handover(bars, out_deck, in_deck),
-    ]
-
-
-def _hand_built_comp() -> float:
-    """The overlap compensation the hand-built bass-swap blends use: round 5 turns it on for them (COMP_WITH_LOW_KILL)."""
-    return DEFAULT_OVERLAP_COMP_DB if COMP_WITH_LOW_KILL else 0.0
-
-
-def _bass_swap_blend(bars: int, out_deck: int, in_deck: int) -> list[Event]:
-    half = max(1, bars // 2)
-    fade_in = max(1, bars // 4)
-    fade_out_from = bars - max(1, bars // 4)
-    return [
-        _set(0, in_deck, "fader", KILL),
-        _set(0, in_deck, "eq_low", KILL),
-        _do(0, in_deck, "play"),
-        *_fader_moves(
-            (in_deck, out_deck),
-            ((0, fade_in), (fade_out_from, bars - fade_out_from)),
-            DEFAULT_FADE_SHAPE,
-            _hand_built_comp(),
-        ),
-        # One bassline at a time: swap the lows on the phrase midpoint.
-        _set(half, out_deck, "eq_low", KILL),
-        _set(half, in_deck, "eq_low", FLAT),
-        *_handover(bars, out_deck, in_deck),
-    ]
-
-
-def _long_blend(bars: int, out_deck: int, in_deck: int) -> list[Event]:
-    half = max(1, bars // 2)
-    quarter = max(1, bars // 4)
-    return [
-        _set(0, in_deck, "fader", KILL),
-        _set(0, in_deck, "eq_low", KILL),
-        _set(0, in_deck, "eq_high", 0.35),
-        _do(0, in_deck, "play"),
-        *_fader_moves((in_deck, out_deck), ((0, half), (half, bars - half)), DEFAULT_FADE_SHAPE, _hand_built_comp()),
-        _ramp(quarter, in_deck, "eq_high", FLAT, quarter),
-        _set(half, out_deck, "eq_low", KILL),
-        _set(half, in_deck, "eq_low", FLAT),
-        _ramp(half, out_deck, "eq_high", 0.35, quarter),
-        *_handover(bars, out_deck, in_deck),
-    ]
-
-
-def _drop_swap(bars: int, out_deck: int, in_deck: int) -> list[Event]:
+def _drop_swap(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, /) -> list[Event]:
     # The incoming window starts ON its drop; the outgoing deck is cut on the
     # same downbeat. Same mechanics as a cut, different window choice.
     return _cut(bars, out_deck, in_deck)
@@ -217,12 +244,16 @@ class StyleParams:
     swap_position: str | None = "center"
     filter: str | None = None
     stems: str | None = None
-    overlap_comp_db: float = DEFAULT_OVERLAP_COMP_DB
-    comp_with_low_kill: bool = COMP_WITH_LOW_KILL
+    #: D12: the outgoing body fades over at least this many bars after the hit.
+    min_body_fade_bars: int = DEFAULT_MIN_BODY_FADE_BARS
+    #: D11: the incoming fader before its bass hit, in dB (lows killed).
+    pre_hit_db: float = DEFAULT_PRE_HIT_DB
 
     def __post_init__(self) -> None:
-        if not -6.0 <= self.overlap_comp_db <= 0.0:
-            raise ValueError(f"overlap_comp_db {self.overlap_comp_db} is outside spec 01's -6 to 0 dB")
+        if not -24.0 <= self.pre_hit_db <= 0.0:
+            raise ValueError(f"pre_hit_db {self.pre_hit_db} is outside -24 to 0 dB")
+        if not 1 <= self.min_body_fade_bars <= 64:
+            raise ValueError(f"min_body_fade_bars {self.min_body_fade_bars} is outside 1 to 64")
         for name, value, allowed in (
             ("volume", self.volume, VOLUME_LANES),
             ("fade_shape", self.fade_shape, FADE_SHAPES),
@@ -240,14 +271,9 @@ class StyleParams:
             "swap_position": self.swap_position,
             "filter": self.filter,
             "stems": self.stems,
-            "overlap_comp_db": self.overlap_comp_db,
-            "comp_with_low_kill": self.comp_with_low_kill,
+            "min_body_fade_bars": self.min_body_fade_bars,
+            "pre_hit_db": self.pre_hit_db,
         }
-
-    def compensates(self) -> bool:
-        """Spec 01 compensates an overlap with no low-EQ kill; round 5 extends it to bass swaps (``comp_with_low_kill``)."""
-        no_kill = self.swap_position is None or self.comp_with_low_kill
-        return self.volume in COMPENSATED_LANES and no_kill and self.overlap_comp_db < 0.0
 
 
 def _gain(shape: str, t: float, rising: bool) -> float:
@@ -259,146 +285,306 @@ def _gain(shape: str, t: float, rising: bool) -> float:
     raise ValueError(f"unknown fade shape {shape!r}")
 
 
-def _shaped_ramp(deck: int, control: str, start: float, span: float, shape: str, rising: bool) -> list[Event]:
-    """A shaped fade as a chain of linear ramps, one per CURVE_SEGMENTS breakpoint."""
-    step = span / CURVE_SEGMENTS
-    return [
-        _ramp(start + k * step, deck, control, round(_gain(shape, (k + 1) / CURVE_SEGMENTS, rising), 6), step)
-        for k in range(CURVE_SEGMENTS)
-    ]
+def _chain(deck: int, control: str, start: float, span: float, values: list[float]) -> list[Event]:
+    """A curve as a chain of linear ramps, one per value, each over an equal share of ``span``."""
+    step = span / len(values)
+    return [_ramp(start + k * step, deck, control, round(value, 6), step) for k, value in enumerate(values)]
 
 
-def _fade_spans(volume: str, bars: int) -> tuple[tuple[float, float], tuple[float, float]]:
-    """(start, span) of the incoming fade-in and the outgoing fade-out for a volume lane (glossary shapes:
-    crossfade both across the region; overlap B up in the first quarter, A out in the last quarter, inferred from
-    the name; fade in fade out B up over the first half, A out over the second, traced from Spotify's editor)."""
-    if volume == "crossfade":
-        return (0.0, bars), (0.0, bars)
-    if volume == "overlap":
-        quarter = bars / 4
-        return (0.0, quarter), (bars - quarter, quarter)
-    if volume == "fade_in_fade_out":
-        half = bars / 2
-        return (0.0, half), (half, half)
-    raise ValueError(f"unknown volume lane {volume!r}")
+def _body_fade(shape: str, pre: float) -> list[tuple[float, float]]:
+    """(outgoing, incoming) fader values at each CURVE_SEGMENTS breakpoint of the body fade (D12).
+
+    Equal power continues the quarter turn from where the incoming already is (sin theta0 = pre), so outgoing^2 +
+    incoming^2 stays at one full deck: the mix never gains level over the louder solo, and the incoming never dips
+    below its pre-hit level. Linear moves both straight, the incoming from its pre-hit level."""
+    points = []
+    for k in range(1, CURVE_SEGMENTS + 1):
+        t = k / CURVE_SEGMENTS
+        if shape == "equal_power":
+            theta = math.asin(pre) + t * (math.pi / 2 - math.asin(pre))
+            points.append((math.cos(theta), math.sin(theta)))
+        elif shape == "linear":
+            points.append((1.0 - t, pre + (1.0 - pre) * t))
+        else:
+            raise ValueError(f"unknown fade shape {shape!r}")
+    return points
 
 
-def _filter_events(
-    move: str | None, out_deck: int, in_deck: int, spans: tuple[tuple[float, float], tuple[float, float]]
+#: The EQ knob law in dB at the kill end (0.5 flat, 0 = -26 dB, linear in dB).
+KNOB_FLOOR_DB = -26.0
+
+
+#: r5: the low band's target sum, a little under one deck so the straight ramps between breakpoints stay inside it.
+LOW_BAND_TARGET = 0.97
+
+
+def knob_amp(knob: float) -> float:
+    """Linear amplitude of a cut-only EQ knob (0..FLAT) on the law: 0.5 flat, 0 = -26 dB, linear in dB."""
+    return 10.0 ** ((min(knob, FLAT) / FLAT - 1.0) * -KNOB_FLOOR_DB / 20.0)
+
+
+def amp_knob(amp: float) -> float:
+    """The knob (KILL..FLAT) that gives ``amp`` on the law; below the -26 dB floor it is KILL."""
+    if amp >= 1.0:
+        return FLAT
+    db = 20.0 * math.log10(max(amp, 1e-9))
+    return max(KILL, FLAT * (1.0 + db / -KNOB_FLOOR_DB))
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * min(1.0, max(0.0, t))
+
+
+#: r6/r7: the power budget for the two decks' bodies after the hit: one deck (r6 tried +0.5 dB and clipped). The incoming
+#: plays at unity from the switch, so the outgoing's mid and high EQ come down to keep inside it (p03: reductions are
+#: band moves driven by what the incoming brings, not a fader ease); provisional, read against true_peak on r6.
+BODY_POWER = 1.0
+#: r7: the outgoing mids never go below -6 dB while both bodies play, so the outgoing stays audible (p10); past that the
+#: incoming fader takes the trim.
+OUT_BAND_FLOOR = 0.5
+#: Round 20: the most the incoming fader gives up inside the crossover to keep the two lows at one deck in amplitude.
+CROSSOVER_TRIM_DB = 2.0
+CROSSOVER_TRIM_FLOOR = 10.0 ** (-CROSSOVER_TRIM_DB / 20.0)
+
+
+def _out_fader_at(bar: float, span: float, edge: float, pre: float, shape: str) -> float:
+    """The outgoing fader ``bar`` bars after the hit: held on the power curve for ``edge`` bars, then the long fade."""
+    if bar <= edge:
+        return body_start(shape, pre)
+    t = (bar - edge) / max(span - edge, 1e-9)
+    if shape == "equal_power":
+        theta0 = math.asin(pre)
+        return math.cos(theta0 + t * (math.pi / 2 - theta0))
+    return 1.0 - t
+
+
+def _after_hit(
+    spec_handoff: str, hit: float, span: float, pre: float, shape: str, out_deck: int, in_deck: int
 ) -> list[Event]:
-    """Sweep the incoming deck open across its fade-in and the outgoing deck closed across its fade-out."""
-    if move is None:
-        return []
-    (in_start, in_span), (out_start, out_span) = spans
-    in_from, out_to = {
-        "lp_in_hp_out": (LOWPASS_SWEEP, HIGHPASS_SWEEP),
-        "lp_both": (LOWPASS_SWEEP, LOWPASS_SWEEP),
-        "hp_both": (HIGHPASS_SWEEP, HIGHPASS_SWEEP),
-    }[move]
-    return [
-        _set(0, in_deck, "filter", in_from),
-        _ramp(in_start, in_deck, "filter", FLAT, in_span),
-        _ramp(out_start, out_deck, "filter", out_to, out_span),
-    ]
+    """Every deck move from the hit to the handover (D14, D15, r6), sampled on one grid and chained.
+
+    Crossover: the incoming fader rises to unity by the switch while the two lows cross over equal-power in the band
+    (the incoming LO from its -8.7 dB park, sin^2 + cos^2 = 1). Swap (p10): the incoming lands at unity with full lows
+    ON the hit and the outgoing lows go; the outgoing fader holds for the swap edge and only then starts its fade, so
+    the fade never muffles the hit. Both: the low band is held at one deck in amplitude (correlated kicks) and the
+    outgoing mids and highs at BODY_POWER in power."""
+    swap = spec_handoff == HANDOFF_SWAP
+    cross = _switch_bars(spec_handoff, span)
+    edge = cross if swap else 0.0
+    # Two equal-step sections, so the switch itself is a breakpoint: hit to switch, switch to handover.
+    tail = span - cross
+    grid = [cross * k / (2 * CURVE_SEGMENTS) for k in range(2 * CURVE_SEGMENTS + 1)]
+    if tail > 1e-9:
+        grid += [cross + tail * k / (2 * CURVE_SEGMENTS) for k in range(1, 2 * CURVE_SEGMENTS + 1)]
+    f_outs, f_ins, out_lows, in_lows, bands = [], [], [], [], []
+    for bar in grid:
+        f_out = _out_fader_at(bar, span, edge, pre, shape)
+        f_in, in_amp, planned = (1.0, 1.0, 0.0) if swap else _crossover_at(bar, cross, tail, pre)
+        band = _out_band(f_in, f_out)
+        f_in = min(f_in, math.sqrt(max(0.0, BODY_POWER - (f_out * band) ** 2)))
+        if not swap and bar <= cross:
+            # Round 20: inside the crossover the maintainer's knob positions stand, and beatmatched kicks add in amplitude, so
+            # the incoming fader is trimmed to keep out_low + in_low at one deck, by at most CROSSOVER_TRIM_DB.
+            # Never under the pre-hit level: a quieter drop than its own lead-in is the dip D8 forbids.
+            f_in = min(f_in, max(pre, f_in * CROSSOVER_TRIM_FLOOR, (1.0 - f_out * planned) / in_amp))
+        room = (LOW_BAND_TARGET - f_in * in_amp) / f_out if f_out > 1e-6 else 0.0
+        f_outs.append(f_out)
+        f_ins.append(f_in)
+        in_lows.append(amp_knob(in_amp))
+        # The low-band room applies once the crossover is done; inside it the maintainer's knob positions stand (they can sum
+        # up to about +2 dB in the lows for a bar or two, the cost of never leaving the bass uncarried).
+        out_lows.append(amp_knob(planned) if not swap and bar <= cross else min(amp_knob(planned), amp_knob(room)))
+        bands.append(amp_knob(band))
+    events = [_set(hit, out_deck, "fader", round(f_outs[0], 6)), _set(hit, in_deck, "fader", round(f_ins[0], 6))]
+    events += [_set(hit, out_deck, "eq_low", round(out_lows[0], 6)), _set(hit, in_deck, "eq_low", round(in_lows[0], 6))]
+    events += [_set(hit, out_deck, "eq_mid", round(bands[0], 6))]
+    lanes = (
+        (out_deck, "fader", f_outs),
+        (in_deck, "fader", f_ins),
+        (out_deck, "eq_low", out_lows),
+        (in_deck, "eq_low", in_lows),
+        (out_deck, "eq_mid", bands),
+    )
+    return events + _chained_lanes(lanes, hit, cross, tail)
 
 
-def _fader_moves(
-    decks: tuple[int, int], spans: tuple[tuple[float, float], tuple[float, float]], shape: str, comp_db: float
+def _crossover_at(bar: float, cross: float, tail: float, pre: float) -> tuple[float, float, float]:
+    """The incoming fader, the incoming low amplitude and the outgoing low amplitude asked for at ``bar``.
+
+    the maintainer's rule, exactly (r7, p15): the incoming LO rises from its 1/3-down park to flat while the outgoing LO falls to
+    that same 1/3 and HOLDS there until the incoming is flat; only then does it fall with the body fade. Never killed
+    on the hit in a crossover."""
+    u = min(1.0, bar / cross)
+    past = (bar - cross) / max(tail, 1e-9)
+    planned = knob_amp(_lerp(FLAT, PRE_HIT_LOW, u)) if bar <= cross else knob_amp(PRE_HIT_LOW) * (1.0 - past)
+    return _lerp(pre, 1.0, u), knob_amp(_lerp(PRE_HIT_LOW, FLAT, u)), planned
+
+
+def _out_band(f_in: float, f_out: float) -> float:
+    """r7 headroom: the outgoing mids give way first, down to OUT_BAND_FLOOR; the rest comes off the incoming fader,
+    so the two bodies stay within one deck in power and nothing clips by construction."""
+    band = math.sqrt(max(0.0, BODY_POWER - f_in * f_in)) / f_out if f_out > 1e-6 else 1.0
+    return min(1.0, max(OUT_BAND_FLOOR, band))
+
+
+def _chained_lanes(
+    lanes: tuple[tuple[int, str, list[float]], ...], hit: float, cross: float, tail: float
 ) -> list[Event]:
-    """The two decks' fader fades: plain shaped ramps, or held ``comp_db`` down through the overlap when it is < 0."""
-    if comp_db < 0.0:
-        return _compensated_overlap(
-            StyleParams(volume="overlap", fade_shape=shape, overlap_comp_db=comp_db), decks, spans
-        )
-    (in_start, in_span), (out_start, out_span) = spans
-    in_deck, out_deck = decks
-    return [
-        *_shaped_ramp(in_deck, "fader", in_start, in_span, shape, rising=True),
-        *_shaped_ramp(out_deck, "fader", out_start, out_span, shape, rising=False),
-    ]
+    """Each lane's samples as ramps: hit to switch, then switch to handover when there is a tail."""
+    n = 2 * CURVE_SEGMENTS
+    events: list[Event] = []
+    for deck, control, values in lanes:
+        events += _chain(deck, control, hit, cross, values[1 : n + 1])
+        if tail > 1e-9:
+            events += _chain(deck, control, hit + cross, tail, values[n + 1 :])
+    return events
 
 
-def _compensated_overlap(
-    params: StyleParams, decks: tuple[int, int], spans: tuple[tuple[float, float], tuple[float, float]]
-) -> list[Event]:
-    """Both decks held ``overlap_comp_db`` down while they overlap at full band, as linear ramp chains (no schema
-    change): the incoming deck fades in to the compensated level, the outgoing deck eases down to it over the same span,
-    and once the outgoing deck has faded to silence the incoming one comes back up to full."""
-    in_deck, out_deck = decks
-    (in_start, in_span), (out_start, out_span) = spans
-    level = round(10.0 ** (params.overlap_comp_db / 20.0), 6)
-    step = in_span / CURVE_SEGMENTS
-    rising = [
-        _ramp(
-            in_start + k * step,
-            in_deck,
-            "fader",
-            round(level * _gain(params.fade_shape, (k + 1) / CURVE_SEGMENTS, True), 6),
-            step,
-        )
-        for k in range(CURVE_SEGMENTS)
-    ]
-    # The outgoing fade takes the first half of its span and the incoming deck's return to full the second half, so the
-    # two never overlap: while both decks are heard, each is at or below the level.
-    restore = out_span / 2
-    out_step = (out_span - restore) / CURVE_SEGMENTS
-    falling = [
-        _ramp(
-            out_start + k * out_step,
-            out_deck,
-            "fader",
-            round(level * _gain(params.fade_shape, (k + 1) / CURVE_SEGMENTS, False), 6),
-            out_step,
-        )
-        for k in range(CURVE_SEGMENTS)
-    ]
-    # The outgoing deck is already at the compensated level when the incoming one starts (it eases down in the one
-    # bar before the window, the plan's earliest bar), and the incoming deck comes back to full only after the
-    # outgoing deck has reached silence: so while both are heard, neither deck is above the level and their sum never
-    # exceeds the overlap core's 2 x level.
-    return [
-        _ramp(in_start - PRE_COMP_LEAD_BARS, out_deck, "fader", level, PRE_COMP_LEAD_BARS),
-        *rising,
-        *falling,
-        _ramp(out_start + out_span - restore, in_deck, "fader", 1.0, restore),
-    ]
+def _switch_bars(handoff: str, span: float) -> float:
+    """Bars from the hit to the dominance switch: the crossover's end, or the swap edge."""
+    return crossover_bars(span) if handoff == HANDOFF_CROSSOVER else min(SWAP_EDGE_BARS, span)
+
+
+def crossover_bars(span: float) -> float:
+    """D14: how long the two lows cross over after the hit, inside a body fade of ``span`` bars."""
+    return min(span, max(CROSSOVER_MIN_BARS, CROSSOVER_SHARE * span))
+
+
+def body_start(shape: str, pre: float) -> float:
+    """The outgoing fader on the hit: equal power puts it where outgoing^2 + pre^2 = one deck; linear leaves it full."""
+    if shape == "equal_power":
+        return math.sqrt(1.0 - pre * pre)
+    if shape == "linear":
+        return 1.0
+    raise ValueError(f"unknown fade shape {shape!r}")
+
+
+@dataclass(frozen=True)
+class _Blend:
+    """A gated blend (D11, D12): what it moves besides the faders and lows."""
+
+    volume: str
+    shape: str = DEFAULT_FADE_SHAPE
+    min_body: int = DEFAULT_MIN_BODY_FADE_BARS
+    pre_hit_db: float = DEFAULT_PRE_HIT_DB
+    #: The incoming filter at bar 0, opened to flat by the hit.
+    in_filter: float | None = None
+    #: Where the outgoing filter sweeps to across the body fade.
+    out_filter: float | None = None
+    #: The incoming highs at bar 0, opened by the hit; the outgoing highs ease to it across the body fade.
+    highs: float | None = None
+    #: The incoming LO before the hit (D14): PRE_HIT_LOW, or KILL where the style's point is a killed entry.
+    pre_hit_low: float = PRE_HIT_LOW
+    #: HANDOFF_CROSSOVER (default) or HANDOFF_SWAP.
+    handoff: str = HANDOFF_CROSSOVER
+
+    def __post_init__(self) -> None:
+        if self.handoff not in (HANDOFF_CROSSOVER, HANDOFF_SWAP):
+            raise ValueError(f"handoff {self.handoff!r} is not one of crossover, swap")
+
+
+def _gated_blend(spec: _Blend) -> Builder:
+    """The one blend law (D11, D12): before the hit the outgoing deck is untouched and the incoming deck rises to its
+    pre-hit level with its lows out; on the hit the incoming lows open and the outgoing lows edge down; from the hit to
+    the handover the outgoing body fades with an equal-power law, so nothing dips before the hit and nothing sums above
+    one full deck after it."""
+
+    def build(bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None, /) -> list[Event]:
+        low, high = hit_bounds(bars, spec.min_body)
+        hit = default_hit_bar(spec.volume, bars, spec.min_body) if hit_bar is None else float(hit_bar)
+        if not low <= hit <= high:
+            raise ValueError(f"bass hit at bar {hit} is outside {low:g}..{high:g} for a {bars}-bar blend")
+        pre = 10.0 ** (spec.pre_hit_db / 20.0)
+        rise = [pre * _gain(spec.shape, k / CURVE_SEGMENTS, True) for k in range(1, CURVE_SEGMENTS + 1)]
+        span = bars - hit
+        events = [
+            _set(0, in_deck, "fader", KILL),
+            _set(0, in_deck, "eq_low", spec.pre_hit_low),
+            _do(0, in_deck, "play"),
+            *_chain(in_deck, "fader", 0.0, hit, rise),
+        ]
+        if spec.in_filter is not None:
+            events += [_set(0, in_deck, "filter", spec.in_filter), _ramp(0, in_deck, "filter", FLAT, hit)]
+        if spec.highs is not None:
+            events += [_set(0, in_deck, "eq_high", spec.highs), _ramp(0, in_deck, "eq_high", FLAT, hit)]
+        # The hit: the two lows cross over (D14), the incoming rising to flat while the outgoing falls to where the
+        # incoming just was, then the outgoing LO keeps falling with the body fade. The outgoing fader starts the body
+        # fade ON the power curve (Codex #7818: chaining from 1.0 held the first segment above one full deck).
+        events += [
+            # r5 (smash the drop) and r6: the incoming at unity by the switch, the long late fade the outgoing's.
+            *_after_hit(spec.handoff, hit, span, pre, spec.shape, out_deck, in_deck),
+        ]
+        if spec.out_filter is not None:
+            events.append(_ramp(hit, out_deck, "filter", spec.out_filter, span))
+        if spec.highs is not None:
+            events.append(_ramp(hit, out_deck, "eq_high", spec.highs, span))
+        return [*events, *_handover(bars, out_deck, in_deck)]
+
+    return build
+
+
+def _lull_then_drop(pre_hit_db: float) -> Builder:
+    """D13: the outgoing deck idles in its own lull, a little of the incoming comes in under it with its lows out, and
+    the incoming drop lands at full level on the handover (the smash). The outgoing deck gives way only there, where the
+    incoming bass lands (D11), so this is the one style whose loudness dip before the hit is intended."""
+
+    def build(bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None, /) -> list[Event]:
+        if hit_bar is not None and hit_bar != float(bars):
+            raise ValueError(f"lull_then_drop lands the incoming drop on the handover, bar {bars}, not {hit_bar}")
+        pre = 10.0 ** (pre_hit_db / 20.0)
+        rise = [pre * _gain(DEFAULT_FADE_SHAPE, k / CURVE_SEGMENTS, True) for k in range(1, CURVE_SEGMENTS + 1)]
+        return [
+            _set(0, in_deck, "fader", KILL),
+            _set(0, in_deck, "eq_low", KILL),
+            _do(0, in_deck, "play"),
+            *_chain(in_deck, "fader", 0.0, bars / 2, rise),
+            *_handover(bars, out_deck, in_deck),
+            # After the outgoing stop (same-bar events run in plan order): the drop at full level, lows in.
+            _set(bars, in_deck, "fader", 1.0),
+            _set(bars, in_deck, "eq_low", FLAT),
+        ]
+
+    return build
+
+
+_FILTER_ENDS: dict[str, tuple[float | None, float | None]] = {
+    "lp_in_hp_out": (LOWPASS_SWEEP, HIGHPASS_SWEEP),
+    "lp_both": (LOWPASS_SWEEP, LOWPASS_SWEEP),
+    "hp_both": (HIGHPASS_SWEEP, HIGHPASS_SWEEP),
+    "hp_out": (None, HIGHPASS_SWEEP),
+}
 
 
 def parametric_builder(params: StyleParams) -> Builder:
     """The builder for one point in the style space (AGENT-34). Bars are the plan's own clock (bar 0 = out window)."""
+    if params.stems is not None:
 
-    def build(bars: int, out_deck: int, in_deck: int) -> list[Event]:
-        if params.stems is not None:
+        def refuse(*_args: Any) -> list[Event]:
             raise ValueError("stem moves are not part of plan execution yet")
-        spans = _fade_spans(params.volume, bars)
-        events = [_set(0, in_deck, "fader", KILL), _do(0, in_deck, "play")]
-        comp_db = params.overlap_comp_db if params.compensates() else 0.0
-        events += _fader_moves((in_deck, out_deck), spans, params.fade_shape, comp_db)
-        if params.swap_position is not None:
-            # One bassline at a time: the incoming lows wait killed until the swap bar.
-            # Center swaps on the mix point; end swaps on the transition's last downbeat (Spotify "End bass swap"),
-            # where the outgoing deck stops and the handover resets its lows, so only the incoming lows open there.
-            events.append(_set(0, in_deck, "eq_low", KILL))
-            if params.swap_position == "center":
-                events += [_set(bars / 2, out_deck, "eq_low", KILL), _set(bars / 2, in_deck, "eq_low", FLAT)]
-            elif params.swap_position == "end":
-                pass  # opened after the handover's outgoing stop, below (Sol P1 #7595: one bassline, even within a bar)
-            else:
-                raise ValueError(f"unknown swap position {params.swap_position!r}")
-        events += _filter_events(params.filter, out_deck, in_deck, spans)
-        # Same-bar events run in plan order, so the end swap's incoming lows open only after the outgoing deck stops.
-        opens_after = [_set(bars, in_deck, "eq_low", FLAT)] if params.swap_position == "end" else []
-        return [*events, *_handover(bars, out_deck, in_deck), *opens_after]
 
-    return build
+        return refuse
+    if params.swap_position == "end":
+        return _lull_then_drop(params.pre_hit_db)
+    in_filter, out_filter = (None, None) if params.filter is None else _FILTER_ENDS[params.filter]
+    # A highpassed incoming (melt's hp_both) is a filtered entry: its lows stay killed until the hit (D14).
+    killed_entry = in_filter == HIGHPASS_SWEEP
+    return _gated_blend(
+        _Blend(
+            volume=params.volume,
+            shape=params.fade_shape,
+            min_body=params.min_body_fade_bars,
+            pre_hit_db=params.pre_hit_db,
+            in_filter=in_filter,
+            out_filter=out_filter,
+            pre_hit_low=KILL if killed_entry else PRE_HIT_LOW,
+        )
+    )
 
 
 def _parametric(
     name: str, summary: str, when: str, params: StyleParams, spotify: str | None, bars: tuple[int, int, int]
 ) -> Style:
-    controls = ["fader", "play", "master"]
-    if params.swap_position is not None:
-        controls.append("eq_low")
+    controls = ["fader", "play", "master", "eq_low"]
     if params.filter is not None:
         controls.append("filter")
     unavailable = "stems are not part of plan execution yet (canon order of work, step 4)" if params.stems else None
@@ -416,13 +602,17 @@ def _parametric(
         builder=parametric_builder(params),
         params=params,
         spotify=spotify,
+        hit=HIT_ON_HANDOVER if params.swap_position == "end" else HIT_GATED,
     )
 
+
+#: The shortest gated blend: the intro before the hit plus the whole body fade after it (D11, D12).
+_MIN_BLEND_BARS = MIN_INTRO_BARS + DEFAULT_MIN_BODY_FADE_BARS + 2
 
 _STYLES: tuple[Style, ...] = (
     Style(
         name="cut",
-        summary="Hard cut on a downbeat: the incoming deck starts as the outgoing one is muted (Spotify Slam).",
+        summary="Hard cut on a downbeat: the incoming deck starts on its bass as the outgoing one is muted (Spotify Slam).",
         min_bars=1,
         max_bars=1,
         default_bars=1,
@@ -431,6 +621,7 @@ _STYLES: tuple[Style, ...] = (
         when="Big key or tempo gaps, showy moments, or when the outgoing track ends abruptly.",
         builder=_cut,
         spotify="Slam",
+        hit=HIT_ON_START,
     ),
     Style(
         name="drop_swap",
@@ -442,70 +633,89 @@ _STYLES: tuple[Style, ...] = (
         controls=("fader", "play", "master"),
         when="Keep the energy up: land the next drop where the current phrase ends.",
         builder=_drop_swap,
+        hit=HIT_ON_START,
     ),
     Style(
         name="filter_sweep",
-        summary="Highpass the outgoing track while the incoming one fades in; bass swaps at the midpoint.",
-        min_bars=4,
-        max_bars=16,
-        default_bars=8,
+        summary="The incoming track comes in under the outgoing one, which highpasses away over the body fade after the"
+        " incoming bass lands.",
+        min_bars=_MIN_BLEND_BARS,
+        max_bars=32,
+        default_bars=16,
         needs_beatmatch=True,
         controls=("filter", "fader", "eq_low", "play", "master"),
-        when="Short, energetic transitions; hides a small key clash.",
-        builder=_filter_sweep,
+        when="Energetic transitions; hides a small key clash.",
+        # Its point is a killed entry: the incoming lows stay out until the hit (D14 keeps KILL here).
+        builder=_gated_blend(_Blend(volume="crossfade", out_filter=HIGHPASS_SWEEP, pre_hit_low=KILL)),
+        lane="crossfade",
     ),
     Style(
         name="bass_swap_blend",
-        summary="Beatmatched blend with the incoming lows killed, swapped on the phrase midpoint.",
-        min_bars=8,
+        summary="Beatmatched blend with the incoming lows held out until its bass lands, then one bassline at a time.",
+        min_bars=_MIN_BLEND_BARS,
         max_bars=32,
         default_bars=16,
         needs_beatmatch=True,
         controls=("fader", "eq_low", "play", "master"),
         when="The default for compatible tracks: one bassline at a time, 16 to 32 bars.",
-        builder=_bass_swap_blend,
+        # The hard swap, a first-class choice beside the default crossover (D14): lows killed until the hit, then
+        # exchanged ON it.
+        builder=_gated_blend(_Blend(volume="overlap", pre_hit_low=KILL, handoff=HANDOFF_SWAP)),
+        lane="overlap",
     ),
     Style(
         name="long_blend",
-        summary="A long blend: highs eased in, lows swapped at the midpoint, the outgoing track fades out.",
+        summary="A long blend: highs eased in, lows in on the incoming bass, the outgoing track fades out after it.",
         min_bars=32,
         max_bars=64,
         default_bars=32,
         needs_beatmatch=True,
         controls=("fader", "eq_low", "eq_high", "play", "master"),
         when="Smooth or winding-down sets with compatible keys and close tempos.",
-        builder=_long_blend,
+        builder=_gated_blend(_Blend(volume="crossfade", highs=EASED_HIGHS)),
+        lane="crossfade",
     ),
     _parametric(
         "crossfade",
-        "Equal-power crossfade across the region with a center bass swap (Spotify Fade).",
+        "Equal-power crossfade of the outgoing body from the incoming bass hit (Spotify Fade).",
         "Compatible tracks when you want the smoothest possible handover.",
         StyleParams(volume="crossfade"),
         "Fade",
-        (8, 32, 16),
+        (_MIN_BLEND_BARS, 32, 16),
     ),
     _parametric(
         "rise",
-        "Overlap with the incoming deck low-passed in, the outgoing high-passed out, bass swapped at the end (Spotify Rise).",
+        "The incoming deck low-passed in, the outgoing high-passed out after the incoming bass lands (Spotify Rise,"
+        " with the swap gated on the bass hit, D11).",
         "Building energy into the next track.",
-        StyleParams(volume="overlap", swap_position="end", filter="lp_in_hp_out"),
+        StyleParams(volume="overlap", filter="lp_in_hp_out"),
         "Rise",
-        (8, 32, 16),
+        (_MIN_BLEND_BARS, 32, 16),
     ),
     _parametric(
         "wave",
-        "Overlap with both decks low-passed (in opening, out closing) and a center bass swap (Spotify Wave).",
+        "Overlap with both decks low-passed (in opening, out closing after the bass hit) (Spotify Wave).",
         "A dark, rolling handover between deep or melodic tracks.",
         StyleParams(volume="overlap", filter="lp_both"),
         "Wave",
-        (8, 32, 16),
+        (_MIN_BLEND_BARS, 32, 16),
     ),
     _parametric(
         "melt",
-        "Fade in then fade out, both decks high-passed, center bass swap (Spotify Melt).",
+        "Fade in then fade out, both decks high-passed (the outgoing after the bass hit), the incoming lows killed until"
+        " it (a filtered entry) (Spotify Melt).",
         "Airy handovers; thins both tracks so their lows never meet.",
         StyleParams(volume="fade_in_fade_out", filter="hp_both"),
         "Melt",
+        (_MIN_BLEND_BARS, 32, 16),
+    ),
+    _parametric(
+        "lull_then_drop",
+        "The outgoing track idles in its own breakdown, a little of the incoming comes in under it, and the incoming"
+        " drop lands at full level on the handover (D13).",
+        "The outgoing track has a lull and the incoming one a drop within reach: introduce it, then smash its drop.",
+        StyleParams(volume="overlap", swap_position="end", pre_hit_db=LULL_PRE_HIT_DB),
+        None,
         (8, 32, 16),
     ),
     Style(
@@ -526,7 +736,7 @@ _STYLES: tuple[Style, ...] = (
         "Acapella over the next beat; avoiding a vocal clash.",
         StyleParams(volume="crossfade", stems="vocals_swap"),
         None,
-        (8, 32, 16),
+        (_MIN_BLEND_BARS, 32, 16),
     ),
     Style(
         name="loop_extend",

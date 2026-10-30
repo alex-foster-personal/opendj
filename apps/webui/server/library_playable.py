@@ -27,6 +27,16 @@ machine with ``available = 1``: this machine stat'ed the file and found it.
 On a schema with no per-machine location rows (pre-v6) a database cannot hold
 another machine's rows, so every unresolved local path there is broken here.
 
+A row mapped to rekordbox that this machine's own locations and
+``tracks.file_path`` do not resolve is also checked at its rekordbox FolderPath
+(LIBM-184), so a track the playlist badges and the deck count as playable from
+that copy is ``present`` here too. The order is the deck's: believed state
+first, the FolderPath only when that has no copy here
+(``apps.adapters.rekordbox.paths``), so :func:`local_audio_paths` names the
+file the deck would play. Among an unresolved row's candidates for bucketing,
+the FolderPath comes first as in :func:`state_locations.playable_candidate_paths`.
+The master database is read only for rows that did not resolve.
+
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 every row lands in exactly one bucket
     [if] bucket counts do not sum to the live row total [then ⛔️] raise
@@ -37,6 +47,9 @@ Requirements (mini-PRD):
   ✔︎ ✅ 🎯 a genuinely broken local link stays visible (overshoot control)
     [if] this machine recorded the file as available and it is gone
     [then] broken_here, never off_machine
+  ✔︎ ✅ 🎯 a rekordbox FolderPath copy counts (LIBM-184)
+    [if] a mapped row's only copy here is at its FolderPath [then] present
+    [if] that FolderPath is gone too [then] the row is not present
 """
 from __future__ import annotations
 
@@ -46,9 +59,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from fastapi import HTTPException
+
 from apps.shared import platform_paths, remote_status
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
+from apps.webui.server.rb_vendor_pkg import track_rows
 from apps.webui.soft_deletes import has_soft_deletes
 
 BUCKETS: tuple[str, ...] = (
@@ -165,9 +181,45 @@ def _owner_machine_id(conn: sqlite3.Connection, machine_id: str | None) -> str:
     )
 
 
-def _path_candidates(file_path: object, alternates: Sequence[str]) -> list[str]:
-    """The row's own path first, then each alternate location not already listed."""
-    raw = [str(file_path)] if file_path and str(file_path).strip() else []
+def _rekordbox_folder_paths(
+    conn: sqlite3.Connection, stable_ids: Sequence[str]
+) -> dict[str, str]:
+    """Rekordbox FolderPath per mapped id, from the same reader the playlist
+    badges use (:func:`track_rows.rb_meta_from_state`) over this scan's own
+    connection. Ids with no mapping or no FolderPath are absent.
+
+    No rekordbox install here (``MASTER_DB_UNAVAILABLE``: a synced state.db
+    whose mappings came from another machine) means no FolderPath copy, the
+    same reading the deck's audio resolver gives it
+    (``apps.adapters.rekordbox.paths._rekordbox_copy``), so the scan still
+    buckets every row. Any other failure propagates: it means this machine
+    could not look, not that there is no copy."""
+    has_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'track_vendor_ids'"
+    ).fetchone()
+    if has_table is None:
+        return {}
+    try:
+        metas = track_rows.rb_meta_from_state(conn, stable_ids)
+    except HTTPException as exc:
+        if isinstance(exc.detail, dict) and exc.detail.get("code") == "MASTER_DB_UNAVAILABLE":
+            return {}
+        raise
+    return {
+        sid: meta.folder_path
+        for sid, meta in metas.items()
+        if meta.folder_path and meta.folder_path.strip()
+    }
+
+
+def _path_candidates(
+    file_path: object, alternates: Sequence[str], folder_path: str | None = None
+) -> list[str]:
+    """Rekordbox's FolderPath first when mapped, then the row's own path, then
+    each alternate location, each listed once."""
+    raw = [folder_path] if folder_path else []
+    if file_path and str(file_path).strip() and str(file_path) not in raw:
+        raw.append(str(file_path))
     return [*raw, *(p for p in alternates if p not in raw)]
 
 
@@ -197,12 +249,30 @@ def _require_buckets_cover_every_row(scan: LibraryPlayability) -> None:
 #-----------------------------------------------------------------------------
 # the scan
 #-----------------------------------------------------------------------------
+def _resolve_here(
+    conn: sqlite3.Connection, stable_ids: Sequence[str], owner: str
+) -> tuple[dict[str, Path | None], dict[str, str]]:
+    """This machine's file per id: its own locations first, then, for an id
+    those leave unresolved, its rekordbox FolderPath when that is on disk here
+    (LIBM-184). Also returns the FolderPaths read, for bucketing the rest."""
+    resolved = state_locations.bulk_local_audio_paths(
+        conn, list(stable_ids), machine_id=owner or None
+    )
+    unresolved = [sid for sid in stable_ids if resolved.get(sid) is None]
+    rekordbox_folders = _rekordbox_folder_paths(conn, unresolved)
+    for stable_id, folder in rekordbox_folders.items():
+        if not _is_streaming(folder):
+            here = state_locations.mapped_audio_path_if_materialised(folder)
+            if here is not None:
+                resolved[stable_id] = here
+    return resolved, rekordbox_folders
+
+
 def local_audio_paths(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, Path]:
     """`stable_id -> local file` for the given ids that are present on this
     machine: the same resolution `scan_playability` uses for its `present`
-    bucket, without classifying the rest of the library."""
-    owner = _owner_machine_id(conn, None)
-    resolved = state_locations.bulk_local_audio_paths(conn, list(stable_ids), machine_id=owner or None)
+    bucket (:func:`_resolve_here`), without classifying the rest of the library."""
+    resolved, _folders = _resolve_here(conn, stable_ids, _owner_machine_id(conn, None))
     return {sid: Path(path) for sid, path in resolved.items() if path is not None}
 
 
@@ -216,9 +286,7 @@ def scan_playability(
     rows = _live_track_rows(conn)
     stable_ids = [sid for sid, _fp in rows]
     owner = _owner_machine_id(conn, machine_id)
-    resolved = state_locations.bulk_local_audio_paths(
-        conn, stable_ids, machine_id=owner or None
-    )
+    resolved, rekordbox_folders = _resolve_here(conn, stable_ids, owner)
     unresolved = [sid for sid in stable_ids if resolved.get(sid) is None]
     alternates = (
         state_locations.list_location_paths(conn, unresolved, machine_id=owner)
@@ -238,7 +306,9 @@ def scan_playability(
         if path is not None:
             present.append((stable_id, str(path)))
             continue
-        candidates = _path_candidates(file_path, alternates.get(stable_id, []))
+        candidates = _path_candidates(
+            file_path, alternates.get(stable_id, []), rekordbox_folders.get(stable_id)
+        )
         bucket = _unresolved_bucket(stable_id, candidates, claimed, volumes)
         if bucket in ("broken_here", "off_machine"):
             folders[absent_folder(next(p for p in candidates if not _is_streaming(p)), home)] += 1

@@ -65,7 +65,7 @@ def test_clean_render_scores_high_with_every_core_factor_measured() -> None:
     assert result.score is not None and result.score >= CLEAN_FLOOR, (
         "if the clean render scores low then M penalizes good transitions"
     )
-    assert result.scorer_version == SCORER_VERSION == "0.7.0"
+    assert result.scorer_version == SCORER_VERSION == "0.8.0"
 
 
 def test_noise_band_is_small_against_the_drops() -> None:
@@ -131,10 +131,10 @@ def test_one_beat_late_fires_bar_lag_while_beat_offset_reads_aligned() -> None:
     assert result.score == 0.0
 
 
-def test_clipping_fires_the_true_peak_veto() -> None:
+def test_clipping_is_reported_and_never_vetoed() -> None:
     result = _score(MUTATIONS["clipping"])
-    assert "true_peak" in [v.name for v in result.vetoes]
-    assert result.metrics["true_peak_dbtp"] > -1.0
+    assert "true_peak" not in [v.name for v in result.vetoes], "if clipping vetoes then peaks are gating again"
+    assert result.metrics["true_peak_dbtp"] > -1.0 and result.metrics["true_peak_would_veto"] is True
 
 
 def test_each_layer1_mutation_moves_its_own_factor() -> None:
@@ -328,7 +328,7 @@ def test_bar_lag_veto_pair_aligned_inside_one_beat_outside() -> None:
 
 
 @pytest.mark.parametrize(("peak_dbtp", "fires"), [(-1.3, False), (-0.7, True)])
-def test_true_peak_veto_pair_around_minus_1_dbtp(peak_dbtp: float, fires: bool) -> None:
+def test_true_peak_would_veto_pair_around_minus_1_dbtp(peak_dbtp: float, fires: bool) -> None:
     """The overlap is scaled so its true peak lands just inside or just outside -1 dBTP (the solos stay quieter)."""
     mix, out_deck, in_deck, ctx = render()
     start, end = (round(x * ctx.sample_rate) for x in ctx.overlap_s)
@@ -339,7 +339,8 @@ def test_true_peak_veto_pair_around_minus_1_dbtp(peak_dbtp: float, fires: bool) 
         deck[start:end] *= gain
     result = score_render(mix, out_deck, in_deck, ctx)
     assert abs(result.metrics["true_peak_dbtp"] - peak_dbtp) < 0.05
-    assert ("true_peak" in _veto_names(result)) is fires
+    assert result.metrics["true_peak_would_veto"] is fires
+    assert "true_peak" not in _veto_names(result)
 
 
 @pytest.mark.parametrize(("ratio", "fires"), [(2 ** (1.9 / 12), False), (2 ** (2.1 / 12), True)])
@@ -636,12 +637,12 @@ def test_a_low_pile_up_counts_both_full_beats_and_a_low_hole_reads_as_a_hole() -
 
 
 def test_an_outgoing_peaking_alone_in_the_overlap_is_not_a_transition_over() -> None:
-    """[if] only the outgoing plays in the overlap and peaks over -1 dBTP [then] no true-peak veto (the transition
+    """[if] only the outgoing plays in the overlap and peaks over -1 dBTP [then] the reading stays clear (the transition
     added nothing over the louder deck), [else stop]."""
     _, out_deck, in_deck, ctx = render()
     hot = out_deck * 3.0
     result = score_render(hot, hot, 0.0 * in_deck, ctx)
-    assert result.metrics["true_peak_dbtp"] > -1.0 and "true_peak" not in _veto_names(result)
+    assert result.metrics["true_peak_dbtp"] > -1.0 and result.metrics["true_peak_would_veto"] is False
 
 
 def test_early_handover_reads_the_bars_before_the_incoming_bass_exists_and_exempts_a_lull() -> None:
@@ -660,3 +661,15 @@ def test_early_handover_reads_the_bars_before_the_incoming_bass_exists_and_exemp
     )
     assert "early_handover" not in lull.factors and "lull_then_drop" in lull.metrics["early_handover_exempt"]
     assert "early_handover" in _score().unknown
+
+
+def test_low_hole_switch_waits_for_a_present_incoming_and_falls_back_to_the_hit() -> None:
+    """0.7.1: [if] the incoming is louder than the outgoing but parked (-8.7 dB under its solo) [then] it does not take
+    the reference, the plan's bass hit does; [if] it is present (-4 dB) [then] it switches there, [else stop]."""
+    from apps.transition_score.scorer import _content_switch
+
+    beats = [((float(i), float(i) + 0.5), i % 4) for i in range(8)]
+    ctx = dataclasses.replace(render()[3], bass_hit_s=5.0)
+    raw_out, raw_in = np.full(8, -40.0), np.full(8, -30.0)
+    assert _content_switch(np.full(8, -8.7), raw_out, raw_in, beats, ctx) == 5
+    assert _content_switch(np.full(8, -4.0), raw_out, raw_in, beats, ctx) == 0

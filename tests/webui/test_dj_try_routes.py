@@ -675,3 +675,21 @@ def test_a_failed_insert_retires_no_kept_render(
     with pytest.raises(sqlite3.OperationalError):
         test_client.post("/api/v1/dj/try", json={"out": "o", "in": "i", "n": 1, "context_bars": 4})
     assert sorted(p.name for p in root.iterdir() if p.is_dir()) == [kept]
+
+
+@pytest.mark.requirement("TRYER-16")
+def test_lanes_refuse_bad_columns_unknown_candidates_and_missing_renders(
+    client: tuple[TestClient, list[dict[str, Any]]], tmp_path: Path
+) -> None:
+    """[if] columns are out of range, the candidate is unknown or its render is gone [then] a typed 4xx, [else stop]."""
+    test_client, _ = client
+    job = _start(test_client)
+    lanes = f"/api/v1/dj/try/{job['job_id']}/candidates"
+    bad = test_client.get(f"{lanes}/A/lanes?columns=0")
+    assert bad.status_code == 422 and bad.json()["error"] == "invalid_columns"
+    unknown = test_client.get(f"{lanes}/Z/lanes")
+    assert unknown.status_code == 404 and unknown.json()["error"] == "candidate_not_found"
+    next(tmp_path.rglob("A.wav")).unlink()
+    gone = test_client.get(f"{lanes}/A/lanes")
+    assert gone.status_code == 404 and gone.json()["error"] == "render_missing"
+    assert str(tmp_path) not in gone.text, "if the 404 names a server path then it leaks the library location"

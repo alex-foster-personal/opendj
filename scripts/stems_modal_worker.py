@@ -48,7 +48,8 @@ Requirements (mini-PRD):
     [if] a track fails in-container [then] the run continues and exits 1 at
       the end with every failure named
   ✔︎ ✅ a bundle is written where the webui reads it, in the farm's own
-    schema-2 layout, and is never fabricated.
+    schema-3 layout (MP3 parts for an MP3/M4A source, STEM-75), and is
+    never fabricated.
     [if] Modal returns no stems for a track [then ⛔️] that track fails
   ✔︎ ✅ credentials are checked before the batch, not per track.
     [if] --transport direct and no Modal token [then ⛔️] exit 2 with the fix
@@ -342,9 +343,21 @@ def modal_separator(
 
     ``stems_dest='local'`` tells the container to RETURN the stem bytes rather
     than upload them; this process writes them where the webui reads them.
+
+    Before any GPU is bought (STEM-75): a track whose source extension has no
+    output-format policy under this tier's codec is yielded as a per-track
+    error and never dispatched, and the farm's mirror guard runs once. A
+    batch with nothing left to dispatch neither checks credentials nor opens
+    a Modal app, because it spends nothing.
     """
+    dispatchable, rejected = split_by_source_policy(tracks, tier_key)
+
     import scripts.modal_vocal_farm as farm
 
+    farm.assert_route_contract()
+    yield from rejected
+    if not dispatchable:
+        return
     assert_modal_credentials()
     preset = preset_for_tier(tier_key)
     ordered = farm.sort_longest_first(
@@ -355,28 +368,66 @@ def modal_separator(
                 duration_ms=track.duration_ms,
                 size_bytes=track.size_bytes,
             )
-            for track in tracks
+            for track, _codec in dispatchable
         ]
     )
+    codec_of = {track.stable_id: codec for track, codec in dispatchable}
 
     def _inputs() -> Iterator[tuple[Any, ...]]:
         for track in ordered:
-            yield (
-                track.audio_path.read_bytes(),
-                track.stable_id,
-                track.audio_path.name,
-                preset.model,
-                preset.overlap,
-                preset.shifts,
-                "local",
-                str(track.audio_path),
-                preset.stamp(),
-                "",  # r2_bucket: unused for a local destination
-                farm.DEFAULT_STEM_CODEC,
-            )
+            yield direct_route_args(track, preset, codec_of[track.stable_id])
 
     with farm.app.run():
         yield from farm.separate_track.starmap(_inputs(), order_outputs=True)
+
+
+def direct_route_args(track: Any, preset: Any, stem_codec: str) -> tuple[Any, ...]:
+    """The ``separate_track`` arguments for one direct-route track.
+
+    ``track`` is anything with ``stable_id`` and ``audio_path`` (a TrackJob or
+    the farm's GapTrack); the source is read here, lazily, one track at a time.
+    """
+    from apps.stems.bundle_publish import separate_track_args
+
+    return separate_track_args(
+        audio_bytes=track.audio_path.read_bytes(),
+        stable_id=track.stable_id,
+        name=track.audio_path.name,
+        source_path=str(track.audio_path),
+        preset=preset,
+        stem_codec=stem_codec,
+    )
+
+
+def split_by_source_policy(
+    tracks: Sequence[TrackJob], tier_key: str
+) -> tuple[list[tuple[TrackJob, str]], list[dict[str, Any]]]:
+    """Each track with the codec the farm is asked for, or its refusal.
+
+    Returns ``(dispatchable, rejected)``: ``dispatchable`` pairs a track with
+    ``route_stem_codec_for_source`` (MP3 via the size ladder for an MP3/M4A
+    source, FLAC for a lossless one or a FLAC tier); ``rejected`` holds one
+    ``{stable_id, error}`` result per track whose extension has no policy,
+    in the shape ``run`` already reports as a failed track.
+    """
+    from apps.stems.bundle_publish import route_stem_codec_for_source
+    from apps.stems.stem_size_policy import UnknownSourceFormatError
+
+    dispatchable: list[tuple[TrackJob, str]] = []
+    rejected: list[dict[str, Any]] = []
+    for track in tracks:
+        try:
+            codec = route_stem_codec_for_source(tier_key, track.audio_path.name)
+        except UnknownSourceFormatError as exc:
+            rejected.append(
+                {
+                    "stable_id": track.stable_id,
+                    "error": f"refused before dispatch: {exc}",
+                }
+            )
+            continue
+        dispatchable.append((track, codec))
+    return dispatchable, rejected
 
 
 def preset_for_tier(tier_key: str) -> Any:

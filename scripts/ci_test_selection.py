@@ -39,6 +39,20 @@ names its cause in the log, the job summary and the record.
 
 What is selected, and why each rule exists: scripts/ci_test_selection_rules.py.
 
+Two TEST-CUT cuts ((private path)) are separate repo variables, read only when the
+switch above is on, so each one reverts by deleting it without touching the other:
+  - `CI_PR_SELECT_BY_NAME=ci-config` (item 3): workflows (`.github/*`), CI scripts
+    (`scripts/ci_*`) and deleted modules are selected by name instead of forcing FULL.
+    `ci/*` and `tests/fixtures/*` still force FULL until #7228.
+  - `CI_PR_DEMOTE_WEAK_LINKS=<dir>[,<dir>...]` (item 2): under those test directories
+    (`tests` is all of them), a module selected only by a weak link is not run at this
+    head; it runs only where the full suite runs (a FULL merge-queue draft, the nightly
+    full-ci.yml). The record lists it under `demoted`. While the merge queue is off (since
+    Fri 30 Oct 2026) that is the nightly run alone, so leave this variable unset until a
+    FULL draft runs again before every merge.
+A value that is set but not understood is a FULL run that names the variable: a typo must
+never quietly make a run smaller or quietly undo a cut.
+
 Shards: the selected modules are spread over the shards by recorded duration
 (`.test_durations`), greedy least-loaded first, so no shard does all the work and every
 shard computes the same assignment.
@@ -64,14 +78,17 @@ import subprocess
 import sys
 import traceback
 from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
 from xml.etree import ElementTree
 
 from scripts.affected_tests import REPO
+from scripts.ci_test_budget import BudgetConfig, BudgetError, fit, load_config, summary_line
 from scripts.ci_test_selection_rules import (
     DURATIONS_NAME,
     FullSuite,
+    Policy,
     Selection,
     lane_universe,
     select_tests,
@@ -88,9 +105,15 @@ SWITCH_ON = "affected"
 QUEUE_DRAFT_HEAD = re.compile(r"^trunk-(?:merge|temp)/pr-\d+/")
 TRUNK_LOGIN = "trunk-io[bot]"
 REPAIR_LABEL = "ci:trunk-repair"
+BY_NAME_VARIABLE = "CI_PR_SELECT_BY_NAME"
+BY_NAME_ON = "ci-config"
+DEMOTE_VARIABLE = "CI_PR_DEMOTE_WEAK_LINKS"
 #: Schema 2 (Tue 27 Oct 2026) adds `queue_switch`, `declared_modules`, `universe_modules` and
-#: `bundle_prs`.
-SCHEMA = 2
+#: `bundle_prs`. Schema 3 (Fri 30 Oct 2026, TEST-BUDGET) adds `budget`: the runner-minute
+#: budget the run was fitted to, the planned minutes before and after, and the weak-link
+#: modules it dropped (scripts/ci_test_budget.py); None when `select` ran without `--budget`.
+#: Schema 4 adds `policy` and `demoted` (TEST-CUT items 2 and 3, (private path)).
+SCHEMA = 4
 RECORD_NAME = "selection.json"
 SHARD_MODULES_NAME = "shard-modules.txt"
 
@@ -156,11 +179,30 @@ def full_suite_reason(switch: str | None, event: Event, queue_switch: str | None
     if REPAIR_LABEL in event.labels:
         return f"the PR carries `{REPAIR_LABEL}`; a trunk repair runs everything"
     if switch != SWITCH_ON:
-        return (
-            f"repo variable {SWITCH_VARIABLE}={switch!r}; selection runs only when it "
-            f"equals {SWITCH_ON!r}"
-        )
+        return f"repo variable {SWITCH_VARIABLE}={switch!r}; selection runs only when it equals {SWITCH_ON!r}"
     return None
+
+
+def policy_from(by_name: str | None, demote: str | None, root: Path) -> Policy:
+    """The TEST-CUT policy the two repo variables ask for. Unset or empty is off.
+
+    Raises FullSuite naming the variable on any value it does not understand.
+    """
+    by_name = (by_name or "").strip()
+    if by_name not in ("", BY_NAME_ON):
+        raise FullSuite(f"repo variable {BY_NAME_VARIABLE}={by_name!r} is neither unset nor {BY_NAME_ON!r}")
+    directories = tuple(entry.strip().rstrip("/") for entry in (demote or "").split(",") if entry.strip())
+    if (demote or "").strip() and not directories:
+        raise FullSuite(f"repo variable {DEMOTE_VARIABLE}={demote!r} names no directory")
+    for directory in directories:
+        under_tests = directory == "tests" or directory.startswith("tests/")
+        # `_under` compares strings, so `tests/./scripts` would match nothing yet read as set.
+        canonical = all(part not in ("", ".", "..") for part in directory.split("/"))
+        if not under_tests or not canonical or not (root / directory).is_dir():
+            raise FullSuite(
+                f"repo variable {DEMOTE_VARIABLE} names `{directory}`, which is not a directory under tests/"
+            )
+    return Policy(ci_config_by_name=by_name == BY_NAME_ON, demote_weak_under=directories)
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +283,9 @@ def bundle_declarations(bundle_json: str | None) -> tuple[list[str], list[int], 
     try:
         bundle = json.loads(bundle_json or "")
     except json.JSONDecodeError as error:
-        raise FullSuite(f"{BUNDLE_VARIABLE} is not a bundle record ({error}); the bundle's declarations are unknown") from error
+        raise FullSuite(
+            f"{BUNDLE_VARIABLE} is not a bundle record ({error}); the bundle's declarations are unknown"
+        ) from error
     problem = bundle_record_problem(bundle)
     if problem:
         raise FullSuite(f"the bundle record is malformed ({problem}); its declarations are unknown")
@@ -308,9 +352,7 @@ def assign_shards(modules: list[str], durations: dict[str, float], shards: int) 
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
 
 
 def pr_changed_paths(root: Path, head_sha: str) -> list[str]:
@@ -361,9 +403,16 @@ class Record:
     shards: dict[str, list[str]]
     reasons: dict[str, list[str]]
     generated_at: str
+    #: TEST-BUDGET: the fit the selection was trimmed to (scripts.ci_test_budget.Fit.as_record),
+    #: None when the run had no budget or took the FULL suite.
+    budget: dict | None = None
+    #: The TEST-CUT policy in force (`Policy` as a dict), None when it was not read.
+    policy: dict | None = None
+    #: Modules selected only by a weak link and not run at this head, with their rules.
+    demoted: dict[str, list[str]] = dataclass_field(default_factory=dict)
 
 
-def decide(
+def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one per cut
     switch: str | None,
     event: Event,
     root: Path,
@@ -371,12 +420,18 @@ def decide(
     shards: int,
     queue_switch: str | None = None,
     bundle_json: str | None = None,
+    budget: BudgetConfig | None = None,
+    *,
+    by_name: str | None = None,
+    demote: str | None = None,
 ) -> Record:
     """The whole decision for this run. Never raises: any failure is a FULL record.
 
     `bundle_json` is CI_BUNDLE_DECLARATIONS; it is read only for a `trunk-merge/` head.
+    `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml).
     """
     changed: list[str] = []
+    policy: Policy | None = None
     universe: list[str] = []
     declared: list[str] = []
     bundle_prs: list[int] = []
@@ -398,6 +453,7 @@ def decide(
         reason: str,
         selection: Selection | None = None,
         assignment: list[list[str]] | None = None,
+        budget_block: dict | None = None,
     ) -> Record:
         return Record(
             schema=SCHEMA,
@@ -419,6 +475,9 @@ def decide(
             shards={str(i + 1): group for i, group in enumerate(assignment or [])},
             reasons=selection.reasons if selection else {},
             generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            budget=budget_block,
+            policy=asdict(policy) if policy else None,
+            demoted=selection.demoted if selection else {},
         )
 
     reason = full_suite_reason(switch, event, queue_switch)
@@ -429,26 +488,41 @@ def decide(
     if declaration_error:
         return record("full", f"fell back to the full suite: invalid declaration: {declaration_error}")
     try:
+        policy = policy_from(by_name, demote, root)
         changed = pr_changed_paths(root, event.head_sha)
-        selection = select_tests(changed, ignores, root)
+        selection = select_tests(changed, ignores, root, policy)
         universe = lane_universe(selection.graph_paths, ignores, root)
         add_declared(selection, declared)
         ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))
-        assignment = assign_shards(selection.modules, module_durations(ledger), shards)
+        durations = module_durations(ledger)
+        budget_block: dict | None = None
+        if budget is not None:
+            fitted = fit(
+                selection.modules, selection.reasons, durations,
+                budget.for_context(event.queue_draft), budget,
+            )  # fmt: skip
+            selection.modules = fitted.kept
+            budget_block = fitted.as_record()
+        assignment = assign_shards(selection.modules, durations, shards)
     except FullSuite as fallback:
         return record("full", f"fell back to the full suite: {fallback}")
     except Exception as error:  # reported loudly below, and the fallback runs MORE tests
         traceback.print_exc(file=sys.stderr)
-        return record(
-            "full", f"fell back to the full suite: selection could not be computed: {error!r}"
-        )
+        return record("full", f"fell back to the full suite: selection could not be computed: {error!r}")
+    demoted = f"; {len(selection.demoted)} weak-link module(s) not run at this head" if selection.demoted else ""
     if not selection.modules:
         return record(
-            "affected", "no test module is affected by this change", selection, assignment
+            "affected", f"no test module is affected by this change{demoted}", selection, assignment, budget_block
         )
     return record(
-        "affected", f"{len(selection.modules)} affected test module(s)", selection, assignment
+        "affected", f"{len(selection.modules)} affected test module(s){demoted}", selection, assignment, budget_block
     )
+
+
+def _fit_of(record: Record):
+    from scripts.ci_test_budget import Fit
+
+    return Fit(**(record.budget or {}))
 
 
 def shard_mode(record: Record, shard: int) -> str:
@@ -473,6 +547,10 @@ def report_lines(record: Record, shard: int, shards: int) -> list[str]:
             f"declared in the PR body; this shard runs {len(mine)}"
         )
         lines += [f"    {module}" for module in mine]
+        if record.demoted:
+            lines.append(f"  {len(record.demoted)} weak-link module(s) not run at this head ({DEMOTE_VARIABLE})")
+    if record.budget:
+        lines.append("  " + summary_line(_fit_of(record)))
     if mode == "empty":
         lines.append(
             "  ZERO affected tests for this shard: it reports success without running pytest. "
@@ -495,8 +573,12 @@ def summary_markdown(record: Record, shard: int, shards: int) -> str:
         f"| selected modules (all shards) | {len(record.selected_modules)} of {record.universe_modules} |",
         f"| declared in the PR body (`CI-Tests:`) | {len(record.declared_modules)} |",
         f"| this shard's modules | {len(record.shards.get(str(shard), []))} |",
+        f"| weak-link modules not run at this head | {len(record.demoted)} |",
         "",
     ]
+    if record.budget:
+        rows.append(f"| test budget | {summary_line(_fit_of(record))} |")
+    rows.append("")
     if mode == "empty":
         rows.append(
             "Zero affected tests for this shard, so pytest did not start. The nightly full "
@@ -556,13 +638,34 @@ def _select(arguments: argparse.Namespace) -> int:
     switch = os.environ.get(SWITCH_VARIABLE)
     queue_switch = os.environ.get(QUEUE_SWITCH_VARIABLE)
     bundle_json = os.environ.get(BUNDLE_VARIABLE)
-    record = decide(switch, event, REPO, arguments.ignore, arguments.shards, queue_switch, bundle_json)
+    budget: BudgetConfig | None = None
+    if arguments.budget:
+        budget_path = Path(arguments.budget)
+        if not budget_path.is_absolute():
+            budget_path = REPO / budget_path  # relative to the repo, like every other input
+        try:
+            budget = load_config(budget_path)
+        except BudgetError as error:
+            # A typo in the budget must make the run BIGGER, never silently smaller: a non-zero
+            # exit is FULL, loudly, in the shard step.
+            print(f"TEST BUDGET UNREADABLE: {error}", file=sys.stderr)
+            return 2
+    record = decide(
+        switch,
+        event,
+        REPO,
+        arguments.ignore,
+        arguments.shards,
+        queue_switch,
+        bundle_json,
+        budget,
+        by_name=os.environ.get(BY_NAME_VARIABLE),
+        demote=os.environ.get(DEMOTE_VARIABLE),
+    )
 
     out_dir = Path(arguments.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / RECORD_NAME).write_text(
-        json.dumps(asdict(record), indent=2) + "\n", encoding="utf-8"
-    )
+    (out_dir / RECORD_NAME).write_text(json.dumps(asdict(record), indent=2) + "\n", encoding="utf-8")
     mode = shard_mode(record, arguments.shard)
     if mode == "affected":
         (out_dir / SHARD_MODULES_NAME).write_text(
@@ -583,9 +686,10 @@ def main(argv: list[str] | None = None) -> int:
     select.add_argument("--shards", type=int, required=True)
     select.add_argument("--out-dir", required=True)
     select.add_argument("--ignore", action="append", default=[], help="a lane --ignore path")
-    junit = commands.add_parser(
-        "junit-all-skipped", help="exit 0 iff every selected module skipped at module level"
+    select.add_argument(
+        "--budget", default=None, help="runner-minute budget config (ci/test-budget.yml); none = unbudgeted"
     )
+    junit = commands.add_parser("junit-all-skipped", help="exit 0 iff every selected module skipped at module level")
     junit.add_argument("report")
     junit.add_argument("--modules", required=True, help="the shard's shard-modules.txt")
     arguments = parser.parse_args(argv)

@@ -240,7 +240,19 @@ test('a pointer over a toast holds it past its dismissal delay', async ({ page }
 	await expect(toast).toBeVisible();
 
 	// Leaving restarts a FULL delay rather than firing the remainder.
-	await page.mouse.move(0, 0);
+	const viewport = page.viewportSize();
+	if (viewport === null) {
+		throw new Error('toast-tray e2e: viewport missing for pointer leave');
+	}
+	await page.mouse.move(viewport.width - 2, viewport.height - 2);
+	await page.waitForFunction(
+		async ([store, logId]) => {
+			const mod = await import(/* @vite-ignore */ store as string);
+			return mod.toastTimerArmed(logId as string) === true;
+		},
+		[STORE, id] as const,
+		{ timeout: 5000 }
+	);
 	await page.clock.runFor(dismissMs / 2 + 100);
 	await expect(toast).toHaveCount(1);
 	await page.clock.runFor(dismissMs / 2);

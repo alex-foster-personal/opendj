@@ -94,7 +94,8 @@ function barPickLoader(fetchMeta, loaded) {
 				loaded.push([row.stable_id, deck]);
 				await dispatchLoad(deck, row.stable_id);
 			}),
-		(deck) => m.cmdk.deckLoadMark(deckState(deck), 0)
+		(deck) => m.cmdk.deckLoadMark(deckState(deck), 0),
+		() => false
 	);
 }
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 
 _SOFT_DELETE_TABLES: frozenset[str] = frozenset(
-    {"tracks", "playlists", "playlist_memberships", "smartlists"}
+    {"tracks", "playlists", "playlist_memberships", "smartlists", "track_vendor_ids"}
 )
 
 

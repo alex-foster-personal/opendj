@@ -89,6 +89,12 @@ export function stepSelection(index: number, count: number, step: -1 | 1): numbe
 	return Math.min(count - 1, Math.max(0, index + step));
 }
 
+/** A highlight that a shorter list (a refreshed library index) left past its end moves to the last row. */
+export function clampSelection(index: number, count: number): number {
+	if (count <= 0) return 0;
+	return Math.min(index, count - 1);
+}
+
 /**
  * The next Tab stop among `count` focusable controls, wrapping at both ends
  * (CMDK-04). `at` is the focused control's index, or -1 when focus sits on

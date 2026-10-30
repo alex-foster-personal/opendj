@@ -3,19 +3,19 @@
 # or build it locally when CI's own "production frontend build" job has not
 # reached a state that will land the artifact within budget.
 #
-# Measured Mon 14 Sep 2026 (docs/decisions/ADR-0028): under a deep queue, 15
+# Measured Mon 14 Sep 2026 ((private path)): under a deep queue, 15
 # of 17 failed E2E `gate` jobs burned their whole 900s poll budget because
 # CI's build job for the SHA had not even started on CI's own pool -- 385
 # runner-minutes of vacuous red. This script now reads that job's live state
 # via `gh api` and decides:
-#   - artifact already published            -> download it (unchanged)
+#   - artifact already published            -> download it from R2 (unchanged)
 #   - job queued / no CI run yet / budget expired -> build locally at once
 #   - job in_progress or completed success   -> keep polling for the artifact
 #   - job completed failure/cancelled/timed_out -> refuse, never rebuild over
 #     a real CI failure
 #   - CI's state cannot be read at all       -> refuse, never guess
 #
-# Pinned by tests/scripts/test_ci_frontend_build_artifact.py.
+# Pinned by (private path).
 set -euo pipefail
 
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
@@ -32,6 +32,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # override convention below.
 LOCAL_BUILD_SCRIPT="${MDT_CI_FRONTEND_BUILD_LOCAL_SCRIPT:-${ROOT}/scripts/ci_frontend_build_local.sh}"
 
+# The artifact lives on Cloudflare R2 at ci/<repo>/shared/production-frontend-<sha>.tar.gz
+# (GitHub artifact storage hit the account quota Fri 30 Oct 2026). Test seam as above:
+# production callers never set MDT_CI_R2_ARTIFACT_CMD.
+read -r -a R2_ARTIFACT <<<"${MDT_CI_R2_ARTIFACT_CMD:-python3 ${ROOT}/scripts/r2_artifact.py}"
+
 if [ -z "${GH_TOKEN:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
   export GH_TOKEN="$GITHUB_TOKEN"
 fi
@@ -41,31 +46,23 @@ if [ -f "${DEST}/.ci-production-frontend-sha" ]; then
   exit 0
 fi
 
-# Prints the artifact id on stdout if published and not expired; prints
-# nothing when gh cannot answer or nothing is published yet. Absence here is
-# not a verdict by itself -- the caller decides what to do next from CI's own
-# job state, not from this silence.
-_poll_artifact_id() {
-  # gh exits 4 when unauthenticated (the fast tier job has no token).
-  # That is "not published yet", not a crash: leaking gh's code here skipped
-  # the refuse-to-build message (head ed73bf4f7, assert 4 == 1).
-  local ids
-  ids="$(gh api -H "Accept: application/vnd.github+json" \
-      "repos/${REPO}/actions/artifacts?name=${ARTIFACT_NAME}&per_page=5" \
-      --jq ".artifacts[] | select(.expired==false and .name==\"${ARTIFACT_NAME}\") | .id" \
-      2>/dev/null)" || ids=""
-  printf '%s\n' "$ids" | awk 'NF { print; exit }'
+# Sets ARTIFACT_STATE to published, absent or unreadable. Unreadable (bad or missing
+# R2 credentials, network) is a hard stop in the caller, never read as absent.
+ARTIFACT_STATE=""
+_probe_artifact() {
+  local rc=0
+  "${R2_ARTIFACT[@]}" exists --shared --name "$ARTIFACT_NAME" --repo "$REPO" || rc=$?
+  case "$rc" in
+    0) ARTIFACT_STATE="published" ;;
+    3) ARTIFACT_STATE="absent" ;;
+    *) ARTIFACT_STATE="unreadable" ;;
+  esac
 }
 
 _download_and_assert() {
-  local artifact_id="$1" tmp_zip
-  tmp_zip="$(mktemp -t mdt-frontend-artifact.XXXXXX.zip)"
-  trap 'rm -f "$tmp_zip"' RETURN
-  gh api -H "Accept: application/vnd.github+json" \
-    "repos/${REPO}/actions/artifacts/${artifact_id}/zip" >"$tmp_zip"
   mkdir -p "$DEST"
   find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-  unzip -qo "$tmp_zip" -d "$DEST"
+  "${R2_ARTIFACT[@]}" download --shared --name "$ARTIFACT_NAME" --repo "$REPO" --dest "$DEST"
   "${ROOT}/scripts/ci_frontend_build_assert.sh" "$SHA" "$DEST"
 }
 
@@ -134,10 +131,13 @@ _build_locally() {
 
 deadline=$(( $(date +%s) + MAX_WAIT_S ))
 while true; do
-  artifact_id="$(_poll_artifact_id)"
-  if [ -n "$artifact_id" ]; then
-    _download_and_assert "$artifact_id"
+  _probe_artifact
+  if [ "$ARTIFACT_STATE" = "published" ]; then
+    _download_and_assert
     exit 0
+  elif [ "$ARTIFACT_STATE" = "unreadable" ]; then
+    echo "::error::R2 artifact ${ARTIFACT_NAME} is unreadable (see the r2-artifact error above); refusing to guess"
+    exit 1
   fi
 
   _probe_ci_job_state

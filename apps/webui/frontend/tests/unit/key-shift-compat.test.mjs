@@ -257,12 +257,22 @@ describe('UI wiring (source)', () => {
 	});
 
 	it("a shifted row renders its superscript and the hover card replaces the native title", async () => {
-		const src = await read('components/rb/browser/TrackTable.svelte');
-		assert.match(src, /<sup class="key-shift-sup">\{keyShiftSuperscript\(match\.shift\)\}<\/sup>/);
-		assert.match(src, /<KeyHoverCard/);
-		const cell = src.slice(src.indexOf('class="c-key"'), src.indexOf('class="c-key"') + 600);
+		const table = await read('components/rb/browser/TrackTable.svelte');
+		assert.match(table, /<sup class="key-shift-sup">\{keyShiftSuperscript\(match\.shift\)\}<\/sup>/);
+		assert.match(table, /<KeyHoverCard/);
+		const cell = table.slice(table.indexOf('class="c-key"'), table.indexOf('class="c-key"') + 600);
 		assert.doesNotMatch(cell.slice(0, cell.indexOf('>')), /\btitle=/);
 		assert.match(cell, /data-custom-tip=""/);
+		assert.match(table, /getBoundingClientRect\(\)/);
+		assert.match(table, /anchor:\s*\{\s*left:\s*rect\.left,\s*top:\s*rect\.top,\s*width:\s*rect\.width,\s*height:\s*rect\.height\s*\}/);
+		assert.match(table, /anchor=\{keyHover\.anchor\}/);
+		assert.equal((table.match(/<KeyHoverCard/g) ?? []).length, 1);
+
+		const card = await read('components/rb/browser/KeyHoverCard.svelte');
+		assert.match(card, /placeFloating\(/);
+		assert.match(card, /preferred:\s*'above'/);
+		assert.match(card, /gap:\s*6/);
+		assert.doesNotMatch(card, /translate\(-50%/);
 	});
 
 	it('a library load carries the row key shift, and the dispatcher applies it after the load', async () => {

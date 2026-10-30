@@ -38,11 +38,46 @@ LANE_ASSERTION_STEP_NAME = "Assert MUSIC_DJ_PORT_LANE is set"
 STALE_SERVER_HYGIENE_STEP_NAME = "Reclaim stale E2E servers before port claim"
 CLAIMING_RUN_SNIPPET = "test:e2e"
 E2E_JOBS = ("gate", "extended")
+# ci.yml's pytest jobs claim the same pool (engine, backend and frontend fixtures through
+# apps/webui/port_config.py), so they carry the same two steps (Fri 30 Oct 2026: two shards on one
+# host collided on lane 0, "address already in use", while the fleet right-sized its runner hosts).
+CI_PYTEST_JOBS = ("test", "fast")
 
 
 def _e2e_job_steps(job_name: str) -> list[dict]:
     doc = yaml.safe_load((WORKFLOWS / "e2e.yml").read_text(encoding="utf-8"))
     return doc["jobs"][job_name]["steps"]
+
+
+def _ci_job_steps(job_name: str) -> list[dict]:
+    doc = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+    return doc["jobs"][job_name]["steps"]
+
+
+def test_every_ci_pytest_job_derives_and_asserts_the_lane_before_pytest_runs() -> None:
+    """if a pytest shard job loses the lane step, or runs it after pytest, then every shard
+    on one host claims from slot 0 of the same pool window again"""
+    e2e_script = next(
+        step["run"] for step in _e2e_job_steps("gate") if step.get("name") == LANE_STEP_NAME
+    )
+    for job_name in CI_PYTEST_JOBS:
+        steps = _ci_job_steps(job_name)
+        names = [step.get("name") for step in steps]
+        runs = [step.get("run") or "" for step in steps]
+        assert LANE_STEP_NAME in names, f"ci.yml {job_name} is missing lane derivation"
+        assert LANE_ASSERTION_STEP_NAME in names, f"ci.yml {job_name} is missing lane assertion"
+        lane_index = names.index(LANE_STEP_NAME)
+        assert lane_index < names.index(LANE_ASSERTION_STEP_NAME), job_name
+        pytest_indices = [
+            i for i, run in enumerate(runs) if "pytest" in run and i != lane_index
+        ]
+        assert pytest_indices, f"ci.yml {job_name} no longer runs pytest; update this test"
+        assert lane_index < min(pytest_indices), (
+            f"ci.yml {job_name}: lane step at {lane_index}, first pytest step at {min(pytest_indices)}"
+        )
+        assert steps[lane_index]["run"] == e2e_script, (
+            f"ci.yml {job_name}: lane derivation must be the same script as e2e.yml's"
+        )
 
 
 def test_lane_derivation_step_precedes_the_dynamic_pool_claim() -> None:

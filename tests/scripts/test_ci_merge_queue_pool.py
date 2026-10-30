@@ -10,18 +10,25 @@ Regression lines:
   - if an unset variable reads STRANDED then the off state pages someone for nothing
   - if label case decides the match then `linux` never matches a runner's `Linux`
   - if a partial runner listing yields a verdict then a missing page reads as no runner
+  - if a reserve runner on page 2 of the listing is dropped then a live pool reads STRANDED
+  - if a listing stops asking for --paginate --slurp then gh output stops parsing
   - if a malformed variable yields a verdict then UNKNOWN is rendered as a finding
   - if a reserve runner shared with CI_RUNS_ON_PYTEST is not flagged then the reserve is not one
 """
 
 from __future__ import annotations
 
+import json
+import subprocess
+
 import pytest
 
+from scripts import ci_merge_queue_pool
 from scripts.ci_merge_queue_pool import (
     MeasurementError,
     Runner,
     items_from_pages,
+    measure,
     parse_labels,
     pool_verdict,
 )
@@ -124,3 +131,62 @@ def test_partial_listing_is_unknown() -> None:
         {"total_count": 2, "runners": [{"name": "b"}]},
     ]
     assert [r["name"] for r in items_from_pages(two_pages, "runners", "p")] == ["a", "b"]
+
+
+def _listed_runner(name: str, *labels: str) -> dict:
+    return {
+        "name": name,
+        "status": "online",
+        "busy": False,
+        "labels": [{"name": label} for label in ("self-hosted", "Linux", *labels)],
+    }
+
+
+def _fake_gh(pages_by_endpoint: dict[str, list[dict]]):
+    """gh's three output shapes: one page, one object per page, or slurped pages."""
+
+    def run(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        endpoint = next(arg for arg in args if arg.startswith("repos/"))
+        pages = next(p for key, p in pages_by_endpoint.items() if key in endpoint)
+        if "--paginate" in args and "--slurp" in args:
+            stdout = json.dumps(pages)
+        elif "--paginate" in args:
+            stdout = "".join(json.dumps(page) for page in pages)
+        else:
+            stdout = json.dumps(pages[0])
+        return subprocess.CompletedProcess(args, 0, stdout, "")
+
+    return run
+
+
+TWO_PAGES_OF_RUNNERS = {
+    "actions/variables": [{"total_count": 1, "variables": [{"name": "CI_RUNS_ON_MERGE_QUEUE", "value": MQ}]}],
+    "actions/runners": [
+        {
+            "total_count": 101,
+            "runners": [_listed_runner(f"general-{n}", "pytest") for n in range(100)],
+        },
+        {"total_count": 101, "runners": [_listed_runner("agbox3-1", "agbox3", "mq")]},
+    ],
+}
+
+
+def test_reserve_runner_on_page_two_is_seen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """if a reserve runner on page 2 of the listing is dropped then a live pool reads STRANDED"""
+    monkeypatch.setattr(ci_merge_queue_pool.subprocess, "run", _fake_gh(TWO_PAGES_OF_RUNNERS))
+    verdict = measure("o/r", None)
+    assert (verdict.status, verdict.exit_code) == ("OK", 0)
+    assert "agbox3-1" in verdict.lines[0]
+
+
+def test_concatenated_pages_are_unknown_not_a_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
+    """if a listing stops asking for --paginate --slurp then gh output stops parsing"""
+    fake = _fake_gh(TWO_PAGES_OF_RUNNERS)
+
+    def without_slurp(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        runners_read = any("actions/runners" in arg for arg in args)
+        return fake([arg for arg in args if not (runners_read and arg == "--slurp")], **kwargs)
+
+    monkeypatch.setattr(ci_merge_queue_pool.subprocess, "run", without_slurp)
+    with pytest.raises(MeasurementError, match="non-JSON"):
+        measure("o/r", None)

@@ -22,6 +22,11 @@ export type PlaylistTreeProps = {
 	allTracksCount: number | null;
 	allTracksBrokenCount: number | null;
 	allTracksError: string | null;
+	/** The reconcile summary's `availability` buckets (issue #3934): when
+	 * valid, the All Tracks badge shows `present` like every playlist badge.
+	 * Required, not optional (pass null while loading): an unwired caller must
+	 * fail the type check rather than silently show the non-broken count. */
+	allTracksAvailability: unknown;
 	selectedId: string | null;
 	/** The active pane's PaneStore.selected_id, forwarded to ColumnBrowser
 	 * so its track highlight reflects the current pane rather than an

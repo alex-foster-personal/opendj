@@ -121,14 +121,27 @@ def _chunked(ids: Sequence[str]) -> Iterator[Sequence[str]]:
         yield ids[start : start + _SQL_CHUNK]
 
 
+def _has_table(conn: sqlite3.Connection) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='grid_quality'").fetchone() is not None
+
+
 def read_many(stable_ids: Sequence[str]) -> dict[str, StoredGridQuality]:
-    """Stored verdicts for `stable_ids`; ids never scanned are absent."""
+    """Stored verdicts for `stable_ids`; ids never scanned are absent.
+
+    The sidecar file is shared with `grid_audio_fit_store`, so on a fresh data dir the
+    grid-vs-audio scan can create it before any grid verdict is written: the file exists
+    with no `grid_quality` table yet, which is the same empty state as no file at all.
+    Without this guard the library listing failed 500 (`no such table: grid_quality`) on
+    every fresh CI runner (PR #7948, Fri 30 Oct 2026).
+    """
     ids = list(dict.fromkeys(stable_ids))
     path = store_path()
     if not ids or not path.is_file():
         return {}
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
+        if not _has_table(conn):
+            return {}
         found: dict[str, StoredGridQuality] = {}
         for chunk in _chunked(ids):
             placeholders = ",".join("?" * len(chunk))

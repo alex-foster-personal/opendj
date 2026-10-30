@@ -1,7 +1,7 @@
 """Bidirectional hub sync: convergence, LWW, tombstones, digest.
 
-Contract under test: ``specs/design_decision_04.md`` over the v6 schema of
-``specs/design_decision_05.md``. One hub data dir plus two spoke data dirs,
+Contract under test: ``(private path)`` over the v6 schema of
+``(private path)``. One hub data dir plus two spoke data dirs,
 all three real migrated DBs; the hub is the FastAPI router behind a
 ``TestClient``, so nothing here touches a network or a mock.
 
@@ -169,25 +169,26 @@ def _insert_track(
     origin: str,
     deleted_at: str | None = None,
 ) -> None:
-    stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
-    conn.execute(
-        """
-        INSERT INTO tracks(
-            stable_id, stable_id_tier, title, content_hash, created_at,
-            updated_at, origin_device_id, deleted_at
+    with sync_stamp.stamped_transaction(conn):
+        stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
+        conn.execute(
+            """
+            INSERT INTO tracks(
+                stable_id, stable_id_tier, title, content_hash, created_at,
+                updated_at, origin_device_id, deleted_at
+            )
+            VALUES (?, 'inferred', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                stable_id,
+                title,
+                hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                _T0,
+                stamped,
+                origin,
+                deleted_at,
+            ),
         )
-        VALUES (?, 'inferred', ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            stable_id,
-            title,
-            hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
-            _T0,
-            stamped,
-            origin,
-            deleted_at,
-        ),
-    )
 
 
 def _set_track_title(
@@ -198,23 +199,25 @@ def _set_track_title(
     updated_at: str,
     origin: str,
 ) -> None:
-    stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
-    conn.execute(
-        "UPDATE tracks SET title = ?, updated_at = ?, origin_device_id = ? "
-        "WHERE stable_id = ?",
-        (title, stamped, origin, stable_id),
-    )
+    with sync_stamp.stamped_transaction(conn):
+        stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
+        conn.execute(
+            "UPDATE tracks SET title = ?, updated_at = ?, origin_device_id = ? "
+            "WHERE stable_id = ?",
+            (title, stamped, origin, stable_id),
+        )
 
 
 def _soft_delete_track(
     conn: sqlite3.Connection, stable_id: str, *, deleted_at: str, origin: str
 ) -> None:
-    stamped = _log(conn, "tracks", (stable_id,), origin, deleted_at)
-    conn.execute(
-        "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
-        "origin_device_id = ? WHERE stable_id = ?",
-        (stamped, stamped, origin, stable_id),
-    )
+    with sync_stamp.stamped_transaction(conn):
+        stamped = _log(conn, "tracks", (stable_id,), origin, deleted_at)
+        conn.execute(
+            "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
+            "origin_device_id = ? WHERE stable_id = ?",
+            (stamped, stamped, origin, stable_id),
+        )
 
 
 def _track_title(conn: sqlite3.Connection, stable_id: str) -> str | None:
@@ -232,17 +235,18 @@ def _insert_playlist(
     updated_at: str,
     origin: str,
 ) -> None:
-    stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
-    conn.execute(
-        """
-        INSERT INTO playlists(
-            playlist_id, name, vendor, vendor_pl_id, created_at, updated_at,
-            origin_device_id
+    with sync_stamp.stamped_transaction(conn):
+        stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
+        conn.execute(
+            """
+            INSERT INTO playlists(
+                playlist_id, name, vendor, vendor_pl_id, created_at, updated_at,
+                origin_device_id
+            )
+            VALUES (?, ?, 'open-dj', ?, ?, ?, ?)
+            """,
+            (playlist_id, name, playlist_id, _T0, stamped, origin),
         )
-        VALUES (?, ?, 'open-dj', ?, ?, ?, ?)
-        """,
-        (playlist_id, name, playlist_id, _T0, stamped, origin),
-    )
 
 
 def _set_members(
@@ -254,25 +258,26 @@ def _set_members(
     origin: str,
 ) -> None:
     """Replace membership locally AND stamp the playlist, as a writer must."""
-    stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
-    conn.execute(
-        "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
-    )
-    for position, stable_id in enumerate(stable_ids):
+    with sync_stamp.stamped_transaction(conn):
+        stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
         conn.execute(
-            """
-            INSERT INTO playlist_memberships(
-                playlist_id, stable_id, position, updated_at, origin_device_id
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (playlist_id, stable_id, position, stamped, origin),
+            "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
         )
-    conn.execute(
-        "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-        "WHERE playlist_id = ?",
-        (stamped, origin, playlist_id),
-    )
+        for position, stable_id in enumerate(stable_ids):
+            conn.execute(
+                """
+                INSERT INTO playlist_memberships(
+                    playlist_id, stable_id, position, updated_at, origin_device_id
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (playlist_id, stable_id, position, stamped, origin),
+            )
+        conn.execute(
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+            "WHERE playlist_id = ?",
+            (stamped, origin, playlist_id),
+        )
 
 
 def _members(conn: sqlite3.Connection, playlist_id: str) -> tuple[str, ...]:
@@ -522,17 +527,18 @@ def test_legacy_null_updated_at_loses_to_a_real_edit(
 
     conn_a = _open(spoke_a)
     try:
-        stamped = _log(conn_a, "track_fields", ("trk-1", "bpm"), _DEV_A, _T1)
-        conn_a.execute(
-            """
-            INSERT INTO track_fields(
-                stable_id, field_name, value_json, source, modified_at,
-                updated_at, origin_device_id
+        with sync_stamp.stamped_transaction(conn_a):
+            stamped = _log(conn_a, "track_fields", ("trk-1", "bpm"), _DEV_A, _T1)
+            conn_a.execute(
+                """
+                INSERT INTO track_fields(
+                    stable_id, field_name, value_json, source, modified_at,
+                    updated_at, origin_device_id
+                )
+                VALUES ('trk-1', 'bpm', '128.0', 'webui', ?, ?, ?)
+                """,
+                (_T1, stamped, _DEV_A),
             )
-            VALUES ('trk-1', 'bpm', '128.0', 'webui', ?, ?, ?)
-            """,
-            (_T1, stamped, _DEV_A),
-        )
     finally:
         conn_a.close()
 

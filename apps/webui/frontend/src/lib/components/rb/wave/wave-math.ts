@@ -90,14 +90,18 @@ function _minVisibleBeatSpacingPx(beats: AnlzBeat[], start: number, tRightSec: n
  * Downbeats are wider and brighter; every returned line spans rowHeight.
  * When beats would sit closer than BEAT_LINE_MIN_GAP_PX the grid keeps
  * only every bar, then every 4, 16 or 32 bars (WAVEZOOM-02). Without a
- * trusted bar phase it keeps every Nth beat instead. */
+ * trusted bar phase it keeps every Nth beat instead.
+ * `originPx`, when given, is the whole-pixel offset a cached image was blitted
+ * at: each line then sits at its rounded track pixel minus that offset, the
+ * same pixel as a Gothic block edge snapped to it (DECKUX-42). */
 export function visibleBeatLines(
 	beats: AnlzBeat[],
 	tLeftSec: number,
 	pxPerSec: number,
 	widthCss: number,
 	rowHeight: number,
-	barPhaseUntrusted = false
+	barPhaseUntrusted = false,
+	originPx?: number
 ): BeatLineGeometry[] {
 	if (beats.length === 0) return [];
 	const tRightSec = tLeftSec + widthCss / pxPerSec;
@@ -118,7 +122,8 @@ export function visibleBeatLines(
 			}
 		}
 		const isDownbeat = beat.n === 1 && trustedBar;
-		const x = Math.round((beat.t - tLeftSec) * pxPerSec);
+		// round(a - n) is round(a) - n for a whole n: the edge's own pixel.
+		const x = Math.round(originPx === undefined ? (beat.t - tLeftSec) * pxPerSec : beat.t * pxPerSec - originPx);
 		// A trusted bar and an untrusted beat can each pass their own stride yet sit
 		// one beat apart, so every candidate is checked against the last line drawn.
 		const prev = lines[lines.length - 1];

@@ -1071,6 +1071,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/autodj/pair-transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pair */
+        get: operations["get_pair_api_v1_autodj_pair_transition_get"];
+        /** Put Pair */
+        put: operations["put_pair_api_v1_autodj_pair_transition_put"];
+        post?: never;
+        /** Delete Pair */
+        delete: operations["delete_pair_api_v1_autodj_pair_transition_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/autodj/pair-transition/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Capture */
+        get: operations["get_capture_api_v1_autodj_pair_transition_capture_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/autodj/pair-transition/played": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Played */
+        post: operations["post_played_api_v1_autodj_pair_transition_played_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/autolists/buckets": {
         parameters: {
             query?: never;
@@ -2190,6 +2243,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dj/transition/autoplay-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autoplay Decision
+         * @description AUTOPLAN-06: what AutoPlay has decided, as the page published it. Null decision: the page predates this mirror field.
+         */
+        get: operations["autoplay_decision_api_v1_dj_transition_autoplay_decision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/transition/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Transition
+         * @description AUTOPLAN-03: the window and track AutoPlay will plan for. Nothing renders, so this answers in the time of a poll.
+         */
+        post: operations["decide_transition_api_v1_dj_transition_decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/transition/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan Transition */
+        post: operations["plan_transition_api_v1_dj_transition_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/transition/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare Transition
+         * @description Start scoring the pair if nothing has, and say how far it has got. Safe to call repeatedly.
+         */
+        post: operations["prepare_transition_api_v1_dj_transition_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dj/try": {
         parameters: {
             query?: never;
@@ -2233,6 +2363,26 @@ export interface paths {
         };
         /** Dj Try Candidate Audio */
         get: operations["dj_try_candidate_audio_api_v1_dj_try__job_id__candidates__candidate_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/lanes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Candidate Lanes
+         * @description Both decks' waveforms and knob lines for one candidate's kept render (TRYER-16).
+         */
+        get: operations["candidate_lanes_api_v1_dj_try__job_id__candidates__candidate_id__lanes_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6500,6 +6650,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/title-fix/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Title Fix Proposals */
+        post: operations["apply_title_fix_proposals_api_v1_title_fix_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Title Fix Batches */
+        get: operations["list_title_fix_batches_api_v1_title_fix_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/batches/{batch_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Title Fix Batch */
+        post: operations["undo_title_fix_batch_api_v1_title_fix_batches__batch_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Title Fix Config */
+        get: operations["get_title_fix_config_api_v1_title_fix_config_get"];
+        /** Put Title Fix Config */
+        put: operations["put_title_fix_config_api_v1_title_fix_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Title Fix Key */
+        put: operations["put_title_fix_key_api_v1_title_fix_key_put"];
+        post?: never;
+        /** Delete Title Fix Key */
+        delete: operations["delete_title_fix_key_api_v1_title_fix_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Title Fix Proposals */
+        get: operations["list_title_fix_proposals_api_v1_title_fix_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Title Fix Proposals */
+        post: operations["reject_title_fix_proposals_api_v1_title_fix_reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Title Fix Scans */
+        get: operations["list_title_fix_scans_api_v1_title_fix_scans_get"];
+        put?: never;
+        /**
+         * Start Title Fix Scan
+         * @description Start a scan over the whole library, the first ``limit`` tracks, or explicit ``stable_ids`` (not both: 422).
+         */
+        post: operations["start_title_fix_scan_api_v1_title_fix_scans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/title-fix/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Title Fix Scan */
+        get: operations["get_title_fix_scan_api_v1_title_fix_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks": {
         parameters: {
             query?: never;
@@ -7169,6 +7478,25 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/transition-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Transition In */
+        get: operations["read_transition_in_api_v1_tracks__stable_id__transition_in_get"];
+        /** Set Transition In */
+        put: operations["set_transition_in_api_v1_tracks__stable_id__transition_in_put"];
+        post?: never;
+        /** Clear Transition In */
+        delete: operations["clear_transition_in_api_v1_tracks__stable_id__transition_in_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -8931,6 +9259,21 @@ export interface components {
              */
             workers: number;
         };
+        /** BatchOut */
+        BatchOut: {
+            /** Batch Id */
+            batch_id: string;
+            /** Created At */
+            created_at: string;
+            /** Kind */
+            kind: string;
+            /** Policy */
+            policy: string;
+            /** Proposal Count */
+            proposal_count: number;
+            /** Undone At */
+            undone_at: string | null;
+        };
         /** BeatgridFallbackOut */
         BeatgridFallbackOut: {
             /** Anlz Available */
@@ -9397,6 +9740,32 @@ export interface components {
             };
             /** Vetoes */
             vetoes: components["schemas"]["VetoOut"][];
+        };
+        /** CaptureLastOut */
+        CaptureLastOut: {
+            /** In */
+            in: string;
+            /** Out */
+            out: string;
+            /** Reason */
+            reason: string;
+            /** Status */
+            status: string;
+        };
+        /** CaptureStatusOut */
+        CaptureStatusOut: {
+            /** In */
+            in: string | null;
+            last: components["schemas"]["CaptureLastOut"] | null;
+            /** Out */
+            out: string | null;
+            /** Samples */
+            samples: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "capturing";
         };
         /** CatalogDevice */
         CatalogDevice: {
@@ -10526,6 +10895,30 @@ export interface components {
              * @enum {string}
              */
             type: "deck_hot_cue";
+        };
+        /** DeckLaneOut */
+        DeckLaneOut: {
+            /** Beats */
+            beats: [
+                number,
+                number
+            ][];
+            /** Curves */
+            curves: {
+                [key: string]: [
+                    number,
+                    number
+                ][];
+            };
+            /** Deck */
+            deck: number;
+            /** Peaks */
+            peaks: number[];
+            /** Playing */
+            playing: [
+                number,
+                number
+            ][];
         };
         /** DeckLoopExit */
         DeckLoopExit: {
@@ -12307,6 +12700,23 @@ export interface components {
             /** Word */
             word: string;
         };
+        /** KeyIn */
+        KeyIn: {
+            /** Api Key */
+            api_key: string;
+        };
+        /** KeyStatusOut */
+        KeyStatusOut: {
+            /** Configured */
+            configured: boolean;
+            /** Hint */
+            hint: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "env" | "none";
+        };
         /** KindDefaultIn */
         KindDefaultIn: {
             /** Asset Kind */
@@ -13602,6 +14012,17 @@ export interface components {
         OpsErrorResponse: {
             detail: components["schemas"]["OpsErrorBody"];
         };
+        /** OutcomeOut */
+        OutcomeOut: {
+            /** Applied */
+            applied: string[];
+            /** Batch Id */
+            batch_id: string | null;
+            /** Skipped */
+            skipped: components["schemas"]["SkippedOut"][];
+            /** Warning */
+            warning?: string | null;
+        };
         /** OverrideIn */
         OverrideIn: {
             /**
@@ -13649,6 +14070,63 @@ export interface components {
             viewport_height: number;
             /** Viewport Width */
             viewport_width: number;
+        };
+        /** PairPlayedIn */
+        PairPlayedIn: {
+            /** In */
+            in: string;
+            /** Out */
+            out: string;
+            /** Plan */
+            plan?: {
+                [key: string]: unknown;
+            } | null;
+            /** Source */
+            source?: ("planner" | "captured" | "edited") | null;
+            /** Style */
+            style?: string | null;
+        };
+        /** PairTransitionIn */
+        PairTransitionIn: {
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            };
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "planner" | "captured" | "edited";
+            /** Style */
+            style: string;
+        };
+        /** PairTransitionMetaOut */
+        PairTransitionMetaOut: {
+            /** Created At */
+            created_at: string;
+            /** In Track Id */
+            in_track_id: string;
+            /** Out Track Id */
+            out_track_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "planner" | "captured" | "edited";
+            /** Style */
+            style: string;
+            /** Times Played */
+            times_played: number;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** PairTransitionOut */
+        PairTransitionOut: {
+            meta: components["schemas"]["PairTransitionMetaOut"];
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            };
         };
         /** PairingCreate */
         PairingCreate: {
@@ -14802,6 +15280,68 @@ export interface components {
                 [key: string]: components["schemas"]["PreviewStripOut"] | null;
             };
         };
+        /** ProposalOut */
+        ProposalOut: {
+            /** Batch Id */
+            batch_id: string | null;
+            /** Changes Artist */
+            changes_artist: boolean;
+            /** Changes Title */
+            changes_title: boolean;
+            /** Confidence */
+            confidence: number | null;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Created At */
+            created_at: string;
+            /** Error */
+            error: string;
+            /** Fixer Status */
+            fixer_status: string;
+            /** Jev Kind */
+            jev_kind: string;
+            /** Notes */
+            notes: string[];
+            /** Original Artist */
+            original_artist: string;
+            /** Original Artist Credit */
+            original_artist_credit: string;
+            /** Original Title */
+            original_title: string;
+            /** Proposal Id */
+            proposal_id: string;
+            /** Proposed Artist */
+            proposed_artist: string;
+            /** Proposed Title */
+            proposed_title: string;
+            /** Scan Id */
+            scan_id: string;
+            /** Source */
+            source: string;
+            /** Stable Id */
+            stable_id: string;
+            /** State */
+            state: string;
+            /** Tags */
+            tags: string[];
+            /** Tags Added */
+            tags_added: string[];
+        };
+        /** ProposalsPage */
+        ProposalsPage: {
+            /** Counts By State */
+            counts_by_state: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["ProposalOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /**
          * Provenance
          * @description Where one binding's wire numbers came from. Required on every binding:
@@ -15680,6 +16220,41 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["SyncRowSampleModel"][];
         };
+        /** ScanIn */
+        ScanIn: {
+            /** Limit */
+            limit?: number | null;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
+        /** ScanOut */
+        ScanOut: {
+            /** Auto Apply Policy */
+            auto_apply_policy: string;
+            /** Auto Batch Id */
+            auto_batch_id: string | null;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Processed */
+            processed: number;
+            /** Requested */
+            requested: number;
+            /** Scan Id */
+            scan_id: string;
+            /** Spend Cap Usd */
+            spend_cap_usd: number;
+            /** Started At */
+            started_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "done" | "capped" | "failed";
+        };
         /**
          * ScanStatusOut
          * @description Progress of the on-device library fingerprint scan.
@@ -15864,6 +16439,11 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** SelectionIn */
+        SelectionIn: {
+            /** Proposal Ids */
+            proposal_ids: string[];
+        };
         /** SettingItem */
         SettingItem: {
             /** Key */
@@ -15985,6 +16565,13 @@ export interface components {
              * @enum {string}
              */
             type: "shift_modifier";
+        };
+        /** SkippedOut */
+        SkippedOut: {
+            /** Proposal Id */
+            proposal_id: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * SmartlistConflictBody
@@ -17243,6 +17830,35 @@ export interface components {
             /** Where */
             where: string;
         };
+        /** TitleFixConfigIn */
+        TitleFixConfigIn: {
+            /**
+             * Auto Apply Policy
+             * @enum {string}
+             */
+            auto_apply_policy: "off" | "safe_tier" | "gate_approved";
+            /** Enabled */
+            enabled: boolean;
+            /** Spend Cap Usd */
+            spend_cap_usd: number;
+            /** Tag Families */
+            tag_families: ("version" | "context" | "cover" | "project")[];
+        };
+        /** TitleFixConfigOut */
+        TitleFixConfigOut: {
+            /**
+             * Auto Apply Policy
+             * @enum {string}
+             */
+            auto_apply_policy: "off" | "safe_tier" | "gate_approved";
+            /** Enabled */
+            enabled: boolean;
+            key: components["schemas"]["KeyStatusOut"];
+            /** Spend Cap Usd */
+            spend_cap_usd: number;
+            /** Tag Families */
+            tag_families: ("version" | "context" | "cover" | "project")[];
+        };
         /** TodoCreateIn */
         TodoCreateIn: {
             /** Detail */
@@ -17922,6 +18538,201 @@ export interface components {
              */
             non_music_hidden: number;
         };
+        /** TransitionDecideIn */
+        TransitionDecideIn: {
+            /** Earliest Ms */
+            earliest_ms: number;
+            /** In Deck */
+            in_deck: number;
+            /** Intent */
+            intent?: string | null;
+            /** Out Deck */
+            out_deck: number;
+            /** Recent Styles */
+            recent_styles?: string[];
+            /** Shortlist */
+            shortlist: string[];
+            /** Target Ms */
+            target_ms: number;
+        };
+        /** TransitionDecideOut */
+        TransitionDecideOut: {
+            /** Bars */
+            bars: number | null;
+            /**
+             * M Measured
+             * @constant
+             */
+            m_measured: false;
+            /** Out Bar Now */
+            out_bar_now: number;
+            /** Reason */
+            reason: string;
+            /** Rejected */
+            rejected: {
+                [key: string]: string;
+            }[];
+            /** Style */
+            style: string | null;
+            /** Track */
+            track: string | null;
+            window: components["schemas"]["TransitionWindowOut"] | null;
+            /** Windows */
+            windows: components["schemas"]["TransitionWindowOut"][];
+        };
+        /** TransitionInClearOut */
+        TransitionInClearOut: {
+            /** Cleared */
+            cleared: boolean;
+            /** Cue */
+            cue?: null;
+        };
+        /** TransitionInCueOut */
+        TransitionInCueOut: {
+            /** In Ms */
+            in_ms: number;
+            /** Kind */
+            kind: string;
+        };
+        /** TransitionInReadOut */
+        TransitionInReadOut: {
+            cue: components["schemas"]["TransitionInCueOut"] | null;
+        };
+        /** TransitionInSetIn */
+        TransitionInSetIn: {
+            /**
+             * In Ms
+             * @description Where the transition should land, in ms. Snapped to the nearest downbeat.
+             */
+            in_ms: number;
+        };
+        /** TransitionInSetOut */
+        TransitionInSetOut: {
+            /**
+             * Bar
+             * @description 1-based bar on the track's downbeats, as the AutoDJ planner counts them
+             */
+            bar: number;
+            cue: components["schemas"]["TransitionInCueOut"];
+            /** Requested Ms */
+            requested_ms: number;
+        };
+        /** TransitionPickOut */
+        TransitionPickOut: {
+            /** Bars */
+            bars: number;
+            /** Candidate */
+            candidate: string;
+            /** Out Start Bar */
+            out_start_bar: number;
+            /** Rationale */
+            rationale: string;
+            /** Score */
+            score: number | null;
+            /** Style */
+            style: string;
+        };
+        /** TransitionPlanIn */
+        TransitionPlanIn: {
+            /** From Ms */
+            from_ms?: number | null;
+            /** In Deck */
+            in_deck: number;
+            /** Intent */
+            intent?: string | null;
+            /** Out Deck */
+            out_deck: number;
+            /** Recent Styles */
+            recent_styles?: string[];
+            /**
+             * Take Incoming
+             * @default false
+             */
+            take_incoming: boolean;
+        };
+        /** TransitionPlanOut */
+        TransitionPlanOut: {
+            /** Considered */
+            considered: number;
+            /** Intent */
+            intent: string;
+            /** Order */
+            order: {
+                [key: string]: unknown;
+            } | null;
+            /** Out Bar Now */
+            out_bar_now: number | null;
+            pick: components["schemas"]["TransitionPickOut"] | null;
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            } | null;
+            /** Plan Ms */
+            plan_ms: number;
+            /** Propose Ms */
+            propose_ms: number;
+            /** Reason */
+            reason: string;
+            /** Render Ms */
+            render_ms: number;
+            /** Rendered */
+            rendered: number;
+            /** Saved */
+            saved: boolean;
+            /** Scored */
+            scored: boolean;
+        };
+        /** TransitionPrepareIn */
+        TransitionPrepareIn: {
+            /** From Ms */
+            from_ms?: number | null;
+            /** In Deck */
+            in_deck: number;
+            /** Intent */
+            intent?: string | null;
+            /** Out Deck */
+            out_deck: number;
+            /**
+             * Status Only
+             * @default false
+             */
+            status_only: boolean;
+        };
+        /** TransitionPrepareOut */
+        TransitionPrepareOut: {
+            /** Candidates */
+            candidates: number;
+            /** In Track */
+            in_track: string | null;
+            /** Reason */
+            reason: string;
+            /** Render Ms */
+            render_ms: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "warming" | "ready" | "failed";
+        };
+        /** TransitionWindowOut */
+        TransitionWindowOut: {
+            /** Energy */
+            energy: number | null;
+            /** Label */
+            label: string;
+            /** Max Bars */
+            max_bars: number;
+            /** Reason */
+            reason: string;
+            /** Score */
+            score: number;
+            /** Start Bar */
+            start_bar: number;
+            /** Start Ms */
+            start_ms: number;
+            /** Vocal Free Bars */
+            vocal_free_bars: number | null;
+        };
         /** TryIn */
         TryIn: {
             /**
@@ -17967,6 +18778,15 @@ export interface components {
             pick: components["schemas"]["PickOut"] | null;
             /** Scorer Version */
             scorer_version: string;
+        };
+        /** TryLanesOut */
+        TryLanesOut: {
+            /** Candidate */
+            candidate: string;
+            /** Decks */
+            decks: components["schemas"]["DeckLaneOut"][];
+            /** Duration S */
+            duration_s: number;
         };
         /** UiPrefsOut */
         UiPrefsOut: {
@@ -18262,6 +19082,14 @@ export interface components {
             /** Vocals Filter */
             vocals_filter?: boolean | null;
             wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
+        };
+        /** UndoIn */
+        UndoIn: {
+            /**
+             * Skip Conflicts
+             * @default false
+             */
+            skip_conflicts: boolean;
         };
         /** UndoRecordOut */
         UndoRecordOut: {
@@ -20825,6 +21653,183 @@ export interface operations {
             };
         };
     };
+    get_pair_api_v1_autodj_pair_transition_get: {
+        parameters: {
+            query: {
+                out: string;
+                in: string;
+                out_deck?: number | null;
+                in_deck?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairTransitionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    put_pair_api_v1_autodj_pair_transition_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairTransitionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairTransitionOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_pair_api_v1_autodj_pair_transition_delete: {
+        parameters: {
+            query: {
+                out: string;
+                in: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_capture_api_v1_autodj_pair_transition_capture_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaptureStatusOut"];
+                };
+            };
+        };
+    };
+    post_played_api_v1_autodj_pair_transition_played_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairPlayedIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairTransitionOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_buckets_api_v1_autolists_buckets_get: {
         parameters: {
             query: {
@@ -23071,6 +24076,161 @@ export interface operations {
             };
         };
     };
+    autoplay_decision_api_v1_dj_transition_autoplay_decision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    decide_transition_api_v1_dj_transition_decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionDecideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionDecideOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    plan_transition_api_v1_dj_transition_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionPlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionPlanOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    prepare_transition_api_v1_dj_transition_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionPrepareIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionPrepareOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     start_try_api_v1_dj_try_post: {
         parameters: {
             query?: never;
@@ -23179,6 +24339,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    candidate_lanes_api_v1_dj_try__job_id__candidates__candidate_id__lanes_get: {
+        parameters: {
+            query?: {
+                columns?: number;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TryLanesOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -30972,6 +32175,433 @@ export interface operations {
             };
         };
     };
+    apply_title_fix_proposals_api_v1_title_fix_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomeOut"];
+                };
+            };
+            /** @description a track changed mid-write */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_title_fix_batches_api_v1_title_fix_batches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_title_fix_batch_api_v1_title_fix_batches__batch_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UndoIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomeOut"];
+                };
+            };
+            /** @description unknown batch */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict or already undone */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_title_fix_config_api_v1_title_fix_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleFixConfigOut"];
+                };
+            };
+        };
+    };
+    put_title_fix_config_api_v1_title_fix_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleFixConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleFixConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_title_fix_key_api_v1_title_fix_key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyStatusOut"];
+                };
+            };
+            /** @description not the local operator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_title_fix_key_api_v1_title_fix_key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyStatusOut"];
+                };
+            };
+            /** @description not the local operator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_title_fix_proposals_api_v1_title_fix_proposals_get: {
+        parameters: {
+            query?: {
+                state?: ("pending" | "applied" | "rejected" | "superseded" | "stale" | "undone" | "noop") | "any";
+                fixer_status?: ("clean" | "fixed" | "review" | "not_music" | "project" | "unknown") | null;
+                source?: string | null;
+                tag?: string | null;
+                scan_id?: string | null;
+                batch_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_title_fix_proposals_api_v1_title_fix_reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_title_fix_scans_api_v1_title_fix_scans_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_title_fix_scan_api_v1_title_fix_scans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description a requested stable_id does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description disabled, key missing, scan running, or no state.db */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_title_fix_scan_api_v1_title_fix_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description unknown scan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tracks_api_v1_tracks_get: {
         parameters: {
             query?: {
@@ -32173,6 +33803,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
+            };
+        };
+    };
+    read_transition_in_api_v1_tracks__stable_id__transition_in_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionInReadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_transition_in_api_v1_tracks__stable_id__transition_in_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionInSetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionInSetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_transition_in_api_v1_tracks__stable_id__transition_in_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransitionInClearOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

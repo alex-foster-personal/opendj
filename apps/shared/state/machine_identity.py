@@ -4,7 +4,7 @@
 file at ``<data-dir>/machine-id`` (mode 0600), NOT in the state DB. That
 split is the whole point: a DB restored from Litestream onto a different
 machine must not inherit the old machine's identity and start impersonating
-it in ``hub_changelog`` (specs/design_decision_05.md, section 1).
+it in ``hub_changelog`` ((private path), section 1).
 
 Nothing here guesses. An unknown platform, an unwritable data dir, a
 corrupt id file or an ambiguous ``MDT_IS_HUB`` value all raise
@@ -140,6 +140,28 @@ def get_or_create_machine_id(data_dir: Path) -> str:
     return _validate_machine_id(existing, path)
 
 
+def read_machine_id(data_dir: Path) -> str | None:
+    """This machine's id if ``data_dir`` already has one, else None. Never mints.
+
+    For read-only paths (a dry-run plan, a snapshot copy of a data dir) that
+    must not create the id file :func:`get_or_create_machine_id` would. No id
+    file means no location row can name this machine, so the caller's answer
+    is the one without machine-local locations. Raises
+    :class:`MachineIdentityError` on a file that exists but is unreadable or
+    malformed, exactly as the minting path does.
+    """
+    path = machine_id_path(Path(data_dir))
+    try:
+        existing = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise MachineIdentityError(
+            f"machine id file {path} exists but is unreadable: {exc}"
+        ) from exc
+    return _validate_machine_id(existing, path)
+
+
 # ----- environment / platform ---------------------------------------------
 
 
@@ -202,9 +224,10 @@ def register_machine(
     ``first_seen`` is stamped once and never rewritten; ``last_seen`` moves
     on every call, so this doubles as the liveness heartbeat. Idempotent.
 
-    ``machines.name`` is UNIQUE: two machines sharing a hostname raise
-    :class:`sqlite3.IntegrityError` here instead of quietly overwriting each
-    other's fleet row.
+    ``machines.name`` is UNIQUE. If a restored or re-registered data directory
+    already has that name under another machine id, registration refreshes the
+    existing row and adopts its stored identity instead of changing a primary
+    key that other synced rows may reference.
 
     ``last_seen`` is stamped through :func:`apps.shared.state.sync_stamp.
     canonical_now`, not a local ``datetime.isoformat()`` call (round 3 finding
@@ -221,7 +244,7 @@ def register_machine(
         data_root=str(Path(data_dir)),
     )
     stamp = now or sync_stamp.canonical_now()
-    conn.execute(
+    row = conn.execute(
         """
         INSERT INTO machines(
             machine_id, name, platform, is_hub, data_root,
@@ -234,6 +257,9 @@ def register_machine(
             is_hub    = excluded.is_hub,
             data_root = excluded.data_root,
             last_seen = excluded.last_seen
+        ON CONFLICT DO UPDATE SET
+            last_seen = excluded.last_seen
+        RETURNING machine_id, name, platform, is_hub, data_root
         """,
         (
             identity.machine_id,
@@ -244,8 +270,16 @@ def register_machine(
             stamp,
             stamp,
         ),
+    ).fetchone()
+    if row is None:
+        raise MachineIdentityError("machine registration did not return a machines row")
+    return MachineIdentity(
+        machine_id=str(row[0]),
+        name=str(row[1]),
+        platform=str(row[2]),
+        is_hub=bool(row[3]),
+        data_root=str(row[4]),
     )
-    return identity
 
 
 def load_machine(conn: sqlite3.Connection, machine_id: str) -> MachineIdentity | None:
@@ -276,5 +310,6 @@ __all__ = [
     "is_hub_from_env",
     "load_machine",
     "machine_id_path",
+    "read_machine_id",
     "register_machine",
 ]

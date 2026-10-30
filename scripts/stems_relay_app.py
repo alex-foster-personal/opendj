@@ -28,27 +28,30 @@ from apps.stems.relay.app import build_app
 
 
 def modal_backend(
-    audio_bytes: bytes, stable_id: str, source_name: str, tier_key: str
+    audio_bytes: bytes,
+    stable_id: str,
+    source_name: str,
+    tier_key: str,
+    stem_codec: str | None = None,
 ) -> dict[str, Any]:
-    """Separate one track on Modal, with THIS process's credential."""
-    import scripts.modal_vocal_farm as farm
-    from apps.stems.tiers import get_tier
+    """Separate one track on Modal, with THIS process's credential.
 
-    preset = farm._resolve_preset(get_tier(tier_key).preset_tag, False)
+    Everything that can refuse the track runs before ``.remote()`` buys a GPU
+    (STEM-75): the source extension against the tier's codec policy (before
+    the farm, and so modal, is even imported), then the farm's mirror guard.
+    """
+    from apps.stems.bundle_publish import preset_for_tier
+
+    # The test-pinned modal-free mirror of the farm's preset table, so every
+    # refusal below happens before the farm, and so modal, is imported.
+    preset = preset_for_tier(tier_key)
+    args = relay_route_args(audio_bytes, stable_id, source_name, tier_key, preset, stem_codec)
+
+    import scripts.modal_vocal_farm as farm
+
+    farm.assert_route_contract()
     with farm.app.run():
-        result = farm.separate_track.remote(
-            audio_bytes,
-            stable_id,
-            source_name,
-            preset.model,
-            preset.overlap,
-            preset.shifts,
-            "local",  # return the stem bytes to this process
-            source_name,
-            preset.stamp(),
-            "",
-            farm.DEFAULT_STEM_CODEC,
-        )
+        result = farm.separate_track.remote(*args)
     if result.get("error"):
         raise RuntimeError(result["error"])
     result["preset"] = preset.stamp()
@@ -56,9 +59,42 @@ def modal_backend(
     return result
 
 
+def relay_route_args(
+    audio_bytes: bytes,
+    stable_id: str,
+    source_name: str,
+    tier_key: str,
+    preset: Any,
+    stem_codec: str | None = None,
+) -> tuple[Any, ...]:
+    """The ``separate_track`` arguments for one relay separation.
+
+    MP3 via the size ladder for an MP3/M4A source, FLAC for a lossless one or
+    when the tier itself is FLAC (STEM-75). A source extension with no
+    output-format policy raises ``UnknownSourceFormatError`` here, before
+    anything is dispatched, rather than inside the GPU container.
+    ``stem_codec`` is the relay's choice for its client
+    (``stem_codec_for_client``: FLAC for one that writes only FLAC); None
+    applies the tier's policy.
+    """
+    from apps.stems.bundle_publish import (
+        route_stem_codec_for_source,
+        separate_track_args,
+    )
+
+    return separate_track_args(
+        audio_bytes=audio_bytes,
+        stable_id=stable_id,
+        name=source_name,
+        source_path=source_name,
+        preset=preset,
+        stem_codec=stem_codec or route_stem_codec_for_source(tier_key, source_name),
+    )
+
+
 def build_relay_app() -> FastAPI:
     """The relay with the Modal backend; every other gate resolves from the environment."""
     return build_app(backend=modal_backend)
 
 
-__all__ = ["build_relay_app", "modal_backend"]
+__all__ = ["build_relay_app", "modal_backend", "relay_route_args"]

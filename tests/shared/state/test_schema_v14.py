@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state.migrations_v14 import _V14
 
@@ -71,6 +72,8 @@ def test_v13_db_migrates_forbid_duplicates(tmp_path: Path) -> None:
         assert row[0] == 0
     finally:
         conn.close()
+
+    state_db.open_rw(path).close()
 
     fresh = sqlite3.connect(":memory:")
     state_schema.apply_migrations(fresh)

@@ -28,12 +28,10 @@
  */
 // requirement: CHROME-02
 import { expect, test, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
-import { bundleSvelteHarness } from './support/svelte-harness-bundle';
+import { bundleSvelteHarness, readSrcForHarness } from './support/svelte-harness-bundle';
 
-const THEME_CSS = fileURLToPath(new URL('../../src/lib/rb/theme.css', import.meta.url));
+const THEME_CSS = 'src/lib/rb/theme.css';
 
 const HARNESS = `<script>
 	import CloudStatusIcon from '$lib/components/rb/browser/CloudStatusIcon.svelte';
@@ -60,7 +58,7 @@ let themeCss = '';
 
 test.beforeAll(async () => {
 	script = await bundleSvelteHarness(HARNESS);
-	themeCss = await readFile(THEME_CSS, 'utf8');
+	themeCss = await readSrcForHarness(THEME_CSS);
 });
 
 async function mount(page: Page, theme: 'dark' | 'light'): Promise<void> {

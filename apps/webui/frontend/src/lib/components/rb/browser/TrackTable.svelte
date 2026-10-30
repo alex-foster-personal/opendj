@@ -283,7 +283,10 @@
 		return keyMatch(key) !== null;
 	}
 
-	let keyHover = $state<{ row: BrowserRow; x: number; y: number } | null>(null);
+	let keyHover = $state<{
+		row: BrowserRow;
+		anchor: { left: number; top: number; width: number; height: number };
+	} | null>(null);
 	// The hover card loads on the first key hover, so it stays out of the
 	// library route's initial bundle (bundle budget, scripts/check-bundle-size.sh).
 	let KeyHoverCard = $state<Component<{
@@ -291,8 +294,7 @@
 		shift: number;
 		shiftedKey: string | null;
 		note?: string | null;
-		x: number;
-		y: number;
+		anchor: { left: number; top: number; width: number; height: number };
 		onDismiss: () => void;
 	}> | null>(null);
 	let keyHoverCardLoad: Promise<void> | null = null;
@@ -313,7 +315,10 @@
 			);
 		}
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		keyHover = { row, x: rect.left + rect.width / 2, y: rect.top };
+		keyHover = {
+			row,
+			anchor: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+		};
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
@@ -2494,8 +2499,7 @@
 		shift={hoverMatch?.shift ?? 0}
 		shiftedKey={hoverMatch?.key ?? null}
 		note={keyCellInert(keyHover.row) ? keyCellTitle(keyHover.row) : null}
-		x={keyHover.x}
-		y={keyHover.y}
+		anchor={keyHover.anchor}
 		onDismiss={() => (keyHover = null)}
 	/>
 {/if}

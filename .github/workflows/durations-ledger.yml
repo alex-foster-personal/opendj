@@ -27,6 +27,11 @@ on:
 
 env:
   PYTHONDONTWRITEBYTECODE: "1"
+  # The shard durations artifacts are read from Cloudflare R2 (scripts/r2_artifact.py).
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
 
 # contents: write moves the ci-data ref (the git data API); nothing else is written.
 permissions:
@@ -93,7 +98,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # The committed seed and the script come from main, whatever ref a
           # manual dispatch names.
@@ -135,3 +140,29 @@ jobs:
           [ -f "$ledger" ] || { echo "[durations-ledger] nothing fresh built; the published ledger stays"; exit 0; }
           py="$(command -v python3)"
           "$py" -m scripts.ci_durations_ledger publish --repo "$GITHUB_REPOSITORY" --ledger "$ledger"
+
+      # The root Playwright footprint map (TEST-BUDGET round 3,
+      # scripts/e2e_footprints_refresh.py): the same shape as the ledger above,
+      # from the newest main-push e2e.yml run's `e2e-spec-footprints` artifact to
+      # the ci-data-e2e branch. With no fresh run this writes nothing and keeps
+      # the published map (red only past 7 days, when the scope job has already
+      # fallen back to the full suite).
+      - name: Build the e2e footprint map from the newest main run
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          py="$(command -v python3)"
+          "$py" -m scripts.e2e_footprints_refresh ledger \
+            --repo "$GITHUB_REPOSITORY" \
+            --out "$RUNNER_TEMP/e2e-footprints/.spec_footprints.json"
+
+      - name: Publish the e2e footprint map to the ci-data-e2e branch
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          map="$RUNNER_TEMP/e2e-footprints/.spec_footprints.json"
+          [ -f "$map" ] || { echo "[e2e-footprints] nothing fresh built; the published map stays"; exit 0; }
+          py="$(command -v python3)"
+          "$py" -m scripts.e2e_footprints_refresh publish --repo "$GITHUB_REPOSITORY" --map "$map"

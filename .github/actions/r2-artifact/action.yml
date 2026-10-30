@@ -1,0 +1,63 @@
+name: R2 artifact
+description: >-
+  Upload or download a CI artifact on Cloudflare R2 in place of GitHub Actions artifact
+  storage (account quota incident Fri 30 Oct 2026). Objects live at
+  ci/<repo>/<run_id>/<name>.tar.gz, or ci/<repo>/shared/<name>.tar.gz when shared is true;
+  a 14-day bucket lifecycle rule on ci/ expires them. Any failure fails the step.
+  Needs env CI_ARTIFACT_R2_ACCOUNT_ID, CI_ARTIFACT_R2_ACCESS_KEY_ID, CI_ARTIFACT_R2_SECRET_ACCESS_KEY, CI_ARTIFACT_R2_BUCKET (set once at
+  workflow level from the ARTIFACT_ARCHIVE_R2_* secrets and variable).
+inputs:
+  mode:
+    description: upload or download
+    required: true
+  name:
+    description: Artifact name
+    required: true
+  path:
+    description: Upload - newline-separated globs. Download - directory to extract into.
+    required: true
+  include-hidden-files:
+    description: Upload - include dotfiles (upload-artifact parity)
+    required: false
+    default: "false"
+  if-no-files-found:
+    description: Upload - error, warn or ignore
+    required: false
+    default: "error"
+  shared:
+    description: Key by name only (not run id), for artifacts other runs look up by SHA
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: R2 ${{ inputs.mode }} ${{ inputs.name }}
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_HIDDEN: ${{ inputs.include-hidden-files }}
+        INPUT_IF_NO_FILES: ${{ inputs.if-no-files-found }}
+        INPUT_SHARED: ${{ inputs.shared }}
+        SCRIPT: ${{ github.workspace }}/scripts/r2_artifact.py
+      run: |
+        set -euo pipefail
+        py="$(command -v python3 || command -v python)"
+        # A python.org build has no CA store of its own (mac-megamac, Fri 30 Oct 2026).
+        [ "$(uname)" != Darwin ] || export SSL_CERT_FILE="${SSL_CERT_FILE:-/etc/ssl/cert.pem}"
+        shared=()
+        [ "$INPUT_SHARED" = "true" ] && shared=(--shared)
+        case "$INPUT_MODE" in
+          upload)
+            "$py" "$SCRIPT" upload --name "$INPUT_NAME" --path "$INPUT_PATH" \
+              --include-hidden-files "$INPUT_HIDDEN" --if-no-files-found "$INPUT_IF_NO_FILES" ${shared[@]+"${shared[@]}"}
+            ;;
+          download)
+            "$py" "$SCRIPT" download --name "$INPUT_NAME" --dest "$INPUT_PATH" ${shared[@]+"${shared[@]}"}
+            ;;
+          *)
+            echo "::error title=r2-artifact::mode must be upload or download, got '$INPUT_MODE'"
+            exit 1
+            ;;
+        esac

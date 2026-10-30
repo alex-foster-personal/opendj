@@ -28,6 +28,7 @@ from apps.opendj_cli import (
     EXIT_NO_ENGINE,
     EXIT_NO_PAGE,
     EXIT_UNCONFIRMED,
+    dj_pair_cli,
     dj_try_cli,
 )
 from apps.opendj_cli.dj_service import AMEND_ACTIONS, DjError, DjService
@@ -48,7 +49,7 @@ _REFUSED_CODES = frozenset(
         "plan_busy",
         "plan_unconfirmed",
         "amend_refused",
-        "autoplay_on",
+        "autoplay_handoff",
         "deck_busy",
         "order_failed",
         "load_unconfirmed",
@@ -99,6 +100,13 @@ def _parser() -> _Parser:
         command = tools.add_parser(name, help=text)
         command.add_argument("plan", help="path to a plan JSON file, or - for stdin")
     tools.add_parser("try", help="render and rank candidate transitions; see opendj dj try --help", add_help=False)
+    tools.add_parser(
+        "pair-transition",
+        help="the saved transition for two tracks; see opendj dj pair-transition --help",
+        add_help=False,
+    )
+    tools.add_parser("autoplay-decision", help="AutoPlay's next decision: its window, track and plan")
+    tools.add_parser("autoplay-decide", help="have AutoPlay decide now rather than at its target")
     amend = tools.add_parser("amend", help="abort, finish_now or extend a scheduled plan")
     amend.add_argument("plan_id")
     amend.add_argument("action", choices=AMEND_ACTIONS)
@@ -120,10 +128,18 @@ def _read_plan(source: str) -> dict[str, Any]:
     return document
 
 
+_NO_ARGUMENT_CALLS: dict[str, Callable[[DjService], dict[str, Any]]] = {
+    "state": DjService.mix_state,
+    "styles": DjService.styles,
+    "autoplay-decision": DjService.autoplay_decision,
+    "autoplay-decide": DjService.autoplay_decide_now,
+}
+
+
 def _call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
     tool = args.tool
-    if tool == "state":
-        return lambda service: service.mix_state()
+    if tool in _NO_ARGUMENT_CALLS:
+        return _NO_ARGUMENT_CALLS[tool]
     if tool == "profile":
         return lambda service: service.track_profile(args.stable_id)
     if tool == "windows":
@@ -134,17 +150,13 @@ def _call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
         )
     if tool == "suggest":
         return lambda service: service.suggest_next(args.stable_id, None, args.top)
-    if tool == "styles":
-        return lambda service: service.styles()
     if tool == "propose":
         return lambda service: service.propose(
             args.in_stable_id, out_deck=args.out_deck, in_deck=args.in_deck, intent=args.intent, top=args.top
         )
     if tool in ("validate", "schedule"):
         plan = _read_plan(args.plan)
-        if tool == "validate":
-            return lambda service: service.validate(plan)
-        return lambda service: service.schedule(plan)
+        return (lambda service: service.validate(plan)) if tool == "validate" else (lambda service: service.schedule(plan))
     return lambda service: service.amend(args.plan_id, args.action, args.bars)
 
 
@@ -169,6 +181,8 @@ def run(
     """Run one ``opendj dj`` tool; ``service_factory`` is the tests' seam."""
     if rest and rest[0] == "try":  # its own parser: options plus pick/undo actions
         return dj_try_cli.run(rest[1:], lock=lock)
+    if rest and rest[0] == "pair-transition":
+        return dj_pair_cli.run(rest[1:], lock=lock)
     try:
         args = _parser().parse_args(list(rest))
         call = _call(args)
@@ -181,6 +195,14 @@ def run(
     if args.tool == "verbs":  # the same document as the MCP list_verbs tool, also static
         _emit({"verbs": describe_verbs()})
         return EXIT_CONFIRMED
+    return _run_on_engine(call, lock, service_factory)
+
+
+def _run_on_engine(
+    call: Callable[[DjService], Any],
+    lock: Path | None,
+    service_factory: Callable[[Path | None], DjService] | None,
+) -> int:
     try:
         service = (
             service_factory(lock) if service_factory is not None else DjService(origin=resolve_verified_origin(lock))

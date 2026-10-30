@@ -25,8 +25,10 @@ from typing import Any
 #: 0.5.0 = round 10 (a beat whose kick band is absent is timed on the 2-8 kHz band);
 #: 0.6.0 = round 14 (loudness_continuity weight 0.4; loudness_loss veto, wind-down exempt);
 #: 0.7.0 = round 15 (bass_overlap counts beats with both lows near full; low_continuity factor; true peak vs the louder deck).
+#: 0.7.1 = low_hole's switch ignores beats with no bass on either deck and falls back to the plan's bass hit.
 #: Versioning rule: ADR-NEW-transition-quality-measure.
-SCORER_VERSION = "0.7.0"
+#: 0.8.0 = round 22: true peak is reported only (hygiene, the maintainer never heard an over), no veto and no weight.
+SCORER_VERSION = "0.8.0"
 #: The core factors ``measured`` counts (k of n); a composite needs at least
 #: :data:`MIN_CORE_MEASURED` of them (spec 10 section 3).
 CORE_FACTORS: tuple[str, ...] = (

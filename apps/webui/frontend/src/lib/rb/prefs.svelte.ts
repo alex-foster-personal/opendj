@@ -36,6 +36,7 @@ import {
 	type PlaylistTreeViewMode
 } from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
+import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, DEFAULT_DECIDE_AFTER_S } from '$lib/rb/auto-play-early';
 import {
 	parseWaveformDesignPref,
 	WAVEFORM_DESIGN_PREF_DEFAULT,
@@ -245,6 +246,10 @@ export interface RbUiPrefs
 	 * onward options (slack / maximize reachable chain). Off = greedy earliest.
 	 */
 	auto_play_maximize_reach: boolean;
+	/** AUTOPLAN-01: decide around the soft target and plan the handoff; off restores the end-of-track handoff alone. */
+	auto_play_early_planning: boolean;
+	/** AUTOPLAN-01: the soft target, seconds on the master. Taste, to calibrate by ear. */
+	auto_play_decide_after_s: number;
 	/** Light/dark chrome. Default dark. Applied to documentElement. */
 	theme: UiTheme;
 	/** Hide grayed PARITY-TODO rows in the settings overlay. */
@@ -370,6 +375,8 @@ const DEFAULTS: RbUiPrefs = {
 	auto_play_enabled: true,
 	auto_play_enforce_order: false,
 	auto_play_maximize_reach: true,
+	auto_play_early_planning: true,
+	auto_play_decide_after_s: DEFAULT_DECIDE_AFTER_S,
 	theme: 'dark',
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
@@ -601,6 +608,25 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (auto_play_enabled is not a boolean) - ` +
 				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.auto_play_early_planning !== undefined && typeof parsed.auto_play_early_planning !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_early_planning is not a boolean) - ` +
+				`${JSON.stringify(parsed.auto_play_early_planning)}`
+		);
+	}
+	if (
+		parsed.auto_play_decide_after_s !== undefined &&
+		!(
+			typeof parsed.auto_play_decide_after_s === 'number' &&
+			parsed.auto_play_decide_after_s >= DECIDE_AFTER_MIN_S &&
+			parsed.auto_play_decide_after_s <= DECIDE_AFTER_MAX_S
+		)
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_decide_after_s is not ${DECIDE_AFTER_MIN_S}..${DECIDE_AFTER_MAX_S}) - ` +
+				`${JSON.stringify(parsed.auto_play_decide_after_s)}`
 		);
 	}
 	if (
@@ -839,6 +865,8 @@ function _assembleLoadedPrefs(
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
 		auto_play_maximize_reach:
 			parsed.auto_play_maximize_reach ?? DEFAULTS.auto_play_maximize_reach,
+		auto_play_early_planning: parsed.auto_play_early_planning ?? DEFAULTS.auto_play_early_planning,
+		auto_play_decide_after_s: parsed.auto_play_decide_after_s ?? DEFAULTS.auto_play_decide_after_s,
 		theme: theme ?? DEFAULTS.theme,
 		hide_todo_settings: parsed.hide_todo_settings ?? DEFAULTS.hide_todo_settings,
 		auto_sync: autoSync,
@@ -1054,6 +1082,13 @@ export function setAutoPlayEnforceOrder(next: boolean): void {
 
 export function setAutoPlayMaximizeReach(next: boolean): void {
 	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_maximize_reach', next);
+}
+
+/** AUTOPLAN-01: local to this page, like the other AutoPlay menu choices that no engine reads. */
+export function setAutoPlayEarly(change: { enabled?: boolean; decide_after_s?: number }): void {
+	if (change.enabled !== undefined) uiPrefs.auto_play_early_planning = change.enabled;
+	if (change.decide_after_s !== undefined) uiPrefs.auto_play_decide_after_s = change.decide_after_s;
+	_persist();
 }
 
 /** Collapse one suggestion panel while retaining the other panel's state. */
@@ -1386,6 +1421,7 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	onSupersededDiskValue: (_key, diskValue) => {
 		// The DJ picked while the GET was in flight: their value stands.
 		if (_radialPicked) return;
+		if (diskValue === true && uiPrefs.jog_radial_waveform === true) return;
 		if (diskValue === true) _settleRadialOff();
 		else if (diskValue === false || diskValue === undefined) _clearRadialOffPending();
 		else

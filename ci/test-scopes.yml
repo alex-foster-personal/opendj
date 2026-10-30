@@ -81,7 +81,7 @@ scopes:
   - name: analysis_bench
     sources: ["apps/analysis_bench/"]
     tests: ["tests/analysis_bench/"]
-    dependents: ["analysis_beatgrid", "analysis_key", "analysis_waveform", "beatbench", "cloudsync", "lyrics", "parity", "perf", "quality", "scripts", "shared", "stems", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_key", "analysis_waveform", "beatbench", "cloud", "cloudsync", "engine_core", "entitlements", "lyrics", "opendj_cli", "parity", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
   - name: analysis_key
     sources: ["apps/analysis_key/"]
     tests: ["tests/analysis_key/"]
@@ -137,7 +137,7 @@ scopes:
   - name: launcher
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
-    dependents: ["analysis_bench", "analysis_key", "analysis_waveform", "cloudsync", "engine_core", "lyrics", "parity", "perf", "quality", "scripts", "shared", "stems", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "cloud", "cloudsync", "engine_core", "entitlements", "lyrics", "opendj_cli", "parity", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
   - name: loudness
     sources: ["apps/loudness/"]
     tests: ["tests/loudness/"]
@@ -214,6 +214,7 @@ scopes:
   - name: tags
     sources: ["apps/tags/"]
     tests: ["tests/tags/"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
   - name: vocals
     sources: ["apps/vocals/"]
     tests: ["tests/vocals/"]
@@ -281,7 +282,7 @@ scopes:
   - name: beatbench
     sources: ["(private path)/", "scripts/beatbench/"]
     tests: ["tests/beatbench/"]
-    dependents: ["analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "cloudsync", "lyrics", "parity", "perf", "quality", "scripts", "shared", "stems", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "cloud", "cloudsync", "engine_core", "entitlements", "lyrics", "opendj_cli", "parity", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
   - name: cloudsync
     sources: ["ops/cloudsync/"]
     tests: ["tests/cloudsync/"]
@@ -315,7 +316,7 @@ scopes:
   - name: scripts
     sources: ["scripts/"]
     tests: ["tests/scripts/"]
-    dependents: ["analysis_bench", "analysis_key", "analysis_waveform", "cloudsync", "lyrics", "parity", "perf", "quality", "shared", "stems", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "cloud", "cloudsync", "engine_core", "entitlements", "lyrics", "opendj_cli", "parity", "perf", "quality", "shared", "standalone", "stems", "vocals", "webui"]
   - name: bench_tryer_calibration
     sources: ["scripts/bench/tryer_calibration/"]
     # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;

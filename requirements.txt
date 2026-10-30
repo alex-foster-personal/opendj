@@ -1,4 +1,4 @@
-pyrekordbox>=0.4.4
+pyrekordbox>=0.4.4,<0.5  # <0.5: 0.5.0 renamed pyrekordbox.db6; mirrors pyproject.toml
 # CAT-06 (Phase 10 Pioneer USB read path): kaitai runtime for the vendored
 # rekordbox_pdb parser at apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py.
 kaitaistruct>=0.11
@@ -193,7 +193,7 @@ cryptography>=50.0.0,<51
 # Both are true, only the isolated one is comparable to ops/quality/baseline.json.
 mypy==2.3.1
 coverage[toml]>=7.4
-soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
+soundfile>=0.13  # test fixtures generate click/WAV files for analysis tests
 # Profiling the Python the perf harness LAUNCHES (never a running task; macOS
 # forbids attaching an allocator tracer to one). Mirrors the pyproject ``dev``
 # extra, which (private path) requires this file to cover.

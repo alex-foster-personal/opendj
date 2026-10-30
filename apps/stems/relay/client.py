@@ -123,6 +123,9 @@ def separate_one(
             api.HEADER_TIER: tier_key,
             api.HEADER_STABLE_ID: stable_id,
             api.HEADER_SOURCE_NAME: source_name,
+            # Every codec this client names its part files after; without it
+            # the relay keeps to FLAC, as for a client from before STEM-76.
+            api.HEADER_STEM_CODECS: ",".join(sorted(api.STEM_CODEC_FILES)),
         },
     )
     _raise_for_refusal(response)
@@ -135,6 +138,13 @@ def separate_one(
         raise RuntimeError(state.error or "the relay reported a failed separation")
     if state.audio is None:
         raise RuntimeError("the relay reported success with no audio alignment")
+    codec = state.audio.codec
+    if codec not in api.STEM_CODEC_FILES:
+        raise RuntimeError(
+            f"the relay reported stem codec {codec!r}; this client writes only "
+            f"{sorted(api.STEM_CODEC_FILES)}"
+        )
+    stem_ext = api.STEM_CODEC_FILES[codec][0]
 
     stems: dict[str, bytes] = {}
     for part in api.STEM_PARTS:
@@ -154,11 +164,15 @@ def separate_one(
     return {
         "stable_id": stable_id,
         "stems": stems,
-        "stem_ext": "flac",
+        # The codec the relay says it encoded, never an assumed one (STEM-76).
+        "stem_ext": stem_ext,
+        "stem_codec": codec,
         "source_sha256": state.source_sha256 or "0" * 64,
-        "audio": state.audio.model_dump(),
+        "audio": state.audio.model_dump(exclude_none=True),
         "relay_model": state.model,
         "relay_preset": state.preset,
+        # The farm's ladder audit, written into the manifest (Codex on #6821).
+        "size_policy": state.size_policy,
     }
 
 

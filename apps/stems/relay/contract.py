@@ -72,6 +72,13 @@ HEADER_SOURCE_NAME: str = "X-Stems-Source-Name"
 no business knowing the shape of a tester's disk, and a full path in a server
 log is the kind of incidental personal data that is easier to never collect
 than to defend."""
+HEADER_STEM_CODECS: str = "X-Stems-Codecs"
+"""Comma-separated codecs this client can write parts in (``STEM_CODEC_FILES``).
+
+A client from before STEM-76 sends no such header and names every part
+``.flac`` whatever the relay encoded, so the relay asks the farm for FLAC
+for it; only a client that lists every codec in ``STEM_CODEC_FILES`` gets
+the tier's by-source policy (MP3 for an MP3/M4A source). Codex on #6821."""
 
 # The env var the client reads. Set at build time; there is no default, and
 # that is deliberate -- a hardcoded fallback URL is how a debug relay ends up
@@ -89,17 +96,30 @@ short-lived value in a child process, not a credential at rest.
 STEM_PARTS: tuple[str, str, str, str] = ("vocals", "drums", "bass", "other")
 SeparationStatus = Literal["queued", "running", "succeeded", "failed"]
 
+STEM_CODEC_FILES: dict[str, tuple[str, str]] = {
+    "flac": ("flac", "audio/flac"),
+    "mp3": ("mp3", "audio/mpeg"),
+}
+"""codec -> (part file extension, part media type), for every codec a relay
+separation may return (STEM-76: MP3 for an MP3/M4A source, FLAC otherwise).
+The relay refuses to report success for any other codec, and the client
+refuses to write one, so a part is never saved under an extension that does
+not match its bytes."""
+
 
 # ----- wire models -----------------------------------------------------------
 class AudioAlignment(BaseModel):
-    """Shared across all four parts. Mirrors the bundle manifest's audio block."""
+    """Shared across all four parts. Mirrors the bundle manifest's audio block.
+
+    ``bit_depth`` is the PCM depth FLAC parts are rendered at; an MP3 part has
+    no bit depth, so it is absent rather than invented (STEM-76)."""
 
     model_config = ConfigDict(extra="forbid")
 
     sample_rate: int = Field(gt=0)
     channels: int = Field(gt=0)
     frame_count: int = Field(gt=0)
-    bit_depth: int = Field(gt=0)
+    bit_depth: int | None = Field(default=None, gt=0)
     codec: str
 
 
@@ -135,6 +155,10 @@ class SeparationState(BaseModel):
     model: dict[str, str] | None = None
     preset: dict[str, Any] | None = None
     source_sha256: str | None = None
+    size_policy: dict[str, Any] | None = Field(
+        default=None,
+        description="the farm's size-policy audit (codec, rung, bitrates, violations); null when the backend measured none",
+    )
 
 
 class QuotaState(BaseModel):
@@ -190,6 +214,7 @@ __all__ = [
     "HEADER_SOURCE_NAME",
     "HEADER_SOURCE_SHA256",
     "HEADER_STABLE_ID",
+    "HEADER_STEM_CODECS",
     "HEADER_TIER",
     "IDENTITY_TOKEN_ENV",
     "PATH_HEALTH",

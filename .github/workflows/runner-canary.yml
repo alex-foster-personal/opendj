@@ -135,7 +135,7 @@ jobs:
 
       # Full, non-sparse checkout: this workspace is reused by the next job on the runner,
       # and a sparse or shallow tree would be left behind for it (test_ci_workspace_reuse.py).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           fetch-depth: 0
@@ -239,7 +239,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           persist-credentials: false
@@ -249,6 +249,42 @@ jobs:
       - name: Remove untracked build debris, keeping dependency dirs
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
+
+      - name: Derive the worktree-port lane from the runner identity
+        timeout-minutes: 1
+        # Same step as e2e.yml. The suite claims dynamic ports through
+        # apps/webui/port_config.py (engine, backend and frontend fixtures), and
+        # each self-hosted runner is a separate clone with its own registry, so
+        # without a lane every pytest shard on one host allocates from slot 0 of
+        # the SAME pool window: two shards on one host, "address already in use"
+        # (Fri 30 Oct 2026, fleet-af runner right-sizing). MUSIC_DJ_PORT_LANE
+        # shifts this runner's whole window clear of every other runner's; the
+        # lane is the runner's trailing index plus one, lane 0 stays local dev.
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Assert MUSIC_DJ_PORT_LANE is set
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          lane="${MUSIC_DJ_PORT_LANE:-}"
+          [[ "$lane" =~ ^[0-9]+$ ]] || {
+            echo "::error::MUSIC_DJ_PORT_LANE is unset or invalid after lane derivation" >&2
+            exit 1
+          }
+          echo "[OK] MUSIC_DJ_PORT_LANE=${lane}"
 
       # CANARY-ONLY addition (round 1, tests/scripts/runner_canary_workflow_checks.py
       # CANARY_ONLY_PNPM_STEP_NAME): ci.yml's `test` job carries no pnpm setup at all,
@@ -331,6 +367,10 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           CI_PR_TEST_SELECTION: ${{ vars.CI_PR_TEST_SELECTION }}
           CI_QUEUE_TEST_SELECTION: ${{ vars.CI_QUEUE_TEST_SELECTION }}
+          # TEST-CUT items 3 and 2 ((private path)), mirrored from ci.yml; a push
+          # always runs FULL, so neither changes what the canary runs.
+          CI_PR_SELECT_BY_NAME: ${{ vars.CI_PR_SELECT_BY_NAME }}
+          CI_PR_DEMOTE_WEAK_LINKS: ${{ vars.CI_PR_DEMOTE_WEAK_LINKS }}
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent
@@ -440,6 +480,7 @@ jobs:
           selection_rc=0
           mode="$(timeout --kill-after=10 300 .venv/bin/python -m scripts.ci_test_selection select \
             --shard ${{ matrix.shard }} --shards 5 --out-dir "$selection_dir" \
+            --budget ci/test-budget.yml \
             "${LANE_IGNORES[@]}")" || selection_rc=$?
           case "$selection_rc:$mode" in
             0:full|0:affected|0:empty) ;;

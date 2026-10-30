@@ -5,7 +5,9 @@
  * Every .svelte file is compiled with Svelte's own client compiler and CSS is
  * injected, so component styles apply exactly as they ship. Nothing is stubbed.
  */
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,6 +34,8 @@ export async function bundleSvelteHarness(harness: string): Promise<string> {
 		define: { 'import.meta.env': '{}' },
 		format: 'iife',
 		logLevel: 'silent',
+		// The bundle's inputs are the spec's footprint (recordHarnessFootprint below).
+		metafile: true,
 		platform: 'browser',
 		write: false,
 		plugins: [
@@ -78,5 +82,43 @@ export async function bundleSvelteHarness(harness: string): Promise<string> {
 			}
 		]
 	});
+	recordHarnessFootprint(Object.keys(result.metafile.inputs));
 	return result.outputFiles[0].text;
+}
+
+/**
+ * Read a `src/` file a harness spec injects by hand (a stylesheet it hands to
+ * `page.addStyleTag`, say). Neither the dev-server request log nor the bundle's
+ * metafile sees a plain `readFile`, so this records the path as part of the
+ * spec's footprint the same way the bundle's inputs are (Codex, PR #7948).
+ * `path` is relative to the frontend root and starts with `src/`.
+ */
+export async function readSrcForHarness(path: string): Promise<string> {
+	if (!path.startsWith('src/')) {
+		throw new Error(`readSrcForHarness: ${path} is not under src/`);
+	}
+	const text = await readFile(join(FRONTEND_ROOT, path), 'utf8');
+	recordHarnessFootprint([path]);
+	return text;
+}
+
+/**
+ * A harness bundle never fetches its sources through Vite, so the dev-server
+ * request log (`vite-e2e-footprints.ts`) sees nothing of the component under
+ * test. While `E2E_FOOTPRINTS_DIR` is set, the bundle's `src/` inputs are
+ * appended to the same `requests.jsonl` with this worker's clock, which is the
+ * clock the footprint reporter stamps the spec with, so the map builder lands
+ * them in this spec's window (Codex, PR #7948).
+ */
+function recordHarnessFootprint(inputs: string[]): void {
+	const dir = process.env.E2E_FOOTPRINTS_DIR;
+	if (!dir) return;
+	mkdirSync(dir, { recursive: true });
+	const now = Date.now();
+	const lines = inputs
+		.map((input) => input.split('?', 1)[0].split('\\').join('/'))
+		.filter((input) => input.startsWith('src/'))
+		.map((path) => JSON.stringify({ t: now, path }) + '\n')
+		.join('');
+	if (lines) appendFileSync(join(dir, 'requests.jsonl'), lines);
 }

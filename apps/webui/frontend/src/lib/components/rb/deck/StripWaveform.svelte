@@ -44,6 +44,8 @@
 	import { decodePreviewStrip } from '$lib/rb/api-rb';
 	import { shouldShowNativeGridMarker } from './strip-native-grid';
 	import { phraseMomentTicks } from '$lib/rb/phrase-moment-ticks';
+	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
+	import { devicePixelRatioNow, startDevicePixelRatioWatch } from '$lib/ui/device-pixel-ratio.svelte';
 
 	let {
 		deck,
@@ -85,10 +87,16 @@
 	$effect(() => {
 		if (deck.playing) tracePlayhead('overview', deck.deck_id, overviewPositionMs);
 	});
+	// Rendered strip width in CSS px, so the playhead can snap to the pixel grid.
+	// Listen for density changes from mount, before the playhead below is ever read.
+	startDevicePixelRatioWatch();
+	let stripBoxW: number = $state(0);
+	// Snapped to the device pixel grid (snapFractionToPixels), so the marker's
+	// `left` is rewritten only when it moves, not every frame.
 	const posPct: number = $derived(
 		deck.duration_ms === null || deck.duration_ms === 0
 			? 0
-			: (overviewPositionMs / deck.duration_ms) * 100
+			: snapFractionToPixels(overviewPositionMs / deck.duration_ms, stripBoxW * devicePixelRatioNow()) * 100
 	);
 
 	// Validated vocals of the loaded analysis; null while no anlz payload.
@@ -314,6 +322,7 @@
 		aria-label={`waveform seek deck ${deck.deck_id}`}
 		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
 		title={vocalsTitle ?? undefined}
+		bind:clientWidth={stripBoxW}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 

@@ -53,7 +53,7 @@ export default defineConfig({
 	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
 	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
-	testMatch: 'autoplay-stall-browser.spec.ts',
+	testMatch: ['autoplay-stall-browser.spec.ts', 'autoplay-next-planner.spec.ts', 'autoplay-early-planning.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,

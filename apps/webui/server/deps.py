@@ -48,7 +48,10 @@ _LOCK_PROBE_FAILED = "__lock_probe_failed__"
 
 
 def get_lock_status(request: Request) -> dict[str, Any] | None:
-    fn: Callable[[], Any] | None = getattr(request.app.state, "lock_status_fn", None)
+    return probe_lock_status(getattr(request.app.state, "lock_status_fn", None))
+
+
+def probe_lock_status(fn: Callable[[], Any] | None) -> dict[str, Any] | None:
     if fn is None:
         return None
     try:
@@ -76,12 +79,8 @@ async def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateB
     return backend
 
 
-def get_write_state(
-    request: Request,
-    backend: StateBackend = Depends(get_backend),  # noqa: B008  # FastAPI DI
-    lock_status: dict[str, Any] | None = Depends(get_lock_status),  # noqa: B008  # FastAPI DI
-) -> StateBackend:
-    local_host = getattr(request.app.state, "hostname", "localhost")
+def assert_writable(lock_status: dict[str, Any] | None, local_host: str) -> None:
+    """Raise 503 unless this host may write: the cloud lock probe worked and no peer holds the writer lock."""
     if lock_status and lock_status.get("holder") == _LOCK_PROBE_FAILED:
         # Probe raised — fail-closed (codex P11-F01).
         raise HTTPException(
@@ -108,7 +107,24 @@ def get_write_state(
                 "holder": lock_status,
             },
         )
+
+
+def write_gate(app: Any) -> Callable[[], None]:
+    """A re-check of the live cloud lock for a write that outlives its request (a background scan's auto-apply,
+    or a track transaction about to commit): get_write_state alone only vouches for the instant a request began."""
+    def gate() -> None:
+        assert_writable(
+            probe_lock_status(getattr(app.state, "lock_status_fn", None)), getattr(app.state, "hostname", "localhost"))
+    return gate
+
+
+def get_write_state(
+    request: Request,
+    backend: StateBackend = Depends(get_backend),  # noqa: B008  # FastAPI DI
+    lock_status: dict[str, Any] | None = Depends(get_lock_status),  # noqa: B008  # FastAPI DI
+) -> StateBackend:
+    assert_writable(lock_status, getattr(request.app.state, "hostname", "localhost"))
     return backend
 
 
-__all__ = ["get_backend", "get_lock_status", "get_read_state", "get_write_state"]
+__all__ = ["assert_writable", "get_backend", "get_lock_status", "get_read_state", "get_write_state", "probe_lock_status", "write_gate"]

@@ -13,6 +13,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
+
 const frontendPort = Number(process.env.PREFLIGHT_GATE_FRONTEND_PORT);
 const apiPort = Number(process.env.PREFLIGHT_GATE_API_PORT);
 if (!Number.isInteger(frontendPort) || !Number.isInteger(apiPort)) {
@@ -23,7 +25,7 @@ if (!Number.isInteger(frontendPort) || !Number.isInteger(apiPort)) {
 }
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), ...e2eFootprintsPlugin()],
 	server: {
 		host: '127.0.0.1',
 		port: frontendPort,

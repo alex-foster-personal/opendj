@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -467,14 +467,14 @@ def render_context(
         # the proposer reads it, and a plan with no intent stays None (never assumed to be one).
         intent=None if plan.intent is None else parse_intent(plan.intent),
         # The proposer's plan shape (#7818 D13: ``lull_then_drop`` asks for the outgoing's lull); None when absent.
-        shape=plan.to_json().get("shape"),
+        shape={**plan.to_json(), **plan.extra}.get("shape"),  # #7827: shape lives in plan.extra
         bass_hit_s=_bass_hit_s(plan, out_profile, layout),
     )
 
 
 def _bass_hit_s(plan: TransitionPlan, out_profile: TrackProfile, layout: RenderLayout) -> float | None:
     """The plan's incoming bass hit on the render clock (#7818 D11 ``bass_entry.hit_plan_bar``), or None without one."""
-    entry = plan.to_json().get("bass_entry")
+    entry = {**plan.to_json(), **plan.extra}.get("bass_entry")  # #7827: bass_entry lives in plan.extra
     if not isinstance(entry, Mapping) or entry.get("hit_plan_bar") is None:
         return None
     return _render_s(float(entry["hit_plan_bar"]), plan, out_profile, layout)
@@ -678,7 +678,7 @@ def try_plans(
     _refuse_taken_keep_folders(keep_renders_in, len(plans))
     _audio_stack()  # fail before any render when the extra is missing
     audio = _real_audio_paths(audio, (out_profile.stable_id, in_profile.stable_id))
-    start = min(layout_of(p, out_profile, in_profile, context_bars).start_out_bar for p in plans)
+    start = shared_start_out_bar(plans, out_profile, in_profile, context_bars)
     engine = binary or odj_audio_binary()
     job = _Job(out_profile, in_profile, audio, context_bars, start, engine, keep_renders_in)
     with ThreadPoolExecutor(max_workers=worker_count(len(plans))) as pool:
@@ -718,6 +718,14 @@ def renderable_plans(
     if not kept:
         raise PairNotTryable(f"none of {len(plans)} proposals can be rendered: " + "; ".join(refused))
     return kept, refused
+
+
+def shared_start_out_bar(
+    plans: Sequence[TransitionPlan], out_profile: TrackProfile, in_profile: TrackProfile, context_bars: int
+) -> float:
+    """The one outgoing bar every render of a job starts at: the earliest any of its plans needs, so all candidates
+    share a clock (switching keeps the playback position). Anything drawn over a render must use this, not a plan's own."""
+    return min(layout_of(p, out_profile, in_profile, context_bars).start_out_bar for p in plans)
 
 
 def try_pair(

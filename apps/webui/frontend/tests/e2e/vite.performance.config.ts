@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
 import type { Plugin } from 'vite';
 
 const DEFAULT_FRONTEND_BASE = 'http://127.0.0.1:5273';
@@ -80,7 +82,7 @@ const api = _loopbackUrl(
 );
 
 export default defineConfig({
-	plugins: [_toneFixturePlugin(), sveltekit()],
+	plugins: [_toneFixturePlugin(), sveltekit(), ...e2eFootprintsPlugin()],
 	optimizeDeps: {
 		// The package serializes its own module function into an AudioWorklet.
 		// Esbuild pre-bundling rewrites that function and the processor never

@@ -285,7 +285,7 @@ _LOSSY_SOURCE_EXTS: frozenset[str] = frozenset({".mp3", ".m4a"})
 _MP3_CBR_KBPS: int = 320
 _LOSSY_SIZE_GATED: frozenset[str] = frozenset({"opus", "mp3"})
 _CONTROL_CODECS: frozenset[str] = frozenset({"flac", "wav"})
-_MP3_CBR_LADDER: tuple[int, ...] = (320, 256, 224, 192)
+_MP3_CBR_LADDER: tuple[int, ...] = (320, 256, 224, 192, 160, 128, 112, 96, 80, 64, 56, 48, 40, 32)
 
 # MIRRORED from apps/stems/tiers.GPU_USD_PER_S (same reason as the block
 # above -- the container has no ``apps`` package). Used for reporting only
@@ -413,7 +413,7 @@ def _assert_stem_size_policy_mirror_matches() -> None:
     for kbps in (128.0, 245.0, 256.0, 319.99, 320.0, 500.0):
         if pol.mp3_lame_settings_for_source_kbps(kbps) != _mp3_lame_settings_for_source_kbps(kbps):
             raise SystemExit(f"error: mp3_lame_settings_for_source_kbps({kbps}) drifted")
-    for kbps in (192.0, 200.0, 257.0, 262.0, 300.0, 320.0, 500.0):
+    for kbps in (32.0, 128.0, 192.0, 200.0, 257.0, 262.0, 300.0, 320.0, 500.0):
         if pol.mp3_rung2_cbr_kbps(kbps) != _mp3_rung2_cbr_kbps(kbps):
             raise SystemExit(f"error: mp3_rung2_cbr_kbps({kbps}) drifted")
     for source_bytes, part_bytes, codec in (

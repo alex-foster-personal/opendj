@@ -80,6 +80,10 @@ test('deck and row stepping stop at the ends', () => {
 	assert.equal(mod.stepSelection(0, 5, -1), 0);
 	assert.equal(mod.stepSelection(4, 5, 1), 4);
 	assert.equal(mod.stepSelection(0, 0, 1), 0);
+	// A list that shrank under the highlight (a refreshed index) clamps it; one that did not leaves it.
+	assert.equal(mod.clampSelection(7, 3), 2);
+	assert.equal(mod.clampSelection(1, 3), 1);
+	assert.equal(mod.clampSelection(4, 0), 0);
 });
 
 test('the bar loads through the browser deck-load path, not its own', () => {

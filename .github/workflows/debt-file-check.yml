@@ -4,8 +4,8 @@ name: Debt file check
 #
 # Same reason as adr-check.yml and reqs-flip-gate.yml: ci.yml's
 # `pull_request` `paths` filter excludes `**.md` and `.planning/**`, so a PR
-# that touches only `.planning/debt/<pr>.md` schedules NO ci.yml run at all.
-# `tests/scripts/test_debt_index.py` runs `scripts.debt_index` inside the
+# that touches only `(private path)/<pr>.md` schedules NO ci.yml run at all.
+# `(private path)` runs `scripts.debt_index` inside the
 # pytest lane, and that lane is exactly what such a PR skips.
 #
 # The consequence was measured, not theorised. Between Mon 14 and Tue 15 Sep
@@ -19,7 +19,7 @@ name: Debt file check
 #
 # This workflow moves that verdict to where it costs one person 30 seconds
 # instead of blocking every push. It is deliberately NOT a re-include of
-# `.planning/debt/**` in ci.yml's paths filter: that would schedule the whole
+# `(private path)/**` in ci.yml's paths filter: that would schedule the whole
 # fast pytest lane for a docs-only PR, which is the ceremony the filter was
 # written to avoid (the maintainer, Fri 28 Aug 2026). `.planning/REQUIREMENTS.md` is
 # re-included there because it is a CI input the lane itself consumes; a debt
@@ -28,8 +28,8 @@ name: Debt file check
 on:
   pull_request:
     paths:
-      - ".planning/debt/**"
-      - ".planning/TECH-DEBT.md"
+      - "(private path)/**"
+      - "(private path)"
       - ".github/workflows/debt-file-check.yml"
 
 concurrency:
@@ -98,7 +98,7 @@ jobs:
             fi
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
@@ -129,7 +129,7 @@ jobs:
         # library, exactly as debt-index-regen.yml relies on post-merge.
         #
         # `--check` and NOT `--require-current`: the committed
-        # `.planning/TECH-DEBT.md` is a main-side artifact that a PR never
+        # `(private path)` is a main-side artifact that a PR never
         # regenerates (issue #1415), so a branch's own new debt file is
         # legitimately absent from the index. `--check` tolerates that and
         # still fails on the malformed metadata this gate exists for.

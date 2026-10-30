@@ -40,6 +40,7 @@ from apps.shared.google_oauth_client import (
     CLIENT_ID_ENV_NAMES,
     CLIENT_SECRET_ENV_NAMES,
     env_with_bundled,
+    first_present,
 )
 from apps.shared.state import db as state_db
 
@@ -118,8 +119,8 @@ class GoogleOAuthConfig:
         so an operator never has to guess which secret is missing.
         """
         env = env_with_bundled(env)
-        client_id = _first_present(env, CLIENT_ID_ENV_NAMES)
-        client_secret = _first_present(env, CLIENT_SECRET_ENV_NAMES)
+        client_id = first_present(env, CLIENT_ID_ENV_NAMES)
+        client_secret = first_present(env, CLIENT_SECRET_ENV_NAMES)
         if not client_id or not client_secret:
             raise AuthConfigError(
                 _MISSING_CREDENTIALS_RUNBOOK.format(
@@ -133,17 +134,9 @@ class GoogleOAuthConfig:
     def is_configured(cls, env: dict[str, str]) -> bool:
         env = env_with_bundled(env)
         return bool(
-            _first_present(env, CLIENT_ID_ENV_NAMES)
-            and _first_present(env, CLIENT_SECRET_ENV_NAMES)
+            first_present(env, CLIENT_ID_ENV_NAMES)
+            and first_present(env, CLIENT_SECRET_ENV_NAMES)
         )
-
-
-def _first_present(env: dict[str, str], names: tuple[str, ...]) -> str | None:
-    for name in names:
-        value = env.get(name, "").strip()
-        if value:
-            return value
-    return None
 
 
 # ----- pending logins (CSRF state + PKCE) --------------------------------

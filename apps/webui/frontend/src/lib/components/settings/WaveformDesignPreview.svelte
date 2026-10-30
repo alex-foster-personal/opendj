@@ -5,6 +5,7 @@
 	import { effectiveWaveformDesign, effectiveWavePalette } from '$lib/rb/ui-skin';
 	import type { AnlzWaveform } from '$lib/rb/anlz-types';
 	import { paintWaveformPreview } from '$lib/settings/waveform-preview-paint';
+	import { blockSnapLoadError } from '$lib/components/rb/wave/block-layout-lazy.svelte';
 
 	let { design }: { design?: WaveformDesign } = $props();
 
@@ -74,6 +75,16 @@
 	data-palette={palette}
 	aria-label="Waveform design preview"
 ></canvas>
+{#if active === 'blocks' && blockSnapLoadError() !== null}
+	<!-- DECKUX-42: say why deck rows paint the fixed pitch rather than look snapped-but-wrong.
+	     Reload, not a promise to retry: the browser can keep a failed module
+	     fetch for the life of the page (CHROME-07), so only a fresh page is
+	     sure to recover. Nothing reloads on its own. -->
+	<p class="wfd-err" data-testid="block-snap-error" title={`Block edge snapping failed to load: ${blockSnapLoadError()}`}>
+		Edge snapping failed to load.
+		<button type="button" class="wfd-reload" data-testid="block-snap-reload" onclick={() => location.reload()}>Reload</button>
+	</p>
+{/if}
 
 <style>
 	.wfd-preview {
@@ -84,5 +95,15 @@
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
 		box-sizing: border-box;
+	}
+	.wfd-err {
+		margin: 4px 0 0;
+		font-size: 11px;
+		color: var(--rb-text);
+		text-decoration: underline wavy;
+	}
+	.wfd-reload {
+		margin-left: 4px;
+		font-size: 11px;
 	}
 </style>

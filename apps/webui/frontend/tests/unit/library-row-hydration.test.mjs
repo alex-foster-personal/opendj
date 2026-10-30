@@ -50,6 +50,10 @@ const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz', 'pre
  */
 const ALLOWED_ANLZ_CALLERS = new Map([
 	['lib/components/rb/BrowserPanel.svelte', 'one warm fetch for the single selected row'],
+	[
+		'lib/components/rb/CommandBarV2.svelte',
+		'CMDK-07: one row-select prefetch for the single highlighted Cmd K row, after a 90 ms rest on it'
+	],
 	['lib/components/rb/wave/anlz-cache.svelte.ts', 'the cache module itself'],
 	['lib/components/rb/wave/WaveRow.svelte', 'one per deck wave row, not per library row'],
 	['lib/rb/api-rb.ts', 'the fetch wrapper'],

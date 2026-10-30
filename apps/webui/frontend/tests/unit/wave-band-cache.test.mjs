@@ -139,3 +139,103 @@ test('the reuse tolerance is PITCH_TOLERANCE on either side', () => {
 	assert.equal(render.bandImageScaleReusable(10, 10 * (1 - tol + 1e-9)), true);
 	assert.equal(render.bandImageScaleReusable(10, 10 * (1 - tol - 1e-6)), false);
 });
+
+// DECKUX-42 regression lines (Sol P1 4303186414 on PR #6534):
+// - if a snapped Gothic row blits its band image at a fractional offset then broken
+// - if a beat line and its snapped block edge land on different pixels while scrolling then broken
+// - if a design with no snapped edges loses its sub-pixel scroll then broken (overshoot control)
+
+// One grid object for every frame: a new beats array is a grid edit, which
+// rebuilds a snapped row's image (beatsVersion).
+const GRID_BEATS = Array.from({ length: 200 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: 0.513 + i * 0.5 }));
+const GRID_ANLZ = { ...anlz, beatgrid: { beat_count: GRID_BEATS.length, beats: GRID_BEATS } };
+
+// 20 px per beat, as on a deck: under BEAT_LINE_MIN_GAP_PX the grid thins to
+// bars (WAVEZOOM-02) and would no longer paint a line on every beat edge.
+const GRID_W = 960;
+
+function gridFrame(positionMs, design) {
+	return {
+		...frame(positionMs, GRID_W),
+		anlz: GRID_ANLZ,
+		waveformDesign: design,
+		blocksSnap: true
+	};
+}
+
+function recordingContext() {
+	const blits = [];
+	const lines = [];
+	const ctx = context(blits);
+	ctx.fillRect = (x, y, w, h) => {
+		// Beat-line bodies are the only full-height rects painted at these alphas.
+		if (ctx.globalAlpha === 0.38 || ctx.globalAlpha === 0.55) lines.push(x);
+	};
+	return { ctx, blits, lines };
+}
+
+test('a snapped Gothic row keeps every beat edge on its grid line while scrolling', async () => {
+	const layout = await loadTypeScriptModule('src/lib/components/rb/wave/block-layout.ts');
+	const pxPerS = GRID_W / render.WAVE_WINDOW_S;
+	let fractionalSeen = 0;
+	for (let ms = 30_000; ms < 30_400; ms += 7) {
+		render.resetWaveBandCacheForTest();
+		const f = gridFrame(ms, 'blocks');
+		const { ctx, blits, lines } = recordingContext();
+		render.drawWaveRow(ctx, f);
+		const dx = blits.at(-1)[1];
+		assert.ok(Number.isInteger(dx), `blit offset ${dx} at ${ms} ms is a whole pixel`);
+		const tLeft = ms / 1000 - render.WAVE_WINDOW_S / 2;
+		if (!Number.isInteger(tLeft * pxPerS)) fractionalSeen += 1;
+		const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + render.WAVE_WINDOW_S);
+		const edges = Array.from(layout.beatAnchorsPx(visible, pxPerS), (x) => x + dx);
+		assert.ok(edges.length > 0, 'CONTROL: the window holds beats');
+		assert.deepEqual(lines, edges, `beat lines sit on their block edges at ${ms} ms`);
+	}
+	assert.ok(fractionalSeen > 0, 'CONTROL: the sweep crosses fractional scroll offsets');
+});
+
+test('designs without snapped edges keep the tile blit rounding', () => {
+	render.resetWaveBandCacheForTest();
+	const { ctx, blits } = recordingContext();
+	const ms = 30_007;
+	render.drawWaveRow(ctx, gridFrame(ms, 'tri-band'));
+	const tLeft = ms / 1000 - render.WAVE_WINDOW_S / 2;
+	const exact = -tLeft * (GRID_W / render.WAVE_WINDOW_S);
+	assert.ok(!Number.isInteger(exact), 'CONTROL: this position is a fractional offset');
+	const expected = Math.round(exact);
+	assert.equal(blits.at(-1)[1], expected);
+});
+
+// DECKUX-42 Beat Sync bound (Sol P1 4303506950 on PR #6534): while a nudge
+// reuses an image built at another scale, the edge is rounded at the built
+// scale and drawn scaled, the line rounded at the live one. Three half-pixel
+// roundings, scaled by at most PITCH_TOLERANCE: under 1.52 px, never more.
+test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px of its line', async () => {
+	const layout = await loadTypeScriptModule('src/lib/components/rb/wave/block-layout.ts');
+	const bound = 1 + 0.5 * (1 + render.BAND_CACHE_CFG.PITCH_TOLERANCE);
+	assert.ok(bound < 1.52);
+	let worst = 0;
+	for (const pitch of [0.975, 0.99, 1.01, 1.025]) {
+		for (let ms = 30_000; ms < 30_400; ms += 13) {
+			render.resetWaveBandCacheForTest();
+			const built = recordingContext();
+			render.drawWaveRow(built.ctx, { ...gridFrame(ms, 'blocks'), pitch: 1 });
+			const { ctx, blits, lines } = recordingContext();
+			const f = { ...gridFrame(ms, 'blocks'), pitch };
+			render.drawWaveRow(ctx, f);
+			const args = blits.at(-1);
+			assert.equal(args.length, 9, 'CONTROL: the nudged frame reuses the image scaled');
+			const [, sx, , sw, , dx, , dw] = args;
+			const builtPxPerS = GRID_W / render.WAVE_WINDOW_S;
+			const trackWindowS = render.WAVE_WINDOW_S * pitch;
+			const tLeft = ms / 1000 - trackWindowS / 2;
+			const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + trackWindowS);
+			const edges = Array.from(layout.beatAnchorsPx(visible, builtPxPerS), (x) => dx + ((x - sx) * dw) / sw);
+			assert.equal(lines.length, edges.length, 'CONTROL: one line per visible beat');
+			for (let i = 0; i < edges.length; i++) worst = Math.max(worst, Math.abs(lines[i] - edges[i]));
+		}
+	}
+	assert.ok(worst > 0.5, `CONTROL: the sweep reaches the rounding error (worst ${worst})`);
+	assert.ok(worst < bound, `worst ${worst.toFixed(3)} px against ${bound.toFixed(3)} px`);
+});

@@ -157,6 +157,15 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         (),
     ),
     fixed(
+        "pair-transitions",
+        "Saved transitions between two tracks",
+        state_tables("pair_transitions"),
+        "machine_local",
+        "Each machine remembers its own transitions for now (migrations_v25.py, ADR-0129). "
+        "Keys are stable ids, so syncing the table later is additive.",
+        (),
+    ),
+    fixed(
         "schema-bookkeeping",
         "Migration bookkeeping",
         state_tables(

@@ -18,7 +18,11 @@ export class StretchDeckProcessor {
 			},
 			async schedule(_outputTime: number, _change: unknown) {},
 			async stop(_outputTime: number) {},
-			async dispose() {}
+			// A test may make dispose reject (a worklet ack timeout) by setting this global.
+			async dispose() {
+				const error = (globalThis as { __stretchStubDisposeError?: Error }).__stretchStubDisposeError;
+				if (error !== undefined) throw error;
+			}
 		};
 	}
 }

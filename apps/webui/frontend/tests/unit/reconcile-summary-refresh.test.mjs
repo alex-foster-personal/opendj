@@ -70,6 +70,16 @@ test('a snapshot paints its counts, and a running rescan asks to be re-read', as
 	assert.deepEqual(outcome, { ok: true, refreshing: true, refresh_error: null });
 });
 
+// REQ: LIBM-184
+test('only a null availability reads as unknown; a missing one is passed on as missing', async () => {
+	// [if] the engine sends availability null [then] 'unknown'; [if] the field is absent [then]
+	// undefined, so the All Tracks badge shows its malformed state (Sol P1, e52910aef9).
+	answer({ ...SUMMARY, availability: null, age_s: 5, refreshing: false, refresh_error: null });
+	assert.equal((await readOnce()).applied[0].counts.availability, 'unknown');
+	answer({ ...SUMMARY, age_s: 5, refreshing: false, refresh_error: null });
+	assert.equal((await readOnce()).applied[0].counts.availability, undefined);
+});
+
 // REQ: HEALTH-15
 test('a failed rescan keeps the counts but says they are unchecked', async () => {
 	// [if] refresh_error is set [then] the error names it beside the counts, [else stop].

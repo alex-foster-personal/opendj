@@ -59,7 +59,7 @@ from apps.transition_score.contract import (
 
 # ----- layer 0 thresholds (file 15 section 2; spec 10 section 3) -------------
 BEAT_OFFSET_P95_VETO_MS = 20.0
-TRUE_PEAK_VETO_DBTP = -1.0
+TRUE_PEAK_CEILING_DBTP = -1.0
 #: The transition must add this much over the louder single deck's true
 #: peak in the overlap (round 15; was the solo spans) before the true-peak veto fires: a master that itself peaks above
 #: -1 dBTP is the track's mastering, not a fault of the transition.
@@ -112,6 +112,11 @@ LOW_CONTINUITY_KNEE_DB = 2.0 * LOW_RULE_EXCURSION_DB
 EARLY_HANDOVER_KNEE_BARS = 1.0
 #: low_hole (reported, not scored, until r5 reads clean): the mix this far under the dominant deck's own source low.
 LOW_HOLE_DB = 3.0
+#: 0.7.1: the incoming takes low_hole's reference only once its low is within this of its own solo level (present,
+#: not parked). Derived from the maintainer's rule: his -8.7 dB park must never count as taking over, the crossover midpoint at
+#: -4.3 dB must, and 6 dB sits between them (p15 r6: a parked incoming louder than a bass-light outgoing switched the
+#: reference four bars before its bass existed).
+LOW_SWITCH_PRESENT_DB = -6.0
 #: Spec 10 / Mosaikbox: half a second of two vocals is the free allowance.
 VOCAL_OVERLAP_KNEE_S = 0.5
 #: Spec 04's landing tolerance again: a step change is a landing.
@@ -503,15 +508,17 @@ def _solo_spans(ctx: RenderContext, length_s: float) -> tuple[tuple[float, float
 
 
 def _true_peak(t: _Tally, mix: np.ndarray, decks: tuple[np.ndarray, np.ndarray], ctx: RenderContext) -> None:
-    """Round 15: the overlap's true peak against the louder SINGLE deck over the same overlap, so the veto measures
-    what the transition adds (r3: the outgoing at full until the hit peaks about 1 dB over its own lead-in)."""
+    """Round 15: the overlap's true peak against the louder SINGLE deck over the same overlap, so the reading measures
+    what the transition adds. Round 22: reported only, never a veto (the maintainer never heard one, even renders at 0 dBFS)."""
     sr = ctx.sample_rate
     span = slice(int(ctx.overlap_s[0] * sr), int(ctx.overlap_s[1] * sr))
     overlap_peak = signals.true_peak_dbtp(mix[span])
     reference = max(signals.true_peak_dbtp(deck[span]) for deck in decks)
     t.metrics.update(true_peak_dbtp=round(overlap_peak, 2), deck_true_peak_dbtp=round(reference, 2))
-    fired = overlap_peak > TRUE_PEAK_VETO_DBTP and overlap_peak > reference + TRUE_PEAK_EXCESS_DB
-    t.veto_if("true_peak", overlap_peak, TRUE_PEAK_VETO_DBTP, fired)
+    t.metrics["true_peak_over_louder_db"] = round(overlap_peak - reference, 2)
+    t.metrics["true_peak_would_veto"] = overlap_peak > TRUE_PEAK_CEILING_DBTP and overlap_peak > reference + (
+        TRUE_PEAK_EXCESS_DB
+    )
 
 
 def _dropout(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
@@ -756,10 +763,30 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
     switch_s = overlap_beats[switch][0][0] if switch < len(overlap_beats) else ctx.overlap_s[1]
     t.metrics["low_switch_s"] = round(switch_s, 3)
     _early_handover(t, switch_s, ctx)
-    _low_hole(t, mix_low, overlap_beats, switch, ctx)
+    _low_hole(t, mix_low, overlap_beats, _content_switch(in_beats, raw_out, raw_in, overlap_beats, ctx), ctx)
     mix_a = _by_position(_beat_levels(mix_low, sr, out_solo), out_solo)[positions]
     mix_b = _by_position(_beat_levels(mix_low, sr, in_solo), in_solo)[positions]
     _low_continuity(t, _beat_levels(mix_low, sr, overlap_beats), mix_a, mix_b, overlap_beats, ctx)
+
+
+def _content_switch(
+    in_rel: np.ndarray,
+    raw_out: np.ndarray,
+    raw_in: np.ndarray,
+    beats: list[tuple[tuple[float, float], int]],
+    ctx: RenderContext,
+) -> int:
+    """0.7.1: low_hole's switch beat: the first beat the incoming's low passes the outgoing's while the incoming is
+    present (within LOW_SWITCH_PRESENT_DB of its own solo low); when none comes before the plan's bass hit, the hit's
+    beat."""
+    starts = np.array([a for (a, _), _ in beats])
+    hit = None if ctx.bass_hit_s is None else int(np.searchsorted(starts, ctx.bass_hit_s - 1e-6))
+    for j in range(len(beats)):
+        if hit is not None and j >= hit:
+            return hit
+        if raw_in[j] > raw_out[j] and in_rel[j] >= LOW_SWITCH_PRESENT_DB:
+            return j
+    return len(beats) if hit is None else min(hit, len(beats))
 
 
 def _early_handover(t: _Tally, switch_s: float, ctx: RenderContext) -> None:

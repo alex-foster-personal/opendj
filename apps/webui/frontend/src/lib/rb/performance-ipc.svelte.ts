@@ -71,6 +71,8 @@ import { hasTrustedBeatGrid } from '$lib/player/grid-features';
 import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
+import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S } from '$lib/rb/auto-play-early';
+import { TRANSITION_INTENTS, type TransitionIntent } from '$lib/rb/auto-play-next-plan';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
 	DECK_IDS,
@@ -93,6 +95,7 @@ import {
 	setAutoGainLiveGuard,
 	deckAutoGain,
 	assertDeckLoadAllowed,
+	commitDueQuantizedLaunches,
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
@@ -123,6 +126,7 @@ import {
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
+	setAutoPlayEarly,
 	setAutoPlayTwoDeck,
 	setPerfView,
 	setShowPads,
@@ -362,8 +366,12 @@ export type PerformanceCommand =
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
 	 * of the AutoPlay button. Real (not stubbed) - see auto-play-next.ts /
 	 * auto-play-next.svelte.ts for the approximate loop/duck/cut it arms. */
-	| { type: 'auto_play_next_arm' }
+	| { type: 'auto_play_next_arm'; intent?: TransitionIntent; out_deck?: DeckId; in_deck?: DeckId; from_ms?: number }
 	| { type: 'auto_play_next_cancel' }
+	/** AUTOPLAN-06: the AutoPlay menu's Decide now. */
+	| { type: 'auto_play_decide_now' }
+	/** AUTOPLAN-01: the AutoPlay menu's early planning checkbox and target. */
+	| { type: 'auto_play_early'; enabled?: boolean; decide_after_s?: number }
 	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
@@ -642,8 +650,14 @@ export interface PerformanceBrowserAdapter {
  * ways would be a real cycle, not just a slack-ratchet number). A missing
  * registration fails loudly, same rationale as a missing browser adapter. */
 export interface AutoPlayNextController {
-	arm(): Promise<boolean>;
+	arm(request: {
+		intent?: TransitionIntent | undefined;
+		outDeck?: DeckId | undefined;
+		inDeck?: DeckId | undefined;
+		fromMs?: number | undefined;
+	}): Promise<boolean>;
 	cancel(): Promise<void>;
+	decideNow(): Promise<void>;
 }
 
 let _autoPlayNextController: AutoPlayNextController | null = null;
@@ -1278,6 +1292,11 @@ export function performanceForgetStep(stepId: string): void {
 }
 
 /** AGENT-30: a deck's playhead with the AudioContext time it was presented at (one observation), or null. */
+/** Launches that came due while no tab was painting: see commitDueQuantizedLaunches. */
+export function commitPerformanceLaunches(): void {
+	commitDueQuantizedLaunches();
+}
+
 export function performancePositionAnchor(deckId: DeckId): { position_ms: number; context_sec: number; pitch: number } | null {
 	return engine.positionAnchor(deckId);
 }
@@ -1432,9 +1451,43 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
-	if (type === 'auto_play_next_arm' || type === 'auto_play_next_cancel') {
+	if (type === 'auto_play_next_arm') {
+		_exactKeys(record, ['type', 'intent', 'out_deck', 'in_deck', 'from_ms']);
+		if (record.intent !== undefined && !TRANSITION_INTENTS.includes(record.intent as TransitionIntent)) {
+			throw new Error(`auto_play_next_arm: unknown intent ${String(record.intent)}`);
+		}
+		if ((record.out_deck === undefined) !== (record.in_deck === undefined)) {
+			throw new Error('auto_play_next_arm: out_deck and in_deck come together');
+		}
+		if (record.from_ms !== undefined && (typeof record.from_ms !== 'number' || !Number.isFinite(record.from_ms) || record.from_ms < 0)) {
+			throw new Error('auto_play_next_arm: from_ms must be a finite ms >= 0');
+		}
+		return {
+			type,
+			...(record.intent === undefined ? {} : { intent: record.intent as TransitionIntent }),
+			...(record.out_deck === undefined ? {} : { out_deck: _deck(record.out_deck), in_deck: _deck(record.in_deck) }),
+			...(record.from_ms === undefined ? {} : { from_ms: record.from_ms as number })
+		};
+	}
+	if (type === 'auto_play_next_cancel') {
 		_exactKeys(record, ['type']);
 		return { type };
+	}
+	if (type === 'auto_play_decide_now') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'auto_play_early') {
+		_exactKeys(record, ['type', 'enabled', 'decide_after_s']);
+		const after = record.decide_after_s;
+		if (after !== undefined && !(typeof after === 'number' && after >= DECIDE_AFTER_MIN_S && after <= DECIDE_AFTER_MAX_S)) {
+			throw new Error(`auto_play_early: decide_after_s must be ${DECIDE_AFTER_MIN_S}..${DECIDE_AFTER_MAX_S}, got ${String(after)}`);
+		}
+		return {
+			type,
+			...(record.enabled === undefined ? {} : { enabled: _boolean('enabled', record.enabled) }),
+			...(after === undefined ? {} : { decide_after_s: after as number })
+		};
 	}
 	if (type === 'pins_show_other_users') {
 		_exactKeys(record, ['type']);
@@ -2317,6 +2370,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'autoplay' ||
 		// TOPVIEW: the two-track AutoPlay toggle is a preference write with no deck.
 		command.type === 'auto_play_two_track' ||
+		command.type === 'auto_play_early' ||
 		// TOPVIEW: the view icons and the PAD button are preference writes with no deck.
 		command.type === 'set_perf_view' ||
 		command.type === 'show_pads' ||
@@ -2344,6 +2398,7 @@ export function performanceCommandQueueScopes(
 		// itself has no deck and nothing to serialize against.
 		|| command.type === 'auto_play_next_arm'
 		|| command.type === 'auto_play_next_cancel'
+		|| command.type === 'auto_play_decide_now'
 		|| command.type === 'load_play_intent'
 		|| command.type === 'playlist_undo'
 		|| command.type === 'playlist_redo'
@@ -2834,12 +2889,24 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
 		}
-		await _autoPlayNextController.arm();
+		await _autoPlayNextController.arm({
+			intent: command.intent,
+			outDeck: command.out_deck,
+			inDeck: command.in_deck,
+			fromMs: command.from_ms
+		});
 	} else if (command.type === 'auto_play_next_cancel') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_cancel: no AutoPlay Next controller is mounted on this route');
 		}
 		await _autoPlayNextController.cancel();
+	} else if (command.type === 'auto_play_decide_now') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_decide_now: no AutoPlay Next controller is mounted on this route');
+		}
+		await _autoPlayNextController.decideNow();
+	} else if (command.type === 'auto_play_early') {
+		setAutoPlayEarly(command);
 	} else if (command.type === 'pins_show_other_users') {
 		throw new Error('pins_show_other_users must be rejected at the dispatch boundary');
 	} else if (command.type === 'tech_mode_toggle') {

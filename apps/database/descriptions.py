@@ -15,6 +15,7 @@ from __future__ import annotations
 
 #: table name -> what one row of it means.
 TABLES: dict[str, str] = {
+    "pair_transitions": "The saved transition for one ordered pair of tracks, as a plan. Most recent wins. Machine-local.",
     # ----- state_core: the library itself -------------------------------
     "tracks": (
         "One musical work as this project understands it, independent of any "

@@ -29,5 +29,5 @@ test('fc60002b81a8: ap-next-btn split shares AutoPlay highlight, hover accent, a
 		'PLAY-13: ap-wrap shares the active border with AutoPlay and next'
 	);
 	assert.match(topbar, /\.ap-wrap\.on\s*\{[^}]*border:\s*1px solid var\(--rb-accent\)/);
-	assert.match(topbar, /Next-track loop/);
+	assert.match(topbar, /Next transition/);
 });

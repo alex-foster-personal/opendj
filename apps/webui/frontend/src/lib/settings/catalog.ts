@@ -546,6 +546,20 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	{
+		id: 'library.title_fix',
+		label: 'Fix broken track metadata',
+		group: 'library',
+		keywords: [
+			'title', 'artist', 'metadata', 'broken', 'fix', 'cleanup', 'junk', 'remix', 'tags',
+			'openrouter', 'api key', 'auto-apply', 'spend', 'cap'
+		],
+		title: 'Open the Title fixes admin pane (/admin?tab=title-fix)',
+		detail:
+			'Scan for tracks whose artist, key or version sits in the title, then review raw -> proposed diffs and apply or undo them. Config there: enabled, OpenRouter key (masked), auto-apply policy (off / safe tier / gate-approved), spend cap per scan, tag families. GET+PUT /api/v1/title-fix/config; CLI python -m apps.webui.title_fix_cli.',
+		implemented: true,
+		control: { kind: 'link', href: '/admin?tab=title-fix' }
+	},
+	{
 		id: 'sync.run_ratings_writeback',
 		label: 'Run ratings writeback now',
 		group: 'sync',

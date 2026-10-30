@@ -36,6 +36,11 @@ export function decodeRelative(raw: number): number {
 	return raw <= 63 ? raw : raw - 128;
 }
 
+/** Centre-64 relative decode (Pioneer jog: CW from 0x41, CCW from 0x3F). */
+export function decodeRelativeCentered(raw: number): number {
+	return raw - 64;
+}
+
 /** Combine a stored MSB with an arriving LSB into a 14-bit raw value. */
 export function combine14(msb: number, lsb: number): number {
 	return (msb << 7) | lsb;

@@ -10,7 +10,8 @@
 import type { HotCueSlot } from './hot-cue-types';
 
 /** Cue taxonomy from the /anlz endpoint. Kind 9-11 rows are excluded server-side v1. */
-export type AnlzCueKind = 'memory' | 'hot_cue' | 'loop';
+/** `transition_in` (AGENT-51): the user's transition-in cue, one per track, no slot. */
+export type AnlzCueKind = 'memory' | 'hot_cue' | 'loop' | 'transition_in';
 
 /** One waveform band set. Arrays are same-length normalised floats 0..1. */
 export interface AnlzWaveformBands {

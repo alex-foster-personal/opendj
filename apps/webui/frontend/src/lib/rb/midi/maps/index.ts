@@ -27,6 +27,7 @@ import { registerDeviceMap } from '$lib/rb/midi/webmidi.svelte';
 import { DDJ400_MAP } from './ddj-400';
 import { FLX4_MAP } from './ddj-flx4';
 import { FLX10_MAP } from './ddj-flx10';
+import { XDJ_AZ_MAP, XDJ_RX3_MAP } from './pioneer-xdj';
 import { RELOOP_MIXTOUR_MAP } from './reloop-mixtour';
 import { RELOOP_MIXTOUR_PRO_MAP } from './reloop-mixtour-pro';
 
@@ -35,7 +36,9 @@ export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = [
 	DDJ400_MAP,
 	RELOOP_MIXTOUR_PRO_MAP,
 	RELOOP_MIXTOUR_MAP,
-	FLX4_MAP
+	FLX4_MAP,
+	XDJ_RX3_MAP,
+	XDJ_AZ_MAP
 ];
 
 let _registered = false;

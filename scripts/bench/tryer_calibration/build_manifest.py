@@ -3,9 +3,10 @@
 Usage:
   python -m scripts.bench.tryer_calibration.build_manifest \\
       --live-data-dir <app data dir, read only> --render-dir <scratch dir> --session <name> \\
-      [--pairs <fixture>] [--only p01,p11]
+      [--pairs <fixture>] [--only p01,p11] [--profiles <snapshot dir>]
 
-The live data dir is only READ: profiles come from the running engine (GET),
+The live data dir is only READ: profiles come from the running engine (GET), or
+with --profiles from saved snapshots (cached_source.py; D10, no app needed),
 audio paths and loudness from its state.db opened read-only. Renders go to
 a builder-owned child of ``--render-dir`` and that child is deleted after each
 pair; any error other than SKIPPABLE_PAIR_ERRORS aborts the build.
@@ -30,7 +31,8 @@ computed from the render layout; the anchor is cut on its source's window.
 Output, under ``scripts/bench/tryer_calibration/sessions/<name>/`` (gitignored):
 ``manifest.json`` (what the page sees: pairs, opaque clip ids, urls),
 ``key.json`` (hidden: role, family, style, cues, vetoes, M, features) and
-``clips/<cid>.flac`` (lossless) with random names.
+``clips/<cid>.flac`` (lossless) with random names, and each clip's per-deck slices at
+``clips/<cid>/decks/deck<N>.flac`` (paths in the key's ``decks``) for the open review page's two-deck lanes.
 
 Requirements:
   ✔︎ ✅ 🎯 taste-v3 factorial selection is a pure function of a TryResult and ignores M and vetoes, order included
@@ -76,7 +78,8 @@ from apps.autodj.render_plan import RENDER_SAMPLE_RATE, RenderPlanError, layout_
 from apps.opendj_cli.dj_service import DjError
 from apps.transition_score import SCORER_VERSION, Candidate, TryResult, try_pair
 from apps.transition_score.contract import CORE_FACTORS
-from apps.transition_score.tryer import AudioUnavailable, EngineTrackSource, PairNotTryable
+from apps.transition_score.tryer import AudioUnavailable, EngineTrackSource, PairNotTryable, ProfileReader
+from scripts.bench.tryer_calibration.cached_source import CachedProfiles
 from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, CalibrationPair, load_pairs_verified
 
 #: A pair is skipped (reason recorded) only when THIS pair cannot be tried: a track without audio or analysis, no
@@ -128,7 +131,8 @@ class AnchorError(RuntimeError):
 SELECTION_RULE = (
     "taste-v3: factorial (family A, exit X), (family B, exit X), (family A, exit Y) in plan_sha256 order, core lanes "
     "preferred; else taste-v1 walk with the reason recorded; M and vetoes ignored for selection and recorded; "
-    "anchor = first variant with incoming +40 ms; played clip = plan span + 2 bars each side"
+    "anchor = first variant with incoming +40 ms; played clip = plan span + 2 bars each side; plus the first "
+    "lull_then_drop candidate in plan_sha256 order as role lull when the pair renders one (D13)"
 )
 
 
@@ -146,6 +150,8 @@ STYLE_FAMILY: dict[str, str] = {
     "echo_out": "fx",
     "stem_swap": "stem",
     "loop_extend": "loop",
+    # D13: its own family, outside the core lanes, so it never enters the taste factorial; added as role "lull".
+    "lull_then_drop": "lull",
 }
 
 
@@ -235,6 +241,16 @@ def select_taste_variants(result: TryResult, *, count: int = 3) -> Selection | s
     if len(chosen) < 2:
         return f"no taste contrast: all {len(rendered)} rendered candidates share family and exit bar"
     return Selection(chosen, "fallback", reason)
+
+
+def lull_candidate(result: TryResult, chosen: list[Candidate]) -> Candidate | None:
+    """D13: the first rendered lull_then_drop candidate in plan_sha256 order not already chosen, so the maintainer can hear the
+    intended lull-then-smash shape beside the taste variants; None when the pair renders none."""
+    lulls = sorted(
+        (c for c in result.candidates if c.refused is None and c.style == "lull_then_drop" and c not in chosen),
+        key=lambda c: c.plan_sha256,
+    )
+    return lulls[0] if lulls else None
 
 
 def layer2_features(candidate: Candidate) -> dict[str, float]:
@@ -440,6 +456,27 @@ def _copy_clip(source: Path, clips: Path, window: tuple[float, float]) -> str:
     return cid
 
 
+def _copy_decks(
+    candidate: Candidate, clips: Path, cid: str, window: tuple[float, float], in_delay_ms: float = 0.0
+) -> dict[str, str]:
+    """Each deck's kept render, sliced to the clip's played window as lossless FLAC beside the clip
+    (``clips/<cid>/decks/deck<N>.flac``), so a review page can draw the two-deck lanes the try-er panel draws.
+    The anchor's incoming deck is delayed by the same ``in_delay_ms`` as its mix (zeros in front, never clipped)."""
+    source = decks_dir_of(candidate)
+    target = clips / cid / "decks"
+    target.mkdir(parents=True)
+    paths: dict[str, str] = {}
+    for deck_file in sorted(source.glob("deck*.wav")):
+        samples, rate = read_wav_pcm16(deck_file)
+        deck = deck_file.stem.removeprefix("deck")
+        if in_delay_ms and int(deck) == candidate.plan["in"]["deck"]:
+            pad = np.zeros((round(in_delay_ms / 1000.0 * rate), *samples.shape[1:]), dtype=np.int16)
+            samples = np.concatenate([pad, samples])[: len(samples)]
+        write_flac_pcm16(target / f"deck{deck}.flac", trim(samples, rate, window), rate)
+        paths[deck] = f"clips/{cid}/decks/deck{deck}.flac"
+    return paths
+
+
 def _key_entry(pair: CalibrationPair, role: str, candidate: Candidate, features: dict[str, float]) -> dict[str, Any]:
     return {
         "pair_id": pair.pair_id,
@@ -468,15 +505,19 @@ def _key_entry(pair: CalibrationPair, role: str, candidate: Candidate, features:
 # -----------------------------------------------------------------------------
 @dataclass
 class ReadOnlyLiveSource:
-    """Profiles from the running engine (GET); audio path and loudness from the live state.db, read only."""
+    """Profiles from the running engine (GET), or from saved snapshots when ``profiles_dir`` is given (D10: no app
+    needed); audio path and loudness from the live state.db, read only."""
 
     live_data_dir: Path
+    profiles_dir: Path | None = None
 
     def __post_init__(self) -> None:
-        self._engine = EngineTrackSource(self.live_data_dir)
+        self._profiles: ProfileReader = (
+            EngineTrackSource(self.live_data_dir) if self.profiles_dir is None else CachedProfiles(self.profiles_dir)
+        )
 
     def profile(self, stable_id: str) -> TrackProfile:
-        profile = self._engine.profile(stable_id)
+        profile = self._profiles.profile(stable_id)
         if profile.lufs is not None:
             return profile
         db = self.live_data_dir / "state" / "state.db"
@@ -490,8 +531,10 @@ class ReadOnlyLiveSource:
         return replace(profile, lufs=float(row[0]), lufs_reason=None)
 
     def audio_path(self, stable_id: str) -> Path:
+        from apps.stems.cli import resolve_audio_path  # opens state.db mode=ro
+
         try:
-            return self._engine.audio_path(stable_id)
+            return resolve_audio_path(self.live_data_dir, stable_id)
         except FileNotFoundError as error:  # this track's audio is not here: skip the pair, never the build
             raise AudioUnavailable(stable_id) from error
 
@@ -531,7 +574,8 @@ def build_pair(
     selection = select_taste_variants(result, count=count)
     if isinstance(selection, str):
         return selection
-    chosen = selection.variants
+    lull = lull_candidate(result, selection.variants)
+    chosen = [*selection.variants, *([lull] if lull is not None else [])]
     out_p, in_p = source.profile(pair.out_id), source.profile(pair.in_id)
     start_bar = shared_start_bar(result, out_p, in_p)
     features = style_vocabulary([layer2_features(c) for c in chosen])
@@ -548,10 +592,12 @@ def build_pair(
         window = played_window(candidate, out_p, in_p, start_bar, render_s)
         windows.append(window)
         cid = _copy_clip(kept_render(candidate), clips, window)
+        role = "lull" if candidate is lull else f"taste{index + 1}"
         key[cid] = {
-            **_key_entry(pair, f"taste{index + 1}", candidate, feats),
+            **_key_entry(pair, role, candidate, feats),
             **design,
             "played_window_s": list(window),
+            "decks": _copy_decks(candidate, clips, cid, window),
         }
         cids.append(cid)
     anchor_cid = secrets.token_hex(6)
@@ -562,6 +608,8 @@ def build_pair(
         "played_window_s": list(windows[0]),
         "anchor": f"+{CFG.ANCHOR_DELAY_MS:g} ms incoming, from taste1's decks",
         "anchor_gain_db": anchor_gain_db,
+        # The anchor's decks are taste1's, its incoming deck delayed like its mix (before the mix's constant gain).
+        "decks": _copy_decks(chosen[0], clips, anchor_cid, windows[0], in_delay_ms=CFG.ANCHOR_DELAY_MS),
     }
     cids.append(anchor_cid)
     return cids, key
@@ -576,6 +624,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--session", required=True, help="session name, e.g. oltf-r0")
     parser.add_argument("--pairs", type=Path, default=FIXTURE_PATH)
     parser.add_argument("--only", help="comma-separated pair ids to build (default: all)")
+    parser.add_argument(
+        "--profiles",
+        type=Path,
+        help="read track profiles from saved snapshots here (cached_source snapshot) instead of a running engine",
+    )
     return parser.parse_args(argv)
 
 
@@ -691,7 +744,7 @@ def _build_session(
     """Build every pair's clips and the session's manifest and key under ``staging``; whether any pair was built."""
     clips = staging / "clips"
     clips.mkdir(parents=True)
-    source = ReadOnlyLiveSource(live)
+    source = ReadOnlyLiveSource(live, args.profiles)
 
     built: list[dict[str, Any]] = []
     key: dict[str, Any] = {}

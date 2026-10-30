@@ -197,6 +197,14 @@ class BackendError(RuntimeError):
     """Base class for backend errors."""
 
 
+class CommittedReadbackError(BackendError):
+    """A write COMMITTED and only the re-read of its result failed: the data landed, the caller must not undo or
+    discard its own record of it. batch_id, when set by a batching caller, names the undo batch recording the write."""
+
+    batch_id: str | None = None
+    applied: tuple[str, ...] = ()  # the proposal ids the committed write covered
+
+
 class NotFoundError(BackendError):
     """Raised when an entity does not exist."""
 
@@ -287,6 +295,35 @@ class TrackUpdate:
     stable_id: str
     patch: dict[str, Any]
     expected_etag: str
+    allow_blank_title: bool = False  # only an undo restoring a title that was blank when it was scanned
+    allow_blank_artist_members: bool = False  # only an undo restoring an artists list that held an empty member as stored
+    tags_absent: tuple[str, ...] = ()  # tags the writer will record as ITS additions: any already present is a conflict
+    tags_present: tuple[str, ...] = ()  # tags the writer relies on being there (an undo removes them): any missing is a conflict
+    tags_exact: tuple[str, ...] | None = None  # the complete tag set the writer saw: any difference is a conflict
+
+
+@dataclass(frozen=True)
+class AppliedState:
+    """A track's ETag and complete tag set as of the instant a batch write committed, read inside the write's own
+    transaction so no later edit can leak into the baseline a later undo compares against."""
+
+    etag: str
+    tags: tuple[str, ...]
+
+
+def applied_state_of(track: Track) -> AppliedState:
+    from .etag import compute_etag
+    return AppliedState(compute_etag(track.stable_id, track.updated_at, track.selection_tag), tuple(sorted(track.tags or [])))
+
+
+def tag_cas_conflicts(update: TrackUpdate, current: Track) -> bool:
+    """A tag write may not move the track ETag, so a writer that claims credit for adding a tag (an undo later removes
+    it) pins the tag as still absent, and an undo pins the tags it removes as still present, inside the write
+    transaction. True when another writer changed either first."""
+    held = current.tags or []
+    if update.tags_exact is not None and set(held) != set(update.tags_exact):
+        return True
+    return any(tag in held for tag in update.tags_absent) or any(tag not in held for tag in update.tags_present)
 
 
 def compute_mytag_catalog_revision(tracks: Sequence[Track]) -> str:
@@ -332,6 +369,38 @@ def _library_revision_digest(catalog: object) -> str:
     return f'"{sha256(encoded).hexdigest()}"'
 
 
+def _checked_title(title: object, allow_blank: bool) -> str:
+    """A title must be a string, and non-blank unless this is an undo restoring one that was blank when scanned."""
+    if not isinstance(title, str) or (not allow_blank and not title.strip()):
+        raise BackendError("title must be a non-empty string")
+    return title
+
+
+def identity_patch(
+    patch: dict[str, Any], *, allow_blank_title: bool = False, allow_blank_artist_members: bool = False,
+) -> dict[str, Any]:
+    """Validate the ``tracks``-row half of a patch: file_path, title, artists.
+
+    These are identity facts on ``tracks`` (no ``track_fields`` provenance row);
+    they land through ``StateWriter.upsert_track``, which keeps row history.
+    ``title``/``artists`` are written by the title-fix admin apply and undo.
+    """
+    out: dict[str, Any] = {}
+    if "file_path" in patch:
+        file_path = patch["file_path"]
+        if not isinstance(file_path, str) or not file_path:
+            raise BackendError("file_path must be a non-empty string")
+        out["file_path"] = file_path
+    if "title" in patch:
+        out["title"] = _checked_title(patch["title"], allow_blank_title)
+    if "artists" in patch:
+        artists = patch["artists"]
+        if not isinstance(artists, list) or not all(isinstance(a, str) and (a or allow_blank_artist_members) for a in artists):
+            raise BackendError("artists must be a list of non-empty strings")
+        out["artists"] = list(artists)
+    return out
+
+
 class StateBackend(Protocol):
     """Narrow surface the web UI needs from the state layer."""
     def list_tracks(self, flt: TrackFilter) -> Page: ...
@@ -353,7 +422,9 @@ class StateBackend(Protocol):
                      expected_etag: str, source: Source = "webui",
                      mutation_guard: Callable[[], None] | None = None) -> Track: ...
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
-                      source: Source = "webui") -> list[Track]: ...
+                      source: Source = "webui",
+                      mutation_guard: Callable[[], None] | None = None,
+                      applied_state: dict[str, AppliedState] | None = None) -> list[Track]: ...
     def update_tag_members(self, old_name: str, new_name: str | None, *,
                            expected_catalog_revision: str,
                            expected_track_count: int,
@@ -363,6 +434,32 @@ class StateBackend(Protocol):
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None: ...
     def stats(self) -> dict[str, Any]: ...
     def last_writer(self) -> tuple[str, str] | None: ...
+
+
+class ArtistsDataError(BackendError):
+    """tracks.artists_json holds something the column never legitimately contains."""
+
+
+def artists_from_json(artists_json: str | None) -> list[str]:
+    """The one reading of tracks.artists_json: null or empty is no artist, a bare string is one artist, a list is
+    returned EXACTLY as stored (empty members included, so an apply followed by an undo restores it byte-for-byte).
+    Malformed JSON, any other value, or a non-string member raises ArtistsDataError instead of reading as blank, so
+    corrupted storage is never normalized into a value and then written back over the raw one."""
+    if not artists_json:
+        return []
+    try:
+        decoded = json.loads(artists_json)
+    except json.JSONDecodeError as exc:
+        raise ArtistsDataError(f"artists_json is not valid JSON: {exc}") from exc
+    if decoded is None:
+        return []
+    if isinstance(decoded, str):
+        return [decoded] if decoded else []
+    if not isinstance(decoded, list):
+        raise ArtistsDataError(f"artists_json holds {type(decoded).__name__}, expected a list or string")
+    if not all(isinstance(a, str) for a in decoded):
+        raise ArtistsDataError("artists_json has a non-string member")
+    return list(decoded)
 
 
 class InMemoryBackend:
@@ -538,7 +635,8 @@ class InMemoryBackend:
 
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
                       source: Source = "webui",
-                      mutation_guard: Callable[[], None] | None = None) -> list[Track]:
+                      mutation_guard: Callable[[], None] | None = None,
+                      applied_state: dict[str, AppliedState] | None = None) -> list[Track]:
         from .etag import compute_etag, strip_quotes
         with self._mutex:
             stable_ids = [update.stable_id for update in updates]
@@ -552,7 +650,7 @@ class InMemoryBackend:
                     raise NotFoundError(f"track not found: {update.stable_id}")
                 current_rows.append(track)
                 current_etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
-                if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                if strip_quotes(current_etag) != strip_quotes(update.expected_etag) or tag_cas_conflicts(update, track):
                     conflicts.append({"stable_id": update.stable_id, "current_etag": current_etag})
             if conflicts:
                 raise BatchConflictError(conflicts)
@@ -615,6 +713,12 @@ class InMemoryBackend:
                     prov["file_path"] = Provenance(value=file_path, source=source,
                                                    confidence=1.0, modified_at=now,
                                                    status="ok")
+                identity = identity_patch(
+                    update.patch, allow_blank_title=update.allow_blank_title,
+                    allow_blank_artist_members=update.allow_blank_artist_members)
+                updated.title = identity.get("title", updated.title)
+                if "artists" in identity:
+                    updated.artist = ", ".join(identity["artists"]) or None
                 tags = list(updated.tags or [])
                 if update.patch.get("tags_add"):
                     for tag in update.patch["tags_add"]:
@@ -641,6 +745,8 @@ class InMemoryBackend:
                         self._tracks[updated.stable_id] = updated
                 if changed:
                     self._last_writer = (source, now)
+                if applied_state is not None:
+                    applied_state.update({updated.stable_id: applied_state_of(updated) for updated in results})
                 if mutation_guard is not None:
                     mutation_guard()
             except Exception:

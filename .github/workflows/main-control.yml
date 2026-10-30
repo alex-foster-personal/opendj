@@ -103,7 +103,7 @@ jobs:
       # Full history so origin/main is current enough for the ancestry guard
       # (issue #3513). edited below re-runs body declarations; ancestry catches
       # stale synthetic merge refs that predate trunk ADR fixes.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Pinned: a workflow_dispatch from another ref would otherwise check
           # out THAT ref, and the freshness script measures `<base>..main`

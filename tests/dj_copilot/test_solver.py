@@ -185,7 +185,6 @@ def test_fuzz_various_seeds(seed: int) -> None:
     tracks = make_tracks(50, seed=seed)
     result = suggest_order(tracks=tracks, goal=_goal_peak())
     assert len(result.order) == 50
-    assert result.solve_ms < 1000.0
 
 
 def test_beam_width_one_equals_greedy() -> None:

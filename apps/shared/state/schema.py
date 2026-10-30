@@ -44,8 +44,9 @@ from .migrations_v21 import _V21
 from .migrations_v22 import _V22
 from .migrations_v23 import _V23
 from .migrations_v24 import _V24
+from .migrations_v25 import _V25
 
-SCHEMA_VERSION: int = 24
+SCHEMA_VERSION: int = 25
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -75,6 +76,7 @@ MIGRATIONS: list[list[str]] = [
     _V22,
     _V23,
     _V24,
+    _V25,
 ]
 
 
@@ -177,6 +179,8 @@ TABLES: tuple[str, ...] = (
     "feedback_pins",
     # v21 (issue #4396) -- machine-local digest gate, never synced
     "sync_write_tokens",
+    # v25 (transition memory, ADR-0129). Machine-local.
+    "pair_transitions",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of

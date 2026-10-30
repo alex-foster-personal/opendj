@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -252,6 +253,47 @@ def test_hydrate_one_leaves_no_partial_bundle_on_fetch_failure(
     )
     assert outcome.status == "error"
     assert not (stems_dir / "broken-track").exists()
+
+
+@pytest.mark.requirement("STEM-58")
+def test_a_failed_hydrate_that_cannot_remove_its_copy_says_so(
+    tmp_path: Path, fake_s3, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
+):
+    """[if] a fetch fails and its temp dir cannot be removed [then] the error names that dir, [else stop].
+
+    A ``.tmp-hydrate-*`` directory is outside every cache scan, so one left
+    behind unseen would never be counted or evicted (Codex on #6821). The only
+    double is the removal refusing, which stands in for an I/O error or a
+    Windows sharing violation.
+    """
+    stems_dir = tmp_path / "stems"
+    index_entry = _seed_bundle(fake_s3, cfg, "stuck-track")
+    index_entry["vocals.wav"] = "f" * 64  # never pushed -> fetch_asset raises
+    real_rmtree = shutil.rmtree
+
+    def refuse_temp_dirs(path, ignore_errors=False, **kwargs):
+        if ".tmp-hydrate-" in str(path):
+            if ignore_errors:
+                return None
+            raise PermissionError(13, "sharing violation", str(path))
+        return real_rmtree(path, ignore_errors=ignore_errors, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_temp_dirs)
+
+    outcome = hydrate_one(
+        "stuck-track",
+        data_dir=tmp_path / "data",
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
+        index={"stuck-track": index_entry},
+        stems_dir=stems_dir,
+    )
+
+    assert outcome.status == "error"
+    left = [p for p in stems_dir.parent.rglob("*") if ".tmp-hydrate-" in p.name]
+    assert left, "control: the refused removal left the temp dir"
+    assert "could not remove failed hydration copy" in (outcome.reason or "")
+    assert str(left[0]) in (outcome.reason or ""), outcome.reason
+    assert not (stems_dir / "stuck-track").exists()
 
 
 # --- reservation guard: bulk skips, on-demand does not (D5) ------------------
@@ -728,3 +770,59 @@ def test_enforcement_protects_a_recently_served_bundle_without_deck_open(tmp_pat
     expired_protected = registry.open_ids(now=served_at + OPEN_DECK_SERVED_TTL_S + 1)
     outcome2 = _enforce_on_full_disk(stems_dir, index, protected=expired_protected)
     assert "served-track" in outcome2.evicted_stable_ids
+
+
+class _LosingSource(DirectR2Source):
+    """Fetches for real, then another hydrator publishes the same bundle first."""
+
+    def __init__(self, *, cfg: CloudConfig, s3, stems_dir: Path, stable_id: str) -> None:
+        super().__init__(cfg=cfg, s3=s3)
+        self._winner = stems_dir / stable_id
+
+    def fetch_bundle_files(self, *, stable_id, file_hashes, tmp_dir):
+        total = super().fetch_bundle_files(stable_id=stable_id, file_hashes=file_hashes, tmp_dir=tmp_dir)
+        shutil.copytree(tmp_dir, self._winner)
+        return total
+
+
+@pytest.mark.requirement("STEM-58")
+def test_a_losing_hydration_copy_that_cannot_be_removed_is_reported_by_name(
+    tmp_path: Path, fake_s3, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
+):
+    """[if] a hydrate loses the race and its copy cannot be removed [then] the outcome names that copy, [else stop].
+
+    MUTATION TARGET: ``shutil.rmtree(tmp_dir, ignore_errors=True)`` (the
+    pre-fix cleanup), which reported already_local while the whole fetched
+    copy stayed in the stem root (Sol on #6820). The winner's bundle is
+    local, so the outcome stays already_local either way. Control: a
+    removable copy is removed and the outcome carries no reason.
+    """
+    stems_dir = tmp_path / "stems"
+    entry = _seed_bundle(fake_s3, cfg, "raced")
+
+    def hydrate() -> HydrationOutcome:
+        shutil.rmtree(stems_dir / "raced", ignore_errors=True)
+        return hydrate_one(
+            "raced",
+            data_dir=tmp_path / "data",
+            source=_LosingSource(cfg=cfg, s3=fake_s3, stems_dir=stems_dir, stable_id="raced"),
+            index={"raced": entry},
+            stems_dir=stems_dir,
+        )
+
+    outcome = hydrate()
+    assert (outcome.status, outcome.reason) == ("already_local", None)
+    assert sorted(p.name for p in stems_dir.iterdir()) == ["raced"], "control: the losing copy is removed"
+
+    real = shutil.rmtree
+
+    def refuse_the_copy(path, *args, **kwargs):
+        if "raced" + stem_cache_budget.IN_FLIGHT_MARKER in Path(path).name:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_the_copy)
+    outcome = hydrate()
+    [stuck] = [p for p in stems_dir.iterdir() if p.name != "raced"]
+    assert outcome.status == "already_local"
+    assert outcome.reason is not None and str(stuck) in outcome.reason

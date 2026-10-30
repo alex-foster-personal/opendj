@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Export globally-defined agent skills into this repo before publishing.
 
-Companion script for `.agents/skills/export-global-skills-before-publishing/SKILL.md`.
+Companion script for `(private path)`.
 
-Problem: this repo's LOCAL skills (`.agents/skills/`, `.cursor/skills/`) reference
+Problem: this repo's LOCAL skills (`(private path)/`, `(private path)/`) reference
 GLOBAL skills that live only on the author's machine (`~/.claude/skills/<name>/`)
 or inside installed plugins (`superpowers:writing-skills`). A stranger who clones
 the published repo has none of them, so every such reference is a dangling pointer.
@@ -17,7 +17,7 @@ OK RAN done + ran-script + works-as-expected, OK RAN TESTED + regression tests.
 
 R1 OK RAN  DISCOVERY: find every global-skill reference made by local skills and
            by repo docs (AGENTS.md, CLAUDE.md, root *.md, docs/), across BOTH the
-           .agents/skills and .cursor/skills harness trees.
+           (private path) and (private path) harness trees.
            [if a local skill contains `[[bifrost-remote-access]]` and it is not in
             the manifest then broken]
            [if a doc contains `~/.claude/skills/af-github-inline-clips` and it is
@@ -94,12 +94,12 @@ MANIFEST_NAME: Final[str] = "MANIFEST.json"
 MANIFEST_SCHEMA: Final[int] = 1
 
 # Harness-scoped local skill trees. A published repo may need skills resolvable by
-# Claude Code (.claude/skills), Cursor/Codex (.agents/skills, .cursor/skills), so
+# Claude Code ((private path)), Cursor/Codex ((private path), (private path)), so
 # discovery covers all of them and vendoring targets one dest-root at a time.
 LOCAL_SKILL_TREES: Final[tuple[str, ...]] = (
-    ".agents/skills",
-    ".cursor/skills",
-    ".claude/skills",
+    "(private path)",
+    "(private path)",
+    "(private path)",
 )
 
 # Docs that commonly name a global skill in prose.
@@ -168,7 +168,7 @@ PERSONAL_MARKERS: Final[tuple[tuple[str, str], ...]] = (
     (r"/Users/dev3?/", "absolute machine path (leaks username + layout)"),
     (r"\b100\.(?:\d{1,3})\.(?:\d{1,3})\.(?:\d{1,3})\b", "tailscale CGNAT address"),
     (r"\b(?:bifrost2?|demon-llama)\b", "named personal machine"),
-    (r"seat-a|former-work-account", "personal account handle"),
+    (r"seat-a|private_owner", "personal account handle"),
     (r"\bpassport\b|\bdate of birth\b|\bDOB\b", "identity document field"),
     (r"\bdoppler\b", "secrets-manager reference"),
     (r"construct\s*>\s*dev_af|dev_personal", "secrets project/config name"),
@@ -218,7 +218,7 @@ MAX_VENDOR_BYTES_DEFAULT: Final[int] = 2_000_000
 
 WIKI_RE: Final[re.Pattern[str]] = re.compile(r"\[\[([A-Za-z0-9][A-Za-z0-9:._/-]*)\]\]")
 HOME_PATH_RE: Final[re.Pattern[str]] = re.compile(
-    r"~/\.claude/skills/([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
+    r"~/\(private path)/([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
 )
 SKILL_COLON_RE: Final[re.Pattern[str]] = re.compile(
     r"\bskill:([A-Za-z0-9](?:[A-Za-z0-9:._-]*[A-Za-z0-9])?)"
@@ -432,16 +432,7 @@ def _scan_targets(repo: Path) -> list[Path]:
     for path in targets:
         if path in seen or _skipped(path, repo):
             continue
-        if path.suffix.lower() not in {
-            ".md",
-            ".mdx",
-            ".txt",
-            ".yaml",
-            ".yml",
-            ".json",
-            ".py",
-            ".sh",
-        }:
+        if path.suffix.lower() not in MARKDOWN_SUFFIXES | {".txt", ".yaml", ".yml", ".json", ".py", ".sh"}:
             continue
         seen.add(path)
         unique.append(path)
@@ -471,12 +462,13 @@ def _discover(
         if not text:
             continue
         rel = _rel(path, repo)
-        state = {"fence": False, "examples": False}
-        for lineno, line in enumerate(text.splitlines(), start=1):
+        lines = text.splitlines()
+        doc = doc_line_mask(lines, markdown=is_markdown(path))
+        for lineno, line in enumerate(lines, start=1):
             # Documentation is not a reference. A skill that DOCUMENTS reference
             # shapes (this one does) would otherwise flood its own manifest with
             # its own examples, including non-skills like a bare wiki-link shape.
-            if _is_doc_line(line, state):
+            if doc[lineno - 1]:
                 skipped_doc_lines += 1
                 continue
             if DISPOSITION_MARKER_RE.search(line):
@@ -869,23 +861,47 @@ def _vendor_link(
     return f"[{name}]({target}) <!-- vendored-ref: {name} -->"
 
 
-def _is_doc_line(line: str, state: dict[str, bool]) -> bool:
-    """Line-level documentation state machine, shared by discovery and rewriting.
+MARKDOWN_SUFFIXES: Final[frozenset[str]] = frozenset({".md", ".mdx", ".mdc", ".markdown"})
 
-    Both MUST agree: if discovery ignores a fenced example, the rewriter must not
-    mangle it, and vice versa.
+
+def is_markdown(path: Path) -> bool:
+    """Code blocks exist only in Markdown; elsewhere indentation is just code."""
+    return path.suffix.lower() in MARKDOWN_SUFFIXES
+
+
+def doc_line_mask(lines: list[str], *, markdown: bool) -> list[bool]:
+    """Per line: True when it is documentation, never a reference.
+
+    Shared by discovery and rewriting, which MUST agree: if discovery ignores a
+    fenced example, the rewriter must not mangle it, and vice versa. Code blocks
+    (fenced or indented) come from a CommonMark parser rather than a line
+    pattern, because only the parser knows a fence's container: one nested in a
+    list item or block quote is indented by that container, and one indented
+    four columns outside any container is not a fence at all. Only Markdown has
+    code blocks: in a `.py` or `.yaml` helper an indented line is the file's own
+    content, so `markdown=False` applies the example markers alone.
     """
-    stripped = line.lstrip()
-    if stripped.startswith(("```", "~~~")):
-        state["fence"] = not state["fence"]
-        return True
-    if EXAMPLES_BEGIN_RE.search(line):
-        state["examples"] = True
-        return True
-    if EXAMPLES_END_RE.search(line):
-        state["examples"] = False
-        return True
-    return state["fence"] or state["examples"] or bool(NOT_A_REF_RE.search(line))
+    from markdown_it import MarkdownIt  # type: ignore[import-not-found]  # repo venv dep, not in the mypy env
+
+    text = "\n".join(line.rstrip("\r\n") for line in lines)
+    mask = [False] * len(lines)
+    for token in MarkdownIt("commonmark").parse(text) if markdown else ():
+        if token.type in ("fence", "code_block") and token.map:
+            for index in range(*token.map):
+                mask[index] = True
+    examples = False
+    for index, line in enumerate(lines):
+        if mask[index]:
+            continue
+        if EXAMPLES_BEGIN_RE.search(line):
+            examples = True
+            mask[index] = True
+        elif EXAMPLES_END_RE.search(line):
+            examples = False
+            mask[index] = True
+        else:
+            mask[index] = examples or bool(NOT_A_REF_RE.search(line))
+    return mask
 
 
 def _rewrite_file(
@@ -928,7 +944,7 @@ def _rewrite_file(
         else:
             repl = f"`{name}` <!-- {marker} -->"
         patterns = [
-            re.compile(rf"~/\.claude/skills/{re.escape(name)}(?:/SKILL\.md)?"),
+            re.compile(rf"~/\(private path)/{re.escape(name)}(?:/SKILL\.md)?"),
             re.compile(rf"\bskill:{re.escape(name)}\b"),
         ]
         if ":" in name:
@@ -938,10 +954,10 @@ def _rewrite_file(
         path_patterns.extend((pattern, repl) for pattern in patterns)
 
     original = path.read_text(encoding="utf-8")
-    state = {"fence": False, "examples": False}
+    lines = original.splitlines(keepends=True)
     out: list[str] = []
-    for line in original.splitlines(keepends=True):
-        if _is_doc_line(line.rstrip("\n"), state) or DISPOSITION_MARKER_RE.search(line):
+    for line, is_doc in zip(lines, doc_line_mask(lines, markdown=is_markdown(path)), strict=True):
+        if is_doc or DISPOSITION_MARKER_RE.search(line):
             out.append(line)
             continue
         line = WIKI_RE.sub(replace_wiki, line)
@@ -1188,8 +1204,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--repo", default=".", help="repo root (default: cwd)")
     parser.add_argument(
         "--dest-root",
-        default=".agents/skills",
-        help="harness skill tree that receives _vendored/ (default: .agents/skills). "
+        default="(private path)",
+        help="harness skill tree that receives _vendored/ (default: (private path)). "
         "Run once per harness that must resolve the skills.",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1233,8 +1249,8 @@ def main(argv: Sequence[str]) -> int:
     if not dest_tree.is_dir():
         _die(
             f"dest-root does not exist: {dest_tree}. Create the harness skill tree first, "
-            "or pass --dest-root for the harness you mean (.agents/skills, .cursor/skills, "
-            ".claude/skills)."
+            "or pass --dest-root for the harness you mean ((private path), (private path), "
+            "(private path))."
         )
     dest_root = dest_tree / VENDOR_DIRNAME
     vendor_rel = _rel(dest_root, repo)

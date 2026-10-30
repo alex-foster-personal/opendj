@@ -93,6 +93,8 @@ export default defineConfig({
 		'**/feedback-review-panel-lazy.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/reanalyze-context-menu-toast.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
+		'**/transition-in-cue.spec.ts', // playwright.transition-in-cue.config.ts (real backend, seeded grid)
+		'**/cmdk-preview-cue.spec.ts', // playwright.cmdk-preview-cue.config.ts (real engine, own-beatgrid fixture)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
 		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (PERFMODE-14 library-mode capture; operator-only)

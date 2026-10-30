@@ -1,6 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+import { e2eFootprintsPlugin } from '../../vite-e2e-footprints';
+
 import { LIBRARY_JOBS_E2E_FRONTEND_PORT } from './library-jobs-e2e-endpoints';
 
 const frontendPort = Number(process.env.LIBRARY_JOBS_E2E_FRONTEND_PORT ?? LIBRARY_JOBS_E2E_FRONTEND_PORT);
@@ -13,7 +15,7 @@ if (!Number.isSafeInteger(frontendPort) || apiOrigin === undefined) {
 }
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), ...e2eFootprintsPlugin()],
 	optimizeDeps: {
 		exclude: ['signalsmith-stretch']
 	},

@@ -28,6 +28,7 @@ for (const [name, rel, size] of [
 		assert.match(source, new RegExp(`deckArtworkUrl\\(deck\\.stable_id, '${size}'\\)`));
 		assert.doesNotMatch(source, /shouldFetchArtwork/, `${name} must not skip a known local miss`);
 		assert.doesNotMatch(source, /[^k]artworkUrl\(deck\.stable_id/, `${name} must not use the plain url`);
+		assert.match(source, /data-expected-resource-error/);
 	});
 }
 
@@ -40,4 +41,5 @@ test('library rows never ask for the online lookup', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /artworkUrl\(row\.stable_id, 's'\)/);
 	assert.doesNotMatch(table, /deckArtworkUrl|online=true/);
+	assert.doesNotMatch(table, /data-expected-resource-error/);
 });

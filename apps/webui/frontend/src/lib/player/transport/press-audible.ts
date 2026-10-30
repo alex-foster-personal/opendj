@@ -7,7 +7,7 @@
  * decides whether a row may add that floor in: is each term a measurement, or
  * is it the absence of one?
  *
- * Extracted under convention D5 (docs/perf/performance-register.md): the
+ * Extracted under convention D5 ((private path)): the
  * engine keeps the call sites, the arithmetic and its refusal rule live here
  * where a test can reach them. Nothing here awaits, so a Class A control never
  * gains a wait by being measured.
@@ -78,7 +78,7 @@ export const PRESS_SCHEDULE_KIND = 'transport-schedule-press';
  * before the shorter prefix, so a load-spanning row still spends the press
  * ring's budget rather than the noisy plain one, while an S2 p95 consumer can
  * test this longest kind FIRST to exclude exactly these rows - see
- * `specs/perf-latency-program.md` S2. Deferred load-play (Space or a direct
+ * `(private path)` S2. Deferred load-play (Space or a direct
  * Load+Play on a still-decoding track) only ever dispatches its play AFTER
  * the load it waited on resolves, so `press_to_schedule_ms` on this kind is
  * never the ordinary schedule-queue wait S2 budgets - it is honestly, and by
@@ -132,6 +132,117 @@ export function isMeasuredLatencyFloor(seconds: number | undefined): boolean {
 }
 
 /**
+ * Whether this engine has a real audio output device behind its context.
+ *
+ * A context with no device still renders, into a fallback sink, and that sink
+ * reports a NONZERO `outputLatency`: Chromium 141 headless on a Linux box with
+ * no `/dev/snd` read baseLatency 10ms and outputLatency 32ms (Fri 9 Oct 2026,
+ * /mnt/project-files/electron-vs-tauri/cloud-press/NOTES.txt). The zero
+ * invariant above cannot catch that, and no value check can: a real Mac's
+ * Chromium reads the same 32ms (table above). The only honest signal is
+ * whether the platform lists an output device at all.
+ *
+ * - `present`: the engine lists at least one `audiooutput` device.
+ * - `absent`: the engine CAN list output devices (it implements
+ *   `AudioContext.setSinkId`, so `enumerateDevices` covers outputs) and lists
+ *   none. The output term is then the fallback sink's figure, not a floor.
+ * - `unverified`: the engine cannot answer (WebKit lists no outputs whether or
+ *   not one exists). Rows keep today's rule, because treating "cannot tell"
+ *   as "absent" would refuse every WebKit row.
+ * - `pending`: the current probe has not answered yet, before the first probe
+ *   or while a re-probe after a devicechange is in flight. Treated like
+ *   `absent`: the output term is withheld until the probe says `present` or
+ *   `unverified`, so a fallback sink's figure never passes as a floor while
+ *   the answer is unknown, and a removed device never reads `present` in the
+ *   gap before its re-probe lands.
+ * - `probe-failed`: the engine should be able to answer and the probe did not
+ *   (`enumerateDevices` threw, or `navigator.mediaDevices` is missing, as in an
+ *   insecure context). Treated like `absent`, because a box whose probe failed
+ *   is exactly where the fallback sink's figure would otherwise pass as a
+ *   floor; the cause rides on the row as `output_device_error`.
+ *
+ * Every row carries the answer as `output_device`, so no state is silent.
+ */
+export type OutputDevicePresence = 'present' | 'absent' | 'unverified' | 'pending' | 'probe-failed';
+
+let outputDevice: OutputDevicePresence = 'pending';
+let outputDeviceError: string | null = null;
+
+// Each probe takes a number; only the newest one may publish, so a slow probe from before a
+// devicechange cannot overwrite the answer of the probe that change started.
+let probeSeq = 0;
+
+function noteProbe(seq: number, value: OutputDevicePresence, error: string | null = null): OutputDevicePresence {
+	if (seq !== probeSeq) return value;
+	outputDevice = value;
+	outputDeviceError = error;
+	if (error !== null) console.warn(`[press-audible] output device probe failed: ${error}`);
+	return value;
+}
+
+/** True when the output term must not be read as a floor. */
+function outputTermRefused(): boolean {
+	return outputDevice === 'absent' || outputDevice === 'probe-failed' || outputDevice === 'pending';
+}
+
+interface DeviceProbeEnv {
+	mediaDevices?: (Pick<MediaDevices, 'enumerateDevices'> & Partial<Pick<MediaDevices, 'addEventListener'>>) | undefined;
+	canListOutputs: boolean;
+}
+
+function defaultProbeEnv(): DeviceProbeEnv {
+	const ctor = (globalThis as { AudioContext?: { prototype: object } }).AudioContext;
+	return {
+		mediaDevices: (globalThis as { navigator?: Navigator }).navigator?.mediaDevices,
+		canListOutputs: ctor !== undefined && 'setSinkId' in ctor.prototype
+	};
+}
+
+/**
+ * Ask the platform once whether an output device exists, and remember it.
+ *
+ * Async and OFF the press path: the engine starts it when the context is
+ * created, and a schedule only ever reads the remembered answer, so no Class A
+ * control waits on it. A failed probe is recorded as `probe-failed` with its
+ * cause, never folded into `unverified`.
+ */
+export async function probeOutputDevice(env: DeviceProbeEnv = defaultProbeEnv()): Promise<OutputDevicePresence> {
+	const seq = ++probeSeq;
+	if (!env.canListOutputs) return noteProbe(seq, 'unverified');
+	// Withdraw the previous answer while this probe is in flight: it described a device list that has
+	// since changed (or no list at all), so the output term is withheld until this probe answers.
+	noteProbe(seq, 'pending');
+	if (env.mediaDevices === undefined) {
+		return noteProbe(seq, 'probe-failed', 'navigator.mediaDevices is unavailable (insecure context?)');
+	}
+	try {
+		const devices = await env.mediaDevices.enumerateDevices();
+		return noteProbe(seq, devices.some((device) => device.kind === 'audiooutput') ? 'present' : 'absent');
+	} catch (error) {
+		return noteProbe(seq, 'probe-failed', `enumerateDevices threw: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+let watching = false;
+
+/** Probe now and again whenever the device list changes (headphones in or out). */
+export function watchOutputDevice(env: DeviceProbeEnv = defaultProbeEnv()): void {
+	void probeOutputDevice(env);
+	if (watching) return;
+	watching = true;
+	env.mediaDevices?.addEventListener?.('devicechange', () => void probeOutputDevice(env));
+}
+
+/**
+ * The output term a row may use: the context's reading, or nothing when the
+ * platform has said there is no device for it to describe, the probe that
+ * would have said so failed, or that probe has not answered yet.
+ */
+export function outputLatencyIfDevice(seconds: number | undefined): number | undefined {
+	return outputTermRefused() ? undefined : seconds;
+}
+
+/**
  * The device-floor terms this row cannot state, in stage-key order.
  *
  * Empty means the floor is fully known and `input_to_output_ms` is earned.
@@ -172,13 +283,22 @@ export function latencyFloorLabels(input: {
 	unavailable: readonly LatencyFloorTerm[];
 	contextState: string;
 }): Record<string, string> {
-	if (input.unavailable.length === 0) {
-		return { latency_floor: 'complete', audio_context_state: input.contextState };
+	const device: Record<string, string> = { output_device: outputDevice };
+	if (outputDeviceError !== null) device.output_device_error = outputDeviceError;
+	// A caller that passed the raw outputLatency still cannot claim a complete
+	// floor with no device behind it: the label never contradicts output_device.
+	const unavailable =
+		outputTermRefused() && !input.unavailable.includes('output_latency_ms')
+			? [...input.unavailable, 'output_latency_ms' as const]
+			: input.unavailable;
+	if (unavailable.length === 0) {
+		return { latency_floor: 'complete', audio_context_state: input.contextState, ...device };
 	}
 	return {
 		latency_floor: 'partial',
-		latency_unavailable: input.unavailable.join(','),
-		audio_context_state: input.contextState
+		latency_unavailable: unavailable.join(','),
+		audio_context_state: input.contextState,
+		...device
 	};
 }
 

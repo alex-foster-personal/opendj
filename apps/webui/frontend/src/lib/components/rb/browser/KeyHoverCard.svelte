@@ -13,14 +13,14 @@
 		keyShiftSuperscript,
 		letteredAndCamelot
 	} from '$lib/rb/compatible-filter-copy';
+	import { placeFloating } from '$lib/ui/clamp-to-viewport';
 
 	let {
 		ownKey,
 		shift,
 		shiftedKey,
 		note = null,
-		x,
-		y,
+		anchor,
 		onDismiss
 	}: {
 		/** The row's own key as stored. */
@@ -31,15 +31,57 @@
 		shiftedKey: string | null;
 		/** Shown instead of the key pair when the key failed or is missing. */
 		note?: string | null;
-		/** Viewport x of the cell's center and y of its top edge. */
-		x: number;
-		y: number;
+		/** Viewport-space rect of the hovered key cell (from getBoundingClientRect). */
+		anchor: { left: number; top: number; width: number; height: number };
 		onDismiss: () => void;
 	} = $props();
 
 	const shown = $derived(letteredAndCamelot(shift === 0 ? ownKey : shiftedKey));
 	const sup = $derived(keyShiftSuperscript(shift));
 	const shiftLine = $derived(keyShiftHoverLine(ownKey, shift));
+
+	let el = $state<HTMLDivElement | null>(null);
+	let cardW = $state(0);
+	let cardH = $state(0);
+	let winW = $state(0);
+	let winH = $state(0);
+
+	$effect(() => {
+		const node = el;
+		if (node === null || typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(() => {
+			cardW = node.offsetWidth;
+			cardH = node.offsetHeight;
+		});
+		ro.observe(node);
+		return () => ro.disconnect();
+	});
+
+	const pos = $derived.by(() => {
+		if (cardW <= 0 || cardH <= 0 || winW <= 0 || winH <= 0) {
+			return null;
+		}
+		const box = placeFloating({
+			trigger: {
+				left: anchor.left + anchor.width / 2 - cardW / 2,
+				top: anchor.top,
+				width: cardW,
+				height: anchor.height
+			},
+			size: { width: cardW, height: cardH },
+			viewport: { width: winW, height: winH },
+			preferred: 'above',
+			gap: 6
+		});
+		return { left: box.x, top: box.y };
+	});
+
+	const cardStyle = $derived.by(() => {
+		if (pos === null) {
+			return 'visibility:hidden;left:0;top:0';
+		}
+		return `visibility:visible;left:${pos.left}px;top:${pos.top}px`;
+	});
 
 	onMount(() => {
 		// A scroll moves the cell out from under a fixed card: drop it.
@@ -49,19 +91,21 @@
 	});
 </script>
 
-{#if note !== null}
-	<div class="key-hover-card" role="tooltip" style={`left:${x}px;top:${y}px`}>
-		<div class="khc-cap">{note}</div>
-	</div>
-{:else if shown !== null}
-	<div class="key-hover-card" role="tooltip" style={`left:${x}px;top:${y}px`}>
-		<div class="khc-pair">
-			<span class="khc-letter">{shown.lettered}{#if sup}<sup>{sup}</sup>{/if}</span>
-			<span class="khc-camelot">{shown.camelot}{#if sup}<sup>{sup}</sup>{/if}</span>
-		</div>
-		<div class="khc-cap">{shown.quality}</div>
-		{#if shiftLine !== null}
-			<div class="khc-shift">{shiftLine}</div>
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
+{#if note !== null || shown !== null}
+	<div class="key-hover-card" bind:this={el} role="tooltip" style={cardStyle}>
+		{#if note !== null}
+			<div class="khc-cap">{note}</div>
+		{:else if shown !== null}
+			<div class="khc-pair">
+				<span class="khc-letter">{shown.lettered}{#if sup}<sup>{sup}</sup>{/if}</span>
+				<span class="khc-camelot">{shown.camelot}{#if sup}<sup>{sup}</sup>{/if}</span>
+			</div>
+			<div class="khc-cap">{shown.quality}</div>
+			{#if shiftLine !== null}
+				<div class="khc-shift">{shiftLine}</div>
+			{/if}
 		{/if}
 	</div>
 {/if}
@@ -70,7 +114,6 @@
 	.key-hover-card {
 		position: fixed;
 		z-index: 60;
-		transform: translate(-50%, calc(-100% - 6px));
 		display: grid;
 		gap: 4px;
 		padding: 6px 9px;

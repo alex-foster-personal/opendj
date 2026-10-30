@@ -143,7 +143,7 @@ def test_trunk_uploads_run_without_a_checkout() -> None:
 
 def test_each_upload_carries_exactly_its_own_shard_report() -> None:
     download_paths = [
-        s["with"]["path"]
+        s["env"]["DEST"]
         for s in _steps(INSIGHTS_JOB)
         if re.fullmatch(r"download-[1-5]", str(s.get("id", "")))
     ]

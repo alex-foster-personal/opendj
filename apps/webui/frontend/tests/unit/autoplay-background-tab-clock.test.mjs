@@ -120,3 +120,14 @@ describe('AutoPlay triggers off the audio clock, not the rAF mirror', () => {
 		assert.ok(Number(poll[1]) <= BACKGROUND_POLL_FLOOR_MS);
 	});
 });
+
+describe('a plan launches its incoming deck in a hidden tab', () => {
+	it('the plan runner commits due launches before it reads the decks', () => {
+		// Live, Fri 30 Oct 2026: with the tab hidden a launch's armed flag lapsed with `playing` still false, because only the
+		// rAF tick read that deck's clock, and the runner failed a sounding deck as "incoming deck 2 stopped mid-plan".
+		const orders = readFileSync(fileURLToPath(new URL('../../src/lib/rb/agent-orders.ts', import.meta.url)), 'utf8');
+		assert.match(orders, /query: \(\) => \{\s*(\/\/.*\s*)?commitPerformanceLaunches\(\);\s*return queryPerformanceState\(\);/);
+		const engine = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url)), 'utf8');
+		assert.match(engine, /export function commitDueQuantizedLaunches\(\): void \{\s*for \(const deck of DECK_IDS\) _commitPendingIfDue\(deck\);/);
+	});
+});

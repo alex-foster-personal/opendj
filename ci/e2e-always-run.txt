@@ -1,0 +1,8 @@
+# Root Playwright specs every narrowed e2e gate runs, whatever the change set
+# (TEST-BUDGET round 3, scripts/ci_e2e_selection.py `always_run_specs`). One spec
+# path per line, relative to apps/webui/frontend; `#` starts a comment. A spec
+# belongs here when it proves the harness itself still boots (engine, Vite, a
+# deck load), so a selection that otherwise picks nothing still proves the gate
+# ran. Keep it short: every entry costs its seconds on every in-scope PR.
+tests/e2e/setup-entry-points.spec.ts  # the setup entry points reach the app (the boot path)
+tests/e2e/deck-loader-placement.spec.ts  # a real deck load on the generated library through /performance

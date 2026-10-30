@@ -355,7 +355,7 @@ def test_a_failed_build_leaves_no_session_and_a_good_one_lands_whole(
     monkeypatch.setattr(bm, "BENCH_ROOT", tmp_path)
     monkeypatch.setattr(bm, "_validated_paths", lambda args: (sessions / args.session, tmp_path, tmp_path / "r"))
     monkeypatch.setattr(bm, "_selected_pairs", lambda args: (pairs, "a" * 64))
-    monkeypatch.setattr(bm, "ReadOnlyLiveSource", lambda live: None)
+    monkeypatch.setattr(bm, "ReadOnlyLiveSource", lambda live, profiles: None)
     monkeypatch.setattr(bm, "_require_disk", lambda *a: None)
     fail_on: set[str] = {"p2"}
 
@@ -423,12 +423,66 @@ def test_the_live_source_turns_missing_audio_into_a_pair_skip(monkeypatch: pytes
     from apps.transition_score.tryer import AudioUnavailable
     from scripts.bench.tryer_calibration import build_manifest as bm
 
-    class GoneEngine:
-        def audio_path(self, stable_id: str) -> Path:
-            raise FileNotFoundError(f"/srv/music/{stable_id}.mp3")
+    def no_audio_file(data_dir: Path, stable_id: str) -> Path:
+        raise FileNotFoundError(f"/srv/music/{stable_id}.mp3")
 
-    source = bm.ReadOnlyLiveSource.__new__(bm.ReadOnlyLiveSource)
-    monkeypatch.setattr(source, "_engine", GoneEngine(), raising=False)
+    monkeypatch.setattr("apps.stems.cli.resolve_audio_path", no_audio_file)
+    source = bm.ReadOnlyLiveSource(Path("/srv/live"), Path("/srv/profiles"))
     with pytest.raises(AudioUnavailable) as gone:
         source.audio_path("trk-in")
     assert isinstance(gone.value, bm.SKIPPABLE_PAIR_ERRORS) and "/srv" not in str(gone.value)
+
+
+@pytest.mark.requirement("TRYER-22")
+def test_deck_slices_are_bit_exact_and_the_anchor_delays_only_its_incoming_deck(tmp_path: Path) -> None:
+    """[if] decks are copied beside a clip [then] each is its exact int16 slice, the anchor's incoming 40 ms late, [else stop].
+
+    The slice covers the played window of the kept deck render; the anchor's outgoing deck is untouched."""
+    rate = 48000
+    render = tmp_path / "kept" / "c1"
+    (render / "decks").mkdir(parents=True)
+    rng = np.random.default_rng(7)
+    decks = {n: (rng.integers(-20000, 20000, size=(rate * 4, 2))).astype(np.int16) for n in (1, 2)}
+    for n, samples in decks.items():
+        soundfile.write(str(render / "decks" / f"deck{n}.wav"), samples, rate, subtype="PCM_16")
+    candidate = dataclasses.replace(_candidate("c1", "blend", 0.5), render_path=str(render / "mix.wav"))
+    (render / "mix.wav").write_bytes(b"")  # kept_render only checks the path is recorded
+    clips = tmp_path / "clips"
+    window = (1.0, 3.0)
+    paths = builder._copy_decks(candidate, clips, "aa", window)
+    assert paths == {"1": "clips/aa/decks/deck1.flac", "2": "clips/aa/decks/deck2.flac"}
+    for n in (1, 2):
+        sliced, _ = soundfile.read(str(clips / "aa" / "decks" / f"deck{n}.flac"), dtype="int16")
+        assert np.array_equal(sliced, decks[n][rate * 1 : rate * 3]), "if a deck slice is not bit-exact then lanes lie"
+    builder._copy_decks(candidate, clips, "bb", window, in_delay_ms=40.0)
+    late, _ = soundfile.read(str(clips / "bb" / "decks" / "deck2.flac"), dtype="int16")
+    shift = round(0.040 * rate)
+    assert np.array_equal(late, decks[2][rate - shift : rate * 3 - shift]), "if the anchor's incoming is not 40 ms late"
+    same, _ = soundfile.read(str(clips / "bb" / "decks" / "deck1.flac"), dtype="int16")
+    assert np.array_equal(same, decks[1][rate : rate * 3]), (
+        "if the anchor moves the outgoing deck then it is not taste1"
+    )
+
+
+@pytest.mark.requirement("AGENT-39")
+def test_a_lull_then_drop_candidate_is_added_beside_the_taste_variants_never_into_them() -> None:
+    """[if] a pair renders lull_then_drop candidates [then] the first by plan_sha256 is added beside the factorial, [else stop].
+
+    It never enters the taste factorial, and with none rendered nothing is added."""
+    from scripts.bench.tryer_calibration.build_manifest import lull_candidate
+
+    ranked = (
+        _candidate("c1", "bass_swap_blend", 0.6, 161),
+        _candidate("c2", "crossfade", 0.5, 161),
+        _candidate("c3", "bass_swap_blend", 0.4, 169),
+        _candidate("c5", "lull_then_drop", 0.2, 145),
+        _candidate("c4", "lull_then_drop", 0.3, 145),
+    )
+    selection = select_taste_variants(TryResult("o", "i", ranked))
+    assert not isinstance(selection, str)
+    assert all(c.style != "lull_then_drop" for c in selection.variants), (
+        "if a lull enters the factorial then D13 leaked"
+    )
+    lull = lull_candidate(TryResult("o", "i", ranked), selection.variants)
+    assert lull is not None and lull.id == "c4"
+    assert lull_candidate(TryResult("o", "i", ranked[:3]), selection.variants) is None

@@ -116,6 +116,9 @@ export default {
 		'tests/manual/wkwebview-spike/inject.mjs',
 		'tests/e2e/**/*.spec.ts',
 		'tests/e2e/**/*.config.ts',
+		// Playwright loads this reporter from the CLI (`--reporter=...,./tests/e2e/
+		// support/footprint-reporter.ts`) in the e2e gate, so no module imports it.
+		'tests/e2e/support/footprint-reporter.ts',
 		'playwright.config.ts',
 		'vite.config.ts',
 		'svelte.config.js',

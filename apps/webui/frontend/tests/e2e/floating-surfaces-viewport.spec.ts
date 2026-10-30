@@ -129,3 +129,77 @@ test('hover tile, comment pin, and QuickDraw stay inside the viewport from the b
 	}
 	await page.keyboard.press('Escape');
 });
+
+const VIEWPORT_INSET_PX = 8;
+const KEY_HOVER_GAP_PX = 6;
+
+async function assertInsetInsideWindow(
+	page: import('@playwright/test').Page,
+	locator: import('@playwright/test').Locator
+): Promise<void> {
+	await expect
+		.poll(async () => locator.boundingBox(), {
+			timeout: 5_000,
+			message: 'surface must have geometry'
+		})
+		.not.toBeNull();
+
+	await expect
+		.poll(
+			async () => {
+				const polled = await locator.boundingBox();
+				if (!polled) return null;
+				const win = await page.evaluate(() => ({
+					w: window.innerWidth,
+					h: window.innerHeight
+				}));
+				return (
+					polled.x >= VIEWPORT_INSET_PX &&
+					polled.y >= VIEWPORT_INSET_PX &&
+					polled.x + polled.width <= win.w - VIEWPORT_INSET_PX &&
+					polled.y + polled.height <= win.h - VIEWPORT_INSET_PX
+				);
+			},
+			{ timeout: 5_000 }
+		)
+		.toBe(true);
+}
+
+test('library key hover card flips below and stays inside the viewport inset from the top-right edge', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await page.goto('/performance');
+	await page.getByText('All Tracks', { exact: true }).first().click();
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+
+	const keyCell = page.locator('.c-key').first();
+	await expect(keyCell).toBeVisible();
+	await keyCell.evaluate(
+		(el, inset) => {
+			const cell = el as HTMLElement;
+			const rect = cell.getBoundingClientRect();
+			cell.style.position = 'fixed';
+			cell.style.left = `${window.innerWidth - rect.width - inset}px`;
+			cell.style.top = `${inset}px`;
+			cell.style.zIndex = '99999';
+		},
+		VIEWPORT_INSET_PX
+	);
+	await keyCell.hover();
+	const keyCard = page.locator('.key-hover-card');
+	await expect(keyCard).toBeVisible({ timeout: 10_000 });
+	await assertInsetInsideWindow(page, keyCard);
+
+	await expect
+		.poll(
+			async () => {
+				const cellBox = await keyCell.boundingBox();
+				const cardBox = await keyCard.boundingBox();
+				if (!cellBox || !cardBox) return null;
+				return cardBox.y >= cellBox.y + cellBox.height + KEY_HOVER_GAP_PX - 0.5;
+			},
+			{ timeout: 5_000, message: 'key hover card must open below the cell near the top edge' }
+		)
+		.toBe(true);
+});

@@ -445,7 +445,7 @@ def test_in_trim_db_is_the_incoming_trim_at_time_zero_with_the_page_mapping() ->
         plan, in_=dataclasses.replace(plan.in_, trim_db=-1.2, trim_reason="match -8.7 to -9.9 LUFS: -1.2 dB")
     )
     doc = compile_render_plan(plan, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
-    trims = [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim"]
+    trims = [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 2]
     assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 2, "value": trim_knob(-1.2)}}]
     page = compile_plan(plan, in_profile, plan_id="p")["plan"]["prepare"]
     assert {"type": "trim", "deck": 2, "value": trim_knob(-1.2)} in page, (
@@ -466,7 +466,8 @@ def test_no_trim_db_sends_no_trim_and_an_authored_trim_beside_it_is_refused() ->
         plan, in_=dataclasses.replace(plan.in_, trim_db=None, trim_reason="no LUFS for fixture-in")
     )
     doc = compile_render_plan(bare, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
-    assert not [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim"]
+    # ADR-0135: only the outgoing's headroom pre-gain; no incoming trim without trim_db.
+    assert not [e for e in doc["events"] if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 2]
     both = dataclasses.replace(
         plan,
         in_=dataclasses.replace(plan.in_, trim_db=-1.0),
@@ -729,7 +730,7 @@ def test_one_unrenderable_proposal_does_not_sink_the_pair(tmp_path: Path, monkey
     kept, refused = tryer.renderable_plans(plans, out_profile, in_profile, 4)
     assert kept == plans[1:] and len(refused) == 1 and "context" in refused[0]
     monkeypatch.setattr(tryer, "layout_of", lambda *a, **k: (_ for _ in ()).throw(RenderPlanError("no")))
-    with pytest.raises(tryer.TryError, match="none of 6"):
+    with pytest.raises(tryer.TryError, match=f"none of {len(plans)} "):
         tryer.renderable_plans(plans, out_profile, in_profile, 4)
 
 
@@ -1266,3 +1267,15 @@ def test_only_pair_level_refusals_are_pair_not_tryable(
     with pytest.raises(TryError) as systemic:
         try_plans(_plans()[:2], out_profile, in_profile, tracks, context_bars=4, binary=engine)
     assert not isinstance(systemic.value, PairNotTryable)
+
+
+@pytest.mark.requirement("AGENT-47")
+def test_the_outgoing_deck_loads_at_unity_unless_the_headroom_is_opted_into() -> None:
+    """[if] any plan is compiled for render [then] no outgoing TRIM is sent, [else stop].
+
+    ADR-0135, superseded in part by round 22: the pre-gain is opt-in."""
+    out_profile, in_profile = _profiles()
+    doc = compile_render_plan(_plans()[0], out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    events = doc["events"]
+    trims = [e for e in events if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 1]
+    assert trims == [], "if the render sets an outgoing trim by default then the headroom opt-in leaked back"

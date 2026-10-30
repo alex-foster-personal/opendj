@@ -41,6 +41,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { stemPartGains } from '$lib/rb/stem-graph';
 import { controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
 import {
+	beatSyncMasterDeck,
 	deckStates,
 	engine,
 	mixerState,
@@ -61,6 +62,7 @@ import {
 import type { DeviceMap, LedTrigger, MidiAction, MidiInputValue } from '$lib/rb/midi/midi-types';
 import {
 	controllerPadMode,
+	clearControllerManualLoop,
 	cycleControllerManualLoop,
 	releaseControllerDevice,
 	resetControllerPadRuntime,
@@ -72,6 +74,8 @@ import {
 } from '$lib/rb/midi/controller-pad-runtime.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { effectiveBeatSync } from '$lib/player/grid-features';
+import { JogWheel } from '$lib/rb/midi/jog';
 import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
 import { startTakeoverEngineSync, takeoverContinuous } from '$lib/rb/midi/takeover-engine-sync.svelte';
 
@@ -214,6 +218,39 @@ function _tempoNudge(deck: DeckId, direction: -1 | 1): void {
 	void dispatchPerformanceCommand({ type: 'tempo', deck, ratio });
 }
 
+const _jogWheels = new Map<DeckId, JogWheel>();
+
+function _jogWheel(deck: DeckId): JogWheel {
+	const existing = _jogWheels.get(deck);
+	if (existing) return existing;
+	const wheel = new JogWheel(
+		() => {
+			const st = deckStates[deck];
+			if (st.duration_ms === null) throw new Error(`deck_jog: deck ${deck} has no duration`);
+			const master = beatSyncMasterDeck();
+			return {
+				playing: st.playing,
+				followsSyncMaster: effectiveBeatSync(st) && master !== null && master !== deck,
+				pitch: st.pitch,
+				rangePct: pitchRanges[deck],
+				positionMs: st.position_ms,
+				durationMs: st.duration_ms
+			};
+		},
+		{
+			seek: (positionMs) => {
+				void dispatchPerformanceCommand({ type: 'seek', deck, position_ms: positionMs, exact: true });
+			},
+			tempo: (ratio) => {
+				void dispatchPerformanceCommand({ type: 'tempo', deck, ratio });
+			},
+			bendRefused: () => pushToast(`Deck ${deck}: follows Beat Sync, turn it off to nudge`, 'error')
+		}
+	);
+	_jogWheels.set(deck, wheel);
+	return wheel;
+}
+
 // ------------------------------------------------------------ action switch
 
 /** The action switch. Exported for unit tests; production wiring goes
@@ -266,6 +303,7 @@ export function handleMidiAction(
 		case 'deck_loop_exit': {
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'looping');
+			clearControllerManualLoop(action.deck, _deviceId);
 			_cmdLoopExit(action.deck);
 			return;
 		}
@@ -315,6 +353,14 @@ export function handleMidiAction(
 			if (!_pressed(value)) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'nudging tempo');
 			_tempoNudge(action.deck, action.direction);
+			return;
+		}
+		case 'deck_jog': {
+			if (value.kind !== 'relative') {
+				throw new Error(`deck_jog requires a relative binding, got ${value.kind}`);
+			}
+			if (_deckIsEmpty(action.deck)) return;
+			_jogWheel(action.deck).turn(value.delta);
 			return;
 		}
 		case 'controller_pad_mode': {
@@ -414,9 +460,9 @@ export function handleMidiAction(
 			const v = takeoverContinuous(action, value, _deviceId, physicalControlId);
 			if (v === null) return;
 			if (_deckIsEmpty(action.deck)) return _toastEmptyDeck(action.deck, 'pitching');
-			void dispatchPerformanceCommand({
-				type: 'tempo', deck: action.deck, ratio: pitchRatioFromFader(v, pitchRanges[action.deck])
-			});
+			const ratio = pitchRatioFromFader(v, pitchRanges[action.deck]);
+			_jogWheels.get(action.deck)?.tempoMoved(ratio);
+			void dispatchPerformanceCommand({ type: 'tempo', deck: action.deck, ratio });
 			return;
 		}
 		case 'browse_encoder': {

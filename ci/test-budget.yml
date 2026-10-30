@@ -1,0 +1,38 @@
+# Runner-minute budget per pytest run (TEST-BUDGET round 0, Fri 30 Oct 2026).
+#
+# A PR head or a queue draft may spend this many runner minutes across its five fast-lane
+# shards. The selector (scripts/ci_test_selection.py, `--budget ci/test-budget.yml`) prices
+# its selection with the model below and, when over budget, drops weak-link modules heaviest
+# first until it fits. Strong links (import graph, `CI-Tests:` declarations, the always-run
+# guards) are never dropped: when they alone exceed the budget the run is marked over_budget
+# and runs them all. Dropped modules are listed in selection.json so an escape can be
+# attributed to the budget; the nightly full suite (full-ci.yml) and the trunk checkpoint
+# still run everything. Decision record: (private path).
+#
+# Why 20: fleet-af ci--whatif `whatif queue` round 1 ((private path)): on the 14 runner
+# seats that work, today's draft (median 95 runner-min, 63 of them pytest) carries 55 to 85
+# merges a day; at 20 runner-min per run the same queue carries about 370. The shards are
+# the first and largest piece of that; the e2e gate (22) and the fixed jobs (12) follow.
+version: 1
+
+runner_minutes:
+  pr_head: 20
+  queue_draft: 20
+
+# Cost model fitted on 258 PR-head runs (R2 0.885) by fleet-af ci--whatif
+# (src/ci_whatif/cost.py, the TEST-CUT instrument): shard runner minutes =
+# shards x overhead + ledger minutes x per_ledger_minute. The first time it is written down here.
+model:
+  overhead_min_per_shard: 0.52
+  min_per_ledger_minute: 0.80
+  shards: 5
+
+# Weak-link rules a budget may drop, in the order they are dropped (the first entry goes
+# first). A module kept by any rule not listed here is strong and never dropped: the import
+# graph and test-area data (direct evidence, (private path)), `CI-Tests:` declarations
+# and the always-run guards. The strings are the reason prefixes
+# scripts/ci_test_selection_rules.py records.
+drop_order:
+  - "coupling `"
+  - "named reference"
+  - "conftest reach `"

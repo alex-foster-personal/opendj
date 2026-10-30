@@ -39,7 +39,7 @@ def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
     upload = next(
         st
         for st in _steps(SHARD_JOB)
-        if str(st.get("uses", "")).startswith("actions/upload-artifact@")
+        if str(st.get("uses", "")) == "./.github/actions/r2-artifact"
         and "ci-insights" in str(st.get("with", {}).get("name", ""))
     )
     up_name = upload["with"]["name"]
@@ -69,10 +69,10 @@ def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
     )
     seen_names = set()
     for shard, step in downloads.items():
-        assert str(step.get("uses", "")).startswith("actions/download-artifact@"), (
-            f"download-{shard} is not an actions/download-artifact step: {step}"
+        assert "--aws-sigv4" in str(step.get("run", "")), (
+            f"download-{shard} is not an R2 download step: {step}"
         )
-        down_name = step["with"]["name"]
+        down_name = step["env"]["ARTIFACT_NAME"]
         expected = up_name.replace("${{ matrix.shard }}", str(shard))
         assert down_name == expected, (
             f"download-{shard} asks for {down_name!r}, which does not match "

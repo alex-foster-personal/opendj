@@ -24,6 +24,7 @@ import urllib.request
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from apps.shared.last_match import require_last_match
 from apps.webui.port_config import (
     PROJECT_ROOT,
     WEBUI_ENV_FILE,
@@ -139,13 +140,15 @@ def serve_url_from_launcher_output(text: str) -> str:
     Deliberately no fallback. The LAST match wins, so a caller replaying an
     accumulated log gets the run it just made rather than an older one.
     """
-    matches = SERVE_LINE_RE.findall(text)
-    if not matches:
-        raise PortConfigError(
+    return require_last_match(
+        text,
+        SERVE_LINE_RE,
+        missing_message=(
             "run-agentbox printed no serve line, so the box never came up behind "
             "HTTPS serve; there is no public origin to open"
-        )
-    return matches[-1]
+        ),
+        refuse=PortConfigError,
+    )
 
 
 def _windows_listener_pids(port: int) -> list[int]:

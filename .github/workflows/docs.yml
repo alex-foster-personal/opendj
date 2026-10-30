@@ -26,7 +26,8 @@ on:
       - "pylock.docs.toml"
       - ".github/workflows/docs.yml"
 
-# Pages publishing rights live on the deploy job only (zizmor excessive-permissions).
+# Docs publish to Cloudflare Pages (project mdt-docs) with a scoped API token, not GitHub
+# Pages, so no job needs pages or id-token rights (zizmor excessive-permissions).
 permissions:
   contents: read
 
@@ -60,6 +61,14 @@ jobs:
     # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
+    # `deployment` is true on a push to main ONLY (Tue 27 Oct 2026, bundle merges PR):
+    # a pull request still builds in the `pr-docs` environment but GitHub creates no
+    # deployment object for a build that publishes nothing. Pinned by
+    # tests/docs/test_mkdocs_config.py.
+    environment:
+      name: ${{ github.event_name == 'push' && 'cloudflare-pages' || 'pr-docs' }}
+      url: https://mdt-docs.pages.dev
+      deployment: ${{ github.event_name == 'push' }}
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
       # checkout cleans the tree as the runner user, so one root-owned file in
@@ -144,7 +153,7 @@ jobs:
           fi
 
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
@@ -175,50 +184,20 @@ jobs:
           scripts/ci_venv.sh 3.11 --lock pylock.docs.toml
       - name: Build site (strict)
         run: .venv/bin/mkdocs build --strict
-      - name: Upload pages artifact
+      # Published from this job, so the built site never crosses a job boundary and needs
+      # no artifact storage: GitHub's artifact quota blocked the old Pages artifact upload
+      # step account-wide on Fri 30 Oct 2026 (run 41015755771). A failed deploy fails the job.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: github.ref == 'refs/heads/main'
-        # SHA-pinned to the v3 tag commit (resolved 2026-04-17).
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
         with:
-          path: site
-
-  deploy:
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    # Deploy is best-effort: GitHub Pages may not be enabled at the repo level
-    # yet (actions/deploy-pages returns 404 until Settings -> Pages is turned on).
-    # Strict mkdocs build above is the CI gate; deploy failing must not block
-    # the integration branch.
-    #
-    # No job-level `if`: a false job condition reports SKIPPED on pull
-    # requests, and the landing gate treats skipped/neutral as not-a-pass.
-    # Pages publish stays main-only at the step below.
-    continue-on-error: true
-    # `deployment` is true on a push to main ONLY (Tue 27 Oct 2026, bundle merges
-    # PR). A pull request still runs this job in the `pr-docs` environment, so the
-    # job and its check-run keep existing (see the no-`if` note above), but GitHub
-    # creates no deployment object for it, so a docs PR no longer shows "This
-    # branch is being deployed" / a pr-docs deployment for a build that publishes
-    # nothing. `deployment: false` is incompatible only with custom deployment
-    # protection rules, and neither environment has any (read back with
-    # `gh api repos/{owner}/{repo}/environments`). Pinned by
-    # tests/docs/test_mkdocs_config.py.
-    environment:
-      name: ${{ github.event_name == 'push' && 'github-pages' || 'pr-docs' }}
-      url: ${{ steps.deployment.outputs.page_url }}
-      deployment: ${{ github.event_name == 'push' }}
-    # See the `build` job above for the runner-selection note.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 10
-    steps:
-      - name: Deploy to GitHub Pages
+          node-version: "22.14.0"
+      - name: Deploy to Cloudflare Pages
         if: github.ref == 'refs/heads/main'
-        id: deployment
-        continue-on-error: true
-        # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
-      - name: PR builds do not publish Pages
+        timeout-minutes: 5
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.148.0 pages deploy site --project-name mdt-docs --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=true
+      - name: PR builds do not publish
         if: github.ref != 'refs/heads/main'
-        run: echo "Pages deploy is main-only; mkdocs --strict already gated this PR."
+        run: echo "Docs publish is main-only; mkdocs --strict already gated this PR."

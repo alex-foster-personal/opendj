@@ -96,6 +96,10 @@ class TrackProfile:
     #: AGENT-31: integrated loudness (``apps/loudness`` scan, the ``loudness_lufs`` lane), or None with ``lufs_reason``.
     lufs: float | None = None
     lufs_reason: str | None = None
+    #: AGENT-51: the bar the user's transition-in cue sits on (Traktor Fade In,
+    #: Mixxx intro start), or None when the track has none. ``mix_windows``
+    #: makes it THE in window when present.
+    transition_in_bar: int | None = None
 
     # ----- bar arithmetic -------------------------------------------------
     @property
@@ -183,6 +187,7 @@ class TrackProfile:
             "hot_cues": list(self.hot_cues),
             "stems_available": self.stems_available,
             "loudness": {"lufs": self.lufs, "reason": self.lufs_reason},
+            "transition_in_bar": self.transition_in_bar,
             "notes": list(self.notes),
         }
 
@@ -347,6 +352,40 @@ def _hot_cues(cues: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
     )
 
 
+def _transition_in_bar(
+    stable_id: str, cues: Sequence[Mapping[str, Any]], downbeats: tuple[float, ...]
+) -> int | None:
+    """The bar of the track's ``transition_in`` cue (AGENT-51), or None.
+
+    The store saves the cue ON a downbeat, but the grid can move after that
+    (a re-analysis, a grid edit), so the stored time is snapped again here to
+    the nearest downbeat of the grid this profile reads, never trusted as a bar.
+    """
+    found = [cue for cue in cues if cue.get("kind") == "transition_in"]
+    if not found:
+        return None
+    if len(found) > 1:
+        raise ProfileError(f"{stable_id}: {len(found)} transition-in cues; the store keeps one")
+    in_ms = found[0].get("in_ms")
+    if not isinstance(in_ms, (int, float)) or isinstance(in_ms, bool) or in_ms < 0:
+        raise ProfileError(f"{stable_id}: transition-in cue has no position ({in_ms!r})")
+    return _nearest_bar(downbeats, float(in_ms) / 1000.0)
+
+
+def downbeats_of(stable_id: str, anlz: Mapping[str, Any]) -> tuple[float, ...]:
+    """The downbeats (seconds) a profile of ``anlz`` would count bars on.
+
+    Raises :class:`ProfileError` when the grid has fewer than two downbeats.
+    """
+    return _grid(stable_id, anlz.get("beatgrid") or {})[1]
+
+
+def snap_to_downbeat(downbeats: tuple[float, ...], seconds: float) -> tuple[int, float]:
+    """``(bar, downbeat_seconds)`` of the downbeat nearest ``seconds`` (1-based bar)."""
+    bar = _nearest_bar(downbeats, seconds)
+    return bar, downbeats[bar - 1]
+
+
 def _key_segments(anlz: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
     block = anlz.get("key_segments")
     if not isinstance(block, Mapping) or block.get("status") != "ok":
@@ -474,6 +513,7 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         vocals_status=vocals_status,
         key_segments=_key_segments(anlz),
         hot_cues=_hot_cues(_records(anlz.get("cues"))),
+        transition_in_bar=_transition_in_bar(stable_id, _records(anlz.get("cues")), downbeats),
         stems_available=stems if isinstance(stems, bool) else None,
         notes=tuple(notes),
         **_loudness(track),
@@ -546,6 +586,15 @@ def trim_db_of_knob(knob: float) -> float:
     if not 0.0 < knob <= 1.0:
         raise ValueError(f"trim knob {knob} gives no finite gain")
     return 20.0 * math.log10(knob * TRIM_MAX_GAIN)
+
+
+#: Round 21 (ADR-0135): every deck loads at this headroom pre-gain, so two decks of masters near 0 dBFS can overlap
+#: under the -1 dBTP ceiling. Mimicked, not chosen: Mixxx's ReplayGain "initial boost without ReplayGain data"
+#: (`[ReplayGain] DefaultBoost`) resets to -6 dB (mixxx 2.4 src/preferences/dialog/dlgprefreplaygain.cpp,
+#: slotResetToDefaults: `SliderDefaultBoost->setValue(-6)`).
+HEADROOM_DB = -6.0
+#: Round 22 (ADR-0135 superseded on the default): decks load at unity. Set this to HEADROOM_DB to opt into the pre-gain.
+DECK_LOAD_TRIM_DB = 0.0
 
 
 def trim_knob(trim_db: float) -> float:

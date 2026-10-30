@@ -578,20 +578,34 @@
 		margin-left: 10px;
 	}
 	.hp-btn-io.io-alert {
+		position: relative;
 		/* The border and glow carry the alarm red; the 10px label is lifted toward
 		   white so it reads at 4.5:1 on the dark panel (raw red was 3.7:1, B25). */
 		color: color-mix(in srgb, var(--rb-red, #e5484d) 70%, #fff);
 		border-color: var(--rb-red, #e5484d);
-		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-red, #e5484d) 70%, transparent);
+		box-shadow: 0 0 3px color-mix(in srgb, var(--rb-red, #e5484d) 45%, transparent);
+	}
+	/* The pulse animates the OPACITY of a stronger glow layer, not box-shadow
+	   itself: an animated box-shadow repaints on the main thread every frame
+	   for as long as the alert stands, which cost frames with two decks
+	   playing (Fri 9 Oct 2026). Opacity runs on the compositor. */
+	.hp-btn-io.io-alert::after {
+		content: '';
+		position: absolute;
+		inset: -1px;
+		border-radius: inherit;
+		box-shadow: 0 0 9px color-mix(in srgb, var(--rb-red, #e5484d) 95%, transparent);
+		opacity: 0;
+		pointer-events: none;
 		animation: io-alert-pulse 1.2s ease-in-out infinite;
 	}
 	@keyframes io-alert-pulse {
 		0%,
 		100% {
-			box-shadow: 0 0 3px color-mix(in srgb, var(--rb-red, #e5484d) 45%, transparent);
+			opacity: 0;
 		}
 		50% {
-			box-shadow: 0 0 9px color-mix(in srgb, var(--rb-red, #e5484d) 95%, transparent);
+			opacity: 1;
 		}
 	}
 	/* Light skin: the panel is light, so the plain red already contrasts. */
@@ -604,8 +618,9 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		/* Glow without pulse. */
-		.hp-btn-io.io-alert {
+		.hp-btn-io.io-alert::after {
 			animation: none;
+			opacity: 0.5;
 		}
 	}
 	.hp-btn:hover {

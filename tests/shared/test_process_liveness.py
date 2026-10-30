@@ -36,40 +36,120 @@ def test_posix_permission_error_reports_alive(monkeypatch: pytest.MonkeyPatch) -
     assert pl._posix_pid_is_alive(42) is True
 
 
-def test_win_open_process_handle_reports_alive(monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] Windows OpenProcess returns a handle [then] alive after close [else stop]."""
+def test_posix_unexpected_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] POSIX kill raises other than lookup/permit [then] raise [else stop]."""
+
+    def _boom(pid: int, sig: int) -> None:
+        raise OSError("unexpected probe failure")
+
+    monkeypatch.setattr(pl.os, "kill", _boom)
+
+    with pytest.raises(OSError, match="unexpected probe failure"):
+        pl._posix_pid_is_alive(42)
+
+
+def _patch_win_kernel32(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     import ctypes
 
     kernel32 = MagicMock()
-    kernel32.OpenProcess.return_value = 99
     monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: kernel32, raising=False)
+    return kernel32
+
+
+def _assert_win32_signatures(kernel32: MagicMock) -> None:
+    from ctypes import wintypes
+
+    assert kernel32.OpenProcess.argtypes == [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    assert kernel32.OpenProcess.restype is wintypes.HANDLE
+    assert kernel32.CloseHandle.argtypes == [wintypes.HANDLE]
+    assert kernel32.CloseHandle.restype is wintypes.BOOL
+
+
+def test_win_open_process_handle_reports_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] Windows OpenProcess returns a handle [then] alive after close [else stop]."""
+    kernel32 = _patch_win_kernel32(monkeypatch)
+    kernel32.OpenProcess.return_value = 99
+    kernel32.CloseHandle.return_value = True
 
     assert pl._win_pid_is_alive(42) is True
     kernel32.CloseHandle.assert_called_once_with(99)
+    _assert_win32_signatures(kernel32)
 
 
 def test_win_access_denied_reports_alive(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] Windows OpenProcess fails with access denied [then] alive [else stop]."""
     import ctypes
 
-    kernel32 = MagicMock()
+    kernel32 = _patch_win_kernel32(monkeypatch)
     kernel32.OpenProcess.return_value = 0
-    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: kernel32, raising=False)
     monkeypatch.setattr(ctypes, "get_last_error", lambda: pl._ERROR_ACCESS_DENIED, raising=False)
 
     assert pl._win_pid_is_alive(42) is True
+    _assert_win32_signatures(kernel32)
 
 
-def test_win_other_failure_reports_dead(monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] Windows OpenProcess fails with another error [then] dead [else stop]."""
+def test_win_invalid_parameter_reports_dead(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] Windows OpenProcess fails with error 87 [then] dead [else stop]."""
     import ctypes
 
-    kernel32 = MagicMock()
+    kernel32 = _patch_win_kernel32(monkeypatch)
     kernel32.OpenProcess.return_value = 0
-    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: kernel32, raising=False)
-    monkeypatch.setattr(ctypes, "get_last_error", lambda: 2, raising=False)
+    monkeypatch.setattr(
+        ctypes, "get_last_error", lambda: pl._ERROR_INVALID_PARAMETER, raising=False
+    )
 
     assert pl._win_pid_is_alive(42) is False
+    _assert_win32_signatures(kernel32)
+
+
+def test_win_unexpected_open_failure_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] Windows OpenProcess fails with unexpected error [then] raise [else stop]."""
+    import ctypes
+
+    win_error_codes: list[int] = []
+
+    class FakeWinError(OSError):
+        def __init__(self, code: int) -> None:
+            self.winerror = code
+            super().__init__(code, "fake WinError")
+
+    def _win_error(code: int) -> FakeWinError:
+        win_error_codes.append(code)
+        return FakeWinError(code)
+
+    kernel32 = _patch_win_kernel32(monkeypatch)
+    kernel32.OpenProcess.return_value = 0
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 8, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", _win_error, raising=False)
+
+    with pytest.raises(FakeWinError) as exc_info:
+        pl._win_pid_is_alive(42)
+    assert exc_info.value.winerror == 8
+    assert win_error_codes == [8]
+
+
+def test_win_close_handle_failure_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] Windows CloseHandle fails [then] raise WinError [else stop]."""
+    import ctypes
+
+    class FakeWinError(OSError):
+        def __init__(self, code: int) -> None:
+            self.winerror = code
+            super().__init__(code, "fake WinError")
+
+    kernel32 = _patch_win_kernel32(monkeypatch)
+    kernel32.OpenProcess.return_value = 99
+    kernel32.CloseHandle.return_value = False
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 6, raising=False)
+    monkeypatch.setattr(ctypes, "WinError", FakeWinError, raising=False)
+
+    with pytest.raises(FakeWinError) as exc_info:
+        pl._win_pid_is_alive(42)
+    assert exc_info.value.winerror == 6
 
 
 def test_pid_is_alive_dispatches_to_posix_on_non_nt(monkeypatch: pytest.MonkeyPatch) -> None:

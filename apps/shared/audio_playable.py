@@ -21,6 +21,14 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
          authority on playability, and a library must never lose a track to a
          metadata parser's blind spot
 
+  ✔︎ ✅ 🎯 a decode far shorter than the duration the file claims is a
+    truncated file, not a short track (issue #6150 B3).
+    [if] a lane decoded under MIN_DECODED_FRACTION of the claimed duration
+         [then ⛔️] ``check_decoded_duration`` raises with both durations, so
+         the key and stems lanes fail per track instead of analyzing the few
+         frames that survived the cut
+    [if] the tag reader cannot parse the file or reports no duration
+         [then] no verdict: the decode stands, as at ingest
   -> full decode, ffmpeg, librosa, or soundfile. Header + one frame only.
   -> rekordbox adapter ingest (follow-up).
 """
@@ -33,11 +41,17 @@ from pathlib import Path
 from apps.shared import _tagreader, paths
 from apps.shared._tagreader import HAS_TAG_READER
 
-__all__ = ["UnplayableAudioError", "probe_playable_audio"]
+__all__ = ["MIN_DECODED_FRACTION", "UnplayableAudioError", "check_decoded_duration", "probe_playable_audio"]
 
 # Effective bitrate bounds for duration/size cross-checks (kbps).
 _MAX_EFFECTIVE_KBPS = 3200
 _MIN_BYTES_PER_SECOND = 1000  # 8 kbps floor
+#: A decode shorter than this fraction of the duration the container claims
+#: is a truncated file. Wide on purpose: a good file decodes to within a frame
+#: of its claim, while a VBR mp3 with no Xing header only has a claim
+#: tinytag ESTIMATES from its first 30 s, so a strict ratio would fail good
+#: files. The acceptance probe's 4096-byte cut of a 2.04 s mp3 decodes 0.26 s.
+MIN_DECODED_FRACTION = 0.5
 
 
 class UnplayableAudioError(Exception):
@@ -78,6 +92,48 @@ def probe_playable_audio(path: Path) -> None:
         _probe_aac(path, header, size_bytes)
     elif HAS_TAG_READER and _tagreader.can_read(path):
         _probe_tags(path, size_bytes)
+
+
+def check_decoded_duration(path: Path, decoded_s: float) -> None:
+    """Raise :class:`UnplayableAudioError` when a decode is far shorter than the file claims.
+
+    Decoders stop quietly at the cut of a truncated file and return the frames
+    before it: a 4096-byte cut of a 2 s A440 mp3 decodes 0.26 s of clean
+    A440, which a key estimator reads as A major. So a lane that decodes
+    must compare what it got with what the container says it holds. A tag
+    reader that cannot parse the file, or gives no duration, gives no verdict.
+    """
+    if decoded_s <= 0:
+        raise UnplayableAudioError("decoded no audio")
+    if not HAS_TAG_READER or not _tagreader.can_read(path):
+        return
+    if _is_streamed_wav(path):
+        return
+    try:
+        claimed = _tagreader.read(path).duration
+    except _tagreader.TagReadError:
+        return
+    if claimed is None or claimed <= 0:
+        return
+    if decoded_s < float(claimed) * MIN_DECODED_FRACTION:
+        raise UnplayableAudioError(
+            f"truncated or corrupt audio: decoded {decoded_s:.2f} s of the "
+            f"{float(claimed):.2f} s the file claims"
+        )
+
+
+def _is_streamed_wav(path: Path) -> bool:
+    """Return whether a WAV carries the streaming size sentinel, so it claims no real length.
+
+    A WAV written to a pipe (``ffmpeg ... -f wav pipe:1``) cannot seek back to
+    patch its sizes, so its RIFF size is 0xFFFFFFFF or 0 and a tag reader turns
+    that into a claim of hours. Such a file is read to EOF and its decode is
+    the truth, so the length check gives no verdict.
+    """
+    if path.suffix.lower() not in {".wav", ".wave"}:
+        return False
+    header = _read_header(path, 8)
+    return header[:4] == b"RIFF" and header[4:8] in {b"\xff\xff\xff\xff", b"\x00\x00\x00\x00"}
 
 
 # ----- header helpers -------------------------------------------------------

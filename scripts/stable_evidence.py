@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from apps.shared.last_match import require_last_match
+
 SUITE_KEYS: tuple[str, ...] = ("fast_lane", "full_ci", "e2e", "macos_packaging")
 TOP_LEVEL_KEYS: tuple[str, ...] = (
     "sha",
@@ -59,7 +61,7 @@ def default_evidence_dir() -> Path:
     env = os.environ.get("OPENDJ_STABLE_EVIDENCE_DIR", "").strip()
     if env:
         return Path(env)
-    return Path("ops/stable")
+    return Path("(private path)")
 
 
 def require_sha(sha: str) -> str:
@@ -326,10 +328,12 @@ def append_signing(
 
 
 def parse_notary_submission_id(log: str) -> str:
-    matches = _ID_LINE_RE.findall(log)
-    if not matches:
-        raise StableEvidenceError("notarytool output has no id: line to parse")
-    return matches[-1]
+    return require_last_match(
+        log,
+        _ID_LINE_RE,
+        missing_message="notarytool output has no id: line to parse",
+        refuse=StableEvidenceError,
+    )
 
 
 def stamp_payload_identity(
@@ -363,7 +367,7 @@ def _add_dir(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--evidence-dir",
         default=None,
-        help="directory of per-sha JSON files (default: OPENDJ_STABLE_EVIDENCE_DIR or ops/stable)",
+        help="directory of per-sha JSON files (default: OPENDJ_STABLE_EVIDENCE_DIR or (private path))",
     )
 
 
