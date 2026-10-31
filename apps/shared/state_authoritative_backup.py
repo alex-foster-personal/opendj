@@ -17,15 +17,14 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import sqlite3
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.shared import sqlite_verified_copy as svc
+from apps.shared.cli_json_emit import emit_json_payload as _emit
 
 BACKUP_PREFIX: str = "state-authoritative-"
 DEFAULT_KEEP: int = 14
@@ -408,10 +407,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload, default=str, sort_keys=True))
-
-
 def _cmd_backup(args: argparse.Namespace) -> None:
     result = backup_state_db(args.data_dir, args.dest, keep=args.keep)
     _emit(asdict(result))
@@ -446,13 +441,14 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    try:
-        COMMANDS[args.command](args)
-    except StateAuthoritativeBackupError as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        return 1
-    return 0
+    from apps.shared.cli_subcommand_main import run_subcommand_cli
+
+    return run_subcommand_cli(
+        _build_parser(),
+        COMMANDS,
+        argv=argv,
+        error_type=StateAuthoritativeBackupError,
+    )
 
 
 if __name__ == "__main__":

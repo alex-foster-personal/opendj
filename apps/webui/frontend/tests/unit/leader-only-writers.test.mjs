@@ -136,6 +136,88 @@ test('a rescue-handled restore still skips the session deck restore', async () =
 	assert.ok(r.log.includes('session restore skipDeckRestore=true'));
 });
 
+/**
+ * The sessionStorage-backed hold, shared by every installer in the tab. `urlDeck`
+ * says whether the URL names a deck (a Load to deck hand-off).
+ */
+function fakeRescueHold(held, { urlDeck = true } = {}) {
+	const hold = {
+		value: held,
+		handoff: () => hold.value && urlDeck,
+		release: () => {
+			hold.value = false;
+		}
+	};
+	return hold;
+}
+
+test('LIBWS-06: arriving from Library skips the rescue replay so the URL deck loads', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder({ rescueHandled: true });
+	const hold = fakeRescueHold(true);
+	installBoth(leadership, { ...r.deps, libraryRescueHold: hold });
+	await flush();
+	assert.ok(!r.log.includes('rescue restore'), 'the rescue ring holds the Gig the operator left');
+	assert.ok(r.log.includes('session restore skipDeckRestore=false'));
+	assert.equal(hold.value, false, 'a settled deck restore releases the hold');
+});
+
+test('LIBWS-06: the hold outlives demotion and re-promotion until the deck restore settles', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder({ rescueHandled: true, restoreSettles: false });
+	const hold = fakeRescueHold(true);
+	installBoth(leadership, { ...r.deps, libraryRescueHold: hold });
+	await flush();
+	leadership.set(false);
+	r.control.restoreSettles = true;
+	leadership.set(true);
+	await flush();
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 0);
+	assert.ok(r.log.includes('session restore resumes the URL decks'));
+	leadership.set(false);
+	leadership.set(true);
+	await flush();
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1, 'released, Take control resumes from the ring again');
+});
+
+test('LIBWS-06: the hold outlives a route remount before the deck restore settles (Codex P1, #6189)', async () => {
+	const hold = fakeRescueHold(true);
+	const first = recorder({ rescueHandled: true, restoreSettles: false });
+	const stopFirst = installBoth(fakeLeadership(true), { ...first.deps, libraryRescueHold: hold });
+	await flush();
+	stopFirst();
+	const second = recorder({ rescueHandled: true });
+	installBoth(fakeLeadership(true), { ...second.deps, libraryRescueHold: hold });
+	await flush();
+	assert.ok(!second.log.includes('rescue restore'), 'the second mount must not replay the old set');
+	assert.ok(second.log.includes('session restore skipDeckRestore=false'));
+});
+
+test('RESCUE-02: a plain return from Library, no deck in the URL, still replays the rescue ring (Codex P1, #6189)', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder({ rescueHandled: true });
+	const hold = fakeRescueHold(true, { urlDeck: false });
+	installBoth(leadership, { ...r.deps, libraryRescueHold: hold });
+	await flush();
+	assert.ok(r.log.includes('rescue restore'), 'PERFMODE-14: empty unless RESCUE-02 applies');
+	assert.ok(r.log.includes('session restore skipDeckRestore=true'));
+	assert.equal(hold.value, false, 'the settled restore still releases the hold');
+});
+
+test('LIBWS-06 control: with no hold the rescue ring still wins on arrival and on re-promotion', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder({ rescueHandled: true });
+	installBoth(leadership, { ...r.deps, libraryRescueHold: fakeRescueHold(false) });
+	await flush();
+	assert.ok(r.log.includes('rescue restore'));
+	assert.ok(r.log.includes('session restore skipDeckRestore=true'));
+	leadership.set(false);
+	r.log.length = 0;
+	leadership.set(true);
+	await flush();
+	assert.ok(r.log.includes('rescue restore'));
+});
+
 test('a follower promoted later restores then, and losing leadership stops every writer', async () => {
 	const leadership = fakeLeadership(false);
 	const r = recorder();

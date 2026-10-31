@@ -37,4 +37,5 @@ test('playlist detail: PLAY IT pin pickers are visible on populated playlist', a
 	await expect(page.getByText('Peak pins', { exact: true })).toBeVisible();
 	await expect(page.getByText('Viable openers', { exact: true })).toBeVisible();
 	await expect(page.getByText('Closer', { exact: true })).toBeVisible();
+	await expect(page.getByLabel('Closer', { exact: true })).toBeVisible();
 });

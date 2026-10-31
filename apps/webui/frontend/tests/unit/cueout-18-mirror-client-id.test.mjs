@@ -23,7 +23,8 @@ const SOURCE = readFileSync(
 );
 
 test('the id is made once, at module scope, without a secure-context API', () => {
-	assert.match(SOURCE, /^const MIRROR_CLIENT_ID = /m);
+	// Exported for the next-up writer's lease header (NATIVE-5886); still one module-scope value.
+	assert.match(SOURCE, /^(export )?const MIRROR_CLIENT_ID = /m);
 	assert.doesNotMatch(SOURCE, /randomUUID/);
 });
 

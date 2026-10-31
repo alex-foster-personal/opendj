@@ -58,9 +58,12 @@ pytestmark = pytest.mark.requirement("CAT-06")
 _REPO_ROOT = Path(writer_onelibrary.__file__).resolve().parents[4]
 _WRITER_PACKAGE_FILES = (
     "apps/__init__.py",
+    "apps/shared/__init__.py",
+    "apps/shared/hashing.py",
     "apps/sync/__init__.py",
     "apps/sync/usb/__init__.py",
     "apps/sync/usb/pioneer/__init__.py",
+    "apps/sync/usb/pioneer/fixture_resolver.py",
     "apps/sync/usb/pioneer/onelibrary.py",
     "apps/sync/usb/pioneer/writer_onelibrary.py",
 )

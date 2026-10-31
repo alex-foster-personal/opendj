@@ -12,7 +12,7 @@ browser takes has an HTTP equivalent an agent can drive:
 Cookie model: the browser holds an opaque token in an httpOnly cookie, the
 daemon holds its sha256 alongside the Google refresh token. The browser
 never sees a Google token, and the session outlives both a daemon restart
-and a browser restart because it lives in ``data/state/state.db``.
+and a browser restart because it lives in ``(private path)``.
 """
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ from apps.webui.server.auth import (
     exchange_code,
 )
 from apps.webui.server.auth_timing import AuthTimer, last_capture
+from apps.webui.server.ui_url import NAMED_LOCAL_HOST
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -108,9 +109,26 @@ def _validate_loopback_origin(origin: str) -> str:
 
     Guards two things at once: an open redirect out of the callback, and a
     session cookie being planted on an origin the daemon does not serve.
+
+    UIURL-01: ``opendj.localhost`` is routed through its loopback twin
+    ``127.0.0.1`` on the same port. Google's installed-app redirect rule
+    accepts loopback IP literals and ``localhost`` only, so the named host
+    can never be a redirect target; the sign-in completes on the
+    ``127.0.0.1`` address of the same engine instead of failing.
     """
     parsed = urlparse(origin)
-    if parsed.scheme != "http" or parsed.hostname not in _LOOPBACK_HOSTS:
+    try:
+        origin_port = parsed.port
+    except ValueError:
+        # urlparse raises on a non-numeric or out-of-range port; that is a
+        # malformed client origin, so it gets the same 422 as any other.
+        origin_port = None
+        valid = False
+    else:
+        valid = parsed.scheme == "http"
+    if valid and parsed.hostname == NAMED_LOCAL_HOST and origin_port:
+        return f"http://127.0.0.1:{origin_port}"
+    if not valid or parsed.hostname not in _LOOPBACK_HOSTS:
         raise HTTPException(
             status_code=422,
             detail={
@@ -122,7 +140,7 @@ def _validate_loopback_origin(origin: str) -> str:
                 ),
             },
         )
-    port = f":{parsed.port}" if parsed.port else ""
+    port = f":{origin_port}" if origin_port else ""
     return f"http://{parsed.hostname}{port}"
 
 

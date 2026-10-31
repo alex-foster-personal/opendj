@@ -33,6 +33,8 @@ import { isScopedCommandInvalidated } from '$lib/rb/performance-command-schedule
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
 import { displayLoopFrom, pqtzLoopBeatCount, validateBeatGrid } from '$lib/rb/beat-sync-math';
 import { isUsbTrackId } from '$lib/rb/track-source';
+import { anlzSourceMatchesSelection } from '$lib/rb/beatgrid-source-basis';
+import { anlzTrackRevision } from '$lib/rb/anlz-fetch-generation';
 export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
@@ -100,6 +102,15 @@ export interface BeatgridResyncGuardDeps {
 	 * ("the engine supplies the identity probes") and to keep it testable with
 	 * a fake, matching every other dependency here. */
 	desiredBeatgridSource: () => 'rekordbox' | 'own' | undefined;
+	/** The track's grid-edit revision (anlz-fetch-generation.ts); defaults to
+	 * the real one, injectable for tests. An adoption queued behind a scope
+	 * claim drops when a later edit bumped it meanwhile (Codex P2, PR #6235). */
+	trackRevision?: (stableId: string) => number;
+}
+
+/** Both grids are rekordbox's, which carry no projected BPM of their own. */
+function _rekordboxToRekordbox(before: AnlzData, after: AnlzData): boolean {
+	return (before.beatgrid.source ?? 'rekordbox') === 'rekordbox' && (after.beatgrid.source ?? 'rekordbox') === 'rekordbox';
 }
 
 function _message(error: unknown): string {
@@ -150,6 +161,7 @@ function _sameSourceDependentAnlzFields(current: AnlzData, data: AnlzData): bool
 		current.beatgrid.status === data.beatgrid.status &&
 		current.beatgrid.reason === data.beatgrid.reason &&
 		current.beatgrid.bpm === data.beatgrid.bpm &&
+		current.beatgrid.fallback === data.beatgrid.fallback &&
 		JSON.stringify(current.tempo_changes) === JSON.stringify(data.tempo_changes) &&
 		JSON.stringify(current.performance_hints) === JSON.stringify(data.performance_hints)
 	);
@@ -297,6 +309,7 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 		reconcileDeckLoop,
 		desiredBeatgridSource
 	} = deps;
+	const trackRevision = deps.trackRevision ?? anlzTrackRevision;
 	const scopedSync = createScopedSyncRunner<DeckId>();
 	const runScoped = scopedSync.run;
 	const afterBeatgridUpgrade: BeatgridResyncGuards['afterBeatgridUpgrade'] = (
@@ -424,6 +437,11 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				}
 				const runtime = deckRuntime(deck);
 				const token = deckLoadToken(deck);
+				// A later grid edit's refetch supersedes this payload even when it
+				// skipped its own adoption because it matched the deck's grid (a
+				// reset after a nudge): installing this one after the scope frees
+				// would leave the engine on the nudged grid (Codex P2, PR #6235).
+				const revision = trackRevision(stableId);
 				// `alreadyScoped` callers (refreshAnalysisSourceDecks's own staged
 				// batch) are trusted outright: THIS call is what will advance the
 				// confirmed selection once it returns, so comparing against it here
@@ -444,14 +462,19 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				// confirmed a selection yet (cold mount): nothing to disagree with.
 				// A stick track is exempt (USB Play spec 4b): its only grid is the
 				// stick's own, served under either lane, so no switch makes it stale.
-				const isStale = (): boolean =>
-					deckRuntime(deck) !== runtime ||
-					deckLoadToken(deck) !== token ||
-					deckStableId(deck) !== stableId ||
-					(!alreadyScoped &&
-						!isUsbTrackId(stableId) &&
-						desiredBeatgridSource() !== undefined &&
-						desiredBeatgridSource() !== data.beatgrid_source);
+				// An unmapped track's STANDALONE-06 per-track own grid agrees with a
+				// 'rekordbox' lane selection (`anlzSourceMatchesSelection`, the same
+				// rule the shared cache applies); comparing the stamps directly read
+				// every edit or re-read of such a track as a stale straggler and
+				// silently dropped it (found building GRIDEDIT-6235d, Wed 7 Oct 2026).
+				const isStale = (): boolean => {
+					if (deckRuntime(deck) !== runtime) return true;
+					if (deckLoadToken(deck) !== token || deckStableId(deck) !== stableId) return true;
+					if (trackRevision(stableId) !== revision) return true;
+					if (alreadyScoped || isUsbTrackId(stableId)) return false;
+					const desired = desiredBeatgridSource();
+					return desired !== undefined && !anlzSourceMatchesSelection(data, desired);
+				};
 				const next: AnlzData = _withSourceDependentAnlzFields(current, data);
 				settlements.push(
 					afterBeatgridUpgrade(
@@ -477,7 +500,13 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 							// or a demotion back to Rekordbox carries none, and keeping
 							// the previous source's number there would be exactly as
 							// stale as never refreshing it at all.
-							publishDeckBpm(deck, data.beatgrid.bpm ?? null);
+							// One exception: rekordbox to rekordbox (a grid edit, or a
+							// re-read). Rekordbox never carries a projected BPM, so the
+							// deck's BPM came from the track, and the edit did not change
+							// it (Codex P2, PR #6235: grid edits blanked the header BPM).
+							if (latest === null || !_rekordboxToRekordbox(latest, data)) {
+								publishDeckBpm(deck, data.beatgrid.bpm ?? null);
+							}
 							// A landed authoritative answer - grid or absence - is itself
 							// evidence the source responded, so an error left over from an
 							// earlier failed revalidation must not survive it (Codex P2
@@ -586,6 +615,10 @@ export function reconcileLoopForAuthoritativeGrid(st: DeckState, anlz: AnlzData)
 		st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 		return;
 	}
+	// A null beat_length marks a loop engaged by range (a stored loop, or a
+	// manual in/out), never INT; giving it a count here would relabel it INT
+	// and break the loop-source menu's exit (Codex P2, PR #6235).
+	if (st.loop.beat_length === null) return;
 	st.loop.beat_length = pqtzLoopBeatCount(anlz.beatgrid.beats, st.loop.in_ms, st.loop.out_ms);
 }
 

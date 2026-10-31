@@ -33,6 +33,8 @@ Regression lines:
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -277,3 +279,34 @@ def test_an_empty_operator_lock_directory_env_var_is_treated_as_unset(
     assert lock_dir.stat().st_uid == os.getuid(), (
         "private mode must check st_uid; shared mode never would have"
     )
+
+
+@pytest.mark.requirement("JIT-06")
+def test_the_warmup_cli_exits_nonzero_when_the_warmup_is_refused(
+    tmp_path: Path,
+) -> None:
+    """[if] cache artifacts already on disk turn a refused warm-up into exit 0 [then] fail, [else stop].
+
+    Codex review at 5c7e6fb75 (P1): ``python -m apps.analysis.jit_warmup``
+    returned 0 whenever any artifacts existed, so a restored or stale cache
+    made a warm-up that compiled and verified nothing report success. The
+    refusal here is a missing ``MDT_NUMBA_WARMUP_DIR``, which the warm-up
+    refuses rather than create; the planted artifact is what used to mask it."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "planted.nbi").write_bytes(b"x")
+    env = {
+        **os.environ,
+        "NUMBA_CACHE_DIR": str(cache),
+        "MDT_NUMBA_WARMUP_DIR": str(tmp_path / "missing"),
+    }
+    proc = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.jit_warmup", "--backend", "librosa"],
+        cwd=str(Path(__file__).resolve().parents[2]), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120,
+        check=False,
+    )
+
+    assert "refused=1" in proc.stdout, proc.stdout
+    assert proc.returncode == 1, proc.stdout
+    assert not (tmp_path / "missing").exists(), "a refused warm-up must create nothing"

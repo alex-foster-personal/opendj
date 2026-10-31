@@ -6,11 +6,11 @@ Run from the project root with the venv active::
 
 Outputs (SYNC-02):
 
-* ``data/sync/matches.csv`` -- schema contract consumed by Phase 3 playlist
+* ``(private path)`` -- schema contract consumed by Phase 3 playlist
   sync: ``rb_id,djay_uuid,confidence,signals_fired,status,rb_title,
   rb_artist,djay_title,djay_artist,rationale``.
 * Rich summary table on stdout.
-* ``data/sync/fingerprints.sqlite`` is created/refreshed on demand.
+* ``(private path)`` is created/refreshed on demand.
 
 Read-only vs live DBs: this script never writes to Rekordbox or djay. It
 calls :func:`apps.shared.paths.copy_live_dbs` to snapshot each live DB
@@ -26,6 +26,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from apps.audit.rekordbox_db_util import close_db_quietly
 from apps.shared import djay_db, paths, rekordbox_db
 from apps.sync.fingerprint import FingerprintCache
 from apps.sync.matcher import MatchResult, match_tracks
@@ -60,10 +61,7 @@ def _load_rb_tracks() -> list:
     try:
         return list(rekordbox_db.iter_tracks(db))
     finally:
-        try:
-            db.close()
-        except Exception:
-            pass
+        close_db_quietly(db)
 
 
 def _load_djay_tracks() -> list[djay_db.DjayTrack]:
@@ -180,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         default=paths.DATA_DIR / "sync",
-        help="Output directory (default: data/sync).",
+        help="Output directory (default: (private path)).",
     )
     args = parser.parse_args(argv)
 

@@ -180,6 +180,34 @@ KEY_SENTINELS: Final[dict[str, frozenset[str]]] = {
 
 KEY_UNITS: Final[tuple[str, ...]] = tuple(sorted(KEY_SENTINELS))
 
+# Loose shape matchers for labelling raw notation in disagreement clusters
+# (``apps.equivalence.compare``). Kept beside the normaliser regexes so the
+# two cannot drift apart silently.
+_CAMELOT_FORM_RE: Final = re.compile(r"^\s*(1[0-2]|[1-9])\s*[AaBb]\s*$")
+_MUSICAL_FORM_RE: Final = re.compile(
+    r"^\s*[A-Ga-g][#b♭♯]?\s*(m|min|minor|maj|major|M)?\s*$"
+)
+
+
+def raw_notation_form(value: Any, kind: str) -> str:
+    """Label the raw NOTATION of one value, so a per-notation bug is visible."""
+    if kind != "key":
+        return "numeric"
+    text = str(value).strip()
+    if _CAMELOT_FORM_RE.match(text):
+        return "camelot"
+    if _MUSICAL_FORM_RE.match(text):
+        return "musical"
+    return "other"
+
+
+def pair_notation_form(left_raw: Any, right_raw: Any, kind: str) -> str:
+    """Both sides' raw notation families, for cluster subset coverage."""
+    return (
+        f"rb={raw_notation_form(left_raw, kind)}"
+        f"|mik={raw_notation_form(right_raw, kind)}"
+    )
+
 
 def _clean(value: Any) -> str:
     """NFC, trimmed, with unicode accidentals folded to ASCII."""
@@ -595,5 +623,7 @@ __all__ = [
     "normalise_numeric",
     "normalise_time",
     "normaliser_name",
+    "pair_notation_form",
+    "raw_notation_form",
     "units_incompatible",
 ]

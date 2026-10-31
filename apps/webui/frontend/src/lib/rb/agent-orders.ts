@@ -1,6 +1,7 @@
 /** Execute agent-declared orders through the same performance dispatcher as UI. */
 import { releaseBody } from '../api/release-body';
 import {
+	activePerformanceCommandSession,
 	dispatchPerformanceCommand,
 	performanceContextTimeNowSec,
 	commitPerformanceLaunches,
@@ -8,6 +9,7 @@ import {
 	performanceStepState,
 	performanceForgetStep,
 	queryPerformanceState,
+	runAudioIoTest,
 	type PerformanceCommand
 } from './performance-ipc.svelte';
 import { durationProgress, resolveDuration, type Duration } from './agent-duration';
@@ -49,8 +51,9 @@ interface AgentStepResult {
 	status: 'succeeded' | 'failed' | 'skipped';
 	error?: string;
 	/** browser_select_playlist answers at first rows (`complete` false means more
-	 * are coming); a plan answers with its id, status and current bar (AGENT-24). */
-	result?: { complete: boolean; rows_loaded: number } | Record<string, unknown>;
+	 * are coming); a plan answers with its id, status and current bar (AGENT-24);
+	 * remote_speaker_answer answers with the speaker's SDP (I18). */
+	result?: { complete: boolean; rows_loaded: number } | { sdp: string } | Record<string, unknown>;
 }
 
 /** AGENT-24: one transition-plan executor per page, created on first use. */
@@ -157,13 +160,115 @@ async function _recordMasterTap(command: Record<string, unknown>): Promise<void>
 	await (await import('$lib/sets/master-mix-capture')).ensureMasterMixCapture(command.session_id);
 }
 
+const IO_TEST_BUSES = ['master', 'cue', 'input'] as const;
+
+/** IOPIN-19: the Audio I/O panel's Test, for an agent. Plays the same beeps on
+ * the same device the panel's button would, and answers once they sounded.
+ * It runs under the dispatcher's ownership (`runAudioIoTest`: a live route
+ * session, no preset, the headphone scope held), and an AUDIO IN Test opens
+ * the picked microphone and fails unless a level was read from it. */
+async function _ioDeviceTest(command: Record<string, unknown>): Promise<Record<string, unknown>> {
+	const bus = command.bus;
+	if (!IO_TEST_BUSES.includes(bus as (typeof IO_TEST_BUSES)[number])) {
+		throw new TypeError(`io_device_test bus must be master, cue or input, got ${JSON.stringify(bus)}`);
+	}
+	const testBus = bus as (typeof IO_TEST_BUSES)[number];
+	// Bound to the route session that sent it: a remount while the Test's code
+	// loads must not let it sound on, and answer for, the replacement route.
+	const session = activePerformanceCommandSession();
+	const [{ ioTestDeviceId, ioTestRefusal }, { playIoTestBeeps, startInputLevelWatch }] = await Promise.all([
+		import('$lib/player/io-device-test'),
+		import('$lib/player/io-device-test-audio')
+	]);
+	if (activePerformanceCommandSession() !== session) {
+		throw new Error('the performance view changed before the Test sounded. Test again.');
+	}
+	return runAudioIoTest(async (stillCurrent, signal) => {
+		const headphones = queryPerformanceState().mixer.headphones;
+		const refusal = ioTestRefusal(testBus, headphones);
+		if (refusal !== null) throw new Error(refusal);
+		let deviceId = ioTestDeviceId(testBus, headphones);
+		const inputId = headphones.selected_input_device_id;
+		let samples = 0;
+		let peak = 0;
+		// The meter's own zero at stop is not a reading of the microphone.
+		let reading = true;
+		// Set when the microphone stops sending audio after it opened.
+		let inputEnded = null as string | null;
+		// Throws with the panel's reason when the microphone cannot open.
+		const stopInput =
+			testBus === 'input'
+				? await startInputLevelWatch(
+						inputId,
+						(rms) => {
+							if (!reading) return;
+							samples += 1;
+							peak = Math.max(peak, rms);
+						},
+						signal,
+						(reason) => {
+							inputEnded = reason;
+						}
+					)
+				: null;
+		let sounded = false;
+		let completed = false;
+		// The route tearing down mid-Test aborts `signal`, which cuts this
+		// Test's own beeps (never a later Test's) rather than leaving them
+		// sounding on audio it no longer owns.
+		try {
+			if (!stillCurrent()) throw new Error('the performance view closed before the Test sounded');
+			if (stopInput !== null) {
+				// The microphone open can wait on a permission prompt, and a device
+				// change may move MAIN meanwhile: beep, and answer for, the MAIN shown now.
+				const now = queryPerformanceState().mixer.headphones;
+				const late = ioTestRefusal(testBus, now);
+				if (late !== null) throw new Error(late);
+				deviceId = ioTestDeviceId(testBus, now);
+			}
+			completed = await playIoTestBeeps(
+				testBus,
+				deviceId,
+				() => {
+					sounded = true;
+				},
+				signal
+			);
+		} finally {
+			reading = false;
+			stopInput?.();
+		}
+		if (!sounded) throw new Error('another Test started before this one sounded');
+		// Cut mid-pattern (the panel closing, another Test, a teardown): it
+		// never answers as tested on beeps that did not all play.
+		if (!completed) throw new Error('the Test was cut before its beeps finished');
+		if (stopInput === null) return { bus: testBus, device_id: deviceId };
+		if (inputEnded !== null) throw new Error(inputEnded);
+		if (samples === 0) throw new Error('AUDIO IN opened but no level was read from it (is the page hidden?)');
+		return { bus: testBus, device_id: deviceId, input_device_id: inputId, input_peak_rms: peak };
+	});
+}
+
 async function _one(command: unknown): Promise<AgentStepResult> {
 	try {
 		const order = _command(command) as unknown as Record<string, unknown>;
 		if (order.type === 'record_master_tap') await _recordMasterTap(order);
+		else if (order.type === 'io_device_test') return { status: 'succeeded', result: await _ioDeviceTest(order) };
 		else if (order.type === 'record_master_tap_cancel') {
 			// The start gave up on the tap: tear it down, never stream (SET-12).
 			(await import('$lib/sets/master-mix-capture')).cancelMasterMixCapture(String(order.session_id));
+		} else if (typeof order.type === 'string' && order.type.startsWith('remote_speaker_')) {
+			// I18: like record_master_tap, a remote speaker order carries no
+			// performance state, so it runs beside the dispatcher, not in it.
+			const [{ runRemoteSpeakerCommand }, { remoteSpeakerPageEnv }] = await Promise.all([
+				import('$lib/player/remote-speaker-orders'),
+				import('./remote-speaker-page-env')
+			]);
+			const result = await runRemoteSpeakerCommand(
+				order,
+				remoteSpeakerPageEnv(() => queryPerformanceState().mixer.headphones.selected_master_output_device_id)
+			);
+			return result === null ? { status: 'succeeded' } : { status: 'succeeded', result };
 		} else {
 			const after = await dispatchPerformanceCommand(_command(command), undefined, 'agent-command');
 			if (order.type === 'browser_select_playlist' && after.browser.load !== null) {

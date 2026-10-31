@@ -6,7 +6,7 @@
 # runners on purpose, so cargo can reuse its fingerprints instead of a full
 # rebuild. That reuse occasionally reads a half-written .rlib/.so left by a
 # job killed mid-write (nucbox disk IO thrash, see afmac
-# research/2026-09-14-nucbox-runner-concurrency.md), and cargo reports it as
+# (private path)), and cargo reports it as
 # a compile error rather than a torn file:
 #
 #   error[E0786]: found invalid metadata files for crate `time_macros` ...
@@ -91,6 +91,8 @@ if ! is_corrupted_target "$log"; then
 fi
 
 echo "::warning::runner ${RUNNER} hit a corrupted cargo target/ dir (manifest ${MANIFEST}) -- cleaning profile '${PROFILE}' and retrying the build once"
-cargo clean --manifest-path "$MANIFEST" --profile "$PROFILE"
+# The resolved cargo the caller passed (the first command word), never a PATH lookup: the cleanup
+# must run the same installation as the build it precedes (Codex P1, #6689).
+"$1" clean --manifest-path "$MANIFEST" --profile "$PROFILE"
 "$@"
 exit "$?"

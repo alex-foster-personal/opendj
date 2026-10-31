@@ -22,6 +22,10 @@ The rules, each one tested:
 * **Cues follow the cue store's ownership rule.** They go through
   :func:`cue_store.import_vendor_cues`, which copies them only when the track
   has no cue set or its set came from this same app.
+* **A shared label never refreshes.** A rekordbox XML import writes with
+  ``source="rekordbox"``, the same label as the master.db ingest, so "this
+  same app" cannot be told apart from rekordbox itself. It only fills empty
+  values and empty cue sets, and never refreshes anything.
 * **Deletes stay deleted** (LIBM-140): a track the user removed is not brought
   back by an import, and is left out of every imported playlist.
 * **Dry-run by default**, inside one discarded write unit with a silent bus,
@@ -33,8 +37,8 @@ colors and play counts (no state field holds them), and cue colors (rekordbox's
 cue color table is unpublished, so an RGB cannot be mapped onto an index
 honestly).
 
-Run it as ``python -m apps.adapters.library_import serato|traktor [--source P]
-[--write]``. It lives in ``apps.adapters`` rather than ``apps.shared.state``
+Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml
+[--source P] [--write]``. It lives in ``apps.adapters`` rather than ``apps.shared.state``
 because it calls the readers, and ``apps.shared`` imports nothing else from
 ``apps`` (the ``shared-is-the-stable-core`` contract in ``.importlinter``).
 """
@@ -63,8 +67,16 @@ from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import compute_playlist_id
 
-Vendor = Literal["serato", "traktor"]
-VENDORS: tuple[Vendor, ...] = ("serato", "traktor")
+Vendor = Literal["serato", "traktor", "rekordbox-xml"]
+VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml")
+
+#: The ``track_fields.source`` each import writes. A rekordbox XML export is
+#: labeled with the format it is in, ``rekordbox``, whichever app wrote it.
+_SOURCE: dict[str, str] = {
+    "serato": "serato",
+    "traktor": "traktor",
+    "rekordbox-xml": "rekordbox",
+}
 
 #: Maps a path as the app stored it to a local absolute path.
 PathResolver = Callable[[str], str]
@@ -183,6 +195,17 @@ def traktor_path_resolver(*, volumes_root: Path = Path("/Volumes")) -> PathResol
     return resolve
 
 
+def rekordbox_xml_path_resolver(stored: str) -> str:
+    """Spell a decoded XML location as this platform stores a path.
+
+    Folder ingests persist ``str(Path)``, so a Windows ``C:/Music/a.mp3``
+    becomes ``C:\\Music\\a.mp3`` here; on macOS and Linux the spelling is
+    unchanged. Without this, an XML import never matches a track already in
+    the library and inserts a duplicate.
+    """
+    return str(Path(stored))
+
+
 def _is_windows_drive(text: str) -> bool:
     return len(text) >= 2 and text[1] == ":" and text[0].isalpha()
 
@@ -255,6 +278,8 @@ def ingest_library(
     """
     if vendor not in VENDORS:
         raise ValueError(f"unknown vendor {vendor!r}; expected one of {VENDORS}")
+    field_source = _SOURCE[vendor]
+    fill_only = field_source != vendor
     start = time.perf_counter()
     now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
     report = VendorIngestReport(vendor=vendor, source=source, dry_run=dry_run)
@@ -281,7 +306,7 @@ def ingest_library(
                     continue
                 seen.add(sid)
                 entry_to_sid[track.track_id] = sid
-                _write_fields(writer, sid, track, vendor, stamp, report)
+                _write_fields(writer, sid, track, field_source, fill_only, stamp, report)
             _write_playlists(writer, library.playlists, vendor, entry_to_sid, deleted_entries, report)
             writer.register_adapter(
                 vendor,
@@ -407,24 +432,28 @@ def _write_fields(
     writer: StateWriter,
     sid: str,
     track: Track,
-    vendor: str,
+    source: str,
+    fill_only: bool,
     modified_at: str,
     report: VendorIngestReport,
 ) -> None:
     conn = writer.raw_conn
     for name, value in _field_values(track):
         current = state_provenance.read_field(conn, sid, name)
-        if current is not None and current.source != vendor:
+        if current is not None and (fill_only or current.source != source):
+            # Every protected value is kept and counted, equal or not (ADR: fill, never fight).
             report.fields_kept[name] = report.fields_kept.get(name, 0) + 1
             continue
         if current is not None and current.value == value:
             continue
-        if writer.set_field(sid, name, value, source=vendor, modified_at=modified_at):  # type: ignore[arg-type]
+        if writer.set_field(sid, name, value, source=source, modified_at=modified_at):  # type: ignore[arg-type]
             report.fields_written[name] = report.fields_written.get(name, 0) + 1
     cues = store_cues(track.cues, report)
+    if fill_only and cue_store.read_row(conn, sid) is not None:
+        return
     report.cue_sets_written += int(
         cue_store.import_vendor_cues(
-            writer.set_field, conn, sid, cues, source=vendor, modified_at=modified_at
+            writer.set_field, conn, sid, cues, source=source, modified_at=modified_at
         )
     )
 
@@ -435,6 +464,19 @@ def _flatten(playlists: Iterable[Playlist], prefix: tuple[str, ...] = ()) -> Ite
         if playlist.track_ids or not playlist.children:
             yield path, playlist
         yield from _flatten(playlist.children, path)
+
+
+def _playlist_key(vendor: str, path: tuple[str, ...]) -> str:
+    """The folder path as one string.
+
+    For rekordbox-xml, a name's own ``\\`` and ``/`` are escaped first. Joining
+    the raw names is ambiguous: folder ``A`` holding ``B/C`` and folder ``A/B``
+    holding ``C`` would both become ``A/B/C``. Other vendors keep the plain join,
+    so their existing playlist ids do not change; their collision is still open.
+    """
+    if vendor != "rekordbox-xml":
+        return "/".join(path)
+    return "/".join(part.replace("\\", "\\\\").replace("/", "\\/") for part in path)
 
 
 def _write_playlists(
@@ -452,12 +494,13 @@ def _write_playlists(
     on the same rows.
     """
     for path, playlist in _flatten(playlists):
-        playlist_id = compute_playlist_id(vendor, "/".join(path))
+        key = _playlist_key(vendor, path)
+        playlist_id = compute_playlist_id(vendor, key)
         writer.insert_playlist(
             playlist_id=playlist_id,
             name=playlist.name,
             vendor=vendor,
-            vendor_pl_id="/".join(path),
+            vendor_pl_id=key,
         )
         members: list[str] = []
         for entry_id in playlist.track_ids:
@@ -491,6 +534,11 @@ def read_vendor_library(vendor: Vendor, source: Path) -> tuple[OpenDjLibrary, Pa
 
         library, _ = TraktorAdapter().read(source)
         return library, traktor_path_resolver()
+    if vendor == "rekordbox-xml":
+        from apps.adapters.rekordbox_xml import read_rekordbox_xml
+
+        # Locations are absolute file URLs; the reader already decoded them.
+        return read_rekordbox_xml(source).library, rekordbox_xml_path_resolver
     raise ValueError(f"unknown vendor {vendor!r}")
 
 
@@ -569,6 +617,7 @@ def run_cli(args: argparse.Namespace, vendor: Vendor) -> int:
 _WHERE: dict[str, str] = {
     "serato": "the _Serato_ folder (default ~/Music/_Serato_)",
     "traktor": "collection.nml (default: the newest Traktor folder in ~/Documents/Native Instruments)",
+    "rekordbox-xml": "a rekordbox XML export (from rekordbox, Lexicon, Engine DJ or VirtualDJ); required",
 }
 
 

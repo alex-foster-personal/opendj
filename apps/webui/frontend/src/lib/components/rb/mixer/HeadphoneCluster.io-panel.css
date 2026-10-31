@@ -56,10 +56,22 @@
 	gap: 6px;
 	min-width: 0;
 }
+/* The picker explainer is inline-flex and shrink-wraps, so each select sized
+   to its own label. Stretch the row so all three dropdowns share one width. */
+.hp-panel[data-audio-io-panel] .hp-menu > .explainer {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: flex-start;
+	width: 100%;
+	min-width: 0;
+}
 .hp-panel[data-audio-io-panel] .hp-pick {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
+	width: 100%;
+	min-width: 0;
 	font-size: 10px;
 	letter-spacing: 0.04em;
 	color: var(--rb-text-dim, #838990);

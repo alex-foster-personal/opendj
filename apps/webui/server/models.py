@@ -670,6 +670,10 @@ class HealthOut(BaseModel):
     waveform_materialization: HealthWaveformMaterialization
     bind_host: str
     version: str
+    #: UIURL-01: the browser address of the UI this process serves
+    #: (``http://opendj.localhost:<port>/``), or null when it serves none.
+    #: GET /api/v1/ui-url carries the same value with its loopback twin.
+    ui_url: str | None
     google_oauth_configured: bool
     #: OPS-32 round 4: this used to be `process_env_keys`, every name in this
     #: process's own `os.environ`. Round 4 (issue #2637/#2638 follow-on,
@@ -692,7 +696,8 @@ class HealthOut(BaseModel):
     #: back zero env strings for the bundled Developer-ID signed python3, so
     #: procargs2 never actually measured the real packaged engine.
     process_env_forbidden_keys: list[str]
-    #: Positive control: a real launchd-started app always has HOME, so its
+    #: Positive control: a real launchd-started app always has HOME (a real
+    #: Windows process has USERPROFILE instead, ``OPS32_HOME_ENV_VAR``), so its
     #: absence means this field was never a real environment read (a stub, a
     #: pre-OPS-32 engine with no field at all, or a malformed body).
     process_env_home_present: bool

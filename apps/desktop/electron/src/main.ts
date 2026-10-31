@@ -37,19 +37,29 @@ import {
 	APP_HOST,
 	APP_ORIGIN,
 	APP_SCHEME,
+	AUDIO_ENGINE_CHOICE_FILE,
 	type PageInit,
 	diagnosticOutput,
 	isAppPage,
 	isExternalUrlAllowed,
 	isTrustedPage,
 	permissionAllowed,
+	readAudioEngineChoice,
 	readBuildStamp,
 	shellBuildIdentity,
-	startingWindowSize
+	startingWindowSize,
+	writeAudioEngineChoice
 } from './policy';
 import { ShellHealthServer } from './shell-health';
 import { EngineError, appendShellLog, installShellLogging } from './shell-log';
-import { EngineSupervisor, type SupervisorSurface, defaultDeps, supervisedOrigin } from './supervisor';
+import {
+	EngineSupervisor,
+	type Supervised,
+	type SupervisorSurface,
+	defaultDeps,
+	shutdownSupervised,
+	supervisedOrigin
+} from './supervisor';
 import { applyUpdate } from './updater';
 
 /** Test seam, as in the Tauri shell: drive the app against an engine someone else started. */
@@ -160,11 +170,20 @@ function main(): void {
 	let supervisor: EngineSupervisor | null = null;
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
+	const engineChoiceFile = path.join(engineDataDir(identifier), AUDIO_ENGINE_CHOICE_FILE);
+	let savedEngineChoice: PageInit['audioEngineChoice'] = null;
+	try {
+		savedEngineChoice = readAudioEngineChoice(engineChoiceFile);
+	} catch (error) {
+		// The page falls back to its default engine; the log says why.
+		appendShellLog('WARN', `audio engine choice unreadable (${String(error)}); using the default`);
+	}
 	const page: PageInit = {
 		engineOrigin: null,
 		shellBuild: identity,
 		perfProbe: process.env.OPENDJ_PERF_PROBE === '1',
-		supervisor: null
+		supervisor: null,
+		audioEngineChoice: savedEngineChoice
 	};
 
 	const shutdownAll = (reason: string): Promise<void> => {
@@ -282,6 +301,11 @@ function main(): void {
 		const exitCode = Number.isInteger(code) ? (code as number) : 0;
 		exitApp(exitCode, `programmatic-exit(code=${exitCode})`);
 	});
+	ipcMain.handle('opendj:audio-engine-choice', (event, choice: unknown) => {
+		if (!trusted(event)) return refuse();
+		// Later page loads this launch read it from page-init too.
+		page.audioEngineChoice = writeAudioEngineChoice(engineChoiceFile, choice);
+	});
 	ipcMain.handle('opendj:relaunch', (event) => {
 		if (!trusted(event)) return refuse();
 		app.relaunch();
@@ -339,6 +363,7 @@ function main(): void {
 		const lockProbe = makeLockProbe(path.join(payload, 'runtime', 'bin', 'python3'));
 		const external = process.env[ENGINE_ORIGIN_ENV];
 		let health: ShellHealthServer | null = null;
+		let bootEngine: Supervised | undefined;
 		try {
 			if (external !== undefined) {
 				if (external.trim() === '') {
@@ -361,8 +386,8 @@ function main(): void {
 					});
 					return choice.response === 0;
 				});
-				const started = await startEngine(payload, dataDir, logPath, bootDeps);
-				page.engineOrigin = supervisedOrigin(started);
+				bootEngine = await startEngine(payload, dataDir, logPath, bootDeps);
+				page.engineOrigin = supervisedOrigin(bootEngine);
 				health = await ShellHealthServer.start(dataDir, (action) => outputHealthJson(action, payload));
 				const surface: SupervisorSurface = {
 					setTitle: (title) => window?.setTitle(title),
@@ -391,69 +416,78 @@ function main(): void {
 					quit: (code) => exitApp(code, `engine fatal (code ${code})`)
 				};
 				supervisor = new EngineSupervisor(
-					started,
+					bootEngine,
 					{ payload, dataDir, logPath, productName },
 					health,
 					surface,
 					defaultDeps(lockProbe)
 				);
+				bootEngine = undefined;
 			}
+		} catch (error) {
+			if (supervisor !== null) await supervisor.shutdown();
+			if (bootEngine !== undefined) await shutdownSupervised(bootEngine, dataDir);
+			if (health !== null) await health.close();
+			failVisibly(error);
+			return;
+		}
+
+		try {
+			// P15: the window, on the bootstrap page, sized to the screen.
+			const size = startingWindowSize(screen.getPrimaryDisplay()?.workAreaSize ?? null);
+			window = new BrowserWindow({
+				width: size.width,
+				height: size.height,
+				title: productName,
+				icon: shellIconPath(),
+				backgroundColor: '#000000',
+				webPreferences: {
+					preload: path.join(__dirname, 'preload.js'),
+					contextIsolation: true,
+					sandbox: true,
+					nodeIntegration: false,
+					webSecurity: true,
+					spellcheck: false,
+					// A DJ app keeps its timers running when another app has focus.
+					backgroundThrottling: false
+				}
+			});
+			// The title is the shell's status line (engine restarting, dead), not the page's.
+			window.on('page-title-updated', (event) => event.preventDefault());
+			window.on('close', (event) => {
+				if (quitAllowed) return;
+				event.preventDefault();
+				appendShellLog('shutdown', 'window-close requested; delegating to webview quit gate');
+				requestQuitFromWebview('window-close');
+			});
+			const contents = window.webContents;
+			contents.on('did-start-navigation', (details) => {
+				if (details.isMainFrame) appendShellLog('webview', `navigation started: ${details.url}`);
+			});
+			contents.on('did-navigate', (_event, url) => appendShellLog('webview', `navigation finished: ${url}`));
+			const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
+				if (isTrustedPage(url)) return;
+				event.preventDefault();
+				appendShellLog('WARN', `refused navigation to ${url}`);
+				if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
+			};
+			contents.on('will-navigate', (event, url) => guardNavigation(event, url));
+			contents.on('will-redirect', (event, url) => guardNavigation(event, url));
+			contents.setWindowOpenHandler(({ url }) => {
+				if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
+				return { action: 'deny' };
+			});
+
+			// The supervisor starts before the load settles: the bootstrap page can
+			// navigate to the engine before loadURL resolves, which rejects it with
+			// ERR_ABORTED, and that must not leave the engine unwatched.
+			supervisor?.start();
+			window.loadURL(`${APP_ORIGIN}/index.html`).catch((error: unknown) => {
+				appendShellLog('webview', `bootstrap load settled early: ${String(error)}`);
+			});
 		} catch (error) {
 			if (supervisor !== null) await supervisor.shutdown();
 			failVisibly(error);
 		}
-
-		// P15: the window, on the bootstrap page, sized to the screen.
-		const size = startingWindowSize(screen.getPrimaryDisplay()?.workAreaSize ?? null);
-		window = new BrowserWindow({
-			width: size.width,
-			height: size.height,
-			title: productName,
-			icon: shellIconPath(),
-			backgroundColor: '#000000',
-			webPreferences: {
-				preload: path.join(__dirname, 'preload.js'),
-				contextIsolation: true,
-				sandbox: true,
-				nodeIntegration: false,
-				webSecurity: true,
-				spellcheck: false,
-				// A DJ app keeps its timers running when another app has focus.
-				backgroundThrottling: false
-			}
-		});
-		// The title is the shell's status line (engine restarting, dead), not the page's.
-		window.on('page-title-updated', (event) => event.preventDefault());
-		window.on('close', (event) => {
-			if (quitAllowed) return;
-			event.preventDefault();
-			appendShellLog('shutdown', 'window-close requested; delegating to webview quit gate');
-			requestQuitFromWebview('window-close');
-		});
-		const contents = window.webContents;
-		contents.on('did-start-navigation', (details) => {
-			if (details.isMainFrame) appendShellLog('webview', `navigation started: ${details.url}`);
-		});
-		contents.on('did-navigate', (_event, url) => appendShellLog('webview', `navigation finished: ${url}`));
-		const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
-			if (isTrustedPage(url)) return;
-			event.preventDefault();
-			appendShellLog('WARN', `refused navigation to ${url}`);
-			if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
-		};
-		contents.on('will-navigate', (event, url) => guardNavigation(event, url));
-		contents.on('will-redirect', (event, url) => guardNavigation(event, url));
-		contents.setWindowOpenHandler(({ url }) => {
-			if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
-			return { action: 'deny' };
-		});
-
-		// The supervisor starts before the load settles: the bootstrap page can
-		// navigate to the engine before loadURL resolves, which rejects it with
-		// ERR_ABORTED, and that must not leave the engine unwatched.
-		supervisor?.start();
-		window.loadURL(`${APP_ORIGIN}/index.html`).catch((error: unknown) => {
-			appendShellLog('webview', `bootstrap load settled early: ${String(error)}`);
-		});
 	}).catch((error: unknown) => failVisibly(error));
 }

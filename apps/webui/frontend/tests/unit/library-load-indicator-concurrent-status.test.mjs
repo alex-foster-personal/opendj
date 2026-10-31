@@ -35,9 +35,10 @@ function count(html, pattern) {
 	return [...html.matchAll(pattern)].length;
 }
 
-// pins 1f9711b7, dd5fad7f, e452be6b: the strip root is reserved space, so it
-// renders while idle too. What idle must NOT render is any status content.
-test('idle props render the reserved strip with no status content', () => {
+// pins 1f9711b7, dd5fad7f, e452be6b, LIBUX-50: the strip root (role=status)
+// renders while idle too, at zero height. What idle must NOT render is any
+// status content.
+test('idle props render the zero-height status root with no status content', () => {
 	const html = renderIndicator({ loading: false, progress: null, searching: false });
 	assert.equal(count(html, /lli-root/g), 1, `rendered: ${html}`);
 	assert.equal(html.includes('lli-mark'), false, `rendered: ${html}`);

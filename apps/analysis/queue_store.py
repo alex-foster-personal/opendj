@@ -57,13 +57,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .queue_stale import (
+from apps.shared.state.analysis_stale import (
     STALE_DEPENDENCY_MOVED,
     STALE_TABLES_SQL,
     clear_stale,
     mark_stale,
     stale_rows,
 )
+
 from .time_iso import utc_now_iso
 
 #: Item states. Terminal states are the ones a resume never revisits.

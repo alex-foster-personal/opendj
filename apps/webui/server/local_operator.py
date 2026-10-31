@@ -14,7 +14,8 @@ passes only if EVERY one of these holds:
    header alone is enough to refuse. uvicorn's default ``proxy_headers`` also
    rewrites the peer from ``X-Forwarded-For``; this check does not rely on it.
 3. The ``Host`` header names a loopback authority (``127.0.0.1``,
-   ``localhost``, ``[::1]``, any port). This is the DNS-rebinding guard: a
+   ``localhost``, ``[::1]``, or the one named local host ``opendj.localhost``
+   that browsers resolve to loopback, any port). This is the DNS-rebinding guard: a
    hostile page whose domain was rebound to 127.0.0.1 connects from the
    loopback, but its browser still sends the attacker's domain as ``Host``.
    It also covers the share host, which is never a loopback name.
@@ -33,6 +34,8 @@ import ipaddress
 from urllib.parse import urlsplit
 
 from fastapi import Request
+
+from apps.webui.server.ui_url import NAMED_LOCAL_HOST
 
 LOOPBACK_HOSTNAME: str = "localhost"
 LOCAL_ORIGIN_SCHEMES: frozenset[str] = frozenset({"http", "https"})
@@ -67,8 +70,8 @@ def is_loopback_ip(host: str | None) -> bool:
 
 
 def is_loopback_hostname(hostname: str | None) -> bool:
-    """True for ``localhost`` or a loopback IP literal (brackets already stripped)."""
-    return hostname == LOOPBACK_HOSTNAME or is_loopback_ip(hostname)
+    """True for ``localhost``, ``opendj.localhost`` or a loopback IP literal (brackets stripped)."""
+    return hostname in (LOOPBACK_HOSTNAME, NAMED_LOCAL_HOST) or is_loopback_ip(hostname)
 
 
 def _hostname_of_authority(authority: str) -> str | None:

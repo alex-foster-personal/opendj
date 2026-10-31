@@ -22,8 +22,9 @@ from ..models import (
     HealthSyncthing,
     HealthWaveformMaterialization,
 )
-from ..ops32_env_guard import OPS32_FORBIDDEN_ENV_PREFIXES
+from ..ops32_env_guard import OPS32_FORBIDDEN_ENV_PREFIXES, OPS32_HOME_ENV_VAR
 from ..state_paths import resolve_state_db_path
+from ..ui_url import resolve_ui_address
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -54,6 +55,11 @@ router = APIRouter(prefix="/health", tags=["health"])
 _HEALTH_THREAD_LIMITER = anyio.CapacityLimiter(4)
 _HEALTH_DB_TIMEOUT_S = 2.0
 _HEALTH_OPTIONAL_PROBE_TIMEOUT_S = 1.5
+# The dev-frontend probe in resolve_ui_address is a blocking HTTP read of up
+# to 1.5 s against a stalled listener. It runs off the event loop on the
+# dedicated limiter, and past this bound ui_url reports None (not served), so
+# /health keeps its one-second contract (discussion_r4251103691).
+_HEALTH_UI_URL_TIMEOUT_S = 0.5
 
 
 async def _call_optional_status_fn(fn: Callable[[], Any] | None) -> Any | None:
@@ -130,6 +136,7 @@ async def health(
         ),
         bind_host=bind_host,
         version=version,
+        ui_url=await _ui_url(request),
         google_oauth_configured=GoogleOAuthConfig.is_configured(dict(os.environ)),
         # OPS-32 round 4: narrowed from every env key name (round 3) to just
         # the ones matching a forbidden prefix, plus one control bit -- round
@@ -141,5 +148,19 @@ async def health(
         process_env_forbidden_keys=sorted(
             key for key in os.environ if key.startswith(OPS32_FORBIDDEN_ENV_PREFIXES)
         ),
-        process_env_home_present="HOME" in os.environ,
+        process_env_home_present=OPS32_HOME_ENV_VAR in os.environ,
     )
+
+
+async def _ui_url(request: Request) -> str | None:
+    try:
+        with anyio.fail_after(_HEALTH_UI_URL_TIMEOUT_S):
+            address = await to_thread.run_sync(
+                resolve_ui_address,
+                request.app.state,
+                limiter=_HEALTH_THREAD_LIMITER,
+                abandon_on_cancel=True,
+            )
+    except TimeoutError:
+        return None
+    return None if address is None else address.ui_url

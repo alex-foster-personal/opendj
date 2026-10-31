@@ -1,8 +1,10 @@
 /**
  * Pin the rescue auto-restore's input for a spec that does not test it.
  *
- * Shared by zz-autoplay-playlist-switch.spec.ts (decks) and
- * ui-contrast-audit.spec.ts (deck layout). The snapshot names no deck and
+ * Shared by zz-autoplay-playlist-switch.spec.ts (decks),
+ * ui-contrast-audit.spec.ts (deck layout), quickload-dblclick-guard.spec.ts
+ * (#6242: deck 2 held another spec's track) and setup-entry-points.spec.ts
+ * (#6244: online-artwork 404s for a restored deck's track). The snapshot names no deck and
  * carries no deck_layout, so a restore that reads it loads nothing and leaves
  * the layout alone.
  */

@@ -10,6 +10,7 @@ Regression lines:
 """
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -46,7 +47,7 @@ def _drain(clock: Clock, runs: list[str], grace_s: float = aa.STARTUP_GRACE_S) -
             refresh_tags_fn=lambda _sid: True,
             declined_fn=lambda _lane, _backend: {},
         ),
-        clock=clock,
+        monotonic=clock,
         startup_grace_s=grace_s,
     )
 
@@ -115,3 +116,57 @@ def test_serving_the_index_ends_the_drain_grace(monkeypatch: pytest.MonkeyPatch)
     response = tracks_routes.get_track_index(request, None, None, backend)
     assert response.status_code == 200
     assert not drain.in_startup_grace()
+
+
+def test_build_for_app_hands_the_drain_the_baseline_the_lane_runner_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] the drain's tick sample never reaches the lane runner [then] fail, [else stop].
+
+    The wiring once sat on a line after the ``return``, so the tick sample was
+    never the baseline and a rise between the sample and the spawn was adopted
+    as the new baseline.
+    """
+    seen: dict[str, Any] = {}
+
+    def capture_drain(_sources: aa.AheadSources, **kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "drain"
+
+    def capture_runner(_db: str, _conn_factory: Any, **kwargs: Any) -> str:
+        seen["baseline_fn"] = kwargs["baseline_fn"]
+        return "runner"
+
+    monkeypatch.setattr(aa, "AheadDrain", capture_drain)
+    monkeypatch.setattr(aa, "run_lane_via_queue", capture_runner)
+    app = SimpleNamespace(state=SimpleNamespace(state_db_path="/nonexistent/state.db"))
+    assert aa.build_for_app(app) == "drain"
+    anchor = seen["xrun_anchor"]
+    assert anchor == [None] and seen["baseline_fn"]() is None
+    anchor[0] = 7
+    assert seen["baseline_fn"]() == 7, "if the runner reads a different list than the drain writes then broken"
+
+
+def test_build_for_app_reads_the_counter_only_from_a_fresh_mirror(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the wired xrun read ignores how old the mirror is [then] fail, [else stop].
+
+    Regression line: if a page that stopped publishing still supplies an xrun
+    count then broken (a hung UI would read as zero new xruns).
+    """
+    seen: dict[str, Any] = {}
+
+    def capture(sources: aa.AheadSources, **_kwargs: Any) -> str:
+        seen["xruns_fn"] = sources.xruns_fn
+        return "drain"
+
+    monkeypatch.setattr(aa, "AheadDrain", capture)
+    monkeypatch.setattr(aa, "run_lane_via_queue", lambda *_a, **_k: "runner")
+    sentinel = {"xruns": 4, "detector": aa.XRUN_DETECTOR_ARMED}
+    state = SimpleNamespace(state_db_path="/nonexistent/state.db", ui_mirror={"xrun_sentinel": sentinel})
+    assert aa.build_for_app(SimpleNamespace(state=state)) == "drain"
+    xruns = seen["xruns_fn"]
+    assert xruns() is None, "a mirror with no received stamp has no known age"
+    state.ui_mirror_received_monotonic = time.monotonic()
+    assert xruns() == 4, "the control: a mirror received just now yields its count"
+    state.ui_mirror_received_monotonic = time.monotonic() - aa.MIRROR_MAX_AGE_S - 1.0
+    assert xruns() is None, "if a mirror older than MIRROR_MAX_AGE_S still yields a count then broken"

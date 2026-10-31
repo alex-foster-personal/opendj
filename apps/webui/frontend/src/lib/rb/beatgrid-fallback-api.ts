@@ -10,8 +10,9 @@
  * thin wrapper rather than editing it.
  */
 import { ApiError, api, unwrap } from '../api/client';
+import type { components } from '../api-types';
 import { RbApiError } from './api-rb-error';
-import { refuseStickRead } from './track-source';
+import { refuseStickRead, refuseStickWrite } from './track-source';
 import type { AnlzBeatgrid } from './anlz-types';
 
 /** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut).
@@ -54,4 +55,33 @@ export async function fetchBeatgridFallback(stable_id: string): Promise<Beatgrid
 		}
 		throw error;
 	}
+}
+
+// GRIDEDIT-6235c/-6235d: the deck grid buttons' writes (rb/grid-edit-api.ts wires
+// them into the edit queue), the same routes as `opendj track grid-edit`.
+type GridEditSource = components['schemas']['GridEditOut']['source'];
+const _GRID_EDIT = '/api/v1/tracks/{stable_id}/grid-edit';
+
+// A stick track has no stored grid edit (the deck disables the buttons for
+// one); these refuse it loudly before any request rather than 404 mid-hold.
+
+export async function nudgeGridEdit(
+	stableId: string,
+	source: GridEditSource,
+	step: { offset_ms: number; beats: number }
+) {
+	refuseStickWrite(stableId, 'grid edit');
+	return unwrap(
+		api.POST('/api/v1/tracks/{stable_id}/grid-edit/nudge', {
+			params: { path: { stable_id: stableId } },
+			body: { source, offset_ms: step.offset_ms, beats: step.beats }
+		})
+	);
+}
+
+/** Reset one half of the edit; the server keeps the other in the same
+ * transaction, so a concurrent agent edit of that half survives. */
+export async function resetGridEditPart(stableId: string, source: GridEditSource, part: 'adjust' | 'shift') {
+	refuseStickWrite(stableId, 'grid edit');
+	return unwrap(api.DELETE(_GRID_EDIT, { params: { path: { stable_id: stableId }, query: { source, part } } }));
 }

@@ -167,3 +167,11 @@ tests/quality/test_hosted_runner_pins_are_allowlisted.py
 # The labelled title-fix eval sets are owner-library rows (licensing rule R14): nothing under
 # tests/fixtures/title_fix may be tracked, and the default fixture directory is not under tests/.
 (private path)
+
+# The committed `helper_carried_paths` (round 22, ci/test-scopes.yml) equals its derivation: the
+# global helpers' module closure. The derivation reads every pytest input (a test module's imports
+# decide which helpers are global), the closure's own text and which files exist, so no import
+# reaches the guard from what changes it; a selection rule naming every input would select it on
+# nearly every change. Sol on #7495. 55.3 s locally at load 13 (Fri 30 Oct 2026), 36.1 s on
+# Tue 27 Oct; its sibling `helper_carried` guard reads 24.1 s in main's CI durations ledger.
+tests/scripts/test_ci_plan_carry_paths.py

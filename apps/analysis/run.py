@@ -61,6 +61,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from apps.shared.state import analysis_stale
+
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends import DEFAULT_BACKEND, get_backend
 from .backends.base import BackendNonshippable, TrackVanished
@@ -226,13 +228,22 @@ def filter_missing(
     backend_name: str,
     db_path: Path | None = None,
 ) -> list[TrackRef]:
-    """Drop tracks that already have an analysis row for ``backend_name``."""
+    """Drop tracks that already have a current analysis row for ``backend_name``.
+
+    A row retired by an audio rewrite (a whole-record stale marker) describes
+    other bytes, so its track is still missing analysis and is queued.
+    """
     if not refs:
         return refs
     existing = fetch_records_by_ids(
         [r.stable_id for r in refs], backend=backend_name, db_path=db_path
     )
-    seen = {r.stable_id for r in existing}
+    conn = open_conn(db_path)
+    try:
+        retired = analysis_stale.retired_rows(conn, backend_name)
+    finally:
+        conn.close()
+    seen = {r.stable_id for r in existing if (r.stable_id, r.backend_version) not in retired}
     return [r for r in refs if r.stable_id not in seen]
 
 

@@ -17,8 +17,12 @@ import {
 } from '$lib/rb/audio-engine.svelte';
 import { audioPrefetchReadyCount, clearAudioPrefetchCache } from '$lib/rb/audio-prefetch-cache.svelte';
 import { PERFORMANCE_SESSION_STORAGE_KEY } from '$lib/rb/performance-session-snapshot';
+import { parseLv2Ids } from '$lib/rb/performance-deeplink';
 
 const LIBRARY_MODE_EXIT_KEY = 'mdt.library_mode_exit';
+// LIBWS-06: outlives the exit marker (which the first session restore consumes)
+// until the first deck restore after leaving Library settles.
+const LIBRARY_RESCUE_HOLD_KEY = 'mdt.library_rescue_hold';
 
 let _releasePromise: Promise<void> | null = null;
 let _releasePromiseGeneration: number | null = null;
@@ -61,12 +65,34 @@ export function readLibraryModeIdleProbe(): LibraryModeIdleProbe {
 export function markLibraryModeExit(): void {
 	if (typeof sessionStorage === 'undefined') return;
 	sessionStorage.setItem(LIBRARY_MODE_EXIT_KEY, '1');
+	sessionStorage.setItem(LIBRARY_RESCUE_HOLD_KEY, '1');
 }
 
 export function shouldSkipPerformanceSessionRestore(): boolean {
 	if (typeof sessionStorage === 'undefined') return false;
 	return sessionStorage.getItem(LIBRARY_MODE_EXIT_KEY) === '1';
 }
+
+/**
+ * LIBWS-06: the arrival from Library, set on every Library exit and kept, across
+ * leadership changes and route remounts (sessionStorage), until the first deck
+ * restore after leaving Library settles. While held, Gig skips its stored
+ * session; it also skips the rescue auto-restore only for a Load to deck
+ * hand-off (the URL names a deck), so a plain return keeps RESCUE-02.
+ */
+export const libraryRescueHold = {
+	held(): boolean {
+		if (typeof sessionStorage === 'undefined') return false;
+		return sessionStorage.getItem(LIBRARY_RESCUE_HOLD_KEY) === '1';
+	},
+	handoff(search: string = typeof location === 'undefined' ? '' : location.search): boolean {
+		return libraryRescueHold.held() && Object.keys(parseLv2Ids(search)).length > 0;
+	},
+	release(): void {
+		if (typeof sessionStorage === 'undefined') return;
+		sessionStorage.removeItem(LIBRARY_RESCUE_HOLD_KEY);
+	}
+};
 
 export function consumeLibraryModeExitFlag(): void {
 	if (typeof sessionStorage === 'undefined') return;
@@ -109,6 +135,32 @@ export function noteGigRuntimeMounted(): number {
  * unconditional `engine.dispose()` outside of `releaseGigRuntime` itself. */
 export function currentGigRuntimeGeneration(): number {
 	return _releaseGeneration;
+}
+
+/**
+ * Settles once any Gig release still in flight has finished (or failed), and
+ * at once when none is. Library's Load to deck awaits this before it
+ * navigates back to Gig (Codex P1, PR #6189): a remount that lands while the
+ * fire-and-forget unmount teardown is still running supersedes it, so the old
+ * decks survive and session restore skips the requested `dN` track, or a
+ * disposal already underway clears the newly mounted engine. A failed release
+ * resolves too: its own caller already surfaces that failure, and Gig must
+ * still open.
+ */
+export function gigRuntimeReleaseSettled(): Promise<void> {
+	const pending = _releasePromise;
+	if (pending === null) return Promise.resolve();
+	return pending.then(
+		() => undefined,
+		() => undefined
+	);
+}
+
+/** True while a Gig release is still in flight: a navigation that must
+ * wait for `gigRuntimeReleaseSettled()` has to decide that synchronously
+ * (SvelteKit's `beforeNavigate` cancels only before its first await). */
+export function gigRuntimeReleasePending(): boolean {
+	return _releasePromise !== null;
 }
 
 export async function releaseGigRuntime(opts?: {
@@ -420,5 +472,6 @@ export function resetLibraryModeRuntimeForTest(): void {
 	}
 	if (typeof sessionStorage !== 'undefined') {
 		sessionStorage.removeItem(LIBRARY_MODE_EXIT_KEY);
+		sessionStorage.removeItem(LIBRARY_RESCUE_HOLD_KEY);
 	}
 }

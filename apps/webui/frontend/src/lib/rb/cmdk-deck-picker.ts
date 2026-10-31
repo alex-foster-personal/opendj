@@ -53,24 +53,38 @@ export interface GuardDeckState {
 	load_generation: number;
 }
 
-/** A replace guard: the playing deck it asked about and the load that was on it when it asked. */
+/**
+ * A replace guard: the playing deck it asked about, the load that was on it when it asked,
+ * how many loads had been dispatched to it then (a load still queued or decoding moves
+ * that count before it moves the deck), and how many commands (play, pause, ...) had.
+ */
 export interface ReplaceGuard extends GuardDeckState {
 	id: DeckId;
+	loads: number;
+	commands: number;
 }
 
-/** The guard for deck `id` as it stands now. */
-export function replaceGuard(id: DeckId, state: GuardDeckState): ReplaceGuard {
-	return { id, stable_id: state.stable_id, load_generation: state.load_generation };
+/** The guard for deck `id` as it stands now; `loads` and `commands` are the deck's dispatch counts. */
+export function replaceGuard(id: DeckId, state: GuardDeckState, loads: number, commands: number): ReplaceGuard {
+	return { id, stable_id: state.stable_id, load_generation: state.load_generation, loads, commands };
 }
 
 /**
  * True while the deck still holds the load the guard asked about, so a confirm
  * answers the question that was shown. A newer load (another track, or the same
  * track loaded again by IPC, MIDI or AutoPlay) moves the generation, and the
- * confirm then must not replace a track nobody was asked about.
+ * confirm then must not replace a track nobody was asked about. So does a load
+ * dispatched but not yet landed, through the dispatch count (Codex r4277027005).
+ * A command since the guard, such as a play that starts the deck, moves the command
+ * count, so the confirm asks again rather than replace a track that now plays (Codex P1, #6689).
  */
-export function guardHolds(guard: ReplaceGuard, state: GuardDeckState): boolean {
-	return state.stable_id === guard.stable_id && state.load_generation === guard.load_generation;
+export function guardHolds(guard: ReplaceGuard, state: GuardDeckState, loads: number, commands: number): boolean {
+	return (
+		state.stable_id === guard.stable_id &&
+		state.load_generation === guard.load_generation &&
+		loads === guard.loads &&
+		commands === guard.commands
+	);
 }
 
 /** WASD as arrows in the picker, which has no text to type; null for any other key. */
@@ -92,4 +106,57 @@ export function pickerArrow(event: {
 		KeyD: 'ArrowRight'
 	};
 	return wasd[event.code] ?? null;
+}
+
+/** What a cmdk_pick of a track reads on its deck: the picker's view of it, its queue and its load count. */
+export interface PickGuardPorts {
+	/** The deck as the picker sees it now, with its loaded track and generation; undefined when not listed. */
+	deck(): (PickerDeck & GuardDeckState) | undefined;
+	/** Loads dispatched to the deck (moves at dispatch, before the deck does). */
+	loads(): number;
+	/** Deck-queue commands other than loads dispatched to the deck: a play, seek or tempo sent during the wait voids a confirm. */
+	commands(): number;
+	/** Commands still queued for the deck. */
+	pending(): number;
+	/** Resolves true once the deck's queue drained, false when it did not settle. */
+	idle(): Promise<boolean>;
+}
+
+/**
+ * CMDK-19: the deck picker's guard for a cmdk_pick of a track, or why it refuses. What the
+ * deck already has queued lands first, so the verdict reads the track really there, as the
+ * picker's own confirm does. A confirm answers only for the load that was on the deck when the
+ * pick came in: one that landed from the queue meanwhile is a track nobody confirmed, so the
+ * pick is refused and asked again rather than replacing it (Codex r4278581453).
+ *
+ * `seen.loads` is set to the deck's load count the verdict was read against, so the caller can
+ * refuse a load dispatched after it and before the pick starts (Codex r4278944613). `seen.commands`
+ * is the same for every command: a seek or tempo sent after the read must win over the pick, not be
+ * adopted as the pick's baseline (Codex BLOCKING, #6692).
+ */
+export async function pickGuard(
+	id: DeckId,
+	ports: PickGuardPorts,
+	confirm: boolean,
+	seen?: { loads: number; commands?: number }
+): Promise<string | null> {
+	const before = ports.deck();
+	const asked = before === undefined ? null : replaceGuard(id, before, ports.loads(), ports.commands());
+	if (ports.pending() > 0 && !(await ports.idle())) return `deck ${id} is still busy; pick again once it settles`;
+	const now = ports.deck();
+	if (seen !== undefined) {
+		seen.loads = ports.loads();
+		seen.commands = ports.commands();
+	}
+	if (now === undefined) return null;
+	const verdict = pickerAction(now, confirm);
+	if (verdict === 'refuse') return `deck ${id} is the master; pick another deck`;
+	if (verdict === 'ask') return `deck ${id} is playing; pick again with confirm to replace it`;
+	// A confirm covers the load it was sent against, playing or paused: any other load that lands
+	// on the deck before the pick is refused, a paused one from the queue included (CMDK-19, Sol P1).
+	// A pick without confirm has no guard, so a paused deck still loads straight through.
+	if (confirm && (asked === null || !guardHolds(asked, now, ports.loads(), ports.commands()))) {
+		return `deck ${id} took another load before this pick; pick again with confirm to replace it`;
+	}
+	return null;
 }

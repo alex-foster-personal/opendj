@@ -172,6 +172,8 @@ GATE_STEPS: dict[str, tuple[str, bool]] = {
     "library-jobs": ("Library jobs ordering (chromium, dry runner)", False),
     "preflight": ("Preflight boot gate + fresh-install onboarding (real backends)", False),
     "onboarding": ("Onboarding gauntlet (packaged engine, production build)", True),
+    "cmdk-pick-race": ("Cmd K pick-race gate - real engine, fixture library", False),
+    "cmdk-preview-cue": ("Cmd K cue-preview gate - real engine, fixture library", False),
 }
 
 

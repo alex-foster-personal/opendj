@@ -484,7 +484,7 @@ def test_discover_fixtures_picks_up_dirs_and_extern_markers(
     (fake / "rb-usb-export-c.extern").mkdir()
 
     # Reload the resolver module reference so discover_fixtures sees the stub.
-    import tests.fixtures._resolver as resolver  # type: ignore[import-not-found]
+    import apps.sync.usb.pioneer.fixture_resolver as resolver  # type: ignore[import-not-found]
     monkeypatch.setattr(resolver, "FIXTURES_ROOT", fake)
 
     names = differ.discover_fixtures("rb-usb-export*")
@@ -567,7 +567,7 @@ def test_run_matrix_skips_optional_fixture_when_unavailable(
 def test_run_matrix_returns_error_row_when_fixture_missing_on_disk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import tests.fixtures._resolver as resolver  # type: ignore[import-not-found]
+    import apps.sync.usb.pioneer.fixture_resolver as resolver  # type: ignore[import-not-found]
 
     def _raise(_name):
         raise FileNotFoundError("bad path")
@@ -602,7 +602,7 @@ def test_verify_fixture_contract_detects_mismatch_against_real_contract(
     is patched, and the real canonical ``rb-usb-export`` fixture is never
     touched (AGENTS.md's no-mocks and immutable-fixtures rules).
     """
-    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+    from apps.sync.usb.pioneer.fixture_resolver import (  # type: ignore[import-not-found]
         FixtureContractMismatch,
         verify_fixture_contract,
     )
@@ -619,7 +619,7 @@ def test_run_matrix_flags_missing_pioneer_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A root that has no ``PIONEER/`` subdir → error row."""
-    import tests.fixtures._resolver as resolver  # type: ignore[import-not-found]
+    import apps.sync.usb.pioneer.fixture_resolver as resolver  # type: ignore[import-not-found]
 
     root = tmp_path / "f"
     root.mkdir()
@@ -636,7 +636,7 @@ def test_run_matrix_flags_missing_exportlibrary_db(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """PIONEER/ exists but exportLibrary.db is absent → error row."""
-    import tests.fixtures._resolver as resolver  # type: ignore[import-not-found]
+    import apps.sync.usb.pioneer.fixture_resolver as resolver  # type: ignore[import-not-found]
 
     root = tmp_path / "f"
     (root / "PIONEER" / "rekordbox").mkdir(parents=True)

@@ -9,14 +9,15 @@ r3976977757) without reintroducing the false-SUCCESS class #1608 closes.
 GitHub's negation ordering for inclusive `paths` lists ("later patterns win")
 and the complementary `paths-ignore` rule (the workflow runs when at least one
 changed file is not ignored) are evaluated by `scripts.ci_pr_scope`, which the
-in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network.
+in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network;
+`scripts/ci_wait.py` reads a pinned SHA's workflow texts and hands them in.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -29,12 +30,17 @@ from scripts.ci_pr_scope import IN_RUN_PULL_REQUEST_SCOPES, workflow_would_run_f
 #: is kept on purpose, because a deleted workflow is not the same as a finished one). A
 #: retired name is the one case where "absent from the catalog" is known, not unknown, so
 #: it is dropped here and nowhere else. Append, never remove: a name can be retired again
-#: by a later rename. Round 6a (specs/ci-fail-fast.md) retired the affected-test canary.
+#: by a later rename. Round 6a ((private path)) retired the affected-test canary.
+#: A job that still exists under new names (a renamed matrix, issue #5205) does not belong
+#: here: `derive_expected_for_changed_paths` maps it through the baseline head's catalog.
 RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
     {
         "affected-test canary (non-blocking early signal)",
     }
 )
+
+#: (workflow file name, job id): the identity a check name keeps across a rename.
+JobKey = tuple[str, str]
 
 #: A job `if:` that reads the in-run scope decision (`needs.<scope job>.outputs.in_scope`).
 _READS_IN_RUN_SCOPE = re.compile(r"needs\.[\w-]+\.outputs\.in_scope\b")
@@ -111,10 +117,13 @@ def _scope_gated_job_ids(jobs: dict[str, dict]) -> frozenset[str]:
     return frozenset(gated)
 
 
-def _job_display_names(job_id: str, job: dict) -> list[str]:
+def _raw_job_name(job_id: str, job: dict) -> str:
     raw_name = job.get("name", job_id)
-    if not isinstance(raw_name, str):
-        raw_name = job_id
+    return raw_name if isinstance(raw_name, str) else job_id
+
+
+def _job_display_names(job_id: str, job: dict) -> list[str]:
+    raw_name = _raw_job_name(job_id, job)
     matrix = (job.get("strategy") or {}).get("matrix") or {}
     if isinstance(matrix, dict):
         return _expand_matrix_job_name(raw_name, matrix)
@@ -131,16 +140,31 @@ class WorkflowCatalog:
     #: Names an in-run-scoped workflow creates on every pull request whatever the
     #: changed paths, so a docs-only head must keep waiting for them.
     always_created_job_names: frozenset[str] = frozenset()
+    #: Every name a job can report under, keyed by the job's identity.
+    job_names: dict[JobKey, frozenset[str]] = field(default_factory=dict)
+    #: A matrix job GitHub skips reports ONE check under its unexpanded template
+    #: (`leg ${{ matrix.leg }} of 2`); a job that runs reports every leg instead. Each
+    #: name maps to the names that answer for it, so neither shape waits on the other.
+    matrix_alternatives: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @classmethod
     def from_workflows_dir(cls, workflows_dir: Path) -> WorkflowCatalog:
+        return cls.from_workflow_texts(
+            {path.name: path.read_text(encoding="utf-8") for path in workflows_dir.glob("*.yml")}
+        )
+
+    @classmethod
+    def from_workflow_texts(cls, texts: Mapping[str, str]) -> WorkflowCatalog:
+        """Build from `{file name: YAML text}`, so a catalog can describe any commit's
+        workflows (read from the API at a pinned SHA), not only this checkout's."""
         check_to_workflow: dict[str, str] = {}
         workflow_filters: dict[str, tuple[tuple[str, ...] | None, tuple[str, ...] | None]] = {}
-        all_names: set[str] = set()
         always_created: set[str] = set()
+        job_names: dict[JobKey, frozenset[str]] = {}
+        alternatives: dict[str, frozenset[str]] = {}
 
-        for path in sorted(workflows_dir.glob("*.yml")):
-            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for name in sorted(texts):
+            document = yaml.safe_load(texts[name])
             if not isinstance(document, dict):
                 continue
             trigger = _pull_request_trigger(_normalize_on(document))
@@ -148,7 +172,7 @@ class WorkflowCatalog:
                 continue
             paths = tuple(trigger.get("paths") or ()) or None
             paths_ignore = tuple(trigger.get("paths-ignore") or ()) or None
-            in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(path.name)
+            in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(name)
             if in_run_scope is not None:
                 # ci.yml and e2e.yml trigger on every pull request and scope the run
                 # from its own `scope` job (scripts/ci_pr_scope.py), so their heavy
@@ -157,29 +181,33 @@ class WorkflowCatalog:
                 # when the same list was a trigger filter.
                 if paths is not None or paths_ignore is not None:
                     raise ValueError(
-                        f"{path.name} declares a pull_request path filter AND an in-run "
+                        f"{name} declares a pull_request path filter AND an in-run "
                         "scope in scripts/ci_pr_scope.py; one list must be the only one"
                     )
                 paths, paths_ignore = in_run_scope
-            workflow_filters[path.name] = (paths, paths_ignore)
-            jobs = {
-                job_id: job
-                for job_id, job in (document.get("jobs") or {}).items()
-                if isinstance(job, dict)
-            }
+            workflow_filters[name] = (paths, paths_ignore)
+            jobs = {job_id: job for job_id, job in (document.get("jobs") or {}).items() if isinstance(job, dict)}
             gated = _scope_gated_job_ids(jobs) if in_run_scope is not None else frozenset()
             for job_id, job in jobs.items():
-                for display_name in _job_display_names(job_id, job):
-                    check_to_workflow.setdefault(display_name, path.name)
-                    all_names.add(display_name)
+                expanded = frozenset(_job_display_names(job_id, job))
+                names = expanded | {_raw_job_name(job_id, job)}
+                job_names[(name, job_id)] = names
+                if len(names) > len(expanded):
+                    template = next(iter(names - expanded))
+                    alternatives[template] = names
+                    alternatives.update({leg: frozenset({leg, template}) for leg in expanded})
+                for display_name in names:
+                    check_to_workflow.setdefault(display_name, name)
                     if in_run_scope is not None and job_id not in gated:
                         always_created.add(display_name)
 
         return cls(
             check_to_workflow=check_to_workflow,
             workflow_filters=workflow_filters,
-            all_job_names=frozenset(all_names),
+            all_job_names=frozenset(check_to_workflow),
             always_created_job_names=frozenset(always_created),
+            job_names=job_names,
+            matrix_alternatives=alternatives,
         )
 
     def applicable_pull_request_job_names(self, changed_files: Sequence[str]) -> frozenset[str]:
@@ -193,27 +221,80 @@ class WorkflowCatalog:
     def known_check_names(self) -> frozenset[str]:
         return self.all_job_names
 
+    def job_of(self, check_name: str) -> JobKey | None:
+        return next((key for key, names in self.job_names.items() if check_name in names), None)
+
+
+def _renamed_to(name: str, catalog: WorkflowCatalog, baseline_catalog: WorkflowCatalog | None) -> frozenset[str] | None:
+    """The head's names for a baseline name whose job still exists but no longer reports
+    under it (a matrix resized, a job retitled). `None` when the name is still live, or
+    when its job cannot be traced to the same (workflow, job id) at the head."""
+    if baseline_catalog is None:
+        return None
+    key = baseline_catalog.job_of(name)
+    if name in catalog.known_check_names():
+        # Still live only if the SAME (workflow, job id) still reports it. If the
+        # original job was retitled and another job took the old name, the owed job
+        # is the original, under its new names (Sol, PR #5997, ci_wait_workflows.py:239).
+        if key is None or key not in catalog.job_names or catalog.job_of(name) == key:
+            return None
+        if name in catalog.job_names[key]:
+            return None
+    return catalog.job_names.get(key) if key is not None else None
+
+
+def renamed_alternatives(
+    baseline: frozenset[str],
+    catalog: WorkflowCatalog,
+    baseline_catalog: WorkflowCatalog | None = None,
+) -> dict[str, frozenset[str]]:
+    """Baseline names the head no longer reports under, mapped to the head names that
+    replaced them (a matrix resized, a job retitled).
+
+    `derive_expected_for_changed_paths` uses this mapping to decide what the head OWES; the
+    waiter needs the same mapping a second time to decide what it must IGNORE. Without it,
+    a run whose renamed legs FAILED stays in the observed snapshot forever: its names are not
+    keys of the head catalog's `matrix_alternatives`, so `_superseded` never groups them with
+    the newer suite that replaced them and the verdict reports FAILURE for a head whose
+    current matrix passed (Codex, PR #5997 r4268197515). Names that are still live under
+    their own job, and names no head can emit again, are omitted: neither is renamed.
+    """
+    out: dict[str, frozenset[str]] = {}
+    for name in baseline - RETIRED_CHECK_NAMES:
+        renamed = _renamed_to(name, catalog, baseline_catalog)
+        if renamed:
+            out[name] = renamed
+    return out
+
 
 def derive_expected_for_changed_paths(
     baseline: frozenset[str],
     changed_files: Sequence[str],
     catalog: WorkflowCatalog,
+    baseline_catalog: WorkflowCatalog | None = None,
 ) -> frozenset[str]:
     """Drop baseline names whose workflow would not run at the current head.
 
-    Unknown baseline names (not in the catalog) are kept fail-closed, EXCEPT names
-    in RETIRED_CHECK_NAMES, which no head can emit again and would otherwise be
-    waited on until the timeout. An empty result is deliberate: expansion
-    (workflows newly activated by a path change) stays with `poll_until_terminal`'s
-    two-poll stabilization rule rather than inflating `expected` from YAML alone.
+    `catalog` describes the HEAD's workflows and `baseline_catalog` the baseline
+    head's. A baseline name its job no longer reports under is REPLACED by that job's
+    names at the head (issue #5205: a main merge cut the fast tier from four legs to
+    two), so the job stays owed under the names it can actually report. Unknown baseline
+    names (in neither catalog) are kept fail-closed, EXCEPT names in
+    RETIRED_CHECK_NAMES, which no head can emit again. An empty result is deliberate:
+    expansion (workflows newly activated by a path change) stays with
+    `poll_until_terminal`'s two-poll stabilization rule rather than inflating
+    `expected` from YAML alone.
     """
     applicable = catalog.applicable_pull_request_job_names(changed_files)
     known = catalog.known_check_names()
-    return frozenset(
-        name
-        for name in baseline
-        if name not in RETIRED_CHECK_NAMES and (name not in known or name in applicable)
-    )
+    expected: set[str] = set()
+    for name in baseline - RETIRED_CHECK_NAMES:
+        renamed = _renamed_to(name, catalog, baseline_catalog)
+        if renamed is not None:
+            expected |= renamed & applicable
+        elif name not in known or name in applicable:
+            expected.add(name)
+    return frozenset(expected)
 
 
 def default_workflows_dir() -> Path:

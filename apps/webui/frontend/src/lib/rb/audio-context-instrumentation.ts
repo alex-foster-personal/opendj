@@ -2,7 +2,7 @@
  * LATENCY-03 / S1 / Q2: everything the audio graph MEASURES about its context.
  *
  * Extracted from `audio-engine.svelte.ts` under convention D5
- * (docs/perf/performance-register.md): instrumentation lives in its own module
+ * ((private path)): instrumentation lives in its own module
  * and the engine keeps only the call sites, so the formulas can be read, tested
  * and changed without touching the file that owns playback.
  *
@@ -113,6 +113,7 @@ export async function resumeAudioContextOrReportDead(
 export function stampContextDeviceFloors(ctx: AudioContext): void {
 	const running = ctx.state === 'running';
 	if (running && _stampedRunningContext === ctx) return;
+	if (!running) _stampedRunningContext = null;
 	if (running) _stampedRunningContext = ctx;
 	recordPerfTiming('audio-context', {
 		sample_rate_hz: ctx.sampleRate,
@@ -344,10 +345,13 @@ export function disarmContextInstrumentation(): void {
 export function armAudioContextWatchdog(
 	ctx: AudioContext,
 	isAnyDeckPlaying: () => boolean,
-	recreateGraph: (() => Promise<void>) | null = null
+	recreateGraph: (() => Promise<void>) | null = null,
+	onStateChange: (state: string) => void = () => undefined
 ): void {
 	ctx.addEventListener('statechange', () => {
-		if (ctx.state === 'running') stampContextDeviceFloors(ctx);
+		const state = ctx.state;
+		onStateChange(state);
+		if (state === 'running') stampContextDeviceFloors(ctx);
 	});
 	// No cast of any kind: WatchableAudioContext is declared narrowly enough that
 	// a real AudioContext structurally satisfies it, which is the point of
@@ -440,6 +444,22 @@ export function armAudioContextWatchdog(
 	const liveness = _outputLiveness;
 	(window as Window & { __mdtAudioOutput?: () => AudioOutputSnapshot }).__mdtAudioOutput = () =>
 		liveness.snapshot();
+}
+
+export function handleAudioContextStateChange(
+	state: string,
+	decks: readonly { playing: boolean; audible: boolean; transport_pending: boolean }[],
+	ensureRaf: () => void
+): void {
+	if (state === 'running') {
+		ensureRaf();
+		return;
+	}
+	for (const deck of decks) {
+		if (!deck.playing && !deck.audible) continue;
+		deck.audible = false;
+		deck.transport_pending = true;
+	}
 }
 
 /**

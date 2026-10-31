@@ -57,6 +57,7 @@ const ALLOWLIST = {
 		why: 'position mirror for the native engine, read by AutoPlay, so it is backstopped'
 	},
 	'src/lib/ui/clamp-to-viewport.ts': { references: 2, why: 'popover placement after layout: paint only' },
+	'src/lib/player/io-device-test-audio.ts': { references: 2, why: 'Audio I/O input meter: samples the mic level only to paint the meter, nothing reads it' },
 	'src/lib/rb/mixer-performance-listeners.ts': { references: 2, why: 'fader ghost guidance: when to SHOW a hint, paint only' },
 	'src/lib/player/headphones.ts': {
 		references: 4,

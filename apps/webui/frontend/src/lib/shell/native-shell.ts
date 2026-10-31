@@ -38,6 +38,8 @@ interface ElectronShellBridge {
 	openExternal(url: string): Promise<void>;
 	exit(code?: number): Promise<void>;
 	relaunch(): Promise<void>;
+	/** Absent in shells built before the engine choice moved to disk. */
+	setAudioEngineChoice?(choice: string): Promise<void>;
 	applyUpdate(onProgress?: (progress: ShellUpdateProgress) => void): Promise<ShellUpdateOutcome>;
 }
 
@@ -110,4 +112,32 @@ export function electronApplyUpdate(
 ): Promise<ShellUpdateOutcome> | null {
 	const electron = electronBridge(scope);
 	return electron === null ? null : electron.applyUpdate(onProgress);
+}
+
+/** The global the Electron preload sets to the audio engine choice it saved. */
+const ELECTRON_ENGINE_CHOICE_GLOBAL = 'OPENDJ_AUDIO_ENGINE_CHOICE';
+
+/**
+ * The audio engine choice the Electron shell saved to disk, or null when this
+ * page is not in Electron or nothing was saved. The page's own localStorage
+ * cannot keep it: the engine binds a new port, so a new origin, each launch.
+ */
+export function electronSavedAudioEngineChoice(scope: Scope = globalThis): string | null {
+	if (electronBridge(scope) === null) return null;
+	const saved = scope[ELECTRON_ENGINE_CHOICE_GLOBAL];
+	return typeof saved === 'string' ? saved : null;
+}
+
+/**
+ * Save the audio engine choice in the Electron shell; null when this page is
+ * not in Electron. Rejects when the shell predates the bridge call, so a
+ * choice that would not survive a relaunch is never reported as saved.
+ */
+export function electronSaveAudioEngineChoice(choice: string, scope: Scope = globalThis): Promise<void> | null {
+	const electron = electronBridge(scope);
+	if (electron === null) return null;
+	if (typeof electron.setAudioEngineChoice !== 'function') {
+		return Promise.reject(new Error('this Electron shell cannot save the audio engine choice; update the app'));
+	}
+	return electron.setAudioEngineChoice(choice);
 }

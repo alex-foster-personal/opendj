@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Hourly error-sink triage: fingerprint runtime errors and file queue:ready issues.
 
-Issue #2673. Reads JSONL deltas from nucbox and remote Mac hosts, groups by a
+Issue #2673. Reads JSONL deltas from this host and remote Mac hosts (names from
+MDT_SINK_TRIAGE_LOCAL_NAME and MDT_SINK_TRIAGE_SSH_HOSTS, issue #5639), groups by a
 stable fingerprint (source_site + message class with numbers, ids and paths
 masked), and opens or updates GitHub issues when thresholds fire.
 
@@ -40,7 +41,7 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +57,15 @@ STALE_AFTER_S = 7200
 TAIL_BYTES = 50 * 1024 * 1024
 MARKER_PREFIX = "<!-- sink-fingerprint:"
 REPO_DEFAULT = "private_owner/music-dj-tools"
+#: Name this host's own sink carries in records and the offset state (#5639).
+LOCAL_SOURCE_NAME_ENV = "MDT_SINK_TRIAGE_LOCAL_NAME"
+#: Comma-separated ssh aliases of the Mac hosts whose sinks are tailed.
+SSH_SOURCES_ENV = "MDT_SINK_TRIAGE_SSH_HOSTS"
+#: Stage-1 defaults, kept until every triage host sets the variables (ADR-0317).
+DEFAULT_LOCAL_SOURCE_NAME = "nucbox"
+DEFAULT_SSH_SOURCES: tuple[str, ...] = ("silver", "air")
+#: One ssh alias: no option-looking leading dash, no shell or list syntax.
+_SSH_ALIAS_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
 
 _PATH_RE = re.compile(r"(?:/[\w.@+-]+)+|~(?:/[\w.@+-]+)+|[A-Za-z]:\\(?:[\\ \w.@+-]+)+")
 
@@ -505,25 +515,38 @@ def run_triage(
     return result
 
 
-def default_sources(jobs_dir: Path) -> list[HostSource]:
+def source_names(environ: Mapping[str, str] | None = None) -> tuple[str, tuple[str, ...]]:
+    """(local source name, ssh source aliases); unset or blank keeps the defaults.
+
+    A value that is not an ssh alias raises naming the variable: the names reach
+    ``ssh`` argv and the per-host offset keys.
+    """
+    env = os.environ if environ is None else environ
+    local = (env.get(LOCAL_SOURCE_NAME_ENV) or "").strip() or DEFAULT_LOCAL_SOURCE_NAME
+    remote = tuple(h.strip() for h in (env.get(SSH_SOURCES_ENV) or "").split(",") if h.strip())
+    for variable, name in [(LOCAL_SOURCE_NAME_ENV, local)] + [(SSH_SOURCES_ENV, h) for h in remote]:
+        if not _SSH_ALIAS_RE.fullmatch(name):
+            raise ValueError(f"{variable}: {name!r} is not an ssh host alias")
+    return local, remote or DEFAULT_SSH_SOURCES
+
+
+def default_sources(jobs_dir: Path, environ: Mapping[str, str] | None = None) -> list[HostSource]:
+    local, remote = source_names(environ)
     return [
         HostSource(
-            name="nucbox",
+            name=local,
             mode="local",
             sink_path=str(jobs_dir / "logs/opendj-error-sink.jsonl"),
             truncations_path=str(Path.home() / ".cache/opendj-host-disk-mac/truncations.jsonl"),
         ),
-        HostSource(
-            name="silver",
-            mode="ssh",
-            sink_path="~/Library/Logs/opendj/error-sink.jsonl",
-            truncations_path="~/.cache/opendj-host-disk-mac/truncations.jsonl",
-        ),
-        HostSource(
-            name="air",
-            mode="ssh",
-            sink_path="~/Library/Logs/opendj/error-sink.jsonl",
-            truncations_path="~/.cache/opendj-host-disk-mac/truncations.jsonl",
+        *(
+            HostSource(
+                name=host,
+                mode="ssh",
+                sink_path="~/Library/Logs/opendj/error-sink.jsonl",
+                truncations_path="~/.cache/opendj-host-disk-mac/truncations.jsonl",
+            )
+            for host in remote
         ),
     ]
 

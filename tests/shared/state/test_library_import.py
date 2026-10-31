@@ -490,3 +490,145 @@ def test_cue_mapping_keeps_pads_and_never_invents_kinds() -> None:
     assert report.cues_skipped == 2
     for cue in cues:
         cue_store.normalize_cue(cue)  # every mapped cue is valid for the store
+
+
+def _rb_xml(audio: Path, *, bpm: str = "128.00") -> str:
+    from urllib.parse import quote
+
+    loc = "file://localhost" + quote(str(audio))
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="Lexicon"/>
+<COLLECTION Entries="1">
+<TRACK TrackID="7" Name="Invented XML Tune" Artist="Invented Artist" AverageBpm="{bpm}" Tonality="8A"
+ Rating="153" Location="{loc}">
+<POSITION_MARK Name="Drop" Type="0" Start="30.0" Num="0"/>
+</TRACK></COLLECTION>
+<PLAYLISTS><NODE Type="0" Name="ROOT" Count="1"><NODE Type="0" Name="Invented Folder" Count="1">
+<NODE Name="Invented Night" Type="1" KeyType="0" Entries="1"><TRACK Key="7"/></NODE></NODE></NODE></PLAYLISTS>
+</DJ_PLAYLISTS>"""
+
+
+def _ingest_xml(state_conn, xml_path: Path) -> vendor.VendorIngestReport:
+    library, resolver = vendor.read_vendor_library("rekordbox-xml", xml_path)
+    writer = StateWriter(state_conn, bus=FakeEventBus(), actor="vendor-test")
+    try:
+        return vendor.ingest_library(
+            writer, library, vendor="rekordbox-xml", source=str(xml_path),
+            resolve_path=resolver, dry_run=False,
+            modified_at=vendor.source_modified_at(xml_path),
+        )
+    finally:
+        writer.close()
+
+
+@pytest.mark.requirement("DJIMPORT-06")
+def test_rekordbox_xml_imports_fields_cues_and_folder_playlists(state_conn, tmp_path: Path) -> None:
+    """[if] a rekordbox XML export is imported [then] fields land as source rekordbox with cues and its playlist, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented XML Tune.wav")
+    xml = tmp_path / "export.xml"
+    xml.write_text(_rb_xml(a))
+
+    report = _ingest_xml(state_conn, xml)
+
+    assert report.tracks_inserted == 1
+    sid = _sid_for(state_conn, a)
+    fields = _fields(state_conn, sid)
+    assert fields["bpm"] == (128.0, "rekordbox")
+    assert fields["key"] == ("8A", "rekordbox")
+    assert fields["rating"] == (3, "rekordbox")
+    blob, source = cue_store.read_row(state_conn, sid)  # type: ignore[misc]
+    assert source == "rekordbox"
+    assert [(c["kind"], c["slot"], c["in_ms"]) for c in blob["cues"]] == [("hot_cue", "A", 30000)]
+    row = state_conn.execute(
+        "SELECT vendor_pl_id FROM playlists WHERE vendor = 'rekordbox-xml' AND name = 'Invented Night'"
+    ).fetchone()
+    assert row == ("Invented Folder/Invented Night",)
+    vendor_ids = {r[0] for r in state_conn.execute("SELECT vendor FROM track_vendor_ids WHERE stable_id = ?", (sid,))}
+    assert vendor_ids == {"rekordbox-xml"}  # never the master.db mapping
+
+
+@pytest.mark.requirement("DJIMPORT-06")
+def test_rekordbox_xml_never_replaces_master_db_values_or_cues(state_conn, tmp_path: Path) -> None:
+    """[if] master.db already gave a track BPM and cues under source rekordbox [then] an XML import keeps both, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented XML Tune.wav")
+    writer = StateWriter(state_conn, bus=FakeEventBus(), actor="seed")
+    try:
+        writer.upsert_track(
+            stable_id="from-master-db", stable_id_tier="inferred", title="Invented XML Tune",
+            artists=[], album=None, isrc=None, duration_ms=None, file_path=str(a),
+        )
+        writer.set_field("from-master-db", "bpm", 127.0, source="rekordbox", modified_at=_STAMP)
+        cue_store.import_vendor_cues(
+            writer.set_field, state_conn, "from-master-db",
+            [{"kind": "hot_cue", "slot": "B", "in_ms": 5000}], source="rekordbox", modified_at=_STAMP,
+        )
+    finally:
+        writer.close()
+    xml = tmp_path / "export.xml"
+    xml.write_text(_rb_xml(a, bpm="131.00"))
+
+    report = _ingest_xml(state_conn, xml)
+
+    fields = _fields(state_conn, "from-master-db")
+    assert fields["bpm"] == (127.0, "rekordbox")
+    assert fields["key"] == ("8A", "rekordbox")  # empty, so filled
+    assert report.fields_kept == {"bpm": 1}
+    blob, _ = cue_store.read_row(state_conn, "from-master-db")  # type: ignore[misc]
+    assert [(c["slot"], c["in_ms"]) for c in blob["cues"]] == [("B", 5000)]
+    assert report.cue_sets_written == 0
+
+
+@pytest.mark.requirement("DJIMPORT-06")
+def test_rekordbox_xml_playlists_whose_names_contain_a_slash_do_not_collide(state_conn, tmp_path: Path) -> None:
+    """[if] folder A holds playlist B/C and folder A/B holds playlist C [then] both keep their own members, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented One.wav")
+    b = _wav(tmp_path / "music" / "Invented Two.wav")
+    xml = tmp_path / "slash.xml"
+    xml.write_text(
+        '<DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="2">'
+        f'<TRACK TrackID="1" Name="One" Location="file://localhost{a}"/>'
+        f'<TRACK TrackID="2" Name="Two" Location="file://localhost{b}"/>'
+        "</COLLECTION>"
+        '<PLAYLISTS><NODE Type="0" Name="ROOT" Count="2">'
+        '<NODE Type="0" Name="A" Count="1"><NODE Type="1" Name="B/C" KeyType="0" Entries="1"><TRACK Key="1"/></NODE></NODE>'
+        '<NODE Type="0" Name="A/B" Count="1"><NODE Type="1" Name="C" KeyType="0" Entries="1"><TRACK Key="2"/></NODE></NODE>'
+        "</NODE></PLAYLISTS></DJ_PLAYLISTS>"
+    )
+
+    _ingest_xml(state_conn, xml)
+
+    rows = state_conn.execute(
+        "SELECT p.vendor_pl_id, COUNT(m.stable_id) FROM playlists p "
+        "JOIN playlist_memberships m USING (playlist_id) WHERE p.vendor = 'rekordbox-xml' "
+        "GROUP BY p.vendor_pl_id ORDER BY p.vendor_pl_id"
+    ).fetchall()
+    assert rows == [("A/B\\/C", 1), ("A\\/B/C", 1)]
+
+
+@pytest.mark.requirement("DJIMPORT-06")
+def test_a_protected_value_equal_to_the_import_is_still_kept_and_counted(state_conn, tmp_path: Path) -> None:
+    """[if] another source's BPM equals the imported one [then] it is kept and counted in fields_kept, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune Equal.wav")
+    writer = StateWriter(state_conn, bus=FakeEventBus(), actor="seed")
+    try:
+        writer.upsert_track(
+            stable_id="seeded-equal", stable_id_tier="inferred",
+            title="Invented Tune Equal", artists=["Invented Artist"], album=None,
+            isrc=None, duration_ms=200000, file_path=str(a),
+        )
+        writer.set_field("seeded-equal", "bpm", 124.0, source="rekordbox", modified_at=_STAMP)
+    finally:
+        writer.close()
+    nml = tmp_path / "equal.nml"
+    nml.write_text(_nml([_entry(a, title="Invented Tune Equal", bpm="124.000000")]))
+
+    report = _ingest_nml(state_conn, nml)
+
+    assert report.fields_kept == {"bpm": 1}
+    assert _fields(state_conn, "seeded-equal")["bpm"] == (124.0, "rekordbox")
+
+
+def test_the_playlist_key_escapes_only_for_rekordbox_xml() -> None:
+    """[if] a playlist path has a slash [then] only rekordbox-xml escapes it, so other vendors keep their ids, [else stop]."""
+    assert vendor._playlist_key("traktor", ("A", "B/C")) == "A/B/C"
+    assert vendor._playlist_key("rekordbox-xml", ("A", "B/C")) == "A/B\\/C"

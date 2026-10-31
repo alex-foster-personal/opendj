@@ -4,6 +4,7 @@
     python -m apps.webui.ahead_analysis_cli retry
     python -m apps.webui.ahead_analysis_cli bump --stable-id S
     python -m apps.webui.ahead_analysis_cli strips --stable-id S [--stable-id T ...]
+    python -m apps.webui.ahead_analysis_cli next-up [--stable-id S ...]   (none clears)
 
 Talks to the running engine (worktree ports when configured, else the engine
 lock file's origin). Prints the JSON response; exits non-zero on any non-2xx.
@@ -35,12 +36,14 @@ def request_for(verb: str, stable_id: str | None) -> tuple[str, str]:
         return "POST", f"{PREFIX}/bump/{quote(stable_id, safe='')}"
     if verb == "strips":
         return "POST", STRIPS_PATH
+    if verb == "next-up":
+        return "PUT", f"{PREFIX}/next-up"
     raise ValueError(f"unhandled verb {verb!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ahead_analysis_cli", description=__doc__.splitlines()[0])
-    parser.add_argument("verb", choices=("coverage", "retry", "bump", "strips"))
+    parser.add_argument("verb", choices=("coverage", "retry", "bump", "strips", "next-up"))
     parser.add_argument("--stable-id", action="append", default=[])
     args = parser.parse_args(argv)
     try:
@@ -49,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     if args.verb == "strips" and not args.stable_id:
         parser.error("strips needs at least one --stable-id")
-    body = {"ids": args.stable_id} if args.verb == "strips" else None
+    body: dict[str, list[str]] | None = None
+    if args.verb == "strips":
+        body = {"ids": args.stable_id}
+    elif args.verb == "next-up":
+        body = {"stable_ids": args.stable_id}
     with httpx.Client(timeout=REQUEST_TIMEOUT_S) as client:
         response = client.request(method, f"{_backend_base_url()}{path}", json=body)
     sys.stdout.write(json.dumps(response.json(), indent=2) + "\n")

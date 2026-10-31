@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Loop cluster (SCREENSHOT-SPEC 3): INT source dropdown (visual-only),
+	// Loop cluster (SCREENSHOT-SPEC 3): INT source dropdown (DECKCTL-6235d),
 	// big beat-length readout, < > halve/double. Real behaviour via the
 	// audio engine: clicking the readout engages/disengages an exact PQTZ
 	// beat loop at the current position; halve/double resize it in place.
@@ -41,8 +41,8 @@
 		restartEngageArgs,
 		safetyLoopTip
 	} from './loop-cluster-actions';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import LoopSafetyControls from './LoopSafetyControls.svelte';
+	import LoopSourceMenu from './LoopSourceMenu.svelte';
 
 	let {
 		deck,
@@ -54,13 +54,15 @@
 		onSafetyArm,
 		onSafetyClear,
 		onIntervalMode,
-		onIntervalBase
+		onIntervalBase,
+		onStoredLoop
 	}: {
 		deck: DeckState;
 		deckId: DeckId;
 		pending: boolean;
 		onEngage: (beats: number, startMs?: number) => Promise<void>;
-		onDisengage: () => Promise<void>;
+		/** Resolves true when the engine took the command. */
+		onDisengage: () => Promise<boolean>;
 		/** Capture the engaged loop into the one safety slot (arms it). */
 		onSafetySave: () => Promise<void>;
 		/** Arm or disarm the saved safety loop. */
@@ -71,6 +73,8 @@
 		onIntervalMode: (enabled: boolean) => Promise<void>;
 		/** Move the window of four offered lengths to a new base. */
 		onIntervalBase: (base: number) => Promise<void>;
+		/** DECKCTL-6235d: engage one of the track's stored loops exactly. */
+		onStoredLoop: (loop: { in_ms: number; out_ms: number }) => Promise<boolean>;
 	} = $props();
 
 	const MIN_BEATS = LOOP_MIN_BEATS;
@@ -279,9 +283,7 @@
 	>
 		<span class="mode-glyph" aria-hidden="true">&#9647;&#9647;</span>
 	</button>
-	<button class="rb-lit-button rb-inert int" disabled title={plannedTitle('loop-source')} aria-label={`loop source deck ${deckId}`} data-testid={`loop-source-deck-${deckId}`}>
-		INT <span class="caret">&#9662;</span>
-	</button>
+	<LoopSourceMenu {deck} {deckId} {pending} {onStoredLoop} {onDisengage} />
 	{#if intervalGrid}
 		<div class="halve-double">
 			<button
@@ -465,10 +467,6 @@
 	.mode-toggle.on .mode-glyph {
 		color: var(--rb-orange);
 	}
-	.int {
-		width: 100%;
-		text-align: center;
-	}
 	.interval-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -501,9 +499,6 @@
 		color: var(--rb-text-dim);
 		cursor: default;
 		opacity: 0.6;
-	}
-	.caret {
-		color: var(--rb-text-dim);
 	}
 	.readout-wrap {
 		position: relative;

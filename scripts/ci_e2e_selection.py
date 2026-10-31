@@ -4,7 +4,8 @@
 The "Root Playwright suite (real engine + Vite)" step of `e2e.yml`'s gate ran every spec
 the root config collects on every in-scope PR, about 9 of the gate's 22 minutes, and the
 named gate steps around it (rekordbox, comment-hotkey, autoplay, headphone, library jobs,
-preflight, webkit, deck-load smoke, stretch, master12, onboarding) ran whatever changed. A
+preflight, webkit, deck-load smoke, stretch, master12, onboarding, the two Cmd K gates) ran
+whatever changed. A
 static route-to-source closure cannot narrow it: 199 of about 270 `page.goto` calls target
 `/performance`, whose page reaches 759 of the 1172 source files. So the narrowing is test
 impact analysis from MEASURED footprints: a map of which `src/` files each spec and each
@@ -29,7 +30,7 @@ Candidates, each with a reason (the record names every rule that fired):
   - always run: the smoke floor `ci/e2e-always-run.txt`. Strong.
   - unmeasured: a spec the map saw fail or time out, a spec on disk the map never collected,
     a dev-server gate absent from the map, and the static gates (webkit, deck-load smoke,
-    stretch, master12, onboarding, which no request log can footprint) when any file under
+    stretch, master12, onboarding, the two Cmd K gates, which no request log can footprint) when any file under
     the frontend changed. Ranked after every overlap; a static gate costs nothing modeled.
 
 The budget (`fit`): planned minutes = root overhead + root spec seconds, plus per kept gate
@@ -100,8 +101,8 @@ MAX_MAP_AGE_DAYS = 7
 #: Python packages the root suite boots: a changed module any of them imports is FULL.
 ENGINE_PREFIXES = ("apps.engine_core", "apps.webui.server")
 #: Named gates no request log can footprint: production builds, a no-server spec, a shell
-#: script. They run on any frontend change and are priced at zero (unknown) minutes.
-STATIC_GATES = ("webkit", "deckload-smoke", "stretch", "master12", "onboarding")
+#: script, a Python helper that owns its own fixture. They run on any frontend change and are priced at zero (unknown) minutes.
+STATIC_GATES = ("webkit", "deckload-smoke", "stretch", "master12", "onboarding", "cmdk-pick-race", "cmdk-preview-cue")
 #: Which specs each static gate runs (their own configs, root testIgnore in
 #: playwright.config.ts): a changed one of these promotes its gate to strong, since the root
 #: filter would match nothing for it. Prefixes, relative to the frontend.
@@ -115,6 +116,8 @@ STATIC_GATE_SPECS: dict[str, tuple[str, ...]] = {
     "stretch": ("tests/e2e/stretch-quality.spec.ts",),
     "master12": ("tests/e2e/audio-output-topology.spec.ts",),
     "onboarding": ("tests/e2e/onboarding-gauntlet-",),
+    "cmdk-pick-race": ("tests/e2e/cmdk-pick-race.spec.ts",),
+    "cmdk-preview-cue": ("tests/e2e/cmdk-preview-cue.spec.ts",),
 }
 ALL_GATES = tuple(sorted(GATES)) + STATIC_GATES
 HEX40 = re.compile(r"^[0-9a-f]{40}$")

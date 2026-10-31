@@ -375,6 +375,11 @@ export async function getSettings(): Promise<SettingsOut> {
 	return unwrap(api.GET('/api/v1/settings'));
 }
 
+/** UIURL-02: the browser address of the UI this engine serves (Settings > Open in browser). */
+export async function getUiUrl(): Promise<components['schemas']['UiUrlOut']> {
+	return unwrap(api.GET('/api/v1/ui-url'));
+}
+
 /** The coalescer key for the health body read. One string, one endpoint. */
 const HEALTH_KEY = 'GET /api/v1/health';
 
@@ -487,6 +492,19 @@ export function timeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: 
 	return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
+function healthBootId(body: { [key: string]: unknown }): string | null {
+	const boot = body['boot_id'];
+	if (typeof boot === 'string' && boot !== '') return boot;
+	const isLegacyDaemon =
+		boot === undefined &&
+		body['contract_rev'] === undefined &&
+		body['engine_version'] === undefined;
+	if (isLegacyDaemon) return null;
+	throw new Error(
+		`health response carries no valid boot_id (got ${JSON.stringify(boot) ?? 'nothing'})`
+	);
+}
+
 /**
  * Liveness-only health read for the Backend status dot (pin a66ee132a14e).
  *
@@ -498,16 +516,24 @@ export function timeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: 
  *
  * Throws on any non-2xx or on timeout; the caller turns that into a red dot
  * carrying the reason.
+ *
+ * Resolves to the engine's boot id, which the AutoPlay next-up resend keys on
+ * (NATIVE-5886). `null` means exactly one thing: the legacy daemon answered,
+ * whose health carries none of the engine handshake fields (the same
+ * discriminator as `api/capabilities.svelte.ts`). A boot id that is empty,
+ * not a string, or missing beside the other handshake fields is contract
+ * drift and fails the probe.
  */
-export async function pingHealth(timeoutMs: number): Promise<void> {
+export async function pingHealth(timeoutMs: number): Promise<string | null> {
 	const { signal, clear } = timeoutSignal(timeoutMs);
 	try {
-		requireBody(
+		const { data } = requireBody(
 			await api.GET('/api/v1/health', {
 				cache: 'no-store',
 				signal
 			})
 		);
+		return healthBootId(data as { [key: string]: unknown });
 	} finally {
 		clear();
 	}

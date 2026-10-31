@@ -37,7 +37,7 @@ LOCAL_CONFIG_REF = re.compile(r"(?:from\s+['\"]\./|tests/e2e/)([\w.-]+\.config)(
 STEP_CONFIG = re.compile(r"--config\s+tests/e2e/([\w.-]+\.config\.ts)")
 LOCK_NAME = re.compile(r"scripts/ci_host_lock\.sh\"?\s+([\w-]+)\s")
 REAP = re.compile(r"scripts/ci_reap_port_holders\.sh\"?((?:\s+\d{4,5})+)\s+--\s")
-SUITE = re.compile(r"pnpm exec playwright test")
+SUITE = re.compile(r"(?:pnpm|\"\$PNPM\")\s+exec playwright test")
 
 
 def _fixed_ports(config_name: str) -> frozenset[str]:

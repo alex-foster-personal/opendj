@@ -816,8 +816,11 @@ class SqliteBackend:
             fields_map = _fetch_fields(conn, [stable_id])
         return _row_to_track(row, fields_map.get(stable_id, {}))
 
-    def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]:
+    def get_tracks_bulk(self, stable_ids: Sequence[str], *, live_only: bool = False) -> dict[str, Track]:
         """Chunked bulk fetch; missing ids are absent from the result.
+
+        ``live_only`` leaves tombstoned tracks (``deleted_at`` set) out too, as
+        the library listings do.
 
         One IN(...) pass over ``tracks`` plus the shared ``_fetch_fields``
         EAV pass -- powers playlist-row hydration without a per-member
@@ -829,12 +832,13 @@ class SqliteBackend:
         with self._ro() as conn:
             if not self._table_exists(conn, "tracks"):
                 _warn_fallback_once("get_tracks_bulk", "no tracks table")
-                return self._fallback.get_tracks_bulk(ids)
+                return self._fallback.get_tracks_bulk(ids, live_only=live_only)
             rows = _state_queries.bulk_select_by_stable_id(
                 conn, "tracks",
                 "stable_id, title, artists_json, album, duration_ms, "
                 "file_path, created_at, updated_at",
                 ids,
+                live_only=live_only,
             )
             fields_map = _fetch_fields(conn, [r["stable_id"] for r in rows])
         return {

@@ -88,6 +88,7 @@ export default defineConfig({
 		'**/library-playlist-fill-pages.spec.ts', // playwright.playlist-switch-latency.config.ts (LIBM-134, its 1k fixture)
 		'**/stem-decode-bench.spec.ts', // playwright.stem-decode-bench.config.ts (production-build bench)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/cmdk-pick-race.spec.ts', // playwright.cmdk-pick-race.config.ts (real backend, cold 40-track fixture, cmdk.v2 on)
 		'**/comment-pin-io-modal.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/comment-pin-admin-dock.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/feedback-review-panel-lazy.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)

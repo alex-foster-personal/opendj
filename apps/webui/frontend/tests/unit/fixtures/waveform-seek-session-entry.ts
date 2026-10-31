@@ -7,7 +7,7 @@
  * would prove nothing (see perf-ipc-entry.ts). No stubs beyond the engine's
  * own documented hot-cue driver seam.
  */
-export { deckStates } from '$lib/rb/audio-engine.svelte';
+export { deckStates, engine } from '$lib/rb/audio-engine.svelte';
 export {
 	installPerformanceBrowserIpc,
 	installPerformanceHotCueDriverForTest,

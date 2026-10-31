@@ -88,6 +88,11 @@ class MirrorLease:
     operator_claimed: bool = False
 
 
+def live_mirror_lease(request: Request) -> MirrorLease | None:
+    """The mirror lease while it is live (AGENT-18); other leased writes fence on it."""
+    return _live_lease(request)
+
+
 def _live_lease(request: Request) -> MirrorLease | None:
     lease = getattr(request.app.state, "ui_mirror_lease", None)
     if lease is None:

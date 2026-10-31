@@ -49,9 +49,9 @@ impl Default for RekordboxAdapter {
     fn default() -> Self {
         Self {
             xml_path: None, // resolved lazily from $HOME/Music/rekordbox/rekordbox.xml
-            backup_dir: PathBuf::from("data/launcher/backups"),
-            reversal_dir: PathBuf::from("data/launcher/reversals"),
-            audit_log: Some(PathBuf::from("data/launcher/audit.jsonl")),
+            backup_dir: PathBuf::from("(private path)"),
+            reversal_dir: PathBuf::from("(private path)"),
+            audit_log: Some(PathBuf::from("(private path)")),
             major_override: None,
         }
     }
@@ -379,8 +379,11 @@ pub(crate) fn content_has_location(content: &str, file_path: &str) -> bool {
     content.contains(&needle)
 }
 
-/// Insert `node` right before the first occurrence of `</COLLECTION>`. Returns
-/// an error if the tag is absent.
+/// Insert `node` right before the first occurrence of `</COLLECTION>` and count
+/// it in `COLLECTION/@Entries`, in one write. The reader refuses a collection
+/// whose `Entries` differs from its child count, so an insert that left the
+/// count stale would make the next import fail. Returns an error, and leaves
+/// `content` untouched, if the tag is absent or its count is not a number.
 pub(crate) fn append_before_collection_close(
     content: &mut String,
     node: &str,
@@ -388,7 +391,38 @@ pub(crate) fn append_before_collection_close(
     let idx = content
         .find("</COLLECTION>")
         .ok_or_else(|| "</COLLECTION> tag not found; not a rekordbox.xml".to_string())?;
-    content.insert_str(idx, node);
+    let mut next = content.clone();
+    next.insert_str(idx, node);
+    bump_collection_entries(&mut next)?;
+    *content = next;
+    Ok(())
+}
+
+/// Add one to the `Entries` attribute of the first `<COLLECTION` start tag.
+fn bump_collection_entries(content: &mut String) -> Result<(), String> {
+    const KEY: &str = " Entries=\"";
+    let open = content
+        .find("<COLLECTION")
+        .ok_or_else(|| "<COLLECTION> tag not found; not a rekordbox.xml".to_string())?;
+    let close = open
+        + content[open..]
+            .find('>')
+            .ok_or_else(|| "<COLLECTION> start tag is not closed".to_string())?;
+    let tag = &content[open..close];
+    let start = open
+        + tag
+            .find(KEY)
+            .ok_or_else(|| "<COLLECTION> has no Entries attribute".to_string())?
+        + KEY.len();
+    let end = start
+        + content[start..]
+            .find('"')
+            .ok_or_else(|| "COLLECTION Entries is not closed".to_string())?;
+    let raw = content[start..end].to_string();
+    let count: u64 = raw
+        .parse()
+        .map_err(|_| format!("COLLECTION Entries={raw:?} is not a count"))?;
+    content.replace_range(start..end, &(count + 1).to_string());
     Ok(())
 }
 
@@ -420,7 +454,7 @@ mod rekordbox_tests {
 
     fn fixture_track() -> Track {
         Track {
-            file_path: PathBuf::from("/Users/test/Music/Library/song.mp3"),
+            file_path: PathBuf::from("/Volumes/Invented/Music/song.mp3"),
             title: "My Song".into(),
             artist: "Some Artist".into(),
             album: "Some Album".into(),
@@ -459,7 +493,7 @@ mod rekordbox_tests {
             "Album=\"Some Album\"",
             "Size=\"4000000\"",
             "TotalTime=\"210\"",
-            "Location=\"file://localhost/Users/test/Music/Library/song.mp3\"",
+            "Location=\"file://localhost/Volumes/Invented/Music/song.mp3\"",
         ] {
             assert!(node.contains(needle), "node missing {}: {}", needle, node);
         }
@@ -589,6 +623,24 @@ mod rekordbox_tests {
     }
 
     #[test]
+    fn append_before_collection_close_counts_the_new_track_in_entries() {
+        let mut content = minimal_xml().to_string();
+        append_before_collection_close(&mut content, "        <TRACK/>\n").unwrap();
+        assert!(content.contains("<COLLECTION Entries=\"1\">"));
+        append_before_collection_close(&mut content, "        <TRACK/>\n").unwrap();
+        assert!(content.contains("<COLLECTION Entries=\"2\">"));
+    }
+
+    #[test]
+    fn append_before_collection_close_leaves_content_alone_when_entries_is_not_a_count() {
+        let mut content = "<DJ_PLAYLISTS><COLLECTION Entries=\"many\"></COLLECTION></DJ_PLAYLISTS>".to_string();
+        let before = content.clone();
+        let err = append_before_collection_close(&mut content, "<TRACK/>").unwrap_err();
+        assert!(err.contains("not a count"));
+        assert_eq!(content, before);
+    }
+
+    #[test]
     fn append_before_collection_close_errors_when_tag_missing() {
         let mut content = "<NO_COLLECTION/>".to_string();
         let err = append_before_collection_close(&mut content, "<x/>").unwrap_err();
@@ -616,6 +668,7 @@ mod rekordbox_tests {
         let result = fs::read_to_string(&xml_path).unwrap();
         assert!(result.contains("Name=\"My Song\""));
         assert!(result.contains("</COLLECTION>"));
+        assert!(result.contains("<COLLECTION Entries=\"1\">"));
         // Event emitted
         assert_eq!(host.events.borrow()[0].vendor, Vendor::Rekordbox);
     }

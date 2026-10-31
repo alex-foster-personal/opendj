@@ -226,7 +226,7 @@ export interface PendingLoadPlay {
 	 *
 	 * The resulting `press_to_schedule_ms` therefore legitimately spans a deck
 	 * load and can be seconds. That is the honest number for THIS gesture and
-	 * a wrong one for S2's 30ms budget (`specs/perf-latency-program.md` S2), so
+	 * a wrong one for S2's 30ms budget (`(private path)` S2), so
 	 * the row must say so itself rather than leaving an S2 consumer to guess
 	 * from duration - see `markLoadSpanningPress` below, spent by
 	 * `press-stamp.ts` into the row's own `kind`.
@@ -350,4 +350,13 @@ export function markArmedHotCuePress(pressT0Ms: number): void {
 export function claimArmedHotCuePress(pressT0Ms: number | undefined): boolean {
 	if (pressT0Ms === undefined) return false;
 	return armedHotCuePressStamps.delete(pressT0Ms);
+}
+
+/** `BrowserPanel._loadOntoDeck`'s options; `stillNewest` is a Cmd K pick's guard (CMDK-16). */
+export interface DeckLoadOptions {
+	play?: boolean;
+	reservation?: number;
+	pressT0Ms?: number;
+	noKeyShift?: boolean;
+	stillNewest?: (ownDispatches: number) => boolean;
 }

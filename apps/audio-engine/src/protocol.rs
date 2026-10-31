@@ -154,7 +154,7 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "key_nudge" => &["type", "deck", "semitones"],
         "quantize_grid" | "beat_jump" => &["type", "deck", "beats"],
         "seek" => &["type", "deck", "position_ms", "quantize"],
-        "loop" => &["type", "deck", "loop"],
+        "loop" => &["type", "deck", "loop", "quantize"],
         "beat_loop" => &["type", "deck", "beats", "start_ms"],
         "tempo" => &["type", "deck", "ratio"],
         "pitch_range" => &["type", "deck", "range"],
@@ -560,7 +560,9 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                 }
                 _ => return Err(invalid("loop.loop must be {in_ms, out_ms} or null".into())),
             };
-            apply(EngineCmd::Loop { deck, bounds_ms: bounds })
+            // As seek: quantize false engages the range as given (a stored loop, DECKCTL-6235d).
+            let quantize = opt_bool(o, ty, "quantize")?.unwrap_or(true);
+            apply(EngineCmd::Loop { deck, bounds_ms: bounds, quantize })
         }
         "beat_loop" => {
             let deck = deck_of(o, ty)?;
@@ -879,7 +881,11 @@ mod tests {
         ));
         assert!(matches!(
             cmd(json!({"type": "loop", "deck": 1, "loop": {"in_ms": 1.0, "out_ms": 2.0}})),
-            Ok(Command::Apply(EngineCmd::Loop { bounds_ms: Some((1.0, 2.0)), .. }))
+            Ok(Command::Apply(EngineCmd::Loop { bounds_ms: Some((1.0, 2.0)), quantize: true, .. }))
+        ));
+        assert!(matches!(
+            cmd(json!({"type": "loop", "deck": 1, "loop": {"in_ms": 1.0, "out_ms": 2.0}, "quantize": false})),
+            Ok(Command::Apply(EngineCmd::Loop { bounds_ms: Some((1.0, 2.0)), quantize: false, .. }))
         ));
         assert!(matches!(
             cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})),

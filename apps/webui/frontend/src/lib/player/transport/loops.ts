@@ -13,10 +13,12 @@
 
 import {
 	quantizeToNearestBeat,
+	positionWithinGridSpan,
 	quantizeToNearestGridBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzPhrase } from '$lib/rb/anlz-types';
+import type { QuantizeGrid } from '$lib/rb/deck-state-types';
 
 type LoopSnapshot = {
 	in_ms: number;
@@ -506,4 +508,127 @@ export function exactBeatLoopRangeMs(
 	const endSec = fraction === 0 ? beats[whole].t
 		: beats[whole].t + fraction * (beats[whole + 1].t - beats[whole].t);
 	return { in_ms: startSec * 1000, out_ms: endSec * 1000 };
+}
+
+/*
+ * DECKCTL-6235c (alpha status I13): phrase quantize, the Q grid's 'phase'
+ * option. With it selected, a quantized pause, seek or cue snaps to the
+ * nearest phrase boundary from analysis (rekordbox PSSI, else own sections)
+ * instead of to every 1, 4 or 8 beats. Each boundary is itself pulled onto
+ * the nearest real beat, so a phrase snap always lands on the grid the deck
+ * draws. Loops keep the 1-beat grid: a phrase is not a loop length.
+ *
+ * A track with no phrases falls back to the 4-beat (bar) snap, and says so
+ * through `phraseQuantizeTip`, rather than snapping nowhere.
+ */
+
+/** The grid a loop uses: 'phase' loops on whole beats. */
+export function loopGridBeats(grid: QuantizeGrid): 1 | 4 | 8 {
+	return grid === 'phase' ? 1 : grid;
+}
+
+/** Phrase boundaries (every start plus the last end) as beat times in ms,
+ * sorted and de-duplicated; empty when there is nothing to snap to. A
+ * boundary outside the beat grid's span has no beat to land on, so it goes to
+ * `offGridMs` rather than being clamped onto the grid's first or last beat. */
+export function phraseBoundaries(
+	beats: readonly AnlzBeat[],
+	phrases: readonly AnlzPhrase[]
+): { onGrid: number[]; offGridMs: number[] } {
+	if (beats.length === 0 || phrases.length === 0) return { onGrid: [], offGridMs: [] };
+	const raw: number[] = [];
+	let lastEnd = -Infinity;
+	for (const phrase of phrases) {
+		if (Number.isFinite(phrase.start_s) && phrase.start_s >= 0) raw.push(phrase.start_s);
+		if (Number.isFinite(phrase.end_s) && phrase.end_s > lastEnd) lastEnd = phrase.end_s;
+	}
+	if (Number.isFinite(lastEnd)) raw.push(lastEnd);
+	const out = new Set<number>();
+	const offGridMs: number[] = [];
+	for (const sec of raw) {
+		if (positionWithinGridSpan(beats, sec)) out.add(_nearestBeatSec(beats, sec) * 1000);
+		else offGridMs.push(sec * 1000);
+	}
+	return { onGrid: [...out].sort((a, b) => a - b), offGridMs };
+}
+
+function _nearestBeatSec(beats: readonly AnlzBeat[], sec: number): number {
+	let lo = 0;
+	let hi = beats.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (beats[mid].t < sec) lo = mid + 1;
+		else hi = mid;
+	}
+	const after = beats[lo];
+	const before = lo > 0 ? beats[lo - 1] : after;
+	return Math.abs(before.t - sec) <= Math.abs(after.t - sec) ? before.t : after.t;
+}
+
+function _nearest(sortedMs: readonly number[], ms: number): number {
+	let best = sortedMs[0];
+	for (const candidate of sortedMs) {
+		if (Math.abs(candidate - ms) < Math.abs(best - ms)) best = candidate;
+	}
+	return best;
+}
+
+/** Where a quantized pause or cue lands on this grid choice. */
+export function snappedPositionMs(
+	beats: readonly AnlzBeat[],
+	phrases: readonly AnlzPhrase[] | undefined,
+	positionMs: number,
+	grid: QuantizeGrid
+): number {
+	if (grid !== 'phase') return quantizedPositionMs(beats, positionMs, true, grid);
+	// Like the 1/4/8 snap, a position beyond the grid's span stays put.
+	if (!positionWithinGridSpan(beats, positionMs / 1000)) return positionMs;
+	const { onGrid, offGridMs } = phraseBoundaries(beats, phrases ?? []);
+	if (onGrid.length === 0 && offGridMs.length === 0) {
+		return quantizedPositionMs(beats, positionMs, true, 4);
+	}
+	if (onGrid.length === 0) return positionMs;
+	const target = _nearest(onGrid, positionMs);
+	// The nearest phrase boundary lies off the grid: no beat to land on, and
+	// snapping to a farther on-grid one would jump past it, so stay put.
+	if (offGridMs.some((ms) => Math.abs(ms - positionMs) < Math.abs(target - positionMs))) {
+		return positionMs;
+	}
+	return target;
+}
+
+/** `quantizedSeekDecisionMs` for the 'phase' choice; the 1/4/8 choices keep
+ * calling that function unchanged. */
+export function phraseSeekDecisionMs(
+	beats: readonly AnlzBeat[] | null,
+	phrases: readonly AnlzPhrase[] | undefined,
+	ms: number,
+	skipGridQuantize: boolean,
+	loop: { in_ms: number; out_ms: number; engaged: boolean } | null
+): { targetMs: number; exitLoop: boolean } {
+	const targetMs =
+		beats !== null && !skipGridQuantize ? snappedPositionMs(beats, phrases, ms, 'phase') : ms;
+	return { targetMs, exitLoop: loopExitOnSeekMs(targetMs, loop) };
+}
+
+/** The hover title for the 'phase' option on this deck. */
+export function phraseQuantizeTip(phrases: readonly AnlzPhrase[] | undefined): string {
+	const count = phrases?.length ?? 0;
+	return count === 0
+		? 'Phrase snap - this track has no phrase analysis yet, so it snaps to the bar (4 beats) until it does'
+		: `Phrase snap - seeks, cue and pause snap to the nearest boundary of this track's ${count} phrases; loops keep whole beats`;
+}
+
+/** The seek decision for any Q grid choice: 'phase' snaps to phrases, 1/4/8 as before. */
+export function gridSeekDecisionMs(
+	beats: readonly AnlzBeat[] | null,
+	phrases: readonly AnlzPhrase[] | undefined,
+	ms: number,
+	grid: QuantizeGrid,
+	skipGridQuantize: boolean,
+	loop: { in_ms: number; out_ms: number; engaged: boolean } | null
+): { targetMs: number; exitLoop: boolean } {
+	return grid === 'phase'
+		? phraseSeekDecisionMs(beats, phrases, ms, skipGridQuantize, loop)
+		: quantizedSeekDecisionMs(beats, ms, grid, skipGridQuantize, loop);
 }

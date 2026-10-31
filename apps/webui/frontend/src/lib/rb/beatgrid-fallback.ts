@@ -147,7 +147,7 @@ export function withFallbackBeatgrid<T extends AnlzData>(
 	}
 	return {
 		...anlz,
-		beatgrid: fallback.beatgrid,
+		beatgrid: { ...fallback.beatgrid, fallback: true },
 		beatgrid_source: 'own',
 		beatgrid_own_unavailable_reason: null
 	};
@@ -173,7 +173,7 @@ export function toSyntheticAnlzData(
 			preview: { length: 0, low: [], mid: [], high: [] },
 			detail: { length: 0, low: [], mid: [], high: [] }
 		},
-		beatgrid: fallback.beatgrid,
+		beatgrid: { ...fallback.beatgrid, fallback: true },
 		cues: [],
 		phrases: [],
 		vocals: { status: 'not_analyzed' },

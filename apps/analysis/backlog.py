@@ -63,6 +63,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import fs_residency, platform_paths
+from apps.shared.state import analysis_stale
 from apps.shared.state import locations as track_locations
 
 from .backends import DEFAULT_BACKEND
@@ -157,10 +158,14 @@ def analyzed_ids(conn: sqlite3.Connection, *, backend: str = DRAIN_BACKEND) -> s
     ).fetchone() is not None
     if not has_table:
         return set()
+    # A row retired by an audio rewrite describes other bytes: not analyzed,
+    # the same answer run.filter_missing gives.
+    retired = analysis_stale.retired_rows(conn, backend)
     return {
         row[0] for row in conn.execute(
-            "SELECT DISTINCT stable_id FROM analysis WHERE backend = ?", (backend,)
+            "SELECT stable_id, backend_version FROM analysis WHERE backend = ?", (backend,)
         )
+        if (row[0], row[1]) not in retired
     }
 
 

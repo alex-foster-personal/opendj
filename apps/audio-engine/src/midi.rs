@@ -664,7 +664,7 @@ impl Router {
                         Action::Cue(deck) => EngineCmd::Cue { deck },
                         Action::BeatLoop(deck, beats) => EngineCmd::BeatLoop { deck, beats, start_ms: None },
                         Action::BeatJump(deck, beats) => EngineCmd::BeatJump { deck, beats },
-                        Action::LoopExit(deck) => EngineCmd::Loop { deck, bounds_ms: None },
+                        Action::LoopExit(deck) => EngineCmd::Loop { deck, bounds_ms: None, quantize: true },
                         _ => unreachable!("matched above"),
                     },
                 }
@@ -978,7 +978,7 @@ mod tests {
         // Deck 2 beat-loop pad 5 (ch 10, note 0x64) is a 4-beat loop.
         same(feed(&mut r, FLX4, &[0x99, 0x64, 0x7f]), engine(EngineCmd::BeatLoop { deck: 2, beats: 4.0, start_ms: None }));
         // 4 BEAT / EXIT (note 0x4D).
-        same(feed(&mut r, FLX4, &[0x90, 0x4d, 0x7f]), engine(EngineCmd::Loop { deck: 1, bounds_ms: None }));
+        same(feed(&mut r, FLX4, &[0x90, 0x4d, 0x7f]), engine(EngineCmd::Loop { deck: 1, bounds_ms: None, quantize: true }));
     }
 
     fn custom(bindings: Value) -> Router {

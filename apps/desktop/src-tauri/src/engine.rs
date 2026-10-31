@@ -11,9 +11,11 @@
 //!
 //! THE FOUR RULES THIS MODULE ENFORCES
 //!
-//! 1. The port is chosen by the OS, never hardcoded. Two Open DJ builds and
-//!    any number of dev servers coexist on one Mac only if nobody claims a
-//!    fixed number.
+//! 1. The port is PREFERRED, never required. The engine asks for
+//!    PREFERRED_ENGINE_PORT so the browser address stays the same across
+//!    launches, and takes whatever the OS assigns when that port is held.
+//!    Two Open DJ builds and any number of dev servers coexist on one Mac
+//!    only if nobody REQUIRES a fixed number.
 //! 2. The data directory is this bundle's own Application Support directory.
 //!    It is never the repo's data/, and it is never a real rekordbox
 //!    library.
@@ -31,8 +33,8 @@
 //!    that had nothing to say, which is the one report this shell must not
 //!    be able to make.
 
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{ErrorKind, Read, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -302,6 +304,84 @@ impl Drop for Engine {
 }
 
 // ----- port ---------------------------------------------------------------
+/// The port the packaged engine asks for first, so the browser address
+/// (`http://opendj.localhost:7700/`) survives a relaunch.
+///
+/// Chosen to sit outside every port this repo hands out or binds: below the
+/// worktree pools (backend 8680+, frontend 9400+, every lane shifts upward),
+/// clear of the dev defaults 8585/5173, of every fixed port in
+/// `(private path)`, and of every e2e suite port; it is itself listed
+/// in `RESERVED_FIXED_PORTS` (`apps/webui/port_config.py`) so the worktree
+/// allocator never hands it out. Also clear of macOS's own AirPlay receiver
+/// (5000/7000). `(private path)` re-checks all of that
+/// against the live files, so a later reservation cannot silently collide.
+pub const PREFERRED_ENGINE_PORT: u16 = 7700;
+
+/// The engine's port: the preferred one when nobody holds it, otherwise one
+/// the OS assigns. Never fails because the preferred port is taken.
+pub fn engine_port() -> Result<u16, EngineError> {
+    pick_loopback_port(PREFERRED_ENGINE_PORT)
+}
+
+/// `preferred` when it is free on loopback right now, else an OS-assigned
+/// port. Taken is logged, so a moved address has a recorded reason.
+pub fn pick_loopback_port(preferred: u16) -> Result<u16, EngineError> {
+    if loopback_port_is_free(preferred) {
+        return Ok(preferred);
+    }
+    // The fallback gets the same dual-stack check: an OS-assigned port that is
+    // free on 127.0.0.1 can still be held on ::1 and shadow the engine.
+    for _ in 0..FALLBACK_PORT_TRIES {
+        let port = free_loopback_port()?;
+        if loopback_port_is_free(port) {
+            append_shell_log(
+                "INFO",
+                &format!("preferred engine port {preferred} is in use; using OS-assigned port {port}"),
+            );
+            return Ok(port);
+        }
+    }
+    Err(EngineError::new(
+        "Open DJ could not reserve a local port.",
+        format!("no loopback port was free on both 127.0.0.1 and ::1 after {FALLBACK_PORT_TRIES} tries"),
+    ))
+}
+
+const FALLBACK_PORT_TRIES: u32 = 20;
+
+/// Free means the engine's own bind (127.0.0.1) would succeed AND nobody
+/// holds the port on ::1. The second half matters because macOS resolves
+/// `opendj.localhost` to ::1 first: a stranger on [::1]:port would answer
+/// the browser before the engine did. A host with no IPv6 loopback cannot
+/// bind ::1 at all, which is not "in use".
+fn loopback_port_is_free(port: u16) -> bool {
+    let v4_free = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok();
+    let v6_taken = matches!(
+        TcpListener::bind((Ipv6Addr::LOCALHOST, port)),
+        Err(err) if err.kind() == ErrorKind::AddrInUse
+    );
+    v4_free && !v6_taken
+}
+
+/// The browser address for an engine on `port`. Mirrors
+/// `apps/webui/server/ui_url.py` (NAMED_LOCAL_HOST), which the engine also
+/// reports as `ui_url` on GET /api/v1/ui-url and /api/v1/health.
+pub fn ui_url(port: u16) -> String {
+    format!("http://opendj.localhost:{port}/")
+}
+
+/// One shell-log line naming where the UI is, written once the engine is
+/// healthy (not before, when the address might still be wrong).
+pub fn log_ui_address(port: u16) {
+    append_shell_log(
+        "INFO",
+        &format!(
+            "engine UI at {} (also http://127.0.0.1:{port}/)",
+            ui_url(port)
+        ),
+    );
+}
+
 /// Ask the OS for a loopback port nobody is using.
 ///
 /// Binding port 0 and reading back what was assigned is the only way to get
@@ -778,6 +858,71 @@ pub fn log_tail(log_path: &Path, lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ----- preferred port ----------------------------------------------------
+    //
+    // Real sockets, no stand-ins: the claim is about what the OS does when a
+    // port is held, so the test holds one.
+
+    #[test]
+    fn a_free_preferred_port_is_used_as_is() {
+        let probe = TcpListener::bind("127.0.0.1:0").expect("bind probe");
+        let port = probe.local_addr().expect("addr").port();
+        drop(probe);
+        assert_eq!(pick_loopback_port(port).expect("pick"), port);
+    }
+
+    #[test]
+    fn a_held_preferred_port_falls_back_to_a_different_free_one() {
+        let holder = TcpListener::bind("127.0.0.1:0").expect("bind holder");
+        let held = holder.local_addr().expect("addr").port();
+        let picked = pick_loopback_port(held).expect("pick");
+        assert_ne!(picked, held, "fell back to the port another listener holds");
+        // The fallback is genuinely bindable, not merely a different number.
+        TcpListener::bind(("127.0.0.1", picked)).expect("fallback port is free");
+        drop(holder);
+    }
+
+    #[test]
+    fn a_preferred_port_held_only_on_ipv6_loopback_is_not_free() {
+        let Ok(holder) = TcpListener::bind("[::1]:0") else {
+            // No IPv6 loopback on this host: nothing on ::1 can shadow the
+            // engine, so there is no behavior to test. Said, not skipped quietly.
+            eprintln!("[WARN] ::1 not bindable here; ipv6 shadow case unmeasured");
+            return;
+        };
+        let held = holder.local_addr().expect("addr").port();
+        assert_ne!(pick_loopback_port(held).expect("pick"), held);
+    }
+
+    #[test]
+    fn the_preferred_port_probe_is_cheap_enough_for_boot() {
+        // Perf register evidence: the probe runs ONCE per engine boot, inside a
+        // boot budget of BOOT_TIMEOUT. Measured 31.8 us per probe on the Air and
+        // 24 ms on a loaded shared Linux CI runner (PR #5834), so the bound is
+        // a boot-scale ceiling, not a microbenchmark: it catches a probe that
+        // blocks (a hung bind), never runner noise.
+        let rounds = 20u32;
+        let mut samples: Vec<Duration> = (0..rounds)
+            .map(|_| {
+                let started = Instant::now();
+                let _ = loopback_port_is_free(PREFERRED_ENGINE_PORT);
+                started.elapsed()
+            })
+            .collect();
+        samples.sort();
+        let median = samples[samples.len() / 2];
+        eprintln!("[perf] loopback_port_is_free: median {median:?} over {rounds} probes");
+        assert!(
+            median < Duration::from_millis(250),
+            "probe median {median:?} is boot-scale"
+        );
+    }
+
+    #[test]
+    fn the_ui_url_names_the_local_host_and_port() {
+        assert_eq!(ui_url(7700), "http://opendj.localhost:7700/");
+    }
 
     // ----- build profile ---------------------------------------------------
     //

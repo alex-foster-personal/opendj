@@ -228,6 +228,48 @@ test('releaseGigRuntime does not let a newer generation join an older in-flight 
 	runtime.resetLibraryModeRuntimeForTest();
 });
 
+test('gigRuntimeReleaseSettled waits out an in-flight release, failed or not (Codex P1, PR #6189)', async () => {
+	runtime.resetLibraryModeRuntimeForTest();
+	// Nothing in flight: settles at once.
+	assert.equal(runtime.gigRuntimeReleasePending(), false);
+	await runtime.gigRuntimeReleaseSettled();
+
+	let finishDispose;
+	const release = runtime.releaseGigRuntime({
+		disposeEngine: () =>
+			new Promise((resolve) => {
+				finishDispose = resolve;
+			})
+	});
+	let settled = false;
+	const barrier = runtime.gigRuntimeReleaseSettled().then(() => {
+		settled = true;
+	});
+	// Let the release reach its pending disposeEngine().
+	for (let i = 0; i < 10 && finishDispose === undefined; i += 1) await Promise.resolve();
+	assert.equal(typeof finishDispose, 'function', 'the release never reached disposeEngine()');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(settled, false, 'the barrier settled while the Gig teardown was still disposing');
+	assert.equal(runtime.gigRuntimeReleasePending(), true, 'a disposing release must read as pending');
+	finishDispose();
+	await release;
+	await barrier;
+	assert.equal(settled, true);
+	assert.equal(runtime.gigRuntimeReleasePending(), false);
+
+	// A rejected release still settles the barrier, so Load to deck still opens Gig.
+	runtime.resetLibraryModeRuntimeForTest();
+	const failing = runtime.releaseGigRuntime({
+		disposeEngine: async () => {
+			throw new Error('dispose failed');
+		}
+	});
+	const failedBarrier = runtime.gigRuntimeReleaseSettled();
+	await assert.rejects(failing, /dispose failed/);
+	await failedBarrier;
+	runtime.resetLibraryModeRuntimeForTest();
+});
+
 test('shouldSkipPerformanceSessionRestore follows library exit marker', () => {
 	runtime.resetLibraryModeRuntimeForTest();
 	const store = new Map();
@@ -245,6 +287,33 @@ test('shouldSkipPerformanceSessionRestore follows library exit marker', () => {
 	assert.equal(runtime.shouldSkipPerformanceSessionRestore(), true);
 	runtime.consumeLibraryModeExitFlag();
 	assert.equal(runtime.shouldSkipPerformanceSessionRestore(), false);
+	delete globalThis.sessionStorage;
+});
+
+test('LIBWS-06: the rescue hold outlives the consumed exit marker until released', () => {
+	runtime.resetLibraryModeRuntimeForTest();
+	const store = new Map();
+	globalThis.sessionStorage = {
+		getItem: (key) => store.get(key) ?? null,
+		setItem: (key, value) => {
+			store.set(key, value);
+		},
+		removeItem: (key) => {
+			store.delete(key);
+		}
+	};
+	assert.equal(runtime.libraryRescueHold.held(), false);
+	runtime.markLibraryModeExit();
+	runtime.consumeLibraryModeExitFlag();
+	assert.equal(runtime.libraryRescueHold.held(), true, 'the first session restore consumes only the exit marker');
+	assert.equal(runtime.libraryRescueHold.handoff('?d2=t1'), true, 'a Load to deck hand-off');
+	assert.equal(runtime.libraryRescueHold.handoff(''), false, 'RESCUE-02: a plain return is no hand-off');
+	runtime.libraryRescueHold.release();
+	assert.equal(runtime.libraryRescueHold.held(), false);
+	assert.equal(runtime.libraryRescueHold.handoff('?d2=t1'), false, 'no hold, no hand-off');
+	runtime.markLibraryModeExit();
+	runtime.resetLibraryModeRuntimeForTest();
+	assert.equal(runtime.libraryRescueHold.held(), false);
 	delete globalThis.sessionStorage;
 });
 

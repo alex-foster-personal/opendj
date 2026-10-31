@@ -14,6 +14,7 @@
 		decks,
 		selected,
 		guard,
+		modKey,
 		onHover,
 		onPick,
 		onConfirm,
@@ -26,6 +27,8 @@
 		selected: number;
 		/** The playing deck a confirm is being asked for, or null. */
 		guard: DeckId | null;
+		/** The confirm modifier as this platform names it: ⌘ on macOS, Ctrl elsewhere. */
+		modKey: string;
 		onHover: (index: number) => void;
 		onPick: (index: number) => void;
 		onConfirm: () => void;
@@ -110,7 +113,7 @@
 				<p>It is empty now.</p>
 			{/if}
 			<div class="guard-acts">
-				<button type="button" class="danger" data-testid="command-bar-guard-confirm" onclick={onConfirm}>{guarded.loaded ? 'Replace it' : 'Load it'} · ⌘Enter</button>
+				<button type="button" class="danger" data-testid="command-bar-guard-confirm" onclick={onConfirm}>{guarded.loaded ? 'Replace it' : 'Load it'} · {modKey}Enter</button>
 				<button type="button" onclick={onCancel}>{guarded.playing ? 'Keep playing' : 'Cancel'} · Esc</button>
 			</div>
 		</div>

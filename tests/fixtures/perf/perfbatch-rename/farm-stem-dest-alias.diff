@@ -1,0 +1,136 @@
+diff --git a/scripts/modal_vocal_farm.py b/scripts/modal_vocal_farm.py
+index fd387cb3b..2ae3c8cd2 100644
+--- a/scripts/modal_vocal_farm.py
++++ b/scripts/modal_vocal_farm.py
+@@ -20,7 +20,7 @@ path between one result and the next. Two consequences shape this file:
+     sees a stem byte, and the function's return value shrinks to the small
+     region JSON. This is the only shape that scales: it removes the Mac from
+     the artifact path entirely instead of merely making it asynchronous.
+-  * ``--stems-dest bifrost2`` keeps the old destination but hands each bundle
++  * ``--stems-dest asset-store`` keeps the old destination but hands each bundle
+     to a bounded worker pool (``PublishQueue``), so an scp at ~25 MB/s
+     overlaps the next track's separation instead of serialising with it.
+     The queue is BOUNDED because the bundles are in RAM; see PublishQueue.
+@@ -274,14 +274,28 @@ PRESETS: dict[str, Preset] = {
+ DEFAULT_PRESET: str = "hdemucs_mmi-ov0.25"
+
+ # Where a run's stems go. "r2" is the only one that keeps the Mac off the
+-# artifact path; "bifrost2" is the legacy direct-scp destination, kept because
+-# R2 is not enabled on the Cloudflare account yet.
++# artifact path; "asset-store" is the legacy direct-scp destination (the
++# scripts/b2store.py host, MDT_B2STORE_SSH_HOST), kept because R2 is not
++# enabled on the Cloudflare account yet.
+ # "local" writes straight into (private path)/<stable_id>/, which is what the
+ # webui mute/solo path reads -- so a farmed bundle is auditionable in the app
+ # immediately. It is the ONLY dest that leaves bytes on this Mac on purpose, so
+ # it is for showcase sets, never for a full-library run.
+-STEM_DESTS: tuple[str, ...] = ("r2", "bifrost2", "local", "none")
+-DEFAULT_STEM_DEST: str = "bifrost2"
++STEM_DEST_ASSET_STORE: str = "asset-store"
++STEM_DESTS: tuple[str, ...] = ("r2", STEM_DEST_ASSET_STORE, "local", "none")
++DEFAULT_STEM_DEST: str = STEM_DEST_ASSET_STORE
++#: Deprecated --stems-dest spellings and the neutral dest each means (issue #5639:
++#: a host name is not a CLI value). Accepted with a warning; a later stage drops them.
++DEPRECATED_STEM_DEST_ALIASES: dict[str, str] = {"bifrost2": STEM_DEST_ASSET_STORE}
++
++
++def stem_dest_arg(value: str) -> str:
++    """argparse ``type`` for --stems-dest: a deprecated alias becomes its neutral dest."""
++    neutral = DEPRECATED_STEM_DEST_ALIASES.get(value)
++    if neutral is None:
++        return value
++    print(f"warning: --stems-dest {value} is deprecated, use {neutral}", file=sys.stderr)
++    return neutral
+
+ # R2 credentials, named to match apps/cloud/config.py so the repo has ONE set
+ # of R2 env var names rather than a farm-private set. Supplied by
+@@ -565,7 +579,7 @@ def _separate_all(
+ # four stems ffprobe'd): 53.17 MB flac vs 14.45 MB opus, 3.68x.
+ #   flac  153 GB  -> ~2.9 h of upload at the measured 14.6 MB/s
+ #   opus   42 GB  -> ~0.8 h
+-# With --stems-dest bifrost2 every byte crosses this Mac TWICE (down from
++# With --stems-dest asset-store every byte crosses this Mac TWICE (down from
+ # Modal, up to bifrost2), which is what makes the choice matter at all: it is
+ # 2 h of the operator's evening, not a rounding error, and --stems-dest r2
+ # would remove the Mac from the path entirely (see issue #373).
+@@ -1867,12 +1881,12 @@ def run_farm(
+
+     NOTHING IN THIS LOOP WAITS ON A TRANSFER. For ``r2`` the container already
+     shipped the stems before returning, so a result arrives publish-complete.
+-    For ``bifrost2`` the bundle is handed to ``PublishQueue`` and the loop
++    For ``asset-store`` the bundle is handed to ``PublishQueue`` and the loop
+     moves straight to the next result.
+
+     The old invariant survives the change: regions are never published for a
+     track whose bundle was lost. It is preserved by DEFERRING the region
+-    write, not by blocking - a bifrost2 track parks in ``pending`` until its
++    write, not by blocking - an asset-store track parks in ``pending`` until its
+     transfer outcome arrives, and only a successful outcome writes the JSON.
+     Deferring costs nothing; blocking cost the whole pipeline.
+     """
+@@ -1886,7 +1900,7 @@ def run_farm(
+     pending: dict[str, Pending] = {}
+     queue = (
+         PublishQueue(store, preset, queue_workers, queue_depth)
+-        if stems_dest == "bifrost2"
++        if stems_dest == STEM_DEST_ASSET_STORE
+         else None
+     )
+
+@@ -1941,7 +1955,7 @@ def run_farm(
+                 stable_id=outcome.stable_id,
+                 bytes=outcome.bytes_pushed,
+                 s=round(outcome.transfer_s, 2),
+-                dest="bifrost2",
++                dest=STEM_DEST_ASSET_STORE,
+             )
+             try:
+                 publish_regions(entry)
+@@ -2228,13 +2242,15 @@ def build_parser() -> argparse.ArgumentParser:
+     )
+     parser.add_argument(
+         "--stems-dest",
++        type=stem_dest_arg,
+         choices=STEM_DESTS,
+         default=DEFAULT_STEM_DEST,
+         help="where the four FLAC stems go. 'r2' uploads from inside the "
+         "container so the Mac never carries a stem byte (needs R2_* in "
+-        "the environment); 'bifrost2' returns them and pushes over scp "
++        "the environment); 'asset-store' returns them and pushes over scp "
+         "from a background queue; 'none' skips them. demucs computes all "
+-        "four sources either way, so this trades transfer, not GPU.",
++        "four sources either way, so this trades transfer, not GPU. "
++        "'bifrost2' is a deprecated alias of 'asset-store'.",
+     )
+     parser.add_argument(
+         "--no-stems",
+@@ -2321,7 +2337,7 @@ def _preflight_memory(args: argparse.Namespace) -> None:
+     """
+     import subprocess
+
+-    stages_locally = args.stems_dest in ("bifrost2", "local")
++    stages_locally = args.stems_dest in (STEM_DEST_ASSET_STORE, "local")
+     gate = REPO_ROOT / "scripts" / "mem_gate.py"
+     if not gate.is_file():
+         raise SystemExit(f"error: memory gate missing at {gate}")
+@@ -2374,7 +2390,7 @@ def _check_r2_env() -> None:
+             "  If those secrets do not exist yet, R2 has to be enabled on the "
+             "Cloudflare account and an R2 API token created first; then store "
+             "the pair as R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY (and "
+-            "R2_ACCOUNT_ID) in Doppler. Until then use --stems-dest bifrost2."
++            "R2_ACCOUNT_ID) in Doppler. Until then use --stems-dest asset-store."
+         )
+
+
+@@ -2486,9 +2502,9 @@ def main(argv: list[str] | None = None) -> int:
+         _check_r2_env()
+         print(f"preflight: R2 credentials present, bucket {args.r2_bucket}")
+     # Only the bifrost2 path stages bundles on local disk; r2 never touches it.
+-    _preflight_disk(batch, args.stems_dest in ("bifrost2", "local"))
++    _preflight_disk(batch, args.stems_dest in (STEM_DEST_ASSET_STORE, "local"))
+     _preflight_memory(args)
+-    store = _open_store() if args.stems_dest == "bifrost2" else None
++    store = _open_store() if args.stems_dest == STEM_DEST_ASSET_STORE else None
+     if store is not None:
+         print("preflight: bifrost2 asset store reachable")
+

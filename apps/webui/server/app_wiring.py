@@ -95,6 +95,7 @@ from .routes import cloudsync_fleet as cloudsync_fleet_routes
 from .routes import cloudsync_ops as cloudsync_ops_routes
 from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
+from .routes import cmdk_ai as cmdk_ai_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
@@ -115,6 +116,7 @@ from .routes import feedback_summary as feedback_summary_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import genres as genres_routes
+from .routes import grid_edit as grid_edit_routes
 from .routes import grid_provenance as grid_provenance_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -132,6 +134,7 @@ from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
+from .routes import performance_remote_speaker as performance_remote_speaker_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
@@ -173,6 +176,7 @@ from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
 from .routes import transition_in_cue as transition_in_cue_routes
 from .routes import ui_prefs as ui_prefs_routes
+from .routes import ui_url as ui_url_routes
 from .routes import usb_eject as usb_eject_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_tracks as usb_tracks_routes
@@ -399,6 +403,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # playlist_write builds its PlaylistStore lazily from
         # app.state.state_db_path; release its sqlite handle on shutdown.
         playlist_write_routes.close_store(app)
+        # I18: the remote speaker's LAN listener is the engine's to close, so
+        # its port is released with the engine rather than left to task teardown.
+        await performance_remote_speaker_routes.close_remote_speaker(app)
         # The hub's idle WAL keepers live on app.state for the app's life;
         # release them so a stopped app holds no handle on the hub database
         # (exclusive maintenance, Windows file replacement). LIBM-120 L6.
@@ -643,6 +650,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         client_events_routes.router,
         performance_telemetry_routes.router,
         performance_headphones_routes.router,
+        performance_remote_speaker_routes.router,
         rescue_snapshots_routes.router,
         bench_routes.router,
         bulk_edit_routes.router,
@@ -672,6 +680,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         grid_provenance_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
+        grid_edit_routes.router,
         transition_in_cue_routes.router,
         track_plays_routes.router,
         progress_routes.router,
@@ -696,6 +705,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         library_jobs_routes.router,
         genres_routes.router,
         energy_routes.router,
+        cmdk_ai_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
         enrich_routes.router,
@@ -711,6 +721,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         lyrics_search_routes.router,
         lyrics_words_routes.router,
         health_routes.router,
+        ui_url_routes.router,
         preflight_routes.router,
         settings_routes.router,
         settings_ai_routes.router,
@@ -781,9 +792,12 @@ def _drop_routes_shadowed_by(app: FastAPI, shadowing: APIRouter) -> None:
 def _mount_frontend_or_placeholder(
     app: FastAPI, mount_frontend: bool, frontend_dir: Path
 ) -> None:
+    # UIURL-01: resolve_ui_address reads this; False until a bundle is mounted.
+    app.state.spa_mounted = False
     if mount_frontend and frontend_dir.exists() and any(frontend_dir.iterdir()):
         app.mount("/", _SpaStaticFiles(directory=str(frontend_dir), html=True),
                   name="spa")
+        app.state.spa_mounted = True
         return
 
     @app.get("/", include_in_schema=False)

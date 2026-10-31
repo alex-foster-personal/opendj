@@ -5,7 +5,7 @@
  * `POST /api/sets/recorder/{id}/master-pcm`, where the daemon writes the WAV.
  * An AudioWorklet and fetch work the same in Chrome and the desktop app's
  * WKWebView; MediaRecorder was not used because it cannot produce lossless
- * PCM and its codecs differ between the two (docs/decisions, ADR-NEW
+ * PCM and its codecs differ between the two ((private path), ADR-NEW
  * set-recording-master-mix-tap).
  *
  * Loaded lazily (by the REC rail only once a master recording is live), so
@@ -19,6 +19,10 @@
 import { API_BASE } from '$lib/api/client';
 import { masterMixUnavailableReason } from '$lib/sets/record-input-choice';
 import { masterMixTapPoint } from '$lib/rb/audio-engine.svelte';
+
+/** The same master bus tap, for the remote speaker (I18): one importer of the
+ * audio engine serves both MAIN taps, so the engine's fan-in does not grow. */
+export { masterMixTapPoint };
 import processorUrl from '$lib/sets/master-capture-processor.js?url';
 
 export const CHUNK_SECONDS = 0.5;

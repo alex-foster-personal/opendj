@@ -29,8 +29,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     internally, rather than CI carrying its own inline copy of the warm-up
     that can drift from the one that ships.
 
-    Exits non-zero when a backend that declares cache roots ends the warm-up
-    with no artifacts on disk. That is the positive check: a warm-up step
+    Exits non-zero when the warm-up is refused (no trustworthy lock), and when
+    a backend that declares cache roots ends the warm-up with no artifacts on
+    disk. That is the positive check: a warm-up step
     that silently warmed nothing is exactly the green-but-useless signal this
     whole issue was hidden behind.
     """
@@ -87,6 +88,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         backend, backend_name=args.backend, purge_stale=args.purge_if_stale
     )
     print(result.render())
+    if result.refused:
+        # Artifacts already on disk must not turn a refusal into a pass: the
+        # warm-up neither compiled nor vouched for them (issue #1401).
+        print(
+            f"[ERROR] backend {args.backend!r}: warm-up refused, so nothing was "
+            "compiled or verified; see the ERROR line above for why",
+            file=sys.stderr,
+        )
+        return 1
 
     artifacts = len(_cache_artifacts(roots))
     print(f"{WARMUP_LINE_PREFIX} artifacts={artifacts}")

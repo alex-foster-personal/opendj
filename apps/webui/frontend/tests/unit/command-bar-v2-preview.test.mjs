@@ -392,6 +392,32 @@ test('a refused later jump keeps owning the preview still sounding, so Esc stops
 	assert.deepEqual(cold.sent.map((c) => c.type), ['preview_cue']);
 });
 
+test('Esc consumes a press held for a beat grid, though nothing has started (Sol)', async () => {
+	const h = harness();
+	h.cue.setTrack({ ...cueTrack(), downbeats: [], stops: [], gridPending: true });
+	await h.cue.jump(1, false);
+	assert.equal(h.cue.state.started, false);
+	assert.equal(h.cue.stop(), true, 'the held press is the preview\'s to consume');
+	assert.deepEqual(h.sent, [], 'nothing was sent for the held press');
+
+	// Control: with nothing held and nothing sounding, Esc goes on to the bar.
+	const idle = harness();
+	idle.cue.setTrack(cueTrack());
+	assert.equal(idle.cue.stop(), false);
+});
+
+test('a refused jump puts the anchor and its trail back on the bar still sounding and names the refusal (Sol, Codex)', async () => {
+	const h = harness();
+	h.cue.setTrack(cueTrack());
+	await h.cue.jump(1, false);
+	const sounding = { anchor: h.cue.state.anchor };
+	h.refuse(true);
+	await h.cue.jump(1, false);
+	assert.equal(h.cue.state.anchor, sounding.anchor, 'the anchor is the bar still sounding, not the refused one');
+	assert.equal(h.cue.state.message, cuePreview.PREVIEW_REFUSED);
+	assert.equal(h.cue.state.started, true);
+});
+
 test('moving to another track stops the old preview and starts the new one at bar 1', async () => {
 	const h = harness();
 	h.cue.setTrack(cueTrack('a'.repeat(40)));
@@ -483,7 +509,7 @@ test('the picker holds its deck, not its row, so a new master never moves Enter 
 	assert.equal(after[2].id, 2, 'precondition: row 2 is now another deck');
 	assert.equal(after.findIndex((d) => d.id === 3), 3, 'deck 3 is still found by its id');
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
-	assert.match(bar, /let picker = \$state<\{ row: CmdkRow; vocalsOnly: boolean; sel: DeckId; guard: ReplaceGuard \| null \} \| null>/);
+	assert.match(bar, /let picker = \$state<\{ row: CmdkRow; vocalsOnly: boolean; sel: DeckId; guard: ReplaceGuard \| null[;} ]/);
 	assert.match(bar, /const pickerSel = \$derived\(picker === null \? -1 : pickerDecks\.findIndex\(\(deck\) => deck\.id === picker\?\.sel\)\);/);
 	const keys = bar.slice(bar.indexOf('function pickerKey'), bar.indexOf('function pickerKey') + 2000);
 	assert.match(keys, /pickerLoad\(pickerSel, false\)/);
@@ -545,20 +571,29 @@ test('typing while focus is off the input clears the highlight and the picker; p
 });
 
 test('a replace guard answers only the load it asked about (Codex r4275059846)', () => {
-	const asked = picker.replaceGuard(2, { stable_id: 'a', load_generation: 5 });
-	assert.deepEqual(asked, { id: 2, stable_id: 'a', load_generation: 5 });
-	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 5 }), true, 'control: nothing moved, the confirm stands');
-	assert.equal(picker.guardHolds(asked, { stable_id: 'b', load_generation: 6 }), false, 'another track was loaded');
-	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 6 }), false, 'the same track was loaded again');
-	assert.equal(picker.guardHolds(asked, { stable_id: null, load_generation: 5 }), false, 'the deck was ejected');
+	const asked = picker.replaceGuard(2, { stable_id: 'a', load_generation: 5 }, 9, 4);
+	assert.deepEqual(asked, { id: 2, stable_id: 'a', load_generation: 5, loads: 9, commands: 4 });
+	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 5 }, 9, 4), true, 'control: nothing moved, the confirm stands');
+	assert.equal(picker.guardHolds(asked, { stable_id: 'b', load_generation: 6 }, 10, 4), false, 'another track was loaded');
+	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 6 }, 10, 4), false, 'the same track was loaded again');
+	assert.equal(picker.guardHolds(asked, { stable_id: null, load_generation: 5 }, 9, 4), false, 'the deck was ejected');
+	// A load dispatched but still queued or decoding has not moved the deck yet (Codex r4277027005).
+	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 5 }, 10, 4), false, 'a newer load is on its way');
+	// A play that lands while the question is open starts the track, so the confirm asks again (Codex P1, #6689).
+	assert.equal(picker.guardHolds(asked, { stable_id: 'a', load_generation: 5 }, 9, 5), false, 'a play started the deck while the guard was open');
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
 	// The guard is taken from the engine's deck state when it asks...
-	assert.match(bar, /p\.guard = replaceGuard\(deck\.id, decks\[deck\.id\]\);/);
+	assert.match(bar, /p\.guard = replaceGuard\(deck\.id, decks\[deck\.id\], deckLoadDispatches\(deck\.id\), deckCommands\(deck\.id\)\);/);
 	// ...and the confirm is only a confirm while that load is still there; otherwise it asks again.
 	const confirm = bar.slice(bar.indexOf('function confirmGuard'), bar.indexOf('function pickerKey'));
 	// A moved deck is asked about again whether or not it plays now (Codex r4275496748): a paused
 	// track loaded during the guard is never replaced on the old confirm.
-	assert.match(confirm, /if \(!guardHolds\(guard, decks\[guard\.id\]\)\) \{\s*p\.guard = replaceGuard\(guard\.id, decks\[guard\.id\]\);\s*return;\s*\}\s*pickerLoad\(index, true\);/);
+	assert.match(confirm, /if \(!guardHolds\(guard, decks\[guard\.id\], deckLoadDispatches\(guard\.id\), deckCommands\(guard\.id\)\)\) \{\s*const session = barSession;\s*const again = await settledGuard\(guard\.id, session\);\s*(?:\/\/[^\n]*\s*)*if \(again !== null && picker === p && barSession === session && p\.guard === null\) p\.guard = again;\s*return;\s*\}\s*pickerLoad\(index, true\);/);
+	// Asked again only once the loads still queued have landed, so it names what is there.
+	const settled = bar.slice(bar.indexOf('async function settledGuard'), bar.indexOf('async function confirmGuard'));
+	assert.match(settled, /const drained = await waitDeckIdle\(\s*\(\) => deckPending\(id\),[\s\S]*?\);[\s\S]*?if \(!drained\) \{\s*if \(barSession === session\) actionError = `Deck \$\{id\} is still busy; pick again once it settles`;\s*return null;\s*\}\s*return replaceGuard\(id, decks\[id\], deckLoadDispatches\(id\), deckCommands\(id\)\);/);
+	// A queue that never drains asks nothing: no guard naming the old track (Codex r4277285054).
+	assert.doesNotMatch(settled, /\n\t\tawait waitDeckIdle/);
 	assert.doesNotMatch(confirm, /pickerLoad\(index, guardHolds/);
 });
 
@@ -582,7 +617,10 @@ test('a guard asked again describes the deck as it is now, not as playing (Codex
 	assert.match(box, /\{#if guarded\.playing\}\s*<h4 id="cmdk2-guard-title">Deck \{guarded\.id\} is playing live<\/h4>\s*<p>Loading here stops/);
 	assert.match(box, /\{:else if guarded\.loaded\}\s*<h4 id="cmdk2-guard-title">Deck \{guarded\.id\} changed<\/h4>\s*<p>It now holds "\{guarded\.title \?\? 'another track'\}", paused\./);
 	assert.match(box, /\{:else\}\s*<h4 id="cmdk2-guard-title">Deck \{guarded\.id\} changed<\/h4>\s*<p>It is empty now\.<\/p>/);
-	assert.match(box, /\{guarded\.loaded \? 'Replace it' : 'Load it'\} · ⌘Enter/);
+	assert.match(box, /\{guarded\.loaded \? 'Replace it' : 'Load it'\} · \{modKey\}Enter/);
+	// The platform's own modifier, as the eject guard shows it (Codex r4277285059).
+	assert.doesNotMatch(box, /⌘Enter/);
+	assert.match(readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8'), /modKey=\{quickLabel\.trim\(\)\}/);
 	assert.match(box, /\{guarded\.playing \? 'Keep playing' : 'Cancel'\} · Esc/);
 });
 
@@ -593,7 +631,7 @@ test('CMDK-04/09: the deck picker lets Tab cycle focus and Backspace edit the se
 	assert.match(body, /if \(event\.key === 'Tab'\) \{\s*cycleFocus\(event\.shiftKey\);\s*return true;\s*\}/);
 	assert.ok(body.indexOf("event.key === 'Tab'") < body.indexOf('if (p.guard !== null)'));
 	// From a picker row the input never sees Backspace, so the picker deletes from the query itself.
-	assert.match(body, /if \(event\.key === 'Backspace' && event\.target !== input\) \{[^}]*picker = null;\s*query = query\.slice\(0, -1\);[^}]*input\?\.focus\(\);\s*return true;\s*\}/);
+	assert.match(body, /if \(event\.key === 'Backspace' && event\.target !== input\) \{[^}]*picker = null;\s*query = \[\.\.\.query\]\.slice\(0, -1\)\.join\(''\);[^}]*input\?\.focus\(\);\s*return true;\s*\}/);
 	// Control: with focus in the input, Backspace still falls through to the input's own edit.
 	assert.match(body, /if \(event\.key === 'Backspace' \|\| \(event\.key\.length === 1[^\n]*\) \{\s*picker = null;\s*return false;\s*\}/);
 	assert.ok(body.indexOf("event.target !== input") < body.indexOf("if (event.key === 'Backspace' ||"));
@@ -799,8 +837,8 @@ test('Esc on a press held behind the beat grid is consumed: it cancels that pres
 test('a queued jump re-reads the live grid before it starts, so a refreshed grid cannot be read through the old track (Sol P2, #6689)', () => {
 	const src = readFileSync(new URL('../../src/lib/rb/cmdk-cue-preview.svelte.ts', import.meta.url), 'utf8');
 	const send = src.slice(src.indexOf('const send = async'), src.indexOf('/** After a start returns'));
-	// Control: the live track is read after the masterPhase wait, and the start is computed from it, not from `current`.
-	assert.ok(send.indexOf('const live = track;') > send.indexOf('ports.masterPhase()'));
+	// Control: the live track is read inside send, which runs after the queue waits, and the start is computed from it, not from `current`.
+	assert.ok(send.indexOf('const live = track;') > 0);
 	assert.match(send, /job\.bar >= live\.downbeats\.length/);
 	assert.match(send, /inPhaseStartSec\(live\.downbeats, job\.bar, phase \?\? 0\)/);
 	assert.doesNotMatch(send, /inPhaseStartSec\(current\.downbeats/);
@@ -810,7 +848,7 @@ test('X and Escape both cancel a replacement guard, so the guarded load never st
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
 	const guard = bar.slice(bar.indexOf('if (p.guard !== null) {'), bar.indexOf('const arrow = pickerArrow(event);'));
 	// Control: the guard branch is the one that consumes the key, so its cancel is what the test reads.
-	assert.match(guard, /if \(event\.key === 'Enter' && \(event\.metaKey \|\| event\.ctrlKey\)\) confirmGuard\(\);/);
+	assert.match(guard, /if \(event\.key === 'Enter' && quickModifierHeld\(event, quickMod\)\) void confirmGuard\(\);/);
 	assert.match(guard, /event\.key === 'Escape'/);
 	assert.match(guard, /event\.key === 'x' \|\| event\.key === 'X'\) p\.guard = null;/);
 });
@@ -822,16 +860,16 @@ test('a picker pick is refused while its deck still has a command queued, so no 
 	assert.match(load, /if \(deckPending\(deck\.id\)\) \{\s*pickerNote = `Deck \$\{deck\.id\} is still busy; pick again once it settles`;\s*return;\s*\}/);
 	assert.ok(load.indexOf('deckPending(deck.id)') < load.indexOf('pickerAction(deck, confirmed)'));
 	// The bar takes the count as a prop, as it takes the dispatcher, and the page passes it.
-	assert.match(bar, /deckPending: \(deck: DeckId\) => boolean;/);
-	assert.match(readFileSync(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8'), /deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\] > 0\}/);
+	assert.match(bar, /deckPending: \(deck: DeckId\) => number;/);
+	assert.match(readFileSync(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8'), /deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\]\}/);
 });
 
 test('CMDK-19: a pick refuses when a command is queued on its deck during the rb-meta settle (Codex P1, #6687)', () => {
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
-	assert.match(bar, /\(deck\) => deckPending\(deck\)\s*\);/);
+	assert.match(bar, /pending: \(deck\) => deckPending\(deck\),/);
 	const loader = readFileSync(new URL('../../src/lib/rb/cmdk-load.ts', import.meta.url), 'utf8');
-	assert.match(loader, /deckPending\(deck\)\) return false;/);
-	assert.ok(loader.indexOf('await settleForLoad(') < loader.indexOf('deckPending(deck)) return false'), 'the queued-command check runs after the settle');
+	assert.match(loader, /if \(!newer && queue\.pending\(deck\) > 0\) \{/);
+	assert.ok(loader.indexOf('settleForLoad(row, fetchMeta)') < loader.indexOf('if (!newer && queue.pending(deck) > 0)'), 'the queued-command check runs after the settle');
 });
 
 test('an untrusted beat grid is refused by name, never derived into bars (Sol P1, #6687)', () => {
@@ -844,7 +882,8 @@ test('an untrusted beat grid is refused by name, never derived into bars (Sol P1
 
 test('a refused jump puts back the bar that still sounds (Sol P2, #6687)', () => {
 	const cue = readFileSync(new URL('../../src/lib/rb/cmdk-cue-preview.svelte.ts', import.meta.url), 'utf8');
-	assert.match(cue, /const restore: JumpRestore = fresh \? null : \{ anchor: state\.anchor, history: \[\.\.\.history\], message: state\.message \};/);
+	assert.match(cue, /const before = \{ anchor: state\.anchor, history: \[\.\.\.history\], message: state\.message \};/);
+	assert.match(cue, /const restore: JumpRestore = fresh \? null : \{ \.\.\.before, landed: state\.message \};/);
 	assert.match(cue, /else if \(job\.restore !== null\) \{\s*state\.anchor = job\.restore\.anchor;\s*history = job\.restore\.history;/);
 });
 
@@ -857,4 +896,12 @@ test('the cue status shows only while its preview sounds (Sol P2, #6687)', () =>
 	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
 	assert.match(bar, /const cueSounding = \$derived\(cue\.state\.started && previewCue\.playing && previewCue\.stable_id === previewId\);/);
 	assert.match(bar, /if \(!cueSounding \|\| cueTrack === null/);
+});
+
+test('an eject that waits for its deck to drain is superseded by a newer eject, so it never overwrites that guard (Codex P2, #6689)', () => {
+	const bar = readFileSync(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url), 'utf8');
+	const eject = bar.slice(bar.indexOf('const op = ++ejectOp;'), bar.indexOf('ejectGuard = replaceGuard(command.deck'));
+	// Control: the token is taken before the drain, and checked after it, before the guard or the unload.
+	assert.match(eject, /if \(op !== ejectOp\) return `/);
+	assert.ok(eject.indexOf('const op = ++ejectOp;') < eject.indexOf('waitDeckIdle('));
 });

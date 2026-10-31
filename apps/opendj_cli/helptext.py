@@ -29,6 +29,7 @@ feedback pins (FB-20, issue #4085, pin 6af63c5e9b7c):
 installed app shell navigation (AGENT-12, issue #2866):
   opendj open performance
   opendj open /performance
+  opendj open browser            open the UI in the default browser (UIURL-02)
 
 installed app PATH (AGENT-05, issue #2751):
   opendj install-cli [--target ~/.local/bin/opendj]   symlink bundled launcher to ~/.local/bin

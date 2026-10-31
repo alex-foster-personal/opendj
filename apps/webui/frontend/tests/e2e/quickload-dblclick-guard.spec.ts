@@ -41,6 +41,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
 
 const TRACK_ROW = '[data-testid="track-row"]';
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
@@ -101,17 +102,32 @@ async function _openAllTracks(page: Page): Promise<void> {
 	});
 	await page.getByText('All Tracks', { exact: true }).first().click();
 	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
+	await _expectEveryDeckEmpty(page);
 }
 
-async function _waitForDeckLoaded(page: Page, deck: 1 | 2): Promise<void> {
-	await page.waitForFunction(
-		(deckId) => {
-			const state = window.musicDjToolsPerformance?.query().decks[deckId];
-			return state !== undefined && state.stable_id !== null && !state.transport_pending;
-		},
-		deck,
-		{ timeout: 45_000 }
-	);
+/** Wait until the deck holds THIS track with no transport pending. Waiting for
+ * any id could not tell a wrong-track load from the right one (#6242). */
+async function _waitForDeckLoaded(page: Page, deck: 1 | 2, stableId: string): Promise<void> {
+	await expect
+		.poll(
+			async () => {
+				const state = (await _query(page)).decks[deck];
+				return state.transport_pending ? `${state.stable_id} (pending)` : state.stable_id;
+			},
+			{ message: `deck ${deck} never settled holding ${stableId}`, timeout: 45_000 }
+		)
+		.toBe(stableId);
+}
+
+/** No deck may hold a track before the test loads one: a rescue restore of an
+ * earlier spec's decks is the state leak behind #6242. */
+async function _expectEveryDeckEmpty(page: Page): Promise<void> {
+	const state = await _query(page);
+	const loaded = ([1, 2, 3, 4] as const)
+		.filter((id) => state.decks[id].stable_id !== null)
+		.map((id) => `deck ${id}: ${state.decks[id].stable_id}`);
+	expect(loaded, 'a deck was already loaded when the case started').toEqual([]);
+	expect(state.rescue_restore.phase, 'a rescue restore ran into this case').toBe('idle');
 }
 
 /** Wait for a deck's PRESENTED `playing` flag, not merely the intent. */
@@ -134,6 +150,10 @@ async function _waitForPlaying(page: Page, deck: 1 | 2, expected: boolean): Prom
 test.describe('quick-load box does not hijack a double-click on a selected row (#1558)', () => {
 	// The fixture library is shared by the whole serial root suite, and other
 	// specs (library-keyboard-nav) expect the default "ask" dialog.
+	test.beforeEach(async ({ request }) => {
+		await appendEmptyRescueSnapshot(request);
+	});
+
 	test.afterEach(async ({ request }) => {
 		const put = await request.put('/api/v1/ui-prefs', {
 			data: { confirm: { dblclick_load_play: null } }
@@ -147,7 +167,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
 		const { row, stableId } = await _pinFirstRow(page);
-		expect(stableId, 'row 0 has no data-stable-id').not.toBeNull();
+		if (stableId === null) throw new Error('row 0 has no data-stable-id');
 
 		// A genuine double-click: Playwright's dblclick fires both clicks back
 		// to back, well inside the platform double-click interval - exactly the
@@ -156,7 +176,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		// is already resting on the title: the reveal's most dangerous instant.
 		await row.locator('td.c-title').dblclick();
 
-		await _waitForDeckLoaded(page, 1);
+		await _waitForDeckLoaded(page, 1, stableId);
 		await _waitForPlaying(page, 1, true);
 		const state = await _query(page);
 		expect(
@@ -178,7 +198,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
 		const { row, stableId } = await _pinFirstRow(page);
-		expect(stableId).not.toBeNull();
+		if (stableId === null) throw new Error('row 0 has no data-stable-id');
 
 		// Select first, as a SEPARATE prior action - not part of the
 		// double-click gesture under test - then double-click the same spot
@@ -188,7 +208,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		await page.waitForTimeout(WITHIN_GUARD_MS);
 		await row.locator('td.c-title').dblclick();
 
-		await _waitForDeckLoaded(page, 1);
+		await _waitForDeckLoaded(page, 1, stableId);
 		await _waitForPlaying(page, 1, true);
 		const state = await _query(page);
 		expect(state.decks[1].stable_id, 'the smart pick on an empty board must be deck 1').toBe(
@@ -210,7 +230,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
 		const { row, stableId } = await _pinFirstRow(page);
-		expect(stableId).not.toBeNull();
+		if (stableId === null) throw new Error('row 0 has no data-stable-id');
 
 		await row.locator('td.c-title').click();
 		await expect(row).toHaveClass(/rb-row-selected/);
@@ -220,7 +240,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 		await expect(row.locator('.deck-btns button').first()).toHaveCSS('pointer-events', 'auto');
 
 		await row.locator('button[title="Load onto deck 2"]').click();
-		await _waitForDeckLoaded(page, 2);
+		await _waitForDeckLoaded(page, 2, stableId);
 		await _waitForPlaying(page, 2, false);
 		const state = await _query(page);
 		expect(state.decks[2].stable_id).toBe(stableId);

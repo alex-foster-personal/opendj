@@ -70,3 +70,25 @@ def test_a_failing_step_stops_the_gate_with_its_exit_code() -> None:
     # A real child process that exits 3, not a stand-in for subprocess.run.
     with pytest.raises(SystemExit, match="exited 3"):
         gate.run([sys.executable, "-c", "raise SystemExit(3)"], REPOSITORY_ROOT, dict(os.environ))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in bash is a POSIX shell script; Windows has no bash to stand in for")
+def test_wrappers_are_launched_through_a_resolved_bash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    gate = _load()
+    # A real executable named bash on a PATH that holds only its directory, run for real.
+    bash = tmp_path / "bash"
+    bash.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bash.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    argv = gate.bash_run(Path("scripts/wrapper.sh"), "arg")
+    assert os.path.samefile(argv[0], bash)
+    assert argv[1:] == ["scripts/wrapper.sh", "arg"]
+    gate.run(argv, REPOSITORY_ROOT, dict(os.environ))
+
+
+def test_a_missing_bash_names_itself(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    gate = _load()
+    # An empty PATH: the lookup is the real one, and no bash is on it.
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(SystemExit, match="bash is not on PATH"):
+        gate.bash_run(Path("scripts/wrapper.sh"))

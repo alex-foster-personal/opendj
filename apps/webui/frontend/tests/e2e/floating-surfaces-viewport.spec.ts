@@ -186,6 +186,11 @@ test('library key hover card flips below and stays inside the viewport inset fro
 		},
 		VIEWPORT_INSET_PX
 	);
+	// A card whose width is not a whole pixel: the CI fixture's first key rendered
+	// 273.17px wide, and a size read as offsetWidth (273) clamped it 0.17px past
+	// the inset (main e2e red from Fri 30 Oct 2026). Pinned so the test fails
+	// on that defect whatever key the first row carries.
+	await page.addStyleTag({ content: '.key-hover-card { padding-left: 9.3px !important; }' });
 	await keyCell.hover();
 	const keyCard = page.locator('.key-hover-card');
 	await expect(keyCard).toBeVisible({ timeout: 10_000 });

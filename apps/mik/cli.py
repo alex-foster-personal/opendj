@@ -445,7 +445,7 @@ def build_parser() -> argparse.ArgumentParser:
                 "--allow-mass-missing",
                 action="store_true",
                 help="override LIBM-41: allow a scan that drops more than "
-                "50% of previously present files (including to zero)",
+                "50%% of previously present files (including to zero)",
             )
     add_backfill_parser(sub, _common_options)
     return parser

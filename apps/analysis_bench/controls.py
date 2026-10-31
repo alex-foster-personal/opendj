@@ -34,6 +34,25 @@ from typing import Any
 BEATGRID_OFFSET_S = 0.025
 
 
+def _bundle_root(fixtures_path: Path) -> Path:
+    """Controls receive the bundle manifest path; fixture data lives beside it."""
+    return fixtures_path.parent
+
+
+def _load_key_refs(fixtures_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    from apps.analysis_bench.scorers import key_lane
+
+    _, rekordbox, mik = key_lane.load_bundle(_bundle_root(fixtures_path))
+    return rekordbox, mik
+
+
+def _load_loudness_truth(fixtures_path: Path) -> dict[str, Any]:
+    from apps.analysis_bench.scorers import loudness_lane
+
+    _manifest, truth = loudness_lane.load_bundle(_bundle_root(fixtures_path))
+    return truth
+
+
 def _beatgrid_positive(fixtures_path: Path) -> dict[str, Any]:
     from scripts.beatbench import report as beatgrid_report
 
@@ -67,7 +86,7 @@ def _beatgrid_positive(fixtures_path: Path) -> dict[str, Any]:
 # bullet names this exact control by citation -- "Include a constant
 # predictor control (S-KEY's 'always C major' floor was 19.0 MIREX)" -- so
 # the value is the spec's, not this module's choice. Camelot 8B, checked
-# against apps.analysis_key.canon in tests/analysis_bench/test_key_lane.py so
+# against apps.analysis_key.canon in (private path) so
 # the literal here cannot drift from what the scorer parses it as. (A prior
 # cut of this control answered A minor / 8A instead, which matches no cited
 # source -- Codex P2 BLOCKING, PR #1620.)
@@ -75,9 +94,7 @@ KEY_CONSTANT_CAMELOT = "8B"
 
 
 def _key_negative(fixtures_path: Path) -> dict[str, Any]:
-    from apps.analysis_bench.scorers import key_lane
-
-    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    rekordbox, _mik = _load_key_refs(fixtures_path)
     results = {stable_id: {"key_camelot": KEY_CONSTANT_CAMELOT} for stable_id in rekordbox}
     return {
         "candidate": "constant_key",
@@ -87,7 +104,7 @@ def _key_negative(fixtures_path: Path) -> dict[str, Any]:
 
 
 def _key_most_common_negative(fixtures_path: Path) -> dict[str, Any]:
-    """The bundle's second named floor (`specs/native-analysis-v1-lanes/
+    """The bundle's second named floor (`(private path)/
     nav1-key-r0.md`: "controls: constant 'always C major', constant 'most
     common key in the set'"). `constant_key` alone only covers the first of
     those two; a full round needs both (Codex P2 BLOCKING, PR #1620).
@@ -102,7 +119,7 @@ def _key_most_common_negative(fixtures_path: Path) -> dict[str, Any]:
 
     from apps.analysis_bench.scorers import key_lane
 
-    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    rekordbox, _mik = _load_key_refs(fixtures_path)
     present = [key for key in rekordbox.values() if key is not None]
     if not present:
         raise ValueError("the most_common control needs at least one rekordbox reference")
@@ -121,7 +138,7 @@ def _key_most_common_negative(fixtures_path: Path) -> dict[str, Any]:
 def _key_positive(fixtures_path: Path) -> dict[str, Any]:
     from apps.analysis_bench.scorers import key_lane
 
-    _, rekordbox, _mik = key_lane.load_bundle(fixtures_path.parent)
+    rekordbox, _mik = _load_key_refs(fixtures_path)
     # A fixture with no rekordbox reference is skipped, not fabricated: this
     # control's job is to echo the reference, and there is nothing to echo.
     # It still counts as an honest omission when scored (key_lane.py's
@@ -148,7 +165,7 @@ def _key_positive_mik(fixtures_path: Path) -> dict[str, Any]:
     """
     from apps.analysis_bench.scorers import key_lane
 
-    _, _rekordbox, mik = key_lane.load_bundle(fixtures_path.parent)
+    _rekordbox, mik = _load_key_refs(fixtures_path)
     results = {
         stable_id: {"key_camelot": key_lane.canon.to_camelot(key)}
         for stable_id, key in mik.items()
@@ -170,9 +187,7 @@ LOUDNESS_CONSTANT_DBTP = 0.0
 
 
 def _loudness_negative(fixtures_path: Path) -> dict[str, Any]:
-    from apps.analysis_bench.scorers import loudness_lane
-
-    _manifest, truth = loudness_lane.load_bundle(fixtures_path.parent)
+    truth = _load_loudness_truth(fixtures_path)
     results = {
         stable_id: {
             "integrated_lufs": LOUDNESS_CONSTANT_LUFS,
@@ -196,9 +211,7 @@ def _loudness_positive(fixtures_path: Path) -> dict[str, Any]:
     Echoing LUFS alone would fail dBTP and the positive control would not
     be a ceiling.
     """
-    from apps.analysis_bench.scorers import loudness_lane
-
-    _manifest, truth = loudness_lane.load_bundle(fixtures_path.parent)
+    truth = _load_loudness_truth(fixtures_path)
     results = {
         stable_id: {
             "integrated_lufs": row["lufs_pyloudnorm"],
@@ -223,7 +236,7 @@ def _waveform_negative(fixtures_path: Path) -> dict[str, Any]:
     from apps.analysis_bench.scorers import waveform_lane
     from apps.analysis_waveform.decode import BAND_NAMES
 
-    bundle = fixtures_path.parent
+    bundle = _bundle_root(fixtures_path)
     _manifest, tracks = waveform_lane.load_bundle(bundle)
     results = {}
     for track in tracks:
@@ -244,7 +257,7 @@ def _waveform_positive(fixtures_path: Path) -> dict[str, Any]:
     from apps.analysis_bench.scorers import waveform_lane
     from apps.analysis_waveform.decode import BAND_NAMES
 
-    bundle = fixtures_path.parent
+    bundle = _bundle_root(fixtures_path)
     _manifest, tracks = waveform_lane.load_bundle(bundle)
     results = {}
     for track in tracks:

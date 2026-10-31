@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -276,10 +277,21 @@ def test_state_is_single_use() -> None:
 
 
 def test_expired_state_is_rejected() -> None:
-    pending_logins = PendingLoginStore(ttl_seconds=0)
-    pending = pending_logins.create("http://127.0.0.1:9418/api/v1/auth/callback")
+    """[if] a pending login outlives its TTL [then] consume rejects it, [else stop].
+
+    Real clock, not ttl_seconds=0: with a coarse monotonic clock (about 15.6 ms
+    on Windows) create and consume can read the same tick, so a zero TTL had
+    not yet expired there. A one-second TTL and a real wait past it expire on
+    every platform.
+    """
+    pending_logins = PendingLoginStore(ttl_seconds=1)
+    url = "http://127.0.0.1:9418/api/v1/auth/callback"
+    fresh = pending_logins.create(url)
+    pending_logins.consume(fresh.state)  # control: inside the TTL it is accepted
+    stale = pending_logins.create(url)
+    time.sleep(1.5)
     with pytest.raises(AuthFlowError):
-        pending_logins.consume(pending.state)
+        pending_logins.consume(stale.state)
 
 
 def test_each_login_gets_a_distinct_state_and_verifier() -> None:
@@ -401,6 +413,44 @@ def test_login_returns_a_consent_url_when_configured(
     ).json()
     assert body["redirect_uri"] == "http://127.0.0.1:9418/api/v1/auth/callback"
     assert body["state"] in body["authorization_url"]
+
+
+@pytest.mark.requirement("UIURL-01")
+@pytest.mark.parametrize("port", [7700, 9418, 65535])
+def test_login_from_the_named_host_signs_in_through_its_loopback_twin(port: int) -> None:
+    """[if] sign-in starts on opendj.localhost [then] Google gets the 127.0.0.1 twin, [else stop].
+
+    Runs the route's own origin check, the production code that picks the
+    redirect origin, with no environment patching and no OAuth config: the
+    rewrite happens before any credential is read. A live Google consent
+    round trip is UNAVAILABLE in CI (no real client credentials); the PR
+    body says so under "Not verified".
+    """
+    named = f"http://opendj.localhost:{port}"
+    assert auth_routes._validate_loopback_origin(named) == f"http://127.0.0.1:{port}"
+    # A loopback origin is returned as is: only the named host is rewritten.
+    assert auth_routes._validate_loopback_origin(f"http://127.0.0.1:{port}") == (
+        f"http://127.0.0.1:{port}"
+    )
+
+
+@pytest.mark.requirement("UIURL-01")
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://opendj.localhost.evil.com:9418",
+        "http://opendj.localhost:9418@evil.example.com",
+        "https://opendj.localhost:9418",
+        "http://opendj.localhost:notaport",
+        "http://opendj.localhost:99999",
+        "http://127.0.0.1:notaport",
+    ],
+)
+def test_named_host_lookalikes_are_refused_as_422(origin: str) -> None:
+    """[if] an origin only resembles opendj.localhost [then] 422, never a twin, [else stop]."""
+    with pytest.raises(HTTPException) as excinfo:
+        auth_routes._validate_loopback_origin(origin)
+    assert excinfo.value.status_code == 422
 
 
 # ----- origin validation --------------------------------------------------

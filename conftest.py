@@ -51,7 +51,7 @@ os.environ["MUSIC_DJ_AUTO_ANALYZE"] = "off"
 import pytest
 
 # Register the reqs plugin (coverage-matrix.md writer + --live-db gate), and the
-# SMARTEST-CI tier plugins (specs/ci-fail-fast.md round 6a). They are registered
+# SMARTEST-CI tier plugins ((private path) round 6a). They are registered
 # HERE and not with `-p` on the command line because `.venv/bin/pytest` (the
 # console script ci.yml runs) does not put the checkout on sys.path, so
 # `-p scripts.x` dies with "No module named 'scripts'" before any option is
@@ -143,10 +143,10 @@ def rb_plain_db_path() -> Path:
     read-write mode. Use ``tmp_rb_db`` or ``rb_plain_conn`` for any test
     that needs to mutate.
 
-    Resolution goes through ``tests.fixtures._resolver`` rather than a
+    Resolution goes through ``apps.sync.usb.pioneer.fixture_resolver`` rather than a
     hard-coded path, because this fixture is leaving the repository: it
     carries real track titles, real Spotify IDs and real filesystem paths
-    from the maintainer's library (docs/oss-going-public-checklist.md, blocker 2).
+    from the maintainer's library ((private path), blocker 2).
     The resolver prefers the committed directory when it is present and
     falls back to the ``rekordbox.extern`` marker afterwards, so this keeps
     working on both sides of the history rewrite with no flag day.
@@ -155,7 +155,7 @@ def rb_plain_db_path() -> Path:
     content is checksum-verified against ``rekordbox.manifest.json`` (see
     ``_verify_rb_fixture_checksum``) before the path is handed to callers.
     """
-    from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
+    from apps.sync.usb.pioneer.fixture_resolver import FixtureNotAvailable, fixture_path
 
     try:
         candidate = fixture_path("rekordbox") / "master.plain.db"
@@ -171,7 +171,7 @@ def rb_plain_db_path() -> Path:
             "sitting in tests/fixtures/rekordbox/ once that directory is no "
             "longer tracked (`.gitignore` guards against re-adding it, but "
             "the file would still carry real track titles, Spotify IDs and "
-            "filesystem paths -- see docs/oss-going-public-checklist.md "
+            "filesystem paths -- see (private path) "
             "blocker 2)."
         )
     if not candidate.is_file():
@@ -205,7 +205,7 @@ def tmp_rb_db(rb_plain_db_path: Path, tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# External-host fixtures (LaCie). See tests/fixtures/_resolver.py.
+# External-host fixtures (LaCie). See apps/sync/usb/pioneer/fixture_resolver.py.
 #
 # We expose ``big_usb_fixture`` at the repo-root conftest so it's visible to
 # every test under tests/, not just tests/fixtures/. It returns the resolved
@@ -225,10 +225,7 @@ def big_usb_fixture():
     subpath is missing — cloning the repo on a fresh machine must not
     break the suite.
     """
-    # Local import so tests/fixtures/_resolver.py stays optional: a
-    # fresh clone without the resolver module (unlikely but defensible)
-    # still collects the rest of the suite.
-    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+    from apps.sync.usb.pioneer.fixture_resolver import (
         FixtureNotAvailable,
         fixture_path,
     )

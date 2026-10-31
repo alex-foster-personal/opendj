@@ -101,12 +101,12 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor, presentationTickFailure } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
 	armXrunSentinel,
-	disarmContextInstrumentation,
+	disarmContextInstrumentation, handleAudioContextStateChange,
 	resumeAudioContextOrReportDead,
 	stampContextDeviceFloors
 } from '$lib/rb/audio-context-instrumentation';
@@ -136,9 +136,10 @@ import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckSte
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
+	anlzTrackRevision,
 	currentAnlzFetchGeneration,
 	fetchAnlzForDeckLoad,
-	fetchAnlzUntilSourceConfirmed,
+	fetchAnlzUntilTrackCurrent,
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
 	installAuthoritativeAnlzErrorSink,
@@ -295,11 +296,12 @@ import {
 	playbackReachedSafetyLoopOut,
 	freshFourBeatAnchorMs,
 	quantizedLoopEndpointsMs,
+	gridSeekDecisionMs, loopGridBeats,
 	quantizedPositionMs,
-	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
 	resolvedLoopState,
 	shiftLiveBeatLoopRangeMs,
+	snappedPositionMs,
 	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
 import {
@@ -319,7 +321,7 @@ import {
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
 	scheduleOffsetStages,
-	stretchScheduleChange,
+	autoCueRestartSec, stretchScheduleChange,
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
 export { stretchScheduleChange };
@@ -407,7 +409,7 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock, clampSeekTargetMs };
-export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
+export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock, presentationTickFailure };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
 // module in src ever reached its pure surface through this barrel, and a
@@ -907,7 +909,8 @@ function _ensureGraph(): AudioContext {
 		armAudioContextWatchdog(
 			_ctx,
 			() => DECK_IDS.some((deck) => deckStates[deck].playing),
-			rebuildAudioGraphKeepingDecks
+			rebuildAudioGraphKeepingDecks,
+			(state) => handleAudioContextStateChange(state, DECK_IDS.map((deck) => deckStates[deck]), _ensureRaf)
 		);
 		setPlayingPositionReader(() =>
 			DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
@@ -1188,14 +1191,6 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
 	const beats = st.anlz?.beatgrid.beats;
 	return effectiveQuantize(st) && beats !== undefined ? beats : null;
-}
-
-function _quantizeGridBeats(st: DeckState): 1 | 4 | 8 {
-	const beats = st.quantize_grid_beats;
-	if (beats === 'phase') {
-		throw new Error(`quantize_grid_beats: deck ${st.deck_id} is 'phase', which is not implemented and must never reach a snap calculation`);
-	}
-	return beats;
 }
 
 function _assignMaster(deck: DeckId | null, reason?: MasterReason, levels?: { masterDb: number; toDb: number | null }): void {
@@ -3287,6 +3282,7 @@ class RbAudioEngine implements AudioEngine {
 		const stableId = st.stable_id;
 		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
 		const generation = currentAnlzFetchGeneration();
+		const revision = anlzTrackRevision(stableId);
 		const [initialFresh, slots] = await Promise.all([
 			fetchAnlzBypassingHttpCache(stableId),
 			fetchHotCueSlots(stableId)
@@ -3302,16 +3298,19 @@ class RbAudioEngine implements AudioEngine {
 		// an EXTERNAL client's direct source toggle, which never bumps it
 		// (discussion_r3978049099 P1 BLOCKING). Hot-cue slots are not
 		// source-dependent, so the ones already fetched stay valid either way.
-		const fresh =
-			generation === currentAnlzFetchGeneration() && anlzMatchesConfirmedSource(initialFresh)
-				? initialFresh
-				: await fetchAnlzUntilSourceConfirmed(() => fetchAnlzBypassingHttpCache(stableId));
-		if (st.stable_id !== stableId) return; // deck was swapped mid-request
-		refreshAnlzCacheEntry(stableId, fresh);
-		st.anlz = rawAnlz(fresh);
-		st.hot_cues = _hotCuesFromSlots(slots);
-		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
-		st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
+		// A grid edit mid-flight supersedes it too (fetchAnlzUntilTrackCurrent),
+		// which installs in the same synchronous step as its revision check.
+		const install = (fresh: AnlzData): void => {
+			if (st.stable_id !== stableId) return; // deck was swapped mid-request
+			refreshAnlzCacheEntry(stableId, fresh);
+			st.anlz = rawAnlz(fresh);
+			st.hot_cues = _hotCuesFromSlots(slots);
+			st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
+			st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);
+		};
+		const current = generation === currentAnlzFetchGeneration() && revision === anlzTrackRevision(stableId);
+		if (current && anlzMatchesConfirmedSource(initialFresh)) install(initialFresh);
+		else await fetchAnlzUntilTrackCurrent(stableId, () => fetchAnlzBypassingHttpCache(stableId), install);
 	}
 
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
@@ -3332,22 +3331,15 @@ class RbAudioEngine implements AudioEngine {
 			pendingScheduleCount: rt.pending.length,
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
-		// Finished tracks restart from 0 via the paused-seek cursor (not an
-		// optimistic playing position); schedule then publishes presentation.
-		const resumeSec = playResumePositionSec(
-			st.position_ms / 1000,
-			rt.durationSec,
-			st.loop
-		);
+		// Finished tracks restart from 0 (DECKCTL-6235: from the cue with AU on) via
+		// the paused-seek cursor; schedule then publishes presentation.
+		const restartSec = autoCueRestartSec(uiPrefs.deck_autocue, st.cue_ms, rt.durationSec);
+		const resumeSec = playResumePositionSec(st.position_ms / 1000, rt.durationSec, st.loop, restartSec);
 		if (!needsScheduledMutation) _setPausedPosition(deck, resumeSec * 1000);
 		const ctx = await _resumeContext();
 		const startSec: number | ((effectiveWhen: number) => number) = needsScheduledMutation
-			? (effectiveWhen) =>
-					playResumePositionSec(
-						_projectPositionAt(deck, effectiveWhen),
-						rt.durationSec,
-						st.loop
-					)
+			? (effectiveWhen) => playResumePositionSec(
+				_projectPositionAt(deck, effectiveWhen), rt.durationSec, st.loop, restartSec)
 			: resumeSec;
 		const syncClock = _syncClockMaster();
 		const owned = _ownedMaster();
@@ -3420,7 +3412,7 @@ class RbAudioEngine implements AudioEngine {
 				pressT0Ms
 			);
 			const cueMs = pauseBeats !== null
-				? quantizedPositionMs(pauseBeats, positionSec * 1000, true, _quantizeGridBeats(st))
+				? snappedPositionMs(pauseBeats, st.anlz?.phrases, positionSec * 1000, st.quantize_grid_beats)
 				: positionSec * 1000;
 			st.cue_ms = cueMs;
 			if (st.slip_active) _clearSlip(deck);
@@ -3438,7 +3430,7 @@ class RbAudioEngine implements AudioEngine {
 		const durMs = _durationSec(deck) * 1000;
 		ms = clampSeekTargetMs(ms, durMs, 'cueJump');
 		const seekBeats = _quantizeGrid(st);
-		const { targetMs, exitLoop } = quantizedSeekDecisionMs(seekBeats, ms, _quantizeGridBeats(st), skipGridQuantize, st.loop);
+		const { targetMs, exitLoop } = gridSeekDecisionMs(seekBeats, st.anlz?.phrases, ms, st.quantize_grid_beats, skipGridQuantize, st.loop);
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
@@ -3517,6 +3509,14 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
+	/** DECKCTL-6235: AU parks a fresh, paused load at `ms` as its cue (a playing deck stays put). */
+	parkAtCue(deck: DeckId, ms: number): void {
+		const { st, rt } = _requireLoaded(deck, 'parkAtCue');
+		if (st.playing || st.audible || rt.controlActive || rt.pending.length > 0) return;
+		st.cue_ms = ms;
+		_setPausedPosition(deck, ms);
+	}
+
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
 	 * set the cue at the current position. Q1: see `play` for the stamp; the
@@ -3533,7 +3533,7 @@ class RbAudioEngine implements AudioEngine {
 			const cueBeats = _quantizeGrid(st);
 			st.cue_ms =
 				cueBeats !== null
-					? quantizedPositionMs(cueBeats, st.position_ms, true, _quantizeGridBeats(st))
+					? snappedPositionMs(cueBeats, st.anlz?.phrases, st.position_ms, st.quantize_grid_beats)
 					: st.position_ms;
 		} else {
 			await this.quantizedSeek(deck, st.cue_ms, undefined, pressT0Ms);
@@ -3624,7 +3624,11 @@ class RbAudioEngine implements AudioEngine {
 	/** The engine's AudioContext clock, for projecting an armed hot-cue
 	 * trigger's remaining wait without exposing the context itself. */
 	contextTimeNowSec(): number {
-		if (_ctx === null) throw new Error('contextTimeNowSec: audio graph not initialised');
+		// IPC query reads armed snapshots inside `$derived` before the graph
+		// exists; a throw becomes a window-error flood (#6649). No graph means
+		// no audio clock yet: act as "now" is infinitely far ahead so every
+		// armed target_context_time / launch_at_context_sec reads as expired.
+		if (_ctx === null) return Number.POSITIVE_INFINITY;
 		return _ctx.currentTime;
 	}
 	stepState(stepId: string): 'waiting' | 'landed' | 'cancelled' | 'lost' | null { return _steps.state(stepId); } forgetStep(stepId: string): void { _steps.forget(stepId); } // AGENT-30: owned here, never inferred; kept until its runner forgets it
@@ -3702,14 +3706,15 @@ class RbAudioEngine implements AudioEngine {
 		pitchRanges[deck] = range;
 	}
 
-	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {
-		await this._setLoop(deck, loop, null);
+	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null, quantize = true): Promise<void> {
+		await this._setLoop(deck, loop, null, quantize);
 	}
 
-	/** Beat-loop callers already resolved endpoints from PQTZ. Do not re-snap
+	/** Beat-loop callers already resolved endpoints from PQTZ, and a stored
+	 * loop (quantize false, DECKCTL-6235d) is engaged as saved. Do not re-snap
 	 * those to the manual loop grid: that would collapse fractional loops. */
 	private async _setLoop(
-		deck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null
+		deck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null, quantize = true
 	): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setLoop');
 		const wasPlaying = st.playing;
@@ -3739,7 +3744,7 @@ class RbAudioEngine implements AudioEngine {
 		const loopBeats = _quantizeGrid(st);
 		const nextLoop = resolvedLoopState(
 			loop, beatLength, _durationSec(deck) * 1000, loopBeats,
-			loopBeats !== null && beatLength === null ? _quantizeGridBeats(st) : null
+			loopBeats !== null && beatLength === null && quantize ? loopGridBeats(st.quantize_grid_beats) : null
 		);
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
@@ -3908,9 +3913,9 @@ class RbAudioEngine implements AudioEngine {
 		}
 	}
 
-	setQuantizeGrid(deck: DeckId, beats: Exclude<QuantizeGrid, 'phase'>): void {
-		if (beats !== 1 && beats !== 4 && beats !== 8) {
-			throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
+	setQuantizeGrid(deck: DeckId, beats: QuantizeGrid): void {
+		if (beats !== 1 && beats !== 4 && beats !== 8 && beats !== 'phase') {
+			throw new TypeError("setQuantizeGrid: beats must be 1, 4, 8, or 'phase'");
 		}
 		const st = deckStates[deck];
 		st.quantize_grid_beats = beats;

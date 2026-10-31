@@ -149,7 +149,7 @@ def _admits_null(prop: dict[str, Any]) -> bool:
     return any(b.get("type") == "null" for b in branches)
 
 
-@pytest.mark.parametrize("key", ["show_pads", "auto_play_two_deck", "perf_view"])
+@pytest.mark.parametrize("key", ["show_pads", "auto_play_two_deck", "perf_view", "deck_autocue"])
 def test_the_contract_does_not_advertise_null_for_view_prefs(key: str) -> None:
     # The server refuses an explicit null for these with 422, so the request
     # contract offers them as omittable but never nullable (Sol P1 4302581642),

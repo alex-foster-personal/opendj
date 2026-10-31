@@ -39,9 +39,10 @@ Requirements (mini-PRD)
 Usage
   sync_untracked.py worktree ../music-dj-tools-wt-foo        # plan
   sync_untracked.py worktree ../music-dj-tools-wt-foo --live
-  sync_untracked.py push silver --live
-  sync_untracked.py pull silver --live
-  sync_untracked.py status silver
+  sync_untracked.py push <ssh-host> --live
+  sync_untracked.py pull <ssh-host> --live
+  sync_untracked.py status <ssh-host>
+  (remote checkout per host: MDT_SYNC_REMOTE_CHECKOUTS, default ~/code/music-dj-tools)
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -77,15 +79,16 @@ FORBIDDEN_ROOTS: tuple[str, ...] = (
     "data/", ".tmp/", ".venv/", "node_modules/", ".claude/", ".git/",
     ".mypy_cache/", "blog/", "downloads/",
 )
-REMOTE_PATHS: dict[str, str] = {
-    "agentbox": "~/code/music-dj-tools",
-}
-#: Env override for Silver's checkout path, resolved fresh (not cached at
-#: import time) so a test can set/unset it per case. Resolved on the REMOTE
-#: host, not locally -- "~/..." is portable there the same way it already is
-#: for agentbox above. #910: no personal absolute path is hardcoded here;
-#: unset falls back to the same portable form agentbox uses.
-SILVER_CHECKOUT_ENV: str = "MDT_SILVER_CHECKOUT"
+#: Remote checkout used for any host without an entry below. "~/..." is
+#: resolved on the REMOTE host, so it is portable across machines (#910).
+DEFAULT_REMOTE_CHECKOUT: str = "~/code/music-dj-tools"
+#: Per-host remote checkout paths, ``host=path`` entries separated by commas,
+#: e.g. ``mac-mini=/Volumes/work/music-dj-tools`` (issue #5639, .env.sample).
+#: No host name is built in; unset or blank means every host uses the default.
+REMOTE_CHECKOUTS_ENV: str = "MDT_SYNC_REMOTE_CHECKOUTS"
+#: Stage-1 alias for the old single-host variable, read as ``silver=<value>``
+#: so a machine that set it keeps its path. Stage 2 of #5639 deletes it.
+LEGACY_SILVER_CHECKOUT_ENV: str = "MDT_SILVER_CHECKOUT"
 
 
 # -----------------------------------------------------------------------------
@@ -338,10 +341,33 @@ def do_worktree(repo: Path, dest: Path, live: bool) -> int:
     return 0
 
 
-def _remote_root(host: str) -> str:
-    if host == "silver":
-        return os.environ.get(SILVER_CHECKOUT_ENV, "~/code/music-dj-tools")
-    return REMOTE_PATHS.get(host, "~/code/music-dj-tools")
+def remote_checkouts(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """{host: remote checkout} from MDT_SYNC_REMOTE_CHECKOUTS (+ the legacy alias).
+
+    Read per call, not at import. A malformed entry, or the legacy alias
+    disagreeing with an explicit ``silver=`` entry, raises naming the variable
+    rather than syncing into a guessed directory.
+    """
+    env = os.environ if environ is None else environ
+    checkouts: dict[str, str] = {}
+    for entry in (env.get(REMOTE_CHECKOUTS_ENV) or "").split(","):
+        if not entry.strip():
+            continue
+        host, sep, path = (part.strip() for part in entry.partition("="))
+        if not (sep and host and path):
+            raise ValueError(f"{REMOTE_CHECKOUTS_ENV}: expected host=path, got {entry.strip()!r}")
+        checkouts[host] = path
+    legacy = (env.get(LEGACY_SILVER_CHECKOUT_ENV) or "").strip()
+    if legacy and checkouts.setdefault("silver", legacy) != legacy:
+        raise ValueError(
+            f"{LEGACY_SILVER_CHECKOUT_ENV}={legacy!r} disagrees with silver={checkouts['silver']!r} "
+            f"in {REMOTE_CHECKOUTS_ENV}; unset the legacy variable"
+        )
+    return checkouts
+
+
+def _remote_root(host: str, environ: Mapping[str, str] | None = None) -> str:
+    return remote_checkouts(environ).get(host, DEFAULT_REMOTE_CHECKOUT)
 
 
 def _remote_hash_script(root: str, files: list[str]) -> str:

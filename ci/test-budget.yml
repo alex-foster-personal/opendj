@@ -1,37 +1,51 @@
-# Runner-minute budget per pytest run (TEST-BUDGET round 0, Fri 30 Oct 2026).
+# Runner-minute budget per pytest run (TEST-BUDGET round 0, Fri 30 Oct 2026; round 5 made it a
+# hard cap the same day).
 #
 # A PR head or a queue draft may spend this many runner minutes across its five fast-lane
 # shards. The selector (scripts/ci_test_selection.py, `--budget ci/test-budget.yml`) prices
-# its selection with the model below and, when over budget, drops weak-link modules heaviest
-# first until it fits. Strong links (import graph, `CI-Tests:` declarations, the always-run
-# guards) are never dropped: when they alone exceed the budget the run is marked over_budget
-# and runs them all. Dropped modules are listed in selection.json so an escape can be
-# attributed to the budget; the nightly full suite (full-ci.yml) and the trunk checkpoint
-# still run everything. Decision record: (private path).
+# its selection with the model below and trims it to fit the way `cap` says. Dropped modules
+# are listed in selection.json so an escape can be attributed to the budget; the nightly full
+# suite (full-ci.yml) and the trunk checkpoint (every push to main) still run everything, and
+# the checkpoint reverts what escapes. Decision records:
+# (private path), (private path).
 #
-# Why 20: fleet-af ci--whatif `whatif queue` round 1 ((private path)): on the 14 runner
-# seats that work, today's draft (median 95 runner-min, 63 of them pytest) carries 55 to 85
-# merges a day; at 20 runner-min per run the same queue carries about 370. The shards are
-# the first and largest piece of that; the e2e gate (22) and the fixed jobs (12) follow.
-version: 1
+# Why 10 (the maintainer, Fri 30 Oct 2026): "What if we set max 10 total runner minutes as a rule and
+# intelligent selection just gets to choose which tests it's allowed to run?" The queue
+# simulator (fleet-af ci--whatif, (private path) round 2) says 10 runner-minutes a run
+# merges 460 a day on the 14 seats that work with a 57 minute median wait; the test rounds
+# before this one left a run at about 53, which the same seats turn into 220 to 290 a day.
+# Measured on the last 80 merged PRs (59 selections): the direct importers of a change run
+# median 0.1, p90 3.1, max 10.3 ledger-min against the 9.25 ledger-min a 10 runner-min run leaves
+# after shard overhead (the max prices at 10.84 runner-min), so the cap cuts at most 6 of the 59
+# (the count above 9.25 was not re-measured; p90 bounds it). The whole import reach exceeds it
+# on 25 of 59.
+version: 2
 
 runner_minutes:
-  pr_head: 20
-  queue_draft: 20
+  pr_head: 10
+  queue_draft: 10
+
+# `hard`: rank every selected module by distance from the change (0 the changed module itself
+# and `CI-Tests:` declarations, 1 its direct importers and test-area data, 2 the whole-tree
+# guards, 3 named references, 4 couplings, n for n import hops, a conftest's reach one past
+# the conftest), then by recorded seconds ascending, and keep the nearest until the budget is
+# spent. `weak-links`: round 0's rule, drop only the weak links listed in `drop_order` and let
+# strong links exceed the budget.
+cap: hard
 
 # Cost model fitted on 258 PR-head runs (R2 0.885) by fleet-af ci--whatif
 # (src/ci_whatif/cost.py, the TEST-CUT instrument): shard runner minutes =
-# shards x overhead + ledger minutes x per_ledger_minute. The first time it is written down here.
+# shards x overhead + ledger minutes x per_ledger_minute. Five shards cost 2.6 of the 10
+# before a test runs, which leaves 9.25 ledger-minutes of tests per run.
 model:
   overhead_min_per_shard: 0.52
   min_per_ledger_minute: 0.80
   shards: 5
 
-# Weak-link rules a budget may drop, in the order they are dropped (the first entry goes
-# first). A module kept by any rule not listed here is strong and never dropped: the import
-# graph and test-area data (direct evidence, (private path)), `CI-Tests:` declarations
-# and the always-run guards. The strings are the reason prefixes
-# scripts/ci_test_selection_rules.py records.
+# Weak-link rules the `weak-links` cap may drop, in the order they are dropped: round 0's rule as
+# shipped, where test-area data is a STRONG link and is never dropped. The strings are the reason
+# prefixes scripts/ci_test_selection_rules.py records. The hard cap ranks by distance instead and
+# reads this list only to stay loadable under either cap.
 drop_order:
   - "coupling `"
   - "named reference"

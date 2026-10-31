@@ -167,7 +167,7 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 			id: `load-${deck}`,
 			label: `Load to deck ${deck}`,
 			command: 'deck.load',
-			when: (ctx) => ctx.workspace === 'performance',
+			// LIBWS-06: in Library mode the load opens Gig with the track on that deck.
 			disabledWhen: (ctx) => (ctx.audio === 'missing' ? NO_LOCAL_AUDIO.missing : null),
 			title: () => `opendj load ${deck} {stable_id}`,
 			testId: () => `context-menu-load-deck-${deck}`

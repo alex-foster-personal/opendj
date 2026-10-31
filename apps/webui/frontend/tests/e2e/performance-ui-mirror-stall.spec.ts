@@ -94,7 +94,7 @@ test('main-thread freeze logs mirror-stall and received_at moves forward', async
 				const receivedMoved = isReceivedAtStamp(receivedAt) && receivedAt > before;
 				return (
 					hasConsoleStall &&
-					perfStall?.severity === 'error' &&
+					perfStall?.severity === 'warn' &&
 					gapMs > 5000 &&
 					receivedMoved
 				);

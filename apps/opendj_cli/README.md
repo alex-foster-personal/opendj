@@ -33,6 +33,22 @@ opendj --json open /performance
 MCP equivalent: `open_route` with `route` defaulting to `/performance`.
 `ui_url` opens a browser tab only and does not move the shell window.
 
+## Open the UI in a browser (UIURL-02)
+
+The engine serves the whole UI, so a browser tab and the app window are the
+same library. Settings > "Open in browser" does this from the app; the agent
+twins are:
+
+```bash
+opendj open browser                 # opens http://opendj.localhost:<port>/
+opendj --json open browser          # same, prints {ui_url, loopback_url, port, opened}
+opendj api GET /api/v1/ui-url       # the address only, opens nothing
+```
+
+The packaged app asks for port 7700 first so the address survives a relaunch,
+and takes an OS-assigned port when 7700 is in use. A portless name would need
+port 80 and a privileged helper, so it is out of scope.
+
 ## CLI meta commands
 
 | Command | Purpose |

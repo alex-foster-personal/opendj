@@ -156,7 +156,7 @@ waveform-native-verify: require-venv-py
 	rm -rf $(WAVEFORM_CONSUMER_VENV)
 	uv venv --python $(PY) $(WAVEFORM_CONSUMER_VENV)
 	uv pip install --python $(WAVEFORM_CONSUMER_PY) dist/music_dj_tools-*.whl
-	FIXTURE_RB_USB_EXPORT=$$($(PY) -c "from tests.fixtures._resolver import fixture_path; print(fixture_path('rb-usb-export'))") && \
+	FIXTURE_RB_USB_EXPORT=$$($(PY) -c "from apps.sync.usb.pioneer.fixture_resolver import fixture_path; print(fixture_path('rb-usb-export'))") && \
 	cd $(WAVEFORM_CONSUMER_VENV) && \
 		MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
 		$(CURDIR)/$(WAVEFORM_CONSUMER_PY) \

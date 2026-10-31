@@ -126,6 +126,13 @@ def bool_value(key: str, raw: str) -> bool:
         raise ValueError(f"{key} must be true or false, got {raw!r}") from None
 
 
+def false_only_value(key: str, raw: str) -> bool:
+    """A flag whose only explicit value is false: omitting it is the default."""
+    if bool_value(key, raw) is not False:
+        raise ValueError(f"{key} may only be false (omit it for the default), got {raw!r}")
+    return False
+
+
 def enum_value(choices: Sequence[str]) -> Callable[[str, str], Any]:
     def parse(key: str, raw: str) -> Any:
         if raw in choices:
@@ -134,6 +141,16 @@ def enum_value(choices: Sequence[str]) -> Callable[[str, str], Any]:
             f"{key} must be one of {'|'.join(str(choice) for choice in choices)}, "
             f"got {raw!r}"
         )
+
+    return parse
+
+
+def quantize_grid_value(choices: Sequence[int]) -> Callable[[str, str], Any]:
+    """A whole-beat grid from ``choices``, or ``phase`` (DECKCTL-6235c: snap to phrase starts)."""
+    beats = int_enum_value(choices)
+
+    def parse(key: str, raw: str) -> Any:
+        return "phase" if raw == "phase" else beats(key, raw)
 
     return parse
 
@@ -155,6 +172,27 @@ def loop_value(_key: str, raw: str) -> dict[str, float]:
     """``<in_ms> <out_ms>``: the two numbers the bus nests under ``loop``."""
     in_ms, out_ms = raw.split()
     return {"in_ms": number_value("in_ms", in_ms), "out_ms": number_value("out_ms", out_ms)}
+
+
+# Mirrors GRID_ADJUST_MAX_OFFSET_MS and the whole-beat bound in
+# apps/webui/frontend/src/lib/rb/grid-edit-command.ts (parseGridEditIntent).
+GRID_EDIT_MAX_OFFSET_MS = 500.0
+GRID_EDIT_MAX_STEP_BEATS = 3
+
+
+def grid_edit_value(key: str, raw: str) -> dict[str, Any]:
+    """``adjust|shift`` resets that part; ``<offset_ms>[:<beats>]`` nudges the grid."""
+    token = raw.strip()
+    if token in ("adjust", "shift"):
+        return {"kind": "reset", "part": token}
+    offset_raw, _, beats_raw = token.partition(":")
+    offset_ms = number_value(key, offset_raw)
+    if abs(offset_ms) > GRID_EDIT_MAX_OFFSET_MS:
+        raise ValueError(f"{key} offset_ms must be within +/-{GRID_EDIT_MAX_OFFSET_MS:g}; got {offset_raw}")
+    beats = int_value(key, beats_raw) if beats_raw != "" else 0
+    if abs(beats) > GRID_EDIT_MAX_STEP_BEATS:
+        raise ValueError(f"{key} beats must be a whole number within +/-{GRID_EDIT_MAX_STEP_BEATS}; got {beats_raw}")
+    return {"kind": "nudge", "offset_ms": offset_ms, "beats": beats}
 
 
 def rescue_decks_value(key: str, raw: str) -> list[dict[str, Any]]:

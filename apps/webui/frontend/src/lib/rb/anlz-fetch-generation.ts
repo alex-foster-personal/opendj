@@ -37,3 +37,21 @@ export function currentAnlzFetchGeneration(): number {
 export function bumpAnlzFetchGeneration(): void {
 	_generation += 1;
 }
+
+/** Per-track revision of what /anlz serves, bumped when a write changes one
+ * track's payload (GRIDEDIT-6235c: a grid edit). A fetch issued under an older
+ * revision may carry the pre-edit grid, so it must not publish over the
+ * refresh that follows the edit; `fetchAnlz` also folds it into its in-flight
+ * dedupe key, so a fetch issued after the edit never joins one from before. */
+const _trackRevision = new Map<string, number>();
+
+export function anlzTrackRevision(stable_id: string): number {
+	return _trackRevision.get(stable_id) ?? 0;
+}
+
+/** Bump `stable_id`'s revision and return the new one. */
+export function bumpAnlzTrackRevision(stable_id: string): number {
+	const revision = anlzTrackRevision(stable_id) + 1;
+	_trackRevision.set(stable_id, revision);
+	return revision;
+}

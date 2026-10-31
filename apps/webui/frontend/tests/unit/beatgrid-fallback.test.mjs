@@ -195,7 +195,8 @@ test('withFallbackBeatgrid swaps the grid, restamps the source, and returns a ne
 
 	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
 
-	assert.deepEqual(merged.beatgrid, fallback.beatgrid);
+	// The grid is marked as the fallback, so the deck refuses grid edits on it (Codex P2, PR #6235).
+	assert.deepEqual(merged.beatgrid, { ...fallback.beatgrid, fallback: true });
 	assert.equal(merged.beatgrid_source, 'own');
 	assert.equal(merged.beatgrid_own_unavailable_reason, null);
 	// Everything the real payload DID carry survives untouched - the fallback
@@ -277,7 +278,7 @@ test('toSyntheticAnlzData carries the real beatgrid through, invents nothing els
 	const synth = beatgridFallback.toSyntheticAnlzData(fallback);
 
 	assert.equal(synth.stable_id, 'abc123');
-	assert.deepEqual(synth.beatgrid, fallback.beatgrid);
+	assert.deepEqual(synth.beatgrid, { ...fallback.beatgrid, fallback: true });
 	assert.deepEqual(synth.cues, []);
 	assert.deepEqual(synth.phrases, []);
 	assert.deepEqual(synth.vocals, { status: 'not_analyzed' });
@@ -396,7 +397,7 @@ test('resolvePaintAnlz: real payload wins, fallback merges into a gridless one o
 	const gridless = anlzWithBeats([]);
 	assert.equal(beatgridFallback.resolvePaintAnlz(gridless, null), gridless);
 	const merged = beatgridFallback.resolvePaintAnlz(gridless, fallback);
-	assert.deepEqual(merged.beatgrid, fallback.beatgrid);
+	assert.deepEqual(merged.beatgrid, { ...fallback.beatgrid, fallback: true });
 	assert.equal(merged.beatgrid_source, 'own');
 	// A stale ANALYSIS_NOT_FOUND entry beside a deck that holds a real grid:
 	// the real grid wins and nothing throws (withFallbackBeatgrid would).

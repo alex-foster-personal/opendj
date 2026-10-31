@@ -8,13 +8,14 @@
  * it is deliberately downstream of them and nothing here is a wire shape.
  */
 
-import type { AnlzData } from './anlz-types';
+import type { AnlzBeat, AnlzBeatgridEdit, AnlzBeatgridSource, AnlzCue, AnlzData } from './anlz-types';
 import type { DeckId } from './deck-slots';
 import type { HotCue, HotCueSlot } from './hot-cue-types';
 import type { StemDeckState } from './stem-types';
 
-/** Re-exported so a deck-state consumer reads a deck's cue types from here. */
-export type { HotCue, HotCueSlot };
+/** Re-exported so deck components and the dispatcher take the deck's own
+ * id and hot-cue types from one module (frontend coupling ratchet). */
+export type { AnlzBeat, AnlzBeatgridEdit, AnlzBeatgridSource, AnlzCue, AnlzData, DeckId, HotCue, HotCueSlot };
 
 /** Beat Sync phase target. Beat mode matches the closest beat; bar mode also
  * requires the follower PQTZ beat number (1..4) to match the master. */

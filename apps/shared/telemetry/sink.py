@@ -90,7 +90,7 @@ def sink_path(environ: Mapping[str, str] | None = None, home: Path | None = None
     if job_host_sink.parent.is_dir():
         return job_host_sink
     mac_logs = home / "Library" / "Logs"
-    if sys.platform == "darwin" or mac_logs.is_dir():
+    if sys.platform == "darwin":
         return mac_logs / "opendj" / "error-sink.jsonl"
     return home / ".local" / "share" / "opendj" / "error-sink.jsonl"
 

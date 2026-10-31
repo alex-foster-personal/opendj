@@ -612,7 +612,14 @@ def list_midi_maps(request: Request) -> MidiMapListOut:
         return MidiMapListOut(maps=[])
     # A file that will not parse is surfaced, never skipped: silently hiding a
     # broken map is how a controller "just stops working" with no explanation.
-    return MidiMapListOut(maps=[_summarize(_read(p)) for p in sorted(maps_dir.glob("*.json"))])
+    # A file deleted between the glob and the read is simply no longer installed.
+    summaries: list[MidiMapSummary] = []
+    for path in sorted(maps_dir.glob("*.json")):
+        try:
+            summaries.append(_summarize(_read(path)))
+        except FileNotFoundError:
+            continue
+    return MidiMapListOut(maps=summaries)
 
 
 @router.get("/catalog", response_model=CatalogOut, response_model_by_alias=True)

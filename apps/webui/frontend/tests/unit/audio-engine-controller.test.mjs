@@ -206,7 +206,7 @@ test('engine disposal resets all route-owned reactive state and is safe without 
 
 	assert.equal(audio.getDeckState(1).quantize_enabled, true);
 	assert.equal(audio.getDeckState(1).stable_id, null);
-	assert.equal(audio.mixerState.channels[1].trim, 0.5);
+	assert.equal(audio.mixerState.channels[1].trim, 10 ** (-6 / 20) / 2);
 	assert.equal(audio.mixerState.crossfader, 0.5);
 	assert.equal(audio.mixerState.master, 1);
 });

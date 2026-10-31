@@ -19,7 +19,11 @@ import {
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { anlzSourceMatchesSelection } from '$lib/rb/beatgrid-source-basis';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
-import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+import {
+	anlzTrackRevision,
+	bumpAnlzTrackRevision,
+	currentAnlzFetchGeneration
+} from '$lib/rb/anlz-fetch-generation';
 import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 import {
 	applyAnlzCaps,
@@ -56,7 +60,7 @@ export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 // Re-exported so a caller that already imports this module for the cache
 // itself (audio-engine.svelte.ts) can read the fetch generation through the
 // same edge, rather than adding a second one to anlz-fetch-generation.ts.
-export { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+export { anlzTrackRevision, currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 // STRUCT-06: re-exported so analysis-source reaches the /anlz layer's sections
 // token through the edge it already has.
 export { noteSectionsAnnounced } from '$lib/rb/api-rb';
@@ -113,12 +117,17 @@ export { isAnlzEntryUsable, isRetryableAnlzData } from '$lib/components/rb/wave/
  * than leaving it stuck forever (discussion_r3975650980 P2 BLOCKING). */
 function _fetchAndPublish(stable_id: string): void {
 	const generation = currentAnlzFetchGeneration();
+	const revision = anlzTrackRevision(stable_id);
+	// A grid edit mid-flight supersedes this fetch the same way a source
+	// switch does: the edit's own refresh publishes the edited grid.
+	const superseded = (): boolean =>
+		generation !== currentAnlzFetchGeneration() || revision !== anlzTrackRevision(stable_id);
 	_cache.set(stable_id, { status: 'loading', generation });
 	const startedAt = performance.now();
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
-			if (generation !== currentAnlzFetchGeneration()) {
+			if (superseded()) {
 				_discardSuperseded(stable_id, generation);
 				return;
 			}
@@ -126,7 +135,7 @@ function _fetchAndPublish(stable_id: string): void {
 		},
 		(err: unknown) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
-			if (generation !== currentAnlzFetchGeneration()) {
+			if (superseded()) {
 				_discardSuperseded(stable_id, generation);
 				return;
 			}
@@ -556,9 +565,35 @@ export function resolveDisplayedAnlz(
  * way `_fetchAndPublish` does, since it still publishes its returned payload
  * after audio decoding regardless. */
 export async function fetchAnlzForDeckLoad(stable_id: string): Promise<AnlzData> {
-	const data = await fetchAnlzUntilSourceConfirmed(() => fetchAnlz(stable_id));
-	_publishAnlzResult(stable_id, data);
-	return data;
+	return fetchAnlzUntilTrackCurrent(
+		stable_id,
+		() => fetchAnlz(stable_id),
+		(data) => {
+			_publishAnlzResult(stable_id, data);
+			return data;
+		}
+	);
+}
+
+/** Like `fetchAnlzUntilSourceConfirmed`, but also retries an answer whose
+ * fetch was issued before a write changed this track's /anlz (a grid edit,
+ * `refetchAnlzCacheEntry`): published, that answer would revert the edited
+ * grid the edit's own refresh just installed (Codex P1 BLOCKING, PR #6235).
+ *
+ * `publish` runs in the same synchronous step as the revision check, never
+ * after an `await` of this function: an edit's refresh could otherwise bump
+ * the revision in that microtask gap and still be overwritten (Sol P1
+ * BLOCKING, PR #6235). */
+export async function fetchAnlzUntilTrackCurrent<R>(
+	stable_id: string,
+	fetch: () => Promise<AnlzData>,
+	publish: (data: AnlzData) => R
+): Promise<R> {
+	for (;;) {
+		const revision = anlzTrackRevision(stable_id);
+		const data = await fetchAnlzUntilSourceConfirmed(fetch);
+		if (revision === anlzTrackRevision(stable_id)) return publish(data);
+	}
 }
 
 /** Retries `fetch` until its answer belongs to the CURRENT anlz-fetch
@@ -698,13 +733,18 @@ export async function resumeAnlzPrefetchOwedFetch(): Promise<void> {
  * `RbApiError` class on an ordinary fetch. */
 export function revalidateAnlz(stable_id: string): void {
 	const startedAt = performance.now();
+	// An answer to a fetch issued before a grid edit is dropped: the edit's own
+	// refresh (`refetchAnlzCacheEntry`) publishes the current payload.
+	const revision = anlzTrackRevision(stable_id);
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
-			_publishAnlzResult(stable_id, data);
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'ready');
+			if (revision !== anlzTrackRevision(stable_id)) return;
+			_publishAnlzResult(stable_id, data);
 		},
 		(err: unknown) => {
 			recordAnlzPrefetchSampled(performance.now() - startedAt, 'error');
+			if (revision !== anlzTrackRevision(stable_id)) return;
 			if (err instanceof RbApiError) {
 				// The selected source explicitly failed to revalidate: the cached
 				// entry's freshness can no longer be established, so it must not
@@ -737,6 +777,32 @@ export function refreshAnlzCacheEntry(
 	alreadyScoped = false
 ): void | Promise<void> {
 	return _publishAnlzResult(stable_id, data, alreadyScoped);
+}
+
+/** Re-reads `/anlz` past the HTTP cache and publishes it through
+ * `refreshAnlzCacheEntry`, whose authoritative-grid sink moves every loaded
+ * deck holding the track onto the new grid (GRIDEDIT-6235c: a grid edit).
+ *
+ * Bumps the track's revision first, so every /anlz fetch issued before the
+ * edit (a prefetch, a revalidation, a deck load, a hot-cue refresh) is
+ * superseded and cannot publish its pre-edit grid over this one when it
+ * settles later (Codex P1 BLOCKING, PR #6235). A later refetch supersedes
+ * this one the same way, so only the newest edit's answer publishes.
+ *
+ * The GET also retries when an analysis-source switch lands while it is in
+ * flight (or its answer disagrees with the confirmed source): a switch does
+ * not bump the track revision, and the pre-switch answer would otherwise
+ * republish the previous source's grid over the switch's own refresh (Codex
+ * P1 BLOCKING, PR #6235). */
+export async function refetchAnlzCacheEntry(stable_id: string): Promise<void> {
+	const revision = bumpAnlzTrackRevision(stable_id);
+	const data = await fetchAnlzUntilSourceConfirmed(() => fetchAnlzBypassingHttpCache(stable_id));
+	if (revision !== anlzTrackRevision(stable_id)) return;
+	// Never awaits the decks' adoption (the sink's settlement, which never
+	// rejects): it claims each deck's scope, and a grid edit calls this while
+	// holding persistence-N, so a preset queued on both would deadlock them
+	// (Codex P1 BLOCKING, PR #6235). The adoption runs once that claim frees.
+	void refreshAnlzCacheEntry(stable_id, data);
 }
 
 /** Evicts a cache entry outright, so it reads back as never-requested. Used

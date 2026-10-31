@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="6.7.7" Company="AlphaTheta"/>
+  <COLLECTION Entries="1">
+          <TRACK TrackID="1667931189" Name="My Song" Artist="Some Artist" Album="Some Album" Size="4000000" TotalTime="210" DateAdded="2026-10-17" Location="file://localhost/Volumes/Invented/Music/song.mp3"/>
+</COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="0"/>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>

@@ -91,11 +91,10 @@ apps' data: the engine's data directory comes from `DEFAULT_IDENTIFIER` in
 `src/main.ts`, not from the bundle id, so the pack opens the same library as the
 Tauri app.
 
-Close the Tauri app before starting a packed Electron build, and do not run the
-two at once. If an engine is already running on that data directory, this shell
-adopts it instead of starting its own, and quitting this shell then stops the
-adopted engine while the other app is still using it (issue
-[#6118](https://github.com/private_owner/music-dj-tools/issues/6118)).
+Close the Tauri app before starting a packed Electron build if you need a clean
+engine lifecycle. If an engine is already running on that data directory, this
+shell adopts it instead of starting its own; quitting this shell leaves an
+adopted engine running for the other app (fixed #6118; Tauri matches).
 
 Run it by hand against a payload (the same layout the dmg ships:
 `bin/opendj-engine`, optionally `runtime/bin/python3` and `bin/odj-audio`):

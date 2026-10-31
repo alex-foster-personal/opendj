@@ -117,6 +117,7 @@ import {
 	type PerfTierPrefs
 } from './perf-tier-prefs';
 import {
+	makeAutoCueRefresher,
 	makePrefsHydrator,
 	makeLibraryKeyFilterRehydrator,
 	setLibraryBrowserDiskPref,
@@ -208,6 +209,10 @@ export interface RbUiPrefs
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
+	/** DECKCTL-6235 (alpha status I11): the deck AU button. On: a loaded track
+	 * parks at its first memory cue (else its first beat), and a finished
+	 * track restarts from its cue rather than 0:00. */
+	deck_autocue: boolean;
 	/**
 	 * CUEOUT-15 R6: tempo of the library preview voice. 'tempo' matches a
 	 * playing master deck when the match fits the preview pitch range (half and
@@ -369,6 +374,7 @@ const DEFAULTS: RbUiPrefs = {
 	key_notation: DEFAULT_KEY_NOTATION,
 	library_hidden_columns: [],
 	beat_sync_max: true,
+	deck_autocue: false,
 	preview_beat_sync: 'tempo',
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
@@ -586,6 +592,12 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 	if (parsed.beat_sync_max !== undefined && typeof parsed.beat_sync_max !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (beat_sync_max is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.deck_autocue !== undefined && typeof parsed.deck_autocue !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (deck_autocue is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
 	}
@@ -857,6 +869,7 @@ function _assembleLoadedPrefs(
 		key_notation: library.key_notation ?? DEFAULTS.key_notation,
 		library_hidden_columns: library.library_hidden_columns ?? DEFAULTS.library_hidden_columns,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
+		deck_autocue: parsed.deck_autocue ?? DEFAULTS.deck_autocue,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
@@ -1070,6 +1083,59 @@ export function setBeatSyncMax(next: boolean): void {
 export function setPreviewBeatSync(next: PreviewBeatSync): void {
 	uiPrefs.preview_beat_sync = next;
 	_persist();
+}
+
+/** DECKCTL-6235: an agent's PUT of `deck_autocue` reaches an open page. */
+export const refreshAutoCueFromDisk = makeAutoCueRefresher(uiPrefs, _persist, reportSettingSaveError);
+
+/** DECKCTL-6235: the deck AU button. The write runs on the shared disk chain
+ * with the verified (throwing) PUT, so the command confirms only a saved
+ * choice (Codex P2, PR #6235). A failed save rejects; when it is the newest
+ * choice, the live value goes back to the last one disk accepted, which is
+ * the value before the first unsaved choice unless a queued save landed
+ * since, so a run of failed choices never leaves an unsaved one showing.
+ * Either way the newest choice ends by re-reading disk, since another client
+ * may have saved a value this page only learned through an event it already
+ * consumed (Codex P2, #6235). */
+let _autoCueRev = 0;
+let _autoCuePending = 0;
+let _autoCueSaved = false;
+export async function setAutoCue(next: boolean): Promise<void> {
+	if (_autoCuePending === 0) _autoCueSaved = uiPrefs.deck_autocue;
+	_autoCuePending += 1;
+	const rev = ++_autoCueRev;
+	let reread: Promise<boolean> | null = null;
+	uiPrefs.deck_autocue = next;
+	_persist();
+	try {
+		await _syncDiskPrefs({}, () => putDiskPrefsVerified({ deck_autocue: next }));
+		_autoCueSaved = next;
+		// A ui_prefs re-read that ran while this PUT was pending may have put
+		// the older disk value back, and another client may have written after
+		// this PUT landed, its event already consumed. So the newest choice
+		// shows what it saved, then settles on what disk holds now before the
+		// command confirms (Codex P2s, #6235).
+		if (rev === _autoCueRev) {
+			if (uiPrefs.deck_autocue !== next) {
+				uiPrefs.deck_autocue = next;
+				_persist();
+			}
+			reread = refreshAutoCueFromDisk();
+		}
+	} catch (error) {
+		if (rev === _autoCueRev) {
+			uiPrefs.deck_autocue = _autoCueSaved;
+			_persist();
+			void refreshAutoCueFromDisk();
+		}
+		throw error;
+	} finally {
+		_autoCuePending -= 1;
+	}
+	// Outside the try: the save landed, so a failed re-read must not roll it back.
+	if (reread !== null && !(await reread)) {
+		throw new Error('Auto cue (AU) was saved, but this page could not re-read it to confirm');
+	}
 }
 
 export function setAutoPlayEnabled(next: boolean): void {

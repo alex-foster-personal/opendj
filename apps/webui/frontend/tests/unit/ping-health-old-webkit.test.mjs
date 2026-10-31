@@ -71,3 +71,56 @@ test('pingHealth still throws on a genuine non-2xx (the timeout fallback must no
 
 	await assert.rejects(() => api.pingHealth(2000));
 });
+
+/**
+ * Boot id contract (NATIVE-5886). The next-up resend after an engine restart
+ * hangs off this value, so a response that should carry one and does not is
+ * a failed probe, never an online engine with an unknown boot.
+ *
+ * [if] the engine health carries a boot id [then] pingHealth returns it.
+ * [if] the body has none of the engine handshake fields (the legacy daemon)
+ *   [then] null [else the Backend dot goes red on a daemon that is up].
+ * [if] boot_id is missing beside other handshake fields, empty, or not a string
+ *   [then] the probe rejects [else contract drift reads as online].
+ */
+function healthResponse(body) {
+	return new Response(JSON.stringify(body), {
+		status: 200,
+		headers: { 'content-type': 'application/json' }
+	});
+}
+
+const ENGINE_HEALTH = {
+	status: 'ok',
+	version: '1',
+	contract_rev: 'rev-1',
+	engine_version: '1.0.0',
+	boot_id: 'boot-1'
+};
+
+test('pingHealth returns the engine boot id', async () => {
+	globalThis.fetch = async () => healthResponse(ENGINE_HEALTH);
+	assert.equal(await api.pingHealth(2000), 'boot-1');
+});
+
+test('pingHealth returns null only for a legacy body with no engine handshake', async () => {
+	globalThis.fetch = async () => healthResponse({ status: 'ok', version: '1' });
+	assert.equal(await api.pingHealth(2000), null);
+});
+
+for (const [label, patch] of [
+	['missing beside the other handshake fields', { boot_id: undefined }],
+	['empty', { boot_id: '' }],
+	['a number', { boot_id: 7 }],
+	['null', { boot_id: null }]
+]) {
+	test(`pingHealth rejects a boot_id that is ${label}`, async () => {
+		globalThis.fetch = async () => healthResponse({ ...ENGINE_HEALTH, ...patch });
+		await assert.rejects(() => api.pingHealth(2000), /boot_id/);
+	});
+}
+
+test('pingHealth rejects a lone malformed boot_id on an otherwise legacy body', async () => {
+	globalThis.fetch = async () => healthResponse({ status: 'ok', version: '1', boot_id: '' });
+	await assert.rejects(() => api.pingHealth(2000), /boot_id/);
+});

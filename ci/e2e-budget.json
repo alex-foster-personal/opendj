@@ -38,7 +38,9 @@
     "deckload-smoke": 1.0,
     "stretch": 0.5,
     "master12": 0.5,
-    "onboarding": 3.0
+    "onboarding": 3.0,
+    "cmdk-pick-race": 1.0,
+    "cmdk-preview-cue": 1.5
   },
   "strong": [
     "always run (ci/e2e-always-run.txt)",

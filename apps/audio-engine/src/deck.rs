@@ -693,6 +693,12 @@ impl Deck {
     /// deck is refused either way, a loop exit too, as the page's `setLoop`
     /// refuses it (`_requireLoaded`) before looking at the loop.
     pub fn set_loop(&mut self, bounds_ms: Option<(f64, f64)>) -> Result<(), EngineError> {
+        self.set_loop_with(bounds_ms, true)
+    }
+
+    /// `set_loop`, or with `quantize` false the range as given (a stored
+    /// hot-cue or memory loop, DECKCTL-6235d), still bounded to the track.
+    pub fn set_loop_with(&mut self, bounds_ms: Option<(f64, f64)>, quantize: bool) -> Result<(), EngineError> {
         self.track()?;
         let Some((in_ms, out_ms)) = bounds_ms else {
             self.clear_loop();
@@ -700,6 +706,9 @@ impl Deck {
         };
         if !(in_ms.is_finite() && out_ms.is_finite()) || in_ms < 0.0 || out_ms <= in_ms {
             return Err(EngineError::new(ErrorCode::Invalid, "loop needs 0 <= in_ms < out_ms"));
+        }
+        if !quantize {
+            return self.set_loop_exact(in_ms, out_ms);
         }
         let (in_ms, out_ms) = (self.quantized_ms(in_ms), self.quantized_ms(out_ms));
         if out_ms <= in_ms {
@@ -1666,6 +1675,10 @@ mod tests {
         let e = d.set_loop(Some((1100.0, 2900.0))).unwrap_err();
         assert!(e.message.contains("collapsed"), "{}", e.message);
         assert_eq!(lp(&d), Some((0.0, 4000.0)));
+        // DECKCTL-6235d: a stored loop engages as saved with Quantize on, even
+        // where its ends would collapse onto one point of the 4-beat grid.
+        d.set_loop_with(Some((1100.0, 2900.0)), false).unwrap();
+        assert_eq!(lp(&d), Some((1100.0, 2900.0)));
         // Controls: Quantize off keeps the ends exact, and beat loops keep
         // their exact beats on a coarse grid (see engage_beat_loop).
         let mut d = deck(&|d: &mut Deck| d.set_quantize(false));

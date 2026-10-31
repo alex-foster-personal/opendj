@@ -1,5 +1,6 @@
 /** Actual browser/engine liveness probes and validated ingest coverage readout. */
 import { pingHealth, timeoutSignal } from '$lib/api';
+import { noteEngineBoot } from '$lib/rb/autoplay-next-up-lazy';
 import type { IngestCoverage } from '$lib/rb/api-ingest';
 import type { LibraryHealthDot } from '$lib/rb/library-health-dots';
 
@@ -7,7 +8,7 @@ const CONN_PING_TIMEOUT_MS = 2000;
 
 export async function _pingBackend(): Promise<LibraryHealthDot> {
 	try {
-		await pingHealth(CONN_PING_TIMEOUT_MS);
+		noteEngineBoot(await pingHealth(CONN_PING_TIMEOUT_MS));
 		return { label: 'Backend', state: 'complete', detail: 'engine online' };
 	} catch (error: unknown) {
 		// The reason is kept rather than flattened to "offline": a timeout

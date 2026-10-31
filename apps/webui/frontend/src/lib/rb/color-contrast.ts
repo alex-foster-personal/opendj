@@ -286,6 +286,7 @@ export const PAIRINGS: ContrastPairing[] = [
   },
   { fg: "rb-red", bg: "rb-bg", level: "non-text", label: "cue marker / position tick" },
   { fg: "rb-yellow", bg: "rb-bg", level: "non-text", label: "Free licence badge" },
+  { fg: "rb-pair", bg: "rb-panel", level: "non-text", label: "pair edge and PAIR tag (Cmd K pairs, CMDK-18)" },
   {
     fg: "rb-master",
     bg: "rb-bg",

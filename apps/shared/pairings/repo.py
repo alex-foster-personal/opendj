@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from .models import DIRECTIONS, SOURCES, PairingEdge
-from .schema_sql import ensure_phase08_tables
+from .schema_sql import ensure_phase08_tables, prepare_repo_connection
 
 
 class PairingsError(ValueError):
@@ -73,12 +73,11 @@ class PairingsRepo:
         *,
         ensure_schema: bool = True,
     ) -> None:
-        self.conn = conn
-        if ensure_schema:
-            # Idempotent CREATE-IF-NOT-EXISTS; keeps the repo usable even
-            # on a brand-new state DB without requiring callers to run a
-            # separate migration step.
-            ensure_phase08_tables(conn)
+        self.conn = prepare_repo_connection(
+            conn,
+            ensure_phase08_tables,
+            ensure_schema=ensure_schema,
+        )
 
     # -- writes -----------------------------------------------------------
 

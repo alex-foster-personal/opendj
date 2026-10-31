@@ -2,8 +2,14 @@
  * Rust engine mode (NAE-13): the performance page driving odj-audio.
  *
  * Regression lines:
- * - if the default choice is anything but Web Audio then broken: the mode is
- *   opt-in until the switch-over plan (20-07)
+ * - if the default choice is anything but Web Audio in a browser tab or Tauri
+ *   then broken; if it is anything but Rust inside the Electron shell then
+ *   broken (Fri 9 Oct 2026); an explicit or stored choice outranks either
+ * - if a choice made inside Electron is kept only in localStorage then broken:
+ *   the engine's port, so the page's origin, changes each launch (Codex
+ *   4236763903); the shell's saved choice must outrank it
+ * - if the library's load-and-play intent is refused in Rust mode then broken:
+ *   every double-click or "load and play" would silently load nothing
  * - if an unknown ?engine= value silently falls back then broken
  * - if a command is both forwarded to the engine and refused as Web Audio only
  *   then broken: the two sets must not overlap
@@ -65,6 +71,75 @@ test('Web Audio stays the default; ?engine= chooses and outranks the stored choi
 	assert.throws(() => m.readEngineChoice('', 'bogus'), /engine=bogus is not one of/);
 });
 
+test('Rust is the default inside the Electron shell only; a choice outranks it', () => {
+	const electron = { opendjShell: { kind: 'electron', version: 1 } };
+	assert.equal(m.defaultEngineChoice(electron), 'rust');
+	assert.equal(m.defaultEngineChoice({}), 'webaudio');
+	assert.equal(m.defaultEngineChoice({ __TAURI_INTERNALS__: {} }), 'webaudio');
+	// A bridge that is not the Electron one is not Electron.
+	assert.equal(m.defaultEngineChoice({ opendjShell: { kind: 'other' } }), 'webaudio');
+	assert.equal(m.readEngineChoice('', null, 'rust'), 'rust');
+	assert.equal(m.readEngineChoice('?engine=webaudio', null, 'rust'), 'webaudio');
+	assert.equal(m.readEngineChoice('', 'webaudio', 'rust'), 'webaudio');
+	assert.equal(m.readEngineChoice('', null, 'webaudio'), 'webaudio');
+});
+
+test('inside Electron the shell-saved choice outranks this origin\'s storage, and a new choice is saved to the shell', async () => {
+	const store = new Map([[m.ENGINE_PREF_KEY, 'rust']]);
+	const saved = [];
+	const prior = { window: globalThis.window, shell: globalThis.opendjShell, choice: globalThis.OPENDJ_AUDIO_ENGINE_CHOICE };
+	globalThis.window = {
+		localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) }
+	};
+	globalThis.opendjShell = { kind: 'electron', version: 1, setAudioEngineChoice: async (c) => void saved.push(c) };
+	try {
+		// Nothing saved by the shell: this origin's storage still decides.
+		delete globalThis.OPENDJ_AUDIO_ENGINE_CHOICE;
+		assert.equal(m.storedEngineChoice(), 'rust');
+		// The shell's saved choice is the one that survives a relaunch's new origin.
+		globalThis.OPENDJ_AUDIO_ENGINE_CHOICE = 'webaudio';
+		assert.equal(m.storedEngineChoice(), 'webaudio');
+		m.setStoredEngineChoice('rust');
+		assert.deepEqual(saved, ['rust']);
+		// Published only once the shell acknowledges the save.
+		assert.equal(globalThis.OPENDJ_AUDIO_ENGINE_CHOICE, 'webaudio');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(globalThis.OPENDJ_AUDIO_ENGINE_CHOICE, 'rust');
+		assert.equal(m.rustMode.saved, 'rust');
+		assert.equal(m.storedEngineChoice(), 'rust');
+		// A save the shell refuses (disk full) is reported, and the previous
+		// choice stays the one this page and the next launch see (Codex 4430422537).
+		const reported = [];
+		const priorError = console.error;
+		console.error = (...args) => void reported.push(args.map(String).join(' '));
+		globalThis.opendjShell.setAudioEngineChoice = async () => {
+			throw new Error('ENOSPC');
+		};
+		try {
+			m.setStoredEngineChoice('webaudio');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		} finally {
+			console.error = priorError;
+		}
+		assert.equal(globalThis.OPENDJ_AUDIO_ENGINE_CHOICE, 'rust');
+		assert.equal(m.rustMode.saved, 'rust');
+		assert.equal(m.storedEngineChoice(), 'rust');
+		assert.equal(reported.length, 1);
+		assert.match(reported[0], /Audio engine choice not saved.*ENOSPC/);
+		// Outside Electron nothing is sent to a shell.
+		delete globalThis.opendjShell;
+		m.setStoredEngineChoice('webaudio');
+		assert.deepEqual(saved, ['rust']);
+		assert.equal(store.get(m.ENGINE_PREF_KEY), 'webaudio');
+	} finally {
+		globalThis.window = prior.window;
+		if (prior.shell === undefined) delete globalThis.opendjShell;
+		else globalThis.opendjShell = prior.shell;
+		if (prior.choice === undefined) delete globalThis.OPENDJ_AUDIO_ENGINE_CHOICE;
+		else globalThis.OPENDJ_AUDIO_ENGINE_CHOICE = prior.choice;
+	}
+});
+
 test('no command is both forwarded and refused', () => {
 	const both = [...m.ENGINE_COMMANDS].filter((t) => m.WEB_AUDIO_ONLY.has(t));
 	assert.deepEqual(both, []);
@@ -101,6 +176,24 @@ test('on: a Web Audio only command fails by name', async () => {
 		// Not the engine's either: still the page's own.
 		assert.equal(await m.executeInRustEngine({ type: 'browser_search', query: 'x' }), false);
 		assert.equal(await m.executeInRustEngine({ type: 'hot_cue_clear', deck: 1, slot: 'A' }), false);
+	} finally {
+		m.rustMode.enabled = false;
+	}
+});
+
+test('on: the load-and-play intent stays the page\'s own, never refused', async () => {
+	// The library sends load_play_intent before every load; refusing it threw
+	// before the load was ever sent, so nothing loaded in Rust mode.
+	assert.equal(m.WEB_AUDIO_ONLY.has('load_play_intent'), false);
+	assert.equal(m.ENGINE_COMMANDS.has('load_play_intent'), false);
+	m.rustMode.enabled = true;
+	try {
+		assert.equal(
+			await m.executeInRustEngine({ type: 'load_play_intent', deck: 1, generation: 1, desired_play: true }),
+			false
+		);
+		// Control: a real Web Audio only command still refuses in the same state.
+		await assert.rejects(m.executeInRustEngine({ type: 'safety_loop_arm', deck: 1 }), /RUST_ENGINE_UNAVAILABLE/);
 	} finally {
 		m.rustMode.enabled = false;
 	}

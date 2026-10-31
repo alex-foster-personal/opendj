@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -102,23 +102,103 @@ def _latest_by_name(check_runs: Iterable[dict]) -> dict[str, dict]:
     A re-run leaves the OLD completed run in place alongside a NEW one under
     the same name at the same SHA. Keeping the old one would let a stale
     completed run hide a fresh in_progress one behind it -- "old completed +
-    new in_progress" must read as NOT terminal. Newest wins by `started_at`,
-    `id` as the tiebreaker for equal timestamps.
+    new in_progress" must read as NOT terminal.
+
+    "Newest" is `_run_order`, NOT `started_at`: a run's jobs are ordered by when
+    their runner picked them up, so a queued leg of an OLDER suite can start
+    after a leg of a NEWER one (the same inversion `_run_order` documents). Ordering
+    this collapse by `started_at` would then keep the older suite's check under a
+    name both suites report, so the family looks like a single suite, `_superseded`
+    has nothing to supersede, and a completed older run answers for the newer one
+    (Codex, PR #5997 r4268197501). `_run_order` compares the suite id FIRST and
+    falls back to `started_at`/`id` only for fixtures without a suite id.
     """
     latest: dict[str, dict] = {}
     for run in check_runs:
         name = run["name"]
         current = latest.get(name)
-        if current is None or (run["started_at"], run["id"]) > (
-            current["started_at"],
-            current["id"],
-        ):
+        if current is None or _run_order(run) > _run_order(current):
             latest[name] = run
     return latest
 
 
-def _missing(expected: frozenset[str], latest: dict[str, dict]) -> frozenset[str]:
-    return expected - latest.keys()
+def _suite_of(run: dict) -> object:
+    return (run.get("check_suite") or {}).get("id")
+
+
+def _current_run_names(
+    name: str,
+    others: frozenset[str],
+    latest: dict[str, dict],
+    alternatives: Mapping[str, frozenset[str]],
+) -> frozenset[str]:
+    """The names in `name`'s matrix family reported by its NEWEST workflow run.
+
+    A head can carry several `pull_request` runs (a skipped matrix, then a base refresh
+    that expands it). Their check-runs differ by name, so `_latest_by_name` keeps both
+    shapes side by side; an old run's template must not answer for a newer run's legs
+    (Codex, PR #5997: alternatives stay within one run). The family's newest
+    run is the check suite created last (see `_run_order`); only its names count as
+    alternatives. Check-runs without a suite id (fixtures) all count as one run."""
+    names = {name} | others
+    for other in others:
+        names |= alternatives.get(other, frozenset())
+    family = [latest[n] for n in names if n in latest]
+    if not family:
+        return frozenset()
+    newest = _newest_suite(family)
+    return frozenset(n for n in others if n in latest and _suite_of(latest[n]) == newest)
+
+
+def _run_order(run: dict) -> tuple:
+    """Workflow-run creation order. Suite ids are assigned when the suite is created, so
+    a higher id is a newer run whatever its jobs' start times; a job of an older run
+    can start after a newer run's first leg while it waits on a runner (Codex, PR #5997
+    r4265878914). `started_at` and `id` only order runs without a suite id (fixtures)."""
+    suite = _suite_of(run)
+    return (suite if isinstance(suite, int) else -1, run["started_at"], run["id"])
+
+
+def _newest_suite(family: list[dict]) -> object:
+    return _suite_of(max(family, key=_run_order))
+
+
+def _superseded(latest: dict[str, dict], alternatives: Mapping[str, frozenset[str]]) -> frozenset[str]:
+    """Matrix-family check names reported only by an OLDER run than the family's newest.
+
+    Once alternatives pick the newest run to answer for a family, the verdict must read
+    that same run: an older run's failed leg must not turn the current passing run into
+    FAILURE (Codex, PR #5997 r4265878920). Names outside any matrix family are never
+    superseded, and check-runs without suite ids all count as one run."""
+    out: set[str] = set()
+    for name, alts in alternatives.items():
+        family = [latest[n] for n in ({name} | alts) if n in latest]
+        if len({_suite_of(run) for run in family}) < 2:
+            continue
+        newest = _newest_suite(family)
+        out |= {n for n in ({name} | alts) if n in latest and _suite_of(latest[n]) != newest}
+    return frozenset(out)
+
+
+def _missing(
+    expected: frozenset[str],
+    latest: dict[str, dict],
+    alternatives: Mapping[str, frozenset[str]] | None = None,
+) -> frozenset[str]:
+    """Expected names with no REPORTED check answering for them. `alternatives` only widens
+    which real check-run names count (a skipped matrix job's one template check, or its
+    legs when it ran); it never invents a status. A name is answered by itself, or by
+    EVERY other name in its alternatives: a leg's only other name is its template, but a
+    template is answered only once all of its expanded legs have reported, so one leg
+    alone can never stand in for a matrix whose other legs never appeared."""
+    alternatives = alternatives or {}
+    reported = latest.keys()
+
+    def answered(name: str) -> bool:
+        others = alternatives.get(name, frozenset({name})) - {name}
+        return name in reported or (bool(others) and others <= _current_run_names(name, others, latest, alternatives))
+
+    return frozenset(name for name in expected if not answered(name))
 
 
 def _all_terminal(latest: dict[str, dict]) -> bool:
@@ -132,7 +212,7 @@ def _all_passing(latest: dict[str, dict]) -> bool:
     with conclusion `failure`, `timed_out`, `cancelled`, `action_required`,
     or `stale`, and treating any of those as success would recreate this
     primitive's own defect in a new place -- exactly the illustration named
-    in `.claude/rules/verification.md`, "a run conclusion tested for
+    in `(private path)`, "a run conclusion tested for
     not-failure ... cancelled, skipped, timed_out, neutral and stale all
     count as passes" (found in review, PR #1685 thread r3976173912). Reuses
     `scripts.trunk_job_verdict_core`'s PASSING/FAILING conclusion vocabulary
@@ -180,15 +260,11 @@ def _run_id(check_run: dict) -> str:
     url = check_run.get("html_url") or ""
     match = re.search(r"/actions/runs/(\d+)/", url)
     if not match:
-        raise TriageError(
-            f"check-run {check_run.get('id')} has no parseable run id in html_url {url!r}"
-        )
+        raise TriageError(f"check-run {check_run.get('id')} has no parseable run id in html_url {url!r}")
     return match.group(1)
 
 
-def _pull_request_triggered_runs(
-    check_runs: Iterable[dict], run_event: Callable[[str], str]
-) -> list[dict]:
+def _pull_request_triggered_runs(check_runs: Iterable[dict], run_event: Callable[[str], str]) -> list[dict]:
     """The check-run objects (not merely names) whose Actions run was
     triggered by a `pull_request` event, dropping anything from `push`,
     `create`, `workflow_dispatch`, or any other event a normal PR push will
@@ -239,9 +315,7 @@ def _pull_request_triggered_runs(
     return kept
 
 
-def _pull_request_triggered_names(
-    check_runs: Iterable[dict], run_event: Callable[[str], str]
-) -> frozenset[str]:
+def _pull_request_triggered_names(check_runs: Iterable[dict], run_event: Callable[[str], str]) -> frozenset[str]:
     return frozenset(run["name"] for run in _pull_request_triggered_runs(check_runs, run_event))
 
 
@@ -250,6 +324,15 @@ def _first_baseline(
     check_runs_at: Callable[[str], list[dict]],
     run_event: Callable[[str], str],
 ) -> frozenset[str] | None:
+    found = _first_baseline_at(candidates, check_runs_at, run_event)
+    return None if found is None else found[1]
+
+
+def _first_baseline_at(
+    candidates: Iterable[str],
+    check_runs_at: Callable[[str], list[dict]],
+    run_event: Callable[[str], str],
+) -> tuple[str, frozenset[str]] | None:
     """The pull-request-triggered check-run names of the FIRST candidate SHA
     that actually has any.
 
@@ -264,7 +347,7 @@ def _first_baseline(
     for sha in candidates:
         names = _pull_request_triggered_names(check_runs_at(sha), run_event)
         if names:
-            return names
+            return sha, names
     return None
 
 
@@ -287,9 +370,7 @@ def _resolve_head_repo(payload: dict, repo: str) -> str:
     owner = (payload.get("headRepositoryOwner") or {}).get("login")
     name = (payload.get("headRepository") or {}).get("name")
     if not owner or not name:
-        raise TriageError(
-            f"PR reported as cross-repository against {repo} but gh returned no head owner/name"
-        )
+        raise TriageError(f"PR reported as cross-repository against {repo} but gh returned no head owner/name")
     return f"{owner}/{name}"
 
 
@@ -320,9 +401,7 @@ def _merge_check_run_pages(pages: list[dict]) -> list[dict]:
 # ----- pure: the bounded poll loop ------------------------------------------
 
 
-def _timeout_message(
-    elapsed: float, expected: frozenset[str], missing: frozenset[str], latest: dict[str, dict]
-) -> str:
+def _timeout_message(elapsed: float, expected: frozenset[str], missing: frozenset[str], latest: dict[str, dict]) -> str:
     """Why the wait ran out, named precisely. A timeout is a NON-verdict, so the one thing it
     owes the reader is which of the three ways it happened: an expected check never appeared,
     a check never finished, or the set of names never stopped growing."""
@@ -333,16 +412,14 @@ def _timeout_message(
         )
     pending = sorted(name for name, run in latest.items() if run["status"] != "completed")
     if pending:
-        return (
-            f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not terminal: {pending}"
-        )
+        return f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not terminal: {pending}"
     return (
         f"timed out after {elapsed:.0f}s: all {len(expected)} expected check(s) were "
         "terminal but a new check name appeared on the final poll and never stabilized"
     )
 
 
-def poll_until_terminal(
+def poll_until_terminal(  # noqa: PLR0913 - each seam is a distinct injected dependency
     expected: frozenset[str],
     fetch_check_runs: Callable[[], list[dict]],
     *,
@@ -352,6 +429,7 @@ def poll_until_terminal(
     clock: Callable[[], float] = time.monotonic,
     lifecycle_check: Callable[[], LifecycleOutcome | None] | None = None,
     inspect_snapshot: Callable[[dict[str, dict]], LifecycleOutcome | None] | None = None,
+    alternatives: Mapping[str, frozenset[str]] | None = None,
 ) -> tuple[WaitStatus, dict[str, dict], str]:
     """Poll `fetch_check_runs` until every name in `expected` exists AND is
     terminal, or `timeout_s` elapses. Never returns SUCCESS for a snapshot
@@ -389,16 +467,27 @@ def poll_until_terminal(
             if outcome is not None:
                 return outcome.status, latest, outcome.message
         latest = _latest_by_name(fetch_check_runs())
+        # Superseded runs are removed BEFORE the inspector sees the snapshot: an older
+        # suite's failed leg that a newer suite replaced is not a failure of this head, and
+        # letting the fail-fast watcher classify it would end the wait on a GENUINE red that
+        # the accumulating branch below already knows to discard (Codex, PR #5997
+        # r4268197510). The inspector only ever narrows a snapshot (it may stop sooner,
+        # never turn one into SUCCESS), so it sees the same filtered view the verdict does.
+        superseded = _superseded(latest, alternatives or {})
+        verdict = {name: run for name, run in latest.items() if name not in superseded}
         if inspect_snapshot is not None:
-            outcome = inspect_snapshot(latest)
+            outcome = inspect_snapshot(verdict)
             if outcome is not None:
                 return outcome.status, latest, outcome.message
-        missing = _missing(expected, latest)
+        # `missing` reads the SAME filtered view as the verdict: a name only an OLDER suite
+        # reported must not answer for it, or the newest suite can pass without ever reporting
+        # a leg it owes (Sol, PR #5997 r4328308881).
+        missing = _missing(expected, verdict, alternatives)
         observed_names = frozenset(latest.keys())
         stable = observed_names == previous_names
         # `latest and`: zero check-runs is never a verdict. With a non-empty `expected` it is
         # already `missing`; the fail-fast watcher polls a first push with no baseline.
-        if latest and not missing and _all_terminal(latest) and stable:
+        if latest and not missing and _all_terminal(verdict) and stable:
             if not expected and clock() - start < timeout_s:
                 # An UNKNOWN lower bound, not an empty one. Without a prior push there is
                 # nothing that says which checks this head owes, so "the observed set
@@ -416,7 +505,7 @@ def poll_until_terminal(
                 previous_names = observed_names
                 sleep(poll_interval_s)
                 continue
-            if _all_passing(latest):
+            if _all_passing(verdict):
                 if not expected:
                     # The deadline does not convert the missing baseline into one. Reporting
                     # SUCCESS for a head whose owed checks were never established is the one
@@ -437,7 +526,7 @@ def poll_until_terminal(
                 )
             failing = sorted(
                 f"{name} ({run['conclusion']})"
-                for name, run in latest.items()
+                for name, run in verdict.items()
                 if run["conclusion"] not in PASSING_JOB_CONCLUSIONS
             )
             return (

@@ -150,7 +150,7 @@ const KNOWN_DEBT = new Map([
 	['src/lib/components/rb/browser/AutoPlayWalkthrough.svelte', new Set(['😊', '🙃'])],
 	['src/lib/components/rb/browser/RecentlyDeletedFolder.svelte', new Set(['↻'])],
 	['src/lib/components/rb/deck/HotCueBank.svelte', new Set(['✎', '×'])], // button glyph: 326, 385 × clear
-	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▾', '▯'])], // button glyph: 280 ▯▯ mode
+	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▯'])], // button glyph: ▯▯ mode (the INT caret moved to LoopSourceMenu as CSS, DECKCTL-6235d)
 	['src/routes/admin/LyricSourceOrder.svelte', new Set(['▲', '▼'])],
 	['src/routes/progress-tree/DepGraph.svelte', new Set(['⚠', '↗', '✕'])], // button glyph: 276 ✕ close
 	['src/routes/progress-tree/NodeDetail.svelte', new Set(['↗'])],
@@ -164,7 +164,6 @@ const KNOWN_DEBT = new Map([
 	// where each glyph sat at that commit, for finding them, not for matching.
 	['src/lib/components/lyrics/StageOverlay.svelte', new Set(['×'])], // 282
 	['src/lib/components/rb/CreatePairingSheet.svelte', new Set(['×'])], // 141, 162
-	['src/lib/components/rb/Deck.svelte', new Set(['┃', '┆'])], // 452 ┃┃┃, 455 ┆┆┆
 	['src/lib/components/rb/FeedbackPinCard.svelte', new Set(['×'])], // 277, 296
 	['src/lib/components/rb/FeedbackSupportPanel.svelte', new Set(['×'])], // 31
 	['src/lib/components/rb/MidiPanel.svelte', new Set(['×'])], // 119

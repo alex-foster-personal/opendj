@@ -21,6 +21,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,15 @@ def test_mdt_ffmpeg_override_wins_over_path_lookup(
     assert decode.resolve_ffmpeg() == str(override)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "os.access(X_OK) is true for every existing file on Windows, which has no "
+        "execute bit; there a non-launchable MDT_FFMPEG is refused one step later, "
+        "at launch, as LocalDecodeUnavailable (pinned on every platform by "
+        "test_a_kernel_launch_failure_becomes_local_decode_unavailable)"
+    ),
+)
 def test_mdt_ffmpeg_set_but_not_executable_raises_rather_than_falling_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -66,9 +76,14 @@ def test_mdt_ffmpeg_unset_falls_back_to_path_lookup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
-    on_path = _make_executable(tmp_path / "ffmpeg")
+    # Windows' shutil.which only matches a PATHEXT extension, so the real
+    # binary there is ffmpeg.exe; a bare "ffmpeg" is never found. It may
+    # return the extension in PATHEXT's case (ffmpeg.EXE), hence Path equality,
+    # which is case-insensitive on Windows and exact on POSIX.
+    name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    on_path = _make_executable(tmp_path / name)
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert decode.resolve_ffmpeg() == str(on_path)
+    assert Path(decode.resolve_ffmpeg()) == on_path
 
 
 def test_neither_mdt_ffmpeg_nor_path_yields_explicit_reason(

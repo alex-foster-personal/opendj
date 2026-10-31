@@ -273,6 +273,24 @@ test('hovering help text shows our tooltip and parks title, then restores it', a
 	button.remove();
 });
 
+test('[if] a readout title changes under the pointer [then] leave keeps the new title, not the parked one, [else stop]', async () => {
+	// Deck grid adjust (GRIDEDIT-6235): clicking the button changes its "Now:" readout
+	// while it is hovered; restore used to write the stale parked copy back.
+	const button = doc.createElement('button');
+	button.setAttribute('title', 'Grid adjust. Now: 0 ms');
+	doc.body.appendChild(button);
+	pointer('pointerover', button);
+	await Promise.resolve();
+	assert.equal(button.getAttribute('data-tip'), 'Grid adjust. Now: 0 ms');
+	button.setAttribute('title', 'Grid adjust. Now: +30 ms');
+	pointer('pointerout', button, doc.body);
+	await Promise.resolve();
+	assert.equal(button.getAttribute('title'), 'Grid adjust. Now: +30 ms', 'the component wrote it last');
+	assert.equal(button.hasAttribute('data-tip'), false);
+	assert.equal(button.hasAttribute('data-tip-parked'), false);
+	button.remove();
+});
+
 test('an element with no help text gets no tooltip', async () => {
 	const button = doc.createElement('button');
 	doc.body.appendChild(button);

@@ -30,6 +30,9 @@ export const EQ_MIN_DB = -26;
 export const EQ_MAX_DB = 6;
 /** TRIM knob 0..1 maps linearly to 0..2x amplitude (0.5 = unity). */
 export const TRIM_MAX_GAIN = 2;
+/** Every newly loaded deck starts 6 dB below unity, matching AutoDJ's renderer. */
+export const DECK_DEFAULT_PRE_GAIN_DB = -6;
+export const DECK_DEFAULT_PRE_GAIN = 10 ** (DECK_DEFAULT_PRE_GAIN_DB / 20) / TRIM_MAX_GAIN;
 
 /** 0 -> EQ_MIN_DB, 0.5 -> 0 dB (flat), 1 -> EQ_MAX_DB. Piecewise linear.
  * Lives beside the constants it derives from (file-size ratchet moved this
@@ -61,7 +64,7 @@ export function assertUnitRange(name: string, value: number): void {
 /**
  * FILTER knob law: one BiquadFilterNode per side (lowpass for CCW, highpass
  * for CW), swept exponential-in-Hz (== linear-in-octaves, the L2 law from
- * `docs/research/filter-taper-laws.md` section 1/6). Endpoints are that
+ * `(private path)` section 1/6). Endpoints are that
  * doc's recommended constants, chosen so full travel never reaches silence
  * (LP floor keeps kick/sub, HP ceiling keeps hats/air) -- doc section on
  * calibration finding 4. This is the mechanism only: fixed Butterworth Q,
@@ -155,7 +158,7 @@ export const TRANSPORT_IMMEDIATE_SAFETY_S = 0.008;
  * plain play/pause was ~73ms of dead weight.
  *
  * Apparatus, the per-block sweep, the knee sweep and the falsification checks:
- * `.planning/latency-round2-design.md`.
+ * `(private path)`.
  */
 export const PROCESSOR_ONSET_RAMP_FACTOR = 0.39;
 /**
@@ -169,7 +172,7 @@ export const PROCESSOR_ONSET_RAMP_FACTOR = 0.39;
  * unset), and the only real win - 0.002, giving 2.9/24.0ms against 5.8/32.0ms -
  * shrinks the output buffer and so raises underrun probability under four decks
  * of worklets. A mid-set dropout costs more than the ~11ms it buys. Full probe
- * table: `.planning/latency-round2-design.md`, appendix.
+ * table: `(private path)`, appendix.
  *
  * It is a named constant rather than a bare `new AudioContext()` because every
  * shipping DJ application (rekordbox, Serato, Traktor) exposes a user-facing

@@ -189,6 +189,12 @@ class DeckGate:
             self._loaded[name] = stable_id
         return any_deck_playing(mirror) or now < self._hold_until
 
+    def playback(self) -> bool:
+        return any_deck_playing(self._mirror_fn())
+
+    def settling(self) -> bool:
+        return self._clock() < self._hold_until
+
 
 def user_jobs_active(
     conn_factory: Callable[[], sqlite3.Connection], refresh_running_fn: Callable[[], bool]

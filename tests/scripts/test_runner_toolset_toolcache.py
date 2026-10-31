@@ -11,9 +11,10 @@ Everything here runs against the host's REAL action-populated cache, never a
 fabricated one: the positive case runs each manifest entry's verify command
 unchanged against it, exactly as the host verifier (fleet-af runner_toolset/verify.py) does (`bash -o
 pipefail -c`). The negative case copies one real version directory, its real
-bytes and its real marker, into tmp_path, runs the same command there, then
-deletes the copied marker and runs it again: the marker is the only difference.
-A host with no populated cache for an entry (a dev Mac) reports UNAVAILABLE.
+bytes and its real marker, into a temporary cache root, runs the same command
+there, then deletes the copied marker and runs it again: the marker is the only
+difference. A host with no populated cache for an entry (a dev Mac) reports
+UNAVAILABLE.
 
 Regression lines:
   - if any tool-cache probe passes on a real cache directory whose `.complete`
@@ -27,6 +28,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -36,6 +40,11 @@ from scripts import runner_toolset_scan as scan
 # The directory every manifest probe names; the runner sets RUNNER_TOOL_CACHE to it
 # (AGENT_TOOLSDIRECTORY in each runner's .env).
 MANIFEST_CACHE = "/opt/hostedtoolcache"
+
+# A copy of a real toolchain is a hardlink farm when the filesystem allows it and
+# 1.05 GB of bytes (40,369 files for CPython 3.11.16) when it does not, so the
+# byte path is bounded here instead of being left to the tier's per-test timeout.
+COPY_BUDGET_S = 60.0
 
 
 def _real_cache() -> Path:
@@ -91,16 +100,80 @@ def _run_verify(entry: dict, cache: Path) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def _copy_real_version(arch_dir: Path, into: Path) -> Path:
+class CopyBudgetExceeded(Exception):
+    """The copy fell back to real bytes and would outlive the job's budget.
+
+    Deliberately not an OSError: shutil.copytree collects OSError per entry and
+    carries on, which is exactly how a whole-toolchain byte copy outlives a
+    timeout instead of stopping.
+    """
+
+
+def _copy_parents(arch_dir: Path) -> list[Path]:
+    """Writable places to keep a copy, `arch_dir`'s own filesystem first."""
+    return [Path(tempfile.gettempdir()), *arch_dir.resolve().parents]  # never inside the tree
+
+
+# `os.link` is what makes the negative case cheap: a real version dir is 1.05 GB
+# of bytes but 41,833 hardlinks. It cannot cross filesystems, and pytest's
+# tmp_path is not on the cache's filesystem on a self-hosted runner: RUNNER_TEMP
+# there is a separate 2 GB tmpfs (dev 69 on nucbox runner-3) while
+# /opt/hostedtoolcache is on /dev/sdd (dev 2096), so every one of the 41,833
+# entries raised EXDEV and the byte fallback wrote 1,048,130,326 bytes into that
+# 2 GB tmpfs until the 120 s per-test timeout killed the fast leg (job
+# 118568630420, 2026-10-20). A root on the source's own device keeps the hardlink
+# path the one that runs. A hosted runner, where tmp_path already shares the
+# device, is unchanged; /tmp is the next choice; a host with neither (a read-only
+# cache filesystem) byte-copies into tmp_path under COPY_BUDGET_S.
+def _copy_root(arch_dir: Path, tmp_path: Path) -> Path:
+    """A fresh, disposable cache root to copy `arch_dir` into, on `arch_dir`'s device."""
+    dev = os.stat(arch_dir).st_dev
+    for parent in (tmp_path, *_copy_parents(arch_dir)):
+        try:
+            if os.stat(parent).st_dev != dev or not os.access(parent, os.W_OK | os.X_OK):
+                continue
+        except OSError:
+            continue
+        return Path(tempfile.mkdtemp(prefix="toolcache-copy-", dir=parent))
+    return Path(tempfile.mkdtemp(prefix="toolcache-copy-", dir=tmp_path))
+
+
+def _link_else_copy(deadline: float) -> Callable[[str, str], str]:
+    """copytree copy_function: hardlink, byte-copy a lone refuser, stop at the budget."""
+
+    def copy_entry(src: str, dst: str) -> str:
+        if time.monotonic() > deadline:
+            raise CopyBudgetExceeded(f"copy budget {COPY_BUDGET_S:.0f}s exhausted")
+        try:
+            os.link(src, dst)
+        except OSError:
+            return shutil.copy2(src, dst)
+        return dst
+
+    return copy_entry
+
+
+def _copy_real_version(arch_dir: Path, tmp_path: Path) -> tuple[Path, Path]:
     """Hardlink (else copy) the real version dir's bytes and its real marker into
-    `into`, same layout; return the copied marker."""
-    target = into / arch_dir.relative_to(_real_cache())
+    a copy-shaped cache root; return `(cache_root, copied_marker)`.
+
+    A copy that cannot finish inside COPY_BUDGET_S reports UNAVAILABLE with the
+    reason it measured rather than sitting in the tier's timeout: the positive
+    case above is what proves the real cache, and a copy too large for the budget
+    is a fact about the host, not a product regression.
+    """
+    root = _copy_root(arch_dir, tmp_path)
+    target = root / arch_dir.relative_to(_real_cache())
     try:
-        shutil.copytree(arch_dir, target, symlinks=True, copy_function=os.link)
-    except OSError:
-        shutil.rmtree(target, ignore_errors=True)
-        shutil.copytree(arch_dir, target, symlinks=True)
-    return Path(shutil.copy2(f"{arch_dir}.complete", f"{target}.complete"))
+        shutil.copytree(
+            arch_dir, target, symlinks=True,
+            copy_function=_link_else_copy(time.monotonic() + COPY_BUDGET_S),
+        )  # fmt: skip
+        return root, Path(shutil.copy2(f"{arch_dir}.complete", f"{target}.complete"))
+    except (OSError, CopyBudgetExceeded) as exc:
+        shutil.rmtree(root, ignore_errors=True)
+        pytest.skip(f"UNAVAILABLE: no copy of {arch_dir} within {COPY_BUDGET_S:.0f}s: {exc}")
+        raise  # unreachable: skip raises; keeps the return type total for mypy
 
 
 @pytest.mark.parametrize("entry", ENTRIES, ids=[e["name"] for e in ENTRIES])
@@ -112,21 +185,19 @@ def test_the_real_marked_tool_cache_passes_the_probe(entry: dict) -> None:
 
 @pytest.mark.parametrize("entry", ENTRIES, ids=[e["name"] for e in ENTRIES])
 def test_a_real_cache_copy_passes_only_with_its_marker(entry: dict, tmp_path: Path) -> None:
-    marker = _copy_real_version(_populated_arch_dir(entry), tmp_path)
+    root, marker = _copy_real_version(_populated_arch_dir(entry), tmp_path)
     try:
-        control = _run_verify(entry, tmp_path)
+        control = _run_verify(entry, root)
         assert control.returncode == 0, f"the marked copy failed: {control.stdout}{control.stderr}"
         marker.unlink()
-        result = _run_verify(entry, tmp_path)
+        result = _run_verify(entry, root)
         assert result.returncode != 0, f"passed without the marker: {result.stdout}{result.stderr}"
         assert ".complete" in result.stdout + result.stderr, result.stdout + result.stderr
     finally:
-        # The hardlink in _copy_real_version fails across filesystems (a tmpfs
-        # RUNNER_TEMP vs /opt/hostedtoolcache), so this is a full copy of a real
-        # toolchain, hundreds of MB. pytest keeps every tmp_path until the
-        # session ends, and on nucbox RUNNER_TEMP is a 2G tmpfs shared with the
-        # whole shard: free it now (ENOSPC on nucbox-wsl-3/6/8/14, Fri 2 Oct 2026).
-        shutil.rmtree(tmp_path, ignore_errors=True)
+        # Free the copy now: RUNNER_TEMP is a 2G tmpfs on nucbox shared with the
+        # whole shard, and pytest keeps every tmp_path until the session ends
+        # (ENOSPC on nucbox-wsl-3/6/8/14, Fri 2 Oct 2026).
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_every_tool_cache_entry_names_its_completion_marker() -> None:

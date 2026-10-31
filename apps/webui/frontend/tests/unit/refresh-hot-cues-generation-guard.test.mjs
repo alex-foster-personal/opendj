@@ -80,30 +80,35 @@ test('refreshHotCues captures the fetch generation before its initial /anlz requ
 	);
 });
 
-test('refreshHotCues re-checks the generation and the confirmed source, delegating a mismatch to fetchAnlzUntilSourceConfirmed', () => {
+test('refreshHotCues re-checks the generation, the track revision and the confirmed source, delegating a mismatch to fetchAnlzUntilTrackCurrent', () => {
 	const body = refreshHotCuesBody();
 
-	const freshMatch = body.match(
-		/const fresh =\s*\n\s*generation === currentAnlzFetchGeneration\(\) && anlzMatchesConfirmedSource\(initialFresh\)\s*\n\s*\?\s*initialFresh\s*\n\s*:\s*await fetchAnlzUntilSourceConfirmed\(\(\) => fetchAnlzBypassingHttpCache\(stableId\)\);/
+	const fastPath = body.match(
+		/const current = generation === currentAnlzFetchGeneration\(\) && revision === anlzTrackRevision\(stableId\);\s*if \(current && anlzMatchesConfirmedSource\(initialFresh\)\) install\(initialFresh\);\s*else /
 	);
 	assert.ok(
-		freshMatch,
-		'no `generation === currentAnlzFetchGeneration() && anlzMatchesConfirmedSource(initialFresh) ? ' +
-			'initialFresh : await fetchAnlzUntilSourceConfirmed(...)` found - a source switch (either this ' +
+		fastPath,
+		'no fast path installing `initialFresh` only when the generation, the track revision and the ' +
+			'confirmed source all still hold - a grid edit or a source switch (either this ' +
 			"client's own, or an external client's direct toggle that never bumps this client's generation) " +
 			'that lands after the first /anlz request has nothing forcing a re-fetch, so the stale ' +
 			'pre-switch payload gets adopted and re-published into the shared cache'
 	);
-
-	const assignEnd = body.indexOf(freshMatch[0]) + freshMatch[0].length;
-	const rest = body.slice(assignEnd);
 	assert.match(
-		rest,
+		body.slice(body.indexOf(fastPath[0]) + fastPath[0].length),
+		/await fetchAnlzUntilTrackCurrent\(stableId, \(\) => fetchAnlzBypassingHttpCache\(stableId\), install\);/,
+		'a mismatch must re-fetch through fetchAnlzUntilTrackCurrent, which installs in the same step as its check'
+	);
+
+	const installBody = body.slice(body.indexOf('const install = (fresh'), body.indexOf(fastPath[0]));
+	assert.match(installBody, /refreshAnlzCacheEntry\(stableId, fresh\)/);
+	assert.match(
+		installBody,
 		/st\.anlz\s*=\s*rawAnlz\(fresh\)/,
-		'st.anlz must be set from `fresh` AFTER the generation and source checks, so a re-fetched answer actually lands'
+		'st.anlz must be set from the checked `fresh`, so a re-fetched answer actually lands'
 	);
 	assert.ok(
-		rest.indexOf('st.anlz = rawAnlz(fresh)') < rest.indexOf('st.hot_cues'),
+		installBody.indexOf('st.anlz = rawAnlz(fresh)') < installBody.indexOf('st.hot_cues'),
 		'st.anlz must be published from the resolved `fresh` before hot cues are derived from it'
 	);
 });

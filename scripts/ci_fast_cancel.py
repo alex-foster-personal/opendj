@@ -1,6 +1,6 @@
 """Cancel the rest of a CI run when the fast tier found a failure that is NEW against main.
 
-SMARTEST-CI round 6 (specs/ci-fail-fast.md, part 4). A fast-tier leg that goes red on a
+SMARTEST-CI round 6 ((private path), part 4). A fast-tier leg that goes red on a
 test main is already red on says nothing about the pull request; one that goes red on a
 GENUINE identity says everything, and the slow shards would only repeat it fifteen minutes
 later while holding runners. This step reads the leg's own pytest output, subtracts main's
@@ -42,7 +42,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -53,6 +52,9 @@ from pathlib import Path
 # a run whose only failures are main's own. Importing the one parser makes the parity
 # structural instead of a property two regexes have to keep agreeing on.
 from scripts.ci_failure_ids import failed_identities
+from scripts.ci_health_core import _gh_api_json, _run_gh
+from scripts.gh_actions_run_cancel import CancelOutcome
+from scripts.gh_actions_run_cancel import cancel_run as _cancel_run_logged
 
 LINE_PREFIX = "[fast-cancel]"
 EXIT_UNKNOWN = 3
@@ -97,6 +99,18 @@ def decide(failed: frozenset[str], baseline: frozenset[str] | None) -> tuple[str
         return "NONE", frozenset()
     genuine = failed - baseline
     return ("GENUINE", genuine) if genuine else ("KNOWN", frozenset())
+
+
+def _cancel_run(run_id: int, *, reason: str, workflow: str) -> CancelOutcome:
+    # Tests monkeypatch this module's ``_run_gh`` / ``_gh_api_json``; pass them through so
+    # ``gh_actions_run_cancel.cancel_run`` does not hit the live GitHub API.
+    return _cancel_run_logged(
+        run_id,
+        reason=reason,
+        workflow=workflow,
+        run_gh=_run_gh,
+        gh_api_json=_gh_api_json,
+    )
 
 
 def _announce(level: str, title: str, body: str) -> None:
@@ -159,7 +173,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print(f"{LINE_PREFIX} dry run, gh not called")
         return 0
-    subprocess.run(["gh", "run", "cancel", args.run_id], check=True, stdin=subprocess.DEVNULL)
+    outcome = _cancel_run(
+        int(args.run_id),
+        reason=f"fast-cancel-genuine leg={args.leg}",
+        workflow="CI",
+    )
+    if outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
+        print(
+            f"{LINE_PREFIX} cancel skipped for run {args.run_id}: "
+            "GitHub reported not-yet-queued (HTTP 409); remaining jobs may continue"
+        )
+        _announce(
+            "warning",
+            f"fast tier leg {args.leg}: cancel skipped (not yet queued)",
+            f"Run `{args.run_id}` could not be cancelled because GitHub had not queued it "
+            "yet. Remaining workflow jobs may continue despite the GENUINE failure.",
+        )
+        return 0
     print(f"{LINE_PREFIX} cancelled run {args.run_id}")
     return 0
 

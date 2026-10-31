@@ -222,33 +222,70 @@ def record_assignments(
     return written
 
 
-def run_arm(arm: Arm, ids: list[str], dest: str, dry_run: bool) -> int:
-    """Farm one arm's tracks in a single batch. Returns the exit code."""
+#: Where an arm's stems go. "asset-store" is the scp destination, the host
+#: scripts/b2store.py names (MDT_B2STORE_SSH_HOST): a host name is not a CLI
+#: value (issue #5639).
+DESTS: tuple[str, ...] = ("asset-store", "local", "r2", "none")
+DEFAULT_DEST: str = "asset-store"
+#: Deprecated --dest spellings and the dest each means. Accepted with a warning;
+#: a later stage of #5639 drops them.
+DEPRECATED_DEST_ALIASES: dict[str, str] = {"bifrost2": "asset-store"}
+#: The farm's --stems-dest spelling of each dest. modal_vocal_farm still calls the
+#: asset store "bifrost2": renaming it there is a stems-pipeline change behind the
+#: perfbatch gate, a later batch of #5639. Not imported from the farm, which needs
+#: modal; tests/stems/test_stem_dest_alias.py pins the two together.
+FARM_STEMS_DEST: dict[str, str] = {
+    "asset-store": "bifrost2", "local": "local", "r2": "r2", "none": "none",
+}
+
+
+def dest_arg(value: str) -> str:
+    """argparse ``type`` for --dest: a deprecated alias becomes its neutral dest."""
+    neutral = DEPRECATED_DEST_ALIASES.get(value)
+    if neutral is None:
+        return value
+    print(f"warning: --dest {value} is deprecated, use {neutral}", file=sys.stderr)
+    return neutral
+
+
+def farm_command(arm: Arm, ids: list[str], dest: str, dry_run: bool) -> list[str]:
+    """The modal_vocal_farm argv for one arm's batch."""
     cmd = [
         sys.executable, "-m", "scripts.modal_vocal_farm",
         "--preset", arm.preset, "--stem-codec", arm.codec,
-        "--stems-dest", dest, "--refarm",
+        "--stems-dest", FARM_STEMS_DEST[dest], "--refarm",
     ]
     for stable_id in ids:
         cmd += ["--only-stable-id", stable_id]
     if dry_run:
         cmd.append("--dry-run")
+    return cmd
+
+
+def run_arm(arm: Arm, ids: list[str], dest: str, dry_run: bool) -> int:
+    """Farm one arm's tracks in a single batch. Returns the exit code."""
+    cmd = farm_command(arm, ids, dest, dry_run)
     print(f"\n=== arm {arm.name} ({arm.preset}, {arm.codec}): {len(ids)} tracks ===",
           flush=True)
     return subprocess.run(cmd, cwd=str(REPO_ROOT), check=False).returncode
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m scripts.stem_split_runner")
     parser.add_argument("--limit", type=int, default=100,
                         help="tracks this wave (default 100; 0 = the whole gap)")
-    parser.add_argument("--dest", default="bifrost2",
-                        choices=("bifrost2", "local", "r2", "none"))
+    parser.add_argument("--dest", type=dest_arg, default=DEFAULT_DEST, choices=DESTS,
+                        help="where stems go; 'bifrost2' is a deprecated alias "
+                        "of 'asset-store'")
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--plan-only", action="store_true",
                         help="assign and record, run nothing")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     _assert_arms_runnable()
     from apps.shared.paths import DATA_DIR

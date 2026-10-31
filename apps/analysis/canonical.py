@@ -32,7 +32,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from . import queue_stale
+from apps.shared.state import analysis_stale
+
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
 from .time_iso import utc_now_iso
@@ -155,7 +156,7 @@ def _eligible_rows(
         "SELECT backend, backend_version, record_json FROM analysis WHERE stable_id = ?",
         (stable_id,),
     ).fetchall()
-    stale = queue_stale.stale_rows(conn, stable_id, lane)
+    stale = analysis_stale.stale_rows(conn, stable_id, lane)
     out: list[tuple[str, str, str]] = []
     for backend, backend_version, record_json in rows:
         parsed = parse_own_backend(backend)

@@ -77,7 +77,8 @@ impl Supervised {
     pub fn shutdown(&mut self) {
         match self {
             Self::Spawned(running) => running.shutdown(),
-            Self::Adopted { pid, .. } => launch::stop_holder_pid(*pid),
+            // An adopted engine belongs to another shell; quitting this one must not stop it.
+            Self::Adopted { .. } => {}
         }
     }
 }
@@ -85,6 +86,41 @@ impl Supervised {
 impl Drop for Supervised {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+/// Boot aborted before the runtime supervisor took ownership.
+pub(crate) fn relinquish_boot_supervised(mut supervised: Supervised, data_dir: &Path) {
+    if matches!(&supervised, Supervised::Adopted { .. }) {
+        release_parent_watch_ownership(data_dir);
+    }
+    supervised.shutdown();
+}
+
+/// Drops the boot engine on setup failure before `start_runtime_supervisor`.
+pub(crate) struct BootSupervisedGuard {
+    supervised: Option<Supervised>,
+    data_dir: PathBuf,
+}
+
+impl BootSupervisedGuard {
+    pub fn new(supervised: Option<Supervised>, data_dir: PathBuf) -> Self {
+        Self {
+            supervised,
+            data_dir,
+        }
+    }
+
+    pub fn take(&mut self) -> Option<Supervised> {
+        self.supervised.take()
+    }
+}
+
+impl Drop for BootSupervisedGuard {
+    fn drop(&mut self) {
+        if let Some(supervised) = self.supervised.take() {
+            relinquish_boot_supervised(supervised, &self.data_dir);
+        }
     }
 }
 
@@ -130,7 +166,10 @@ impl EngineSupervisor {
         paths: SupervisorPaths,
         shell_health: ShellHealthServer,
     ) -> Self {
-        let engine_pid = AtomicU32::new(supervised.pid().unwrap_or(0));
+        let engine_pid = AtomicU32::new(match &supervised {
+            Supervised::Spawned(running) => running.pid(),
+            Supervised::Adopted { .. } => 0,
+        });
         Self {
             inner: Arc::new(Mutex::new(RuntimeState {
                 supervised: Some(supervised),
@@ -162,6 +201,9 @@ impl EngineSupervisor {
         match lock_within(&self.inner, SHUTDOWN_LOCK_WAIT) {
             Some(mut guard) => {
                 if let Some(mut running) = guard.supervised.take() {
+                    if matches!(&running, Supervised::Adopted { .. }) {
+                        release_parent_watch_ownership(&guard.paths.data_dir);
+                    }
                     running.shutdown();
                 }
                 self.engine_pid.store(0, Ordering::SeqCst);
@@ -190,6 +232,11 @@ impl EngineSupervisor {
         self.engine_pid.store(pid.unwrap_or(0), Ordering::SeqCst);
     }
 
+    #[cfg(test)]
+    fn engine_pid_value(&self) -> u32 {
+        self.engine_pid.load(Ordering::SeqCst)
+    }
+
     pub fn shell_health_port(&self) -> u16 {
         self.shell_health.port()
     }
@@ -207,12 +254,16 @@ pub fn spawn_runtime_supervisor(
     paths: SupervisorPaths,
     data_dir: &Path,
 ) -> Result<Arc<EngineSupervisor>, engine::EngineError> {
-    let shell_health = ShellHealthServer::start(data_dir).map_err(|detail| {
-        engine::EngineError::new(
-            "Open DJ could not start its shell health server.",
-            detail,
-        )
-    })?;
+    let shell_health = match ShellHealthServer::start(data_dir) {
+        Ok(server) => server,
+        Err(detail) => {
+            relinquish_boot_supervised(supervised, data_dir);
+            return Err(engine::EngineError::new(
+                "Open DJ could not start its shell health server.",
+                detail,
+            ));
+        }
+    };
     let supervisor = Arc::new(EngineSupervisor::new(supervised, paths, shell_health));
     let inner = Arc::clone(&supervisor);
     thread::spawn(move || runtime_loop(app, inner));
@@ -560,7 +611,10 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         return false;
     }
     if let Some(mut old) = guard.supervised.take() {
-        old.shutdown();
+        match &mut old {
+            Supervised::Spawned(running) => running.shutdown(),
+            Supervised::Adopted { pid, .. } => launch::stop_holder_pid(*pid),
+        }
     }
     supervisor.record_engine_pid(None);
     // A quit can start during the stop above, which may take the full grace.
@@ -569,24 +623,26 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         engine::append_shell_log("INFO", "quit began during restart; not respawning");
         return false;
     }
-    if let Err(err) = write_parent_file(&data_dir) {
-        engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
-        guard.phase = SupervisorPhase::Fatal;
-        update_surfaces(app, supervisor, &guard);
-        return false;
-    }
+    let mut parent_watch_claim = match RestartParentWatchClaim::claim(data_dir.clone()) {
+        Ok(claim) => claim,
+        Err(err) => {
+            engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
+            guard.phase = SupervisorPhase::Fatal;
+            update_surfaces(app, supervisor, &guard);
+            return false;
+        }
+    };
     let lock_path = launch::lock_path(&data_dir);
     match launch::inspect_lock(&lock_path, engine::health_ok) {
         launch::LaunchPlan::Adopt { pid, host, port } => {
-            supervisor.record_engine_pid(Some(pid));
-            // Same latch order as the spawn branch below: a quit that took
-            // the pid before this record never saw the adopted engine.
+            // Adopted engines are not recorded in engine_pid: quit must not
+            // force-stop a holder this shell does not own.
+            supervisor.record_engine_pid(None);
             if supervisor.is_stopping() {
-                engine::append_shell_log("INFO", "quit began during restart; stopping the adopted engine");
-                launch::stop_holder_pid(pid);
-                supervisor.record_engine_pid(None);
+                engine::append_shell_log("INFO", "quit began during restart; not adopting");
                 return false;
             }
+            parent_watch_claim.keep();
             guard.supervised = Some(Supervised::Adopted { pid, host, port });
             guard.phase = SupervisorPhase::Running;
             guard.dead_at = None;
@@ -609,7 +665,7 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         }
         launch::LaunchPlan::Spawn => {}
     }
-    let port = match engine::free_loopback_port() {
+    let port = match engine::engine_port() {
         Ok(port) => port,
         Err(err) => {
             engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
@@ -650,7 +706,9 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
             guard.auto_restart_attempted = false;
             guard.health_misses = 0;
             log_restart_success(&reason);
+            engine::log_ui_address(port);
             let origin = guard.supervised.as_ref().expect("spawned").origin();
+            parent_watch_claim.keep();
             update_surfaces(app, supervisor, &guard);
             navigate_to_origin(app, &origin, &product_name);
             true
@@ -680,8 +738,112 @@ fn log_restart_success(reason: &str) {
     engine::append_shell_log("INFO", &line);
 }
 
-fn write_parent_file(data_dir: &Path) -> Result<(), String> {
-    let path = data_dir.join(".engine.parent");
+const PARENT_FILE: &str = ".engine.parent";
+const PARENT_PREV_FILE: &str = ".engine.parent.prev";
+
+fn read_parent_file_pid(data_dir: &Path) -> Option<u32> {
+    let path = data_dir.join(PARENT_FILE);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let pid = raw.trim().parse::<u32>().ok()?;
+    (pid > 0).then_some(pid)
+}
+
+fn read_parent_prev_pid(data_dir: &Path) -> Option<u32> {
+    let path = data_dir.join(PARENT_PREV_FILE);
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let pid = raw.trim().parse::<u32>().ok()?;
+    (pid > 0).then_some(pid)
+}
+
+fn write_parent_prev_pid(data_dir: &Path, pid: u32) -> Result<(), String> {
+    let path = data_dir.join(PARENT_PREV_FILE);
+    std::fs::write(&path, format!("{pid}\n")).map_err(|err| format!("{}: {err}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|err| {
+            format!("{}: {err}", path.display())
+        })?;
+    }
+    Ok(())
+}
+
+fn clear_parent_prev_pid(data_dir: &Path) {
+    let _ = std::fs::remove_file(data_dir.join(PARENT_PREV_FILE));
+}
+
+pub(crate) fn release_parent_watch_ownership(data_dir: &Path) {
+    let Some(recorded) = read_parent_file_pid(data_dir) else {
+        return;
+    };
+    if recorded != std::process::id() {
+        return;
+    }
+    let parent_path = data_dir.join(PARENT_FILE);
+    if let Some(fallback) = read_parent_prev_pid(data_dir) {
+        if launch::pid_can_act(fallback) {
+            if std::fs::write(&parent_path, format!("{fallback}\n")).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(
+                        &parent_path,
+                        std::fs::Permissions::from_mode(0o600),
+                    );
+                }
+                clear_parent_prev_pid(data_dir);
+                engine::append_shell_log(
+                    "INFO",
+                    &format!(
+                        "restored {PARENT_FILE} to live adopter pid {fallback} on adopt quit"
+                    ),
+                );
+            }
+            return;
+        }
+    }
+    clear_parent_prev_pid(data_dir);
+    if std::fs::remove_file(&parent_path).is_ok() {
+        engine::append_shell_log(
+            "INFO",
+            "cleared .engine.parent on adopt quit so parent_watch falls back to OPENDJ_PARENT_PID",
+        );
+    }
+}
+
+/// Holds `.engine.parent` until restart succeeds or the claim is released.
+struct RestartParentWatchClaim {
+    data_dir: PathBuf,
+    held: bool,
+}
+
+impl RestartParentWatchClaim {
+    fn claim(data_dir: PathBuf) -> Result<Self, String> {
+        write_parent_file(&data_dir)?;
+        Ok(Self { data_dir, held: true })
+    }
+
+    fn keep(&mut self) {
+        self.held = false;
+    }
+
+    fn release(&mut self) {
+        if self.held {
+            release_parent_watch_ownership(&self.data_dir);
+            self.held = false;
+        }
+    }
+}
+
+impl Drop for RestartParentWatchClaim {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+pub(crate) fn write_parent_file(data_dir: &Path) -> Result<(), String> {
+    let predecessor = read_parent_file_pid(data_dir);
+    let path = data_dir.join(PARENT_FILE);
     std::fs::write(&path, format!("{}\n", std::process::id())).map_err(|err| {
         format!("{}: {err}", path.display())
     })?;
@@ -691,6 +853,11 @@ fn write_parent_file(data_dir: &Path) -> Result<(), String> {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|err| {
             format!("{}: {err}", path.display())
         })?;
+    }
+    if let Some(predecessor) = predecessor {
+        if predecessor != std::process::id() && launch::pid_can_act(predecessor) {
+            write_parent_prev_pid(data_dir, predecessor)?;
+        }
     }
     Ok(())
 }
@@ -984,9 +1151,11 @@ mod tests {
 
     #[test]
     fn reaping_a_declared_dead_engine_that_is_still_alive_is_bounded() {
-        let directory =
-            std::env::temp_dir().join(format!("opendj-reap-bounded-{}", std::process::id()));
-        std::fs::create_dir_all(&directory).unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-reap-bounded-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
         let child = std::process::Command::new("/bin/sleep")
             .arg("120")
             .stdin(std::process::Stdio::null())
@@ -1029,7 +1198,6 @@ mod tests {
                 libc::killpg(pid as i32, libc::SIGKILL);
             }
         }
-        let _ = std::fs::remove_dir_all(&directory);
         assert!(
             finished,
             "reap_child blocked on a live child: the poll thread would park forever"
@@ -1116,6 +1284,122 @@ mod tests {
     fn lock_within_takes_a_free_lock() {
         let mutex = Mutex::new(7_u8);
         assert_eq!(*lock_within(&mutex, Duration::from_millis(10)).unwrap(), 7);
+    }
+
+    #[test]
+    fn release_parent_watch_clears_only_when_the_file_names_this_shell() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-parent-watch-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        let path = directory.join(PARENT_FILE);
+        std::fs::write(&path, "424242\n").expect("other shell pid");
+        release_parent_watch_ownership(&directory);
+        assert!(path.is_file(), "another shell's pid must be left alone");
+        std::fs::write(&path, format!("{}\n", std::process::id())).expect("this shell pid");
+        release_parent_watch_ownership(&directory);
+        assert!(!path.exists(), "this shell's pid must be cleared on adopt quit");
+    }
+
+    #[test]
+    fn relinquish_boot_supervised_adopted_clears_parent_watch() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-boot-relinquish-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        write_parent_file(&directory).expect("write parent for boot adopt");
+        relinquish_boot_supervised(
+            Supervised::Adopted {
+                pid: 424_242,
+                host: "127.0.0.1".into(),
+                port: 9,
+            },
+            &directory,
+        );
+        assert!(
+            !directory.join(PARENT_FILE).exists(),
+            "boot abort must clear .engine.parent for adopted engines"
+        );
+    }
+
+    #[test]
+    fn boot_supervised_guard_relinquishes_on_drop() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-boot-guard-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        write_parent_file(&directory).expect("write parent");
+        {
+            let _guard = BootSupervisedGuard::new(
+                Some(Supervised::Adopted {
+                    pid: 1,
+                    host: "127.0.0.1".into(),
+                    port: 9,
+                }),
+                directory.clone(),
+            );
+        }
+        assert!(!directory.join(PARENT_FILE).exists());
+    }
+
+    #[test]
+    fn restart_parent_watch_claim_releases_on_abort_without_keep() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-parent-watch-restart-claim-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        {
+            let _claim = RestartParentWatchClaim::claim(directory.clone()).expect("claim");
+        }
+        assert!(
+            !directory.join(PARENT_FILE).exists(),
+            "restart abort must clear .engine.parent when restart does not succeed"
+        );
+    }
+
+    #[test]
+    fn quit_during_restart_adopt_abort_releases_parent_watch_after_write_parent_file() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-parent-watch-abort-adopt-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        write_parent_file(&directory).expect("write parent for restart adopt");
+        let path = directory.join(PARENT_FILE);
+        assert!(path.is_file());
+        release_parent_watch_ownership(&directory);
+        assert!(
+            !path.exists(),
+            "quit during restart adopt must clear .engine.parent before returning"
+        );
+    }
+
+    #[test]
+    fn adopted_supervisor_does_not_record_engine_pid_for_force_stop() {
+        let tmp = tempfile::Builder::new()
+            .prefix("opendj-adopt-pid-")
+            .tempdir()
+            .expect("tempdir");
+        let directory = tmp.path().to_path_buf();
+        let supervisor = EngineSupervisor::new(
+            Supervised::Adopted {
+                pid: 424_242,
+                host: "127.0.0.1".into(),
+                port: 9,
+            },
+            SupervisorPaths {
+                payload: directory.clone(),
+                data_dir: directory.clone(),
+                log_path: directory.join("engine.log"),
+                product_name: "test".into(),
+            },
+            ShellHealthServer::start(&directory).expect("shell health"),
+        );
+        assert_eq!(supervisor.engine_pid_value(), 0);
     }
 
     #[test]

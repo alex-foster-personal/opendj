@@ -21,20 +21,28 @@ def _as_text(value: object) -> str | None:
     return text or None
 
 
+def _tracks_columns(conn: sqlite3.Connection) -> set[str]:
+    return {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+
+
+def _hash_pending_where(columns: set[str]) -> str:
+    """Predicates for live inferred rows lacking identity hashes (no deleted_at)."""
+    predicates = [
+        "stable_id_tier = 'inferred'",
+        "(content_hash IS NULL OR content_hash = '')",
+    ]
+    if "audio_hash" in columns:
+        predicates.append("(audio_hash IS NULL OR audio_hash = '')")
+    return " AND ".join(predicates)
+
+
 def count_hash_pending(conn: sqlite3.Connection) -> int:
     """Live inferred-tier tracks with no hash and no normalizable ISRC."""
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
-    audio_predicate = (
-        "AND (audio_hash IS NULL OR audio_hash = '')"
-        if "audio_hash" in columns else ""
-    )
+    columns = _tracks_columns(conn)
     rows = conn.execute(
         f"""
         SELECT isrc FROM tracks
-        WHERE deleted_at IS NULL
-          AND stable_id_tier = 'inferred'
-          AND (content_hash IS NULL OR content_hash = '')
-          {audio_predicate}
+        WHERE deleted_at IS NULL AND {_hash_pending_where(columns)}
         """
     ).fetchall()
     return sum(
@@ -54,16 +62,8 @@ def list_hash_pending(
     if limit < 1:
         raise ValueError(f"limit must be >= 1, got {limit}")
     params: list[object] = []
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
-    audio_predicate = (
-        " AND (audio_hash IS NULL OR audio_hash = '')"
-        if "audio_hash" in columns else ""
-    )
-    where = (
-        "deleted_at IS NULL AND stable_id_tier = 'inferred' "
-        "AND (content_hash IS NULL OR content_hash = '')"
-        + audio_predicate
-    )
+    columns = _tracks_columns(conn)
+    where = f"deleted_at IS NULL AND {_hash_pending_where(columns)}"
     if cursor:
         where += " AND stable_id > ?"
         params.append(cursor)

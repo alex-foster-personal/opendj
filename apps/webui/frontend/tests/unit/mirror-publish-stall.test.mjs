@@ -43,12 +43,15 @@ test('mirrorStallMessage names the gap in milliseconds', () => {
 	assert.match(message, /ms/);
 });
 
-test('ui-mirror.ts wires published_at, gap check, and mirror-stall at error', () => {
+test('ui-mirror.ts wires published_at, gap check, and mirror-stall at warn (OBS-08)', () => {
 	const root = fileURLToPath(new URL('../..', import.meta.url));
 	const source = readFileSync(`${root}/src/lib/rb/ui-mirror.ts`, 'utf8');
 	assert.match(source, /\bpublished_at:/);
 	assert.match(source, /classifyMirrorPublishGap/);
-	const mirrorStallCall = source.match(/recordPerfEvent\([\s\S]*?['"]mirror-stall['"][\s\S]*?\);/);
+	const mirrorStallCall = source.match(/recordPerfEvent\(\s*['"]mirror-stall['"][\s\S]*?\);/);
 	assert.ok(mirrorStallCall, 'recordPerfEvent must be called with mirror-stall');
-	assert.match(mirrorStallCall[0], /['"]error['"]/);
+	// OBS-08: warn keeps the stall in the ring and on the console without a
+	// client-errors POST. The console line the #2154 AC names is still written.
+	assert.match(mirrorStallCall[0], /['"]warn['"]/);
+	assert.doesNotMatch(mirrorStallCall[0], /['"]error['"]/);
 });

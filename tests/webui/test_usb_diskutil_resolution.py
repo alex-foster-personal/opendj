@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
@@ -39,8 +39,12 @@ def _path_lookup_is_a_failure(name: str, *_args: object, **_kwargs: object) -> s
 
 
 def test_the_pinned_path_is_absolute_and_in_usr_sbin() -> None:
-    assert Path("/usr/sbin/diskutil") == macos_diskutil.DISKUTIL_PATH
-    assert macos_diskutil.DISKUTIL_PATH.is_absolute()
+    # Judged in POSIX terms on every host: the pin is a macOS path, and a
+    # WindowsPath spelling of it (\usr\sbin\diskutil, rooted but driveless)
+    # is never absolute there, though the literal it was built from is.
+    pinned = PurePosixPath(macos_diskutil.DISKUTIL_PATH.as_posix())
+    assert pinned == PurePosixPath("/usr/sbin/diskutil")
+    assert pinned.is_absolute()
 
 
 def test_an_executable_file_resolves_to_its_own_absolute_path(tmp_path: Path) -> None:

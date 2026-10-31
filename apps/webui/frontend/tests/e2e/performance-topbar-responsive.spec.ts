@@ -244,6 +244,8 @@ test('loaded deck Stage opens the performance karaoke overlay and closes cleanly
 	});
 
 	const stageButton = page.getByRole('button', { name: 'Open karaoke stage' });
+	// LYR-12: Stage is inside LYR's hover menu, so hover LYR first.
+	await page.locator('button.topbar-slot-lyr').hover();
 	await expect(stageButton).toBeEnabled();
 	await stageButton.click();
 

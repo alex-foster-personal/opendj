@@ -1,6 +1,6 @@
 """Fail-fast CI watcher for a pull request: stream new failures, stop on the first GENUINE one.
 
-`just ci-watch <PR>` is the merging agent's single wait (spec: specs/ci-fail-fast.md, parts 1
+`just ci-watch <PR>` is the merging agent's single wait (spec: (private path), parts 1
 and 2, SMARTEST-CI round 3). Measured Wed 16 Sep 2026 over 30 failing PR runs: the first
 failed job landed at a median 4.4 min, the last job at 211 min, and agents waited for the
 last. This polls the pinned head every 30 s, prints each newly finished non-passing check as
@@ -42,6 +42,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import time
@@ -70,12 +71,15 @@ from scripts.ci_main_red import (
     stale_red_identities,
 )
 from scripts.ci_wait import (
+    MERGE_MOVES_ALLOWED,
+    ExpectationPlan,
     _check_runs_at_sha,
     _head_sha,
+    _lifecycle_of,
     _memoized_run_event,
-    _pr_lifecycle,
+    _pinned_merge_sha,
     _pr_lifecycle_message,
-    expected_for_head,
+    plan_for_head,
 )
 from scripts.ci_wait_core import (
     LifecycleOutcome,
@@ -86,7 +90,7 @@ from scripts.ci_wait_core import (
 )
 from scripts.review_coverage_carry import fetch_commits, is_ancestor
 from scripts.review_gate_freshness import CHECKOUT_ROOT
-from scripts.review_gh import TriageError
+from scripts.review_gh import TriageError, _gh
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
 REPO = "private_owner/music-dj-tools"
@@ -308,21 +312,54 @@ def exit_for(status: WaitStatus, watch: FailureWatch, *, has_baseline: bool) -> 
 
 def watch_pr(pr: str, *, timeout_s: float, poll_interval_s: float) -> Exit:
     head = _head_sha(pr, REPO)
-    expected = expected_for_head(pr, head, REPO)
     print(f"[ci-watch {_utc()}] PR #{pr} pinned head {head}; polling every {poll_interval_s:.0f}s")
+    for _ in range(MERGE_MOVES_ALLOWED):
+        # ONE merge-ref catalog for `expected` AND `alternatives`: resolving it twice can bind the
+        # two halves to different matrices across a base move (Sol, PR #5997 r4328137492).
+        plan = plan_for_head(pr, head, REPO)
+        result = _watch_plan(pr, head, plan, timeout_s=timeout_s, poll_interval_s=poll_interval_s)
+        if result is not None:
+            return result
+        print(f"[ci-watch {_utc()}] merge ref moved under the watch; re-deriving the catalog")
+    raise TriageError(
+        f"PR {pr}'s merge ref never stabilised at head {head} after {MERGE_MOVES_ALLOWED} "
+        "derivations; the matrix its checks execute is unknown, so ci-watch will not report a verdict"
+    )
+
+
+def _watch_plan(
+    pr: str,
+    head: str,
+    plan: ExpectationPlan | None,
+    *,
+    timeout_s: float,
+    poll_interval_s: float,
+) -> Exit | None:
+    """One watch against one bound plan. `None` means the merge ref moved: re-derive."""
+    expected = None if plan is None else plan.expected
     if expected is None:
         print("  no baseline from an earlier push: failures are watched, GREEN cannot be proven")
     watch = FailureWatch(read_job_log, cached_main_red, print, pr_head_sha=head)
     run_event = _memoized_run_event(REPO)
 
     def lifecycle() -> LifecycleOutcome | None:
-        state, merged = _pr_lifecycle(pr, REPO)
+        pull = json.loads(_gh(["api", f"repos/{REPO}/pulls/{pr}"]))
+        state, merged = _lifecycle_of(pull, pr, REPO)
         terminal = lifecycle_wait_status(state, merged)
         if terminal is not None:
             return LifecycleOutcome(terminal, _pr_lifecycle_message(pr, head, terminal))
         moved = _head_sha(pr, REPO)
         if moved != head:
             return LifecycleOutcome(WaitStatus.HEAD_MOVED, f"head moved {head[:9]} -> {moved[:9]}")
+        if plan is not None and _pinned_merge_sha(pull, head, REPO) != plan.merge_sha:
+            # Same rule as ci-wait: only the planned merge commit is a stable measurement, and
+            # an unpinned one is a rebuild in progress, not a licence to keep the old matrix
+            # (Sol, PR #5997 r4328308899 / r4328308888).
+            return LifecycleOutcome(
+                WaitStatus.HEAD_MOVED,
+                f"merge ref is no longer {plan.merge_sha}; the matrix the running checks "
+                "execute changed, so the watch re-derives against the new catalog",
+            )
         return None
 
     status, _, message = poll_until_terminal(
@@ -332,7 +369,10 @@ def watch_pr(pr: str, *, timeout_s: float, poll_interval_s: float) -> Exit:
         poll_interval_s=poll_interval_s,
         lifecycle_check=lifecycle,
         inspect_snapshot=watch.inspect,
+        alternatives={} if plan is None else plan.alternatives,
     )
+    if status is WaitStatus.HEAD_MOVED:
+        return None
     code, meaning = exit_for(status, watch, has_baseline=expected is not None)
     print(f"[ci-watch {_utc()}] {code.name} (exit {int(code)}): {meaning}. {message}")
     return code

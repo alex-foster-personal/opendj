@@ -18,6 +18,7 @@ reference stick has 42 such rows).
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -39,7 +40,12 @@ from tests.sync.usb.export_pdb_builder import PdbExport, PdbPlaylist, PdbTrack, 
 
 STICK_UUID = "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9"
 OTHER_UUID = "11111111-2222-4333-8444-555555555555"
-STICK_NAME = "SYN STICK "  # trailing space on purpose, like the real test stick
+# Trailing space on purpose, like the real test stick: a macOS volume name can
+# end in a space, and the routes must strip it for display. Win32 strips
+# trailing spaces from every path component, so "SYN STICK " cannot exist as a
+# directory there (mkdir makes "SYN STICK" and the child path does not
+# resolve). The quirk is a macOS mount phenomenon, and POSIX CI still covers it.
+STICK_NAME = "SYN STICK" if sys.platform == "win32" else "SYN STICK "
 AUDIO_BYTES = b"\xff\xfb\x90\x00synthetic audio payload"
 ARTWORK_S_BYTES = b"small"
 ARTWORK_M_BYTES = b"medium"

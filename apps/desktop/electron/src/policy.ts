@@ -3,6 +3,7 @@
 // Everything here is free of Electron so node:test covers it directly.
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 // ----- diagnostic flags (INSTALL-24, issue #2868) ---------------------------
 export const USAGE = `usage: opendj-desktop [-h] [--version]
@@ -184,4 +185,41 @@ export interface PageInit {
 	perfProbe: boolean;
 	/** Present only while the supervisor has declared the engine dead. */
 	supervisor: { engine: 'dead'; exit_code: number; lock_pid: number; lock_port: number; health_port: number } | null;
+	/** OPENDJ_AUDIO_ENGINE_CHOICE: the audio engine last chosen in Settings, or null when none was. */
+	audioEngineChoice: AudioEngineChoice | null;
+}
+
+// ----- audio engine choice -------------------------------------------------------
+// The page remembers its engine choice in localStorage, but the engine binds a new
+// port each launch, so the page's origin, and with it that storage, starts empty
+// every time. The shell keeps the choice on disk instead (NAE-8118).
+export type AudioEngineChoice = 'webaudio' | 'rust';
+export const AUDIO_ENGINE_CHOICE_FILE = 'audio-engine-choice.json';
+
+export function isAudioEngineChoice(value: unknown): value is AudioEngineChoice {
+	return value === 'webaudio' || value === 'rust';
+}
+
+/** The saved choice; null when none was saved. Throws on a file it cannot read. */
+export function readAudioEngineChoice(file: string): AudioEngineChoice | null {
+	let raw: string;
+	try {
+		raw = fs.readFileSync(file, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+		throw error;
+	}
+	const choice = (JSON.parse(raw) as { choice?: unknown } | null)?.choice;
+	if (!isAudioEngineChoice(choice)) throw new Error(`${file}: choice ${JSON.stringify(choice)} is not one of webaudio, rust`);
+	return choice;
+}
+
+/** Save the choice atomically (write a sibling, then rename over the file). */
+export function writeAudioEngineChoice(file: string, choice: unknown): AudioEngineChoice {
+	if (!isAudioEngineChoice(choice)) throw new Error(`audio engine choice must be webaudio|rust, got ${String(choice)}`);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	const temp = `${file}.${process.pid}.tmp`;
+	fs.writeFileSync(temp, `${JSON.stringify({ choice })}\n`);
+	fs.renameSync(temp, file);
+	return choice;
 }

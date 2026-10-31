@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.audit.matches_csv import DEFAULT_MIN_MATCH_CONFIDENCE, iter_match_pairs
+from apps.audit.rekordbox_db_util import close_db_quietly
 from apps.shared import paths
 from apps.shared.normalised import NormalisedCue
 
@@ -234,10 +235,7 @@ def main(argv: list[str] | None = None) -> int:
             min_confidence=args.min_confidence,
         )
     finally:
-        try:
-            rb_db.close()
-        except Exception:
-            pass
+        close_db_quietly(rb_db)
 
     write_diff_csv(rows, args.out)
     print_summary(rows)

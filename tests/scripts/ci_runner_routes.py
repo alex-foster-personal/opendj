@@ -22,6 +22,16 @@ TRUNK_DRAFT_GUARD = (
 )
 MERGE_QUEUE_DISJUNCT = f"{TRUNK_DRAFT_GUARD} && vars.CI_RUNS_ON_MERGE_QUEUE"
 
+#: The e2e gate's own reserve (ADR-NEW-trunk-queue-drafts-use-a-reserved-e2e-pool): a
+#: Trunk draft prefers the opt-in `CI_RUNS_ON_E2E_MERGE_QUEUE`, a label set on e2e hosts,
+#: never the pytest-host `mq` reserve the gate has never been proven on.
+E2E_MERGE_QUEUE_DISJUNCT = f"{TRUNK_DRAFT_GUARD} && vars.CI_RUNS_ON_E2E_MERGE_QUEUE"
+#: The e2e gate's switch before that route, and with it.
+PRE_ROUTE_E2E_GATE = "${{ fromJSON(vars.CI_RUNS_ON_E2E || '\"ubuntu-latest\"') }}"
+E2E_GATE_RUNS_ON = (
+    f"${{{{ fromJSON({E2E_MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_E2E || '\"ubuntu-latest\"') }}}}"
+)
+
 #: The light-pool switch every routed non-pytest job read before this route existed.
 PRE_ROUTE_LIGHT = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 #: The same switch with the merge-queue preference in front of it.

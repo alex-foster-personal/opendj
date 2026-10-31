@@ -4,9 +4,9 @@
  *
  * The browser (BrowserPanel) is the same component Gig mode mounts under
  * its decks. In Library mode it publishes its active pane's selection here
- * so the inspector and preview bar can follow it, and it refuses deck loads:
- * Library mode advertises "no decks, no workers" (app-mode.ts), and a deck
- * load would build the audio engine the mode switch just tore down.
+ * so the inspector and preview bar can follow it. It builds no deck: Library
+ * mode advertises "no decks, no workers" (app-mode.ts), so a deck load hands
+ * the track to Gig instead (library-preview.svelte.ts, LIBWS-06).
  */
 
 import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte';
@@ -28,9 +28,6 @@ export const libraryWorkspace: LibraryWorkspaceState = $state({
 	selected_rows: [],
 	pane_title: ''
 });
-
-export const LIBRARY_DECK_LOAD_REFUSAL =
-	'Library mode has no decks. Switch to Gig to load a track.';
 
 export function enterLibraryWorkspace(): void {
 	libraryWorkspace.active = true;

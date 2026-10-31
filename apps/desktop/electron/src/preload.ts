@@ -5,9 +5,11 @@
 // Two jobs, nothing else:
 // 1. Put the shell's globals into the page's own world (P14): the engine
 //    origin, the build identity, the quit hook default, the pending shell
-//    error queue, and the dead-engine supervisor state when there is one.
+//    error queue, the dead-engine supervisor state when there is one, and
+//    the saved audio engine choice when there is one.
 // 2. Expose `window.opendjShell`, the four native features the UI needs
-//    (folder picker, open in browser, exit/relaunch, updater). The main
+//    (folder picker, open in browser, exit/relaunch, updater) and the
+//    audio engine choice it saves to disk. The main
 //    process re-checks the calling frame's origin on every call.
 //
 // Sandboxed preloads may only require 'electron', so this file imports nothing
@@ -26,6 +28,7 @@ interface PageInit {
 	shellBuild: Record<string, unknown>;
 	perfProbe: boolean;
 	supervisor: Record<string, unknown> | null;
+	audioEngineChoice: string | null;
 }
 
 const init = ipcRenderer.sendSync('opendj:page-init') as PageInit | null;
@@ -45,6 +48,7 @@ if (init !== null) {
 				pending.push({ kind, message, context: context || { source: 'shell-webview' } });
 			};
 			if (state.supervisor !== null) scope.__OPENDJ_ENGINE_SUPERVISOR__ = state.supervisor;
+			if (state.audioEngineChoice !== null) scope.OPENDJ_AUDIO_ENGINE_CHOICE = state.audioEngineChoice;
 		},
 		args: [init]
 	});
@@ -57,6 +61,8 @@ if (init !== null) {
 		openExternal: (url: string): Promise<void> => ipcRenderer.invoke('opendj:open-external', String(url)),
 		exit: (code = 0): Promise<void> => ipcRenderer.invoke('opendj:exit', Number(code)),
 		relaunch: (): Promise<void> => ipcRenderer.invoke('opendj:relaunch'),
+		setAudioEngineChoice: (choice: string): Promise<void> =>
+			ipcRenderer.invoke('opendj:audio-engine-choice', String(choice)),
 		applyUpdate: async (
 			onProgress?: (progress: Progress) => void
 		): Promise<{ kind: 'no-update' } | { kind: 'installed' } | { kind: 'refused'; reason: string }> => {

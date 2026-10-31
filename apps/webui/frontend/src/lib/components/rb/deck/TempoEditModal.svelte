@@ -18,6 +18,10 @@
 		halveDoubleVisibility,
 		nudgeBpm,
 		parseTempoBpmInput,
+		pushTempoTap,
+		TAP_TEMPO_MIN_TAPS,
+		runTempoWrites,
+		tapTempoBpm,
 		tempoWritesFromTargetBpm
 	} from '$lib/rb/tempo-edit';
 	import {
@@ -123,11 +127,11 @@
 			currentRange: pitchRanges[id]
 		});
 		if (writes === null) return false;
-		for (const write of writes) {
-			await runPerformanceCommandFromUi(write, pressT0Ms);
-		}
+		// A refused write (preset lock, unloaded deck) resolves ok: false rather
+		// than throwing; the caller must not claim the tempo landed.
+		const taken = await runTempoWrites(writes, (write) => runPerformanceCommandFromUi(write, pressT0Ms));
 		drafts[id] = _formatBpm(_effectiveBpm(id));
-		return true;
+		return taken;
 	}
 
 	async function commitDraft(id: DeckId, raw: string, pressT0Ms?: number): Promise<void> {
@@ -162,6 +166,33 @@
 			const target = nudgeBpm(base, sign * delta);
 			void commitDraft(id, String(target), event.timeStamp);
 		}
+	}
+
+	// I12 (TEMPO-SRC-01): tap the tempo this deck should run at. From the
+	// fourth tap on, every tap applies the tapped BPM through the same writes
+	// as a typed one; a pause longer than 2 s starts a new run.
+	let taps: number[] = $state([]);
+	/** False when the last tapped tempo could not be applied (no base BPM, or
+	 * past the widest pitch range), so the title never claims it was. */
+	let tapApplied = $state(true);
+	const tappedBpm: number | null = $derived(tapTempoBpm(taps));
+	const tapTitle: string = $derived(
+		tappedBpm === null
+			? `Tap the beat: from the ${TAP_TEMPO_MIN_TAPS}th tap this deck runs at the tapped BPM (a 2 s pause starts over)`
+			: tapApplied
+				? `Tapped ${tappedBpm.toFixed(2)} BPM over the last ${taps.length - 1} intervals; this deck now runs at it`
+				: `Tapped ${tappedBpm.toFixed(2)} BPM, but the tempo did not change: this track has no BPM or beatgrid to scale from, or the tempo is past the widest pitch range`
+	);
+
+	async function onTap(id: DeckId, event: MouseEvent): Promise<void> {
+		// Only the primary button taps; a right or middle click is not a beat.
+		if (event.button !== 0) return;
+		taps = pushTempoTap(taps, event.timeStamp);
+		const bpm = tapTempoBpm(taps);
+		if (bpm === null) return;
+		drafts[id] = _formatBpm(bpm);
+		tapApplied = await _dispatchWrites(id, bpm, event.timeStamp);
+		if (!tapApplied) drafts[id] = _formatBpm(_effectiveBpm(id));
 	}
 
 	async function onHalve(id: DeckId, event: MouseEvent): Promise<void> {
@@ -309,6 +340,21 @@
 				</button>
 			{/if}
 			{#if id === deckId && loaded}
+				<button
+					type="button"
+					class="tap-btn"
+					class:tapping={taps.length > 1}
+					class:refused={!tapApplied}
+					data-testid={`tempo-edit-tap-deck-${id}`}
+					aria-label={`tap tempo deck ${id}`}
+					title={tapTitle}
+					onpointerdown={(e) => void onTap(id, e)}
+					onclick={(e) => {
+						if (e.detail === 0) void onTap(id, e);
+					}}
+				>
+					TAP
+				</button>
 				<!-- svelte-ignore a11y_no_redundant_roles -->
 				<input
 					type="range"
@@ -466,8 +512,15 @@
 	.bpm-input:disabled {
 		color: var(--rb-text-dim);
 	}
+	.tap-btn.tapping {
+		border-color: var(--rb-accent);
+	}
+	.tap-btn.refused {
+		border-color: var(--rb-orange);
+	}
 	.halve-btn,
-	.double-btn {
+	.double-btn,
+	.tap-btn {
 		font-size: 10px;
 		padding: 2px 6px;
 		border: 1px solid var(--rb-border);
@@ -477,7 +530,8 @@
 		cursor: pointer;
 	}
 	.halve-btn:hover,
-	.double-btn:hover {
+	.double-btn:hover,
+	.tap-btn:hover {
 		background: var(--rb-select);
 	}
 	.tempo-slider {

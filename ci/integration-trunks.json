@@ -1,0 +1,8 @@
+{
+  "_comment": "Version trunks kept in sync by .github/workflows/integration-sync.yml (ADR-NEW-post-v1-branch-strategy). Order matters: each upstream is synced before the trunks that follow it. A trunk listed here must exist on origin; the sync job reports a missing one as UNKNOWN and fails.",
+  "required_checks": ["ci gate"],
+  "trunks": [
+    {"branch": "main-v2", "upstream": "main"},
+    {"branch": "main-v3", "upstream": "main-v2"}
+  ]
+}

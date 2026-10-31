@@ -19,8 +19,13 @@ def bulk_select_by_stable_id(
     table: str,
     columns: str,
     stable_ids: Sequence[str],
+    *,
+    live_only: bool = False,
 ) -> list[sqlite3.Row]:
     """``SELECT <columns> FROM <table> WHERE stable_id IN (...)``, chunked.
+
+    ``live_only`` also requires ``deleted_at IS NULL``, so a tombstoned row
+    reads as absent (the table must carry ``deleted_at``).
 
     Ids are deduped (order-preserving) before chunking; a missing id is
     simply absent from the returned rows, same absence contract every
@@ -28,11 +33,12 @@ def bulk_select_by_stable_id(
     """
     ids = list(dict.fromkeys(stable_ids))
     rows: list[sqlite3.Row] = []
+    live = " AND deleted_at IS NULL" if live_only else ""
     for i in range(0, len(ids), _SQL_CHUNK):
         sub = ids[i : i + _SQL_CHUNK]
         placeholders = ",".join("?" * len(sub))
         rows.extend(conn.execute(
-            f"SELECT {columns} FROM {table} WHERE stable_id IN ({placeholders})",
+            f"SELECT {columns} FROM {table} WHERE stable_id IN ({placeholders}){live}",
             tuple(sub),
         ))
     return rows

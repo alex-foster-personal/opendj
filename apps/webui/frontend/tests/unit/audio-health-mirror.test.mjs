@@ -312,6 +312,7 @@ describe('audio faults survive unrelated ring traffic', () => {
 		assert.equal(at('audio-output-rebind-deferred', 'warn'), 'warn');
 		assert.equal(at('silent-while-playing', 'error'), 'error');
 		assert.equal(at('presentation-clock-stalled', 'error'), 'error');
+		assert.equal(at('presentation-clock-stalled', 'warn'), 'warn');
 		assert.equal(at('audio-output-alive', 'info'), null, 'a recovery is not a fault');
 		assert.equal(at('audio-context', 'info'), null, 'a device floor is not a fault');
 		assert.equal(at('xrun', 'error'), null, 'xrun has its own counter and would crowd the bucket');

@@ -40,10 +40,41 @@ class Invocation:
     values: dict[str, Any] = field(default_factory=dict)
 
 
-def _consume(args: Sequence[Arg], rest: Sequence[str]) -> tuple[dict[str, Any], list[str]]:
+def _named_tokens(args: Sequence[Arg], rest: Sequence[str]) -> tuple[dict[str, str], list[str]]:
+    """Split out ``key=value`` tokens that name a one-token argument of the verb.
+
+    Positional tokens fill slots in order, so ``cmdk_pick 0 2`` binds 2 to ``id``.
+    A named token reaches its slot directly, so ``cmdk_pick 0 deck=2`` targets the
+    deck without inventing an ``id``. A token whose key names no argument stays
+    positional, so text that happens to contain ``=`` is not refused.
+    """
+    keys = {argument.key for argument in args if argument.arity == 1}
+    named: dict[str, str] = {}
+    positional: list[str] = []
+    for token in rest:
+        key, separator, value = token.partition("=")
+        if separator and key in keys:
+            if key in named:
+                raise InvocationError(f"{key} was given twice; give it once")
+            named[key] = value
+        else:
+            positional.append(token)
+    return named, positional
+
+
+def _consume(
+    args: Sequence[Arg], rest: Sequence[str], named: Mapping[str, str] | None = None
+) -> tuple[dict[str, Any], list[str]]:
     values: dict[str, Any] = {}
     remaining = list(rest)
+    named = named or {}
     for argument in args:
+        if argument.key in named:
+            try:
+                values[argument.key] = argument.parse(argument.key, named[argument.key])
+            except ValueError as error:
+                raise InvocationError(str(error)) from error
+            continue
         if len(remaining) < argument.arity:
             if argument.optional:
                 continue
@@ -80,7 +111,11 @@ def _verb_for(name: str, scoped: int | None, positionals: list[str]) -> tuple[Ve
         return verb, positionals
     if not any(argument.key == "deck" for argument in verb.args):
         raise InvocationError(f"{name} does not take a deck")
-    return verb, [str(scoped), *positionals]
+    if verb.args[0].key == "deck":
+        return verb, [str(scoped), *positionals]
+    # The deck is not the first argument (cmdk_pick's index comes first), so the
+    # scope prefix names it rather than guessing the slot it would have filled.
+    return verb, [*positionals, f"deck={scoped}"]
 
 
 def _reject_leftover(
@@ -117,7 +152,8 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
         raise InvocationError("no verb given; run opendj --list-verbs")
     name, *positionals = rest
     verb, positionals = _verb_for(name, scoped, positionals)
-    values, leftover = _consume(verb.args, positionals)
+    named, positionals = _named_tokens(verb.args, positionals)
+    values, leftover = _consume(verb.args, positionals, named)
     _reject_leftover(verb, values, leftover, any(a.key == "deck" for a in verb.args))
     command = verb.build(values)
     if "deck" in command and command["deck"] not in DECK_VALUES:

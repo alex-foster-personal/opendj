@@ -122,6 +122,20 @@ test('the boot wiring really points the sink at reportClientError', () => {
 // what must NOT escalate
 //-----------------------------------------------------------------------------
 
+test('observability perf kinds recorded at warn stay local', () => {
+	// OBS-08: mirror-stall and xrun-sentinel-armed are recorded at warn (the default),
+	// and only error rows escalate. No per-kind exception exists in _escalate.
+	for (const kind of ['mirror-stall', 'xrun-sentinel-armed']) {
+		escalated.length = 0;
+		perfLog.recordPerfEvent(kind, `${kind} probe`, null, 'warn');
+		assert.equal(
+			escalated.length,
+			0,
+			`if ${kind} at warn escalates then broken - the row is for local diagnosis only`
+		);
+	}
+});
+
 test('CONTROL: warn and info severity rows stay local', () => {
 	// transport-schedule is appended once per _scheduleDeck and PitchFader drives
 	// that from an unthrottled pointermove, so "forward every perf event" would

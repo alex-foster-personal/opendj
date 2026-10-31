@@ -30,6 +30,7 @@ from apps.engine_core.ws import (
     QUEUE_SIZE,
     SLOW_CONSUMER_CODE,
     TOPIC_HEALTH_CHANGED,
+    TOPIC_ANALYSIS_CHANGED,
     TOPIC_JOBS_UPDATED,
     TOPIC_LIBRARY_CHANGED,
     TOPICS,
@@ -79,8 +80,25 @@ def test_hello_frame_carries_the_contract_and_seq_start() -> None:
         TOPIC_JOBS_UPDATED,
         TOPIC_HEALTH_CHANGED,
         TOPIC_LIBRARY_CHANGED,
+        TOPIC_ANALYSIS_CHANGED,
     ]
     assert list(TOPICS) == hello["payload"]["topics"]
+
+
+def test_analysis_changed_frame_names_track_and_lane() -> None:
+    hub = WsHub(contract_rev="rev", engine_version="0")
+    with TestClient(_app(hub)) as client, client.websocket_connect(
+        EVENTS_PATH
+    ) as socket:
+        socket.receive_text()
+        hub.publish(
+            TOPIC_ANALYSIS_CHANGED,
+            {"stable_id": "track-1", "lane": "beatgrid"},
+        )
+        frame = json.loads(socket.receive_text())
+
+    assert frame["topic"] == TOPIC_ANALYSIS_CHANGED
+    assert frame["payload"] == {"stable_id": "track-1", "lane": "beatgrid"}
 
 
 def test_seq_is_lifetime_monotonic_across_frames() -> None:

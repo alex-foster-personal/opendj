@@ -567,3 +567,71 @@ def test_a_stale_legacy_path_falls_back_to_the_local_location(state_db, tmp_path
         "materialized local copy was sitting in track_locations"
     )
     assert [item.file_path for item in result.pending] == [str(audio)]
+
+
+# ----- a record retired by an audio rewrite is not analyzed (NATIVE-30) ------
+
+_RETIRED_BACKEND = backlog_mod.DRAIN_BACKEND
+
+
+def _retired_db(tmp_path: Path, *, retire: bool) -> tuple[Path, Path]:
+    """A state db with one librosa row for sid-a, retired by folder ingest or current (NATIVE-30)."""
+    from apps.analysis.store import open_conn, upsert_record
+    from apps.shared.state.ingest import folder
+    from tests.test_analysis_route import _record
+
+    db = tmp_path / "state" / "state.db"
+    open_state_rw(db).close()
+    audio = tmp_path / "a.mp3"
+    audio.write_bytes(b"\x00" * 4096)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, file_path, created_at, updated_at) "
+        "VALUES ('sid-a', 'inferred', 't', '[]', ?, '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00')",
+        (str(audio),),
+    )
+    conn.commit()
+    conn.close()
+    upsert_record(_record("sid-a", backend=_RETIRED_BACKEND), db_path=db)
+    if not retire:
+        # A lane-level marker (the dependency cascade) is not a retirement.
+        from apps.shared.state import analysis_stale
+
+        conn = open_conn(db)
+        try:
+            analysis_stale.mark_stale(
+                conn, stable_id="sid-a", lane="key", backend=_RETIRED_BACKEND,
+                backend_version="test-1.0", reason=analysis_stale.STALE_DEPENDENCY_MOVED,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    if retire:
+        conn = open_conn(db)
+        try:
+            folder._retire_analysis_of_replaced_bytes(conn, "sid-a", delete=False)
+            conn.commit()
+        finally:
+            conn.close()
+    return db, audio
+
+
+@pytest.mark.requirement("NATIVE-30")
+@pytest.mark.parametrize("retire", [True, False])
+def test_a_retired_record_is_queued_again_and_a_current_one_is_not(tmp_path: Path, retire: bool) -> None:
+    """[if] a rewrite retired the row [then] it is queued again, [else stop]."""
+    from apps.analysis.run import TrackRef, filter_missing
+
+    db, audio = _retired_db(tmp_path, retire=retire)
+    queued = filter_missing([TrackRef("sid-a", audio)], backend_name=_RETIRED_BACKEND, db_path=db)
+    conn = sqlite3.connect(db)
+    try:
+        pending = [item.stable_id for item in backlog_mod.scan(conn).pending]
+    finally:
+        conn.close()
+    if retire:
+        assert [r.stable_id for r in queued] == ["sid-a"], "a retired record must not read as analyzed"
+        assert pending == ["sid-a"], "the drain backlog must agree with the run"
+    else:
+        assert queued == [], "a current record is still skipped"
+        assert pending == []

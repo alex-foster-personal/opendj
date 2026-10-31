@@ -19,12 +19,12 @@ import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
 import { releaseBody } from '$lib/api/release-body';
 import { RbApiError } from './api-rb-error';
-import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
+import { anlzTrackRevision, currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
 import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
 export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
-import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
@@ -876,7 +876,7 @@ export async function fetchAnlz(
 	bypassCache = false
 ): Promise<AnlzWithVocals> {
 	const gen = currentAnlzFetchGeneration();
-	const key = `${stable_id}:${points}:${gen}`;
+	const key = `${stable_id}:${points}:${gen}:${anlzTrackRevision(stable_id)}`;
 	if (!bypassCache) {
 		const existing = _inflightAnlz.get(key);
 		if (existing !== undefined) return existing;
@@ -1064,15 +1064,6 @@ export async function setTransitionInCue(stable_id: string, in_ms: number): Prom
 /** URL for GET /tracks/{sid}/artwork: see artwork-url.ts, its leaf home. */
 export { artworkUrl };
 
-/** Artwork for a loaded deck: the same chain as {@link artworkUrl}, and when
- * the track has no local artwork (rekordbox, embedded picture, folder image)
- * the server also looks it up on MusicBrainz + Cover Art Archive and caches
- * what it finds. Only decks ask for this: the lookup is held to one request
- * per second, so a library page of rows must never trigger it. */
-export function deckArtworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
-	return `${artworkUrl(stable_id, size)}&online=true`;
-}
-
 /** Human label for rb_meta.artwork_status when the art cell is empty.
  *
  * `ok`, null and undefined are all "no label", and undefined is the common
@@ -1109,8 +1100,11 @@ export function audioUrl(stable_id: string): string {
 /** Fetch the full audio file as an ArrayBuffer for decodeAudioData.
  * Throws RbApiError on AUDIO_FILE_MISSING / AUDIO_IS_STREAMING_URI /
  * TRACK_NOT_FOUND - the audio engine surfaces these, never plays silence. */
-export async function fetchAudioArrayBuffer(stable_id: string): Promise<ArrayBuffer> {
-	const r = await fetch(audioUrl(stable_id));
+export async function fetchAudioArrayBuffer(
+	stable_id: string,
+	signal?: AbortSignal
+): Promise<ArrayBuffer> {
+	const r = await fetch(audioUrl(stable_id), signal === undefined ? undefined : { signal });
 	if (!r.ok) await _throwRbApiError(r);
 	return r.arrayBuffer();
 }

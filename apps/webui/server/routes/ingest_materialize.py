@@ -65,7 +65,10 @@ def _resolve_staged(
     tracks: list[MaterializedTrack] = []
     unresolved: list[str] = []
     for path in staged:
-        rel = str(path.relative_to(dest_dir))
+        # POSIX separators on every OS: the client names staged files with /
+        # (the upload's own filenames), so a Windows backslash would break the
+        # match between what was uploaded and what materialized.
+        rel = path.relative_to(dest_dir).as_posix()
         stable_id = _stable_id_for_path(conn, path)
         if stable_id is None:
             unresolved.append(rel)

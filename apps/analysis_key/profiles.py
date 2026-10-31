@@ -19,7 +19,7 @@ this PR's diff to the new lane).
 An EDM-tuned candidate (edma/bgate, Faraldo, Jorda & Herrera 2017, "A
 Multi-Profile Method for Key Estimation in EDM," AES Conference on Semantic
 Audio) was attempted in this round and removed: this repo's own
-specs/native-analysis-v1.md section 5.1 states the provenance rule for those
+(private path) section 5.1 states the provenance rule for those
 constants explicitly -- transcribed from the Faraldo papers themselves, never
 from Essentia's AGPL-licensed key.cpp or the unlicensed edmkey repository.
 The values previously here were sourced from Essentia's source, which
@@ -79,6 +79,11 @@ def key_for_index(index: int) -> Key:
     return Key(pitch_class=index // 2, is_minor=bool(index % 2))
 
 
+def _require_chroma_matrix(chroma: np.ndarray) -> None:
+    if chroma.ndim != 2 or chroma.shape[0] != 12:
+        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
+
+
 def _unit(vector: np.ndarray) -> np.ndarray:
     return vector / (np.linalg.norm(vector) + 1e-9)
 
@@ -111,8 +116,7 @@ def correlation_matrix(
     all 24 candidates, and it must be the same instrument the track-level
     estimate uses, not a second one that can disagree with it.
     """
-    if chroma.ndim != 2 or chroma.shape[0] != 12:
-        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
+    _require_chroma_matrix(chroma)
     matrix = _profile_matrix(
         _KRUMHANSL_MAJOR if major_profile is None else major_profile,
         _KRUMHANSL_MINOR if minor_profile is None else minor_profile,
@@ -130,8 +134,6 @@ def profile_correlations(
     The long-term estimate's own score vector, exposed so segment confidence
     and the track's scalar key come from one computation.
     """
-    if chroma.ndim != 2 or chroma.shape[0] != 12:
-        raise ValueError(f"chroma must have 12 pitch-class rows, got shape {chroma.shape}")
     return correlation_matrix(
         chroma.mean(axis=1, keepdims=True), major_profile, minor_profile
     )[:, 0]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
 import time
 from pathlib import Path
@@ -63,6 +64,15 @@ def _insert_track(state_path: Path, stable_id: str, file_path: str) -> None:
         conn.close()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "os.mkfifo does not exist on Windows, and no Windows file type blocks "
+        "open() in-kernel the way a writerless FIFO does; the bounded-open "
+        "timeout path under test is platform-neutral (its taskkill branch is "
+        "not exercised here)"
+    ),
+)
 def test_lifespan_shutdown_completes_after_blocked_audio_probe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

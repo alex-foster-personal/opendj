@@ -92,9 +92,26 @@ export interface AnlzBeatgrid {
 	 * the grid is trusted). Rekordbox omits it. `true` means a static grid
 	 * the analyzer distrusts (legacy / defensive). */
 	static_grid_untrusted?: boolean;
-/** Own payloads only. True when the bar-phase vote is below the floor.
- * The tempo line is still the grid. Beat numbers are not a trusted downbeat. */
-bar_phase_untrusted?: boolean;
+	/** Own payloads only. True when the bar-phase vote is below the floor.
+	 * The tempo line is still the grid. Beat numbers are not a trusted downbeat. */
+	bar_phase_untrusted?: boolean;
+	/** GRIDEDIT-6235b: the user's grid adjust / grid shift already applied to
+	 * `beats` above (apps/shared/state/grid_edit.py). Absent = no edit. */
+	edit?: AnlzBeatgridEdit;
+	/** Set only by beatgrid-fallback.ts: this grid came from /beatgrid-fallback,
+	 * which never applies a stored grid edit, so the deck refuses to edit it.
+	 * On the grid itself so it is replaced with the grid (Sentry on PR #8132). */
+	fallback?: true;
+}
+
+/** One grid source's stored edit, as `/anlz` and `/grid-edit` report it. */
+export interface AnlzBeatgridEdit {
+	/** The grid the edit belongs to; always the block's own `source`. */
+	source: AnlzBeatgridSource;
+	/** Every beat moved by this many ms, later when positive. */
+	offset_ms: number;
+	/** Bar 1 moved by this many whole beats, later when positive (-1..2). */
+	beat_shift: number;
 }
 
 /** One tempo change detected by the own beatgrid analyzer (NATIVE-03). */

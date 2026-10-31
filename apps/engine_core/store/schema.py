@@ -84,12 +84,12 @@ from apps.adapters.rekordbox.sidecar_schema import (
     VENDOR_SIDECAR_TABLES,
     ensure_vendor_sidecar_tables,
 )
-from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.shared.pairings.schema_sql import (
     migrate_pairings_snapshot_json,
     migrate_smartlists_deleted_at,
 )
+from apps.shared.state.analysis_stale import STALE_TABLES_SQL
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 from apps.shared.state.migrations_v25 import _V25 as _LEGACY_V25
 

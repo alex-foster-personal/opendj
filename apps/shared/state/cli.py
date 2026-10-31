@@ -2,7 +2,7 @@
 
 Subcommands (built up across Phase 5 plans):
 
-* ``init``       -- create/migrate ``data/state/state.db`` (plan 05-01).
+* ``init``       -- create/migrate ``(private path)`` (plan 05-01).
 * ``stats``      -- print table counts + source breakdown (plan 05-01/03).
 * ``inspect``    -- pretty-print one track as open-dj JSON (plan 05-02).
 * ``ingest-rb``  -- Rekordbox -> state.db, dry-run by default (plan 05-03).
@@ -242,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "re-decrypt the encrypted snapshot even when a plain copy exists "
-            "(then rm -rf data/state/anlz-cache/, which embeds djmdCue data)"
+            "(then rm -rf (private path)/, which embeds djmdCue data)"
         ),
     )
     ing.add_argument(
@@ -289,7 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     fol.add_argument(
         "--allow-mass-missing",
         action="store_true",
-        help="override LIBM-41: allow a scan that drops more than 50% of a "
+        help="override LIBM-41: allow a scan that drops more than 50%% of a "
         "previously populated root (including to zero)",
     )
     return parser

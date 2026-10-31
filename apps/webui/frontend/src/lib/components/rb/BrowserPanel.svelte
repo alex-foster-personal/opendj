@@ -120,7 +120,7 @@
 		SearchHitWire,
 		Vocals
 	} from '$lib/rb/api-rb';
-	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { DeckId, DeckLoadOptions } from '$lib/rb/deck-slots';
 	import type { PlaylistNode, RbMeta } from '$lib/rb/library-types';
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
@@ -307,15 +307,14 @@
 	} from './wave/anlz-cache.svelte';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 	/**
-	 * LIBWS-01/03: set only when the Library workspace (CrateDesk) mounts this
-	 * browser. It then refuses deck loads with `refusal` and publishes the
-	 * active pane's selection through `publish`. Gig mounts it without one.
-	 * A prop rather than an import keeps the browser off the workspace module
-	 * (frontend.max_fan_out).
-	 */
+	 * LIBWS-01/04/06: set only by the Library workspace (CrateDesk): selection
+	 * goes out via `publish`, deck loads go to Gig via `loadToDeck`, strip
+	 * clicks and double-clicks play via its engine-free `preview`. A prop
+	 * keeps the browser off the workspace module (frontend.max_fan_out). */
 	interface BrowserLibraryHost {
-		refusal: string;
 		publish(ids: readonly string[], rows: readonly BrowserRow[], paneTitle: string): void;
+		loadToDeck(row: LoadableRow, deck: DeckId | null): void;
+		preview(row: LoadableRow, ratio: number): void;
 	}
 	let { library = null }: { library?: BrowserLibraryHost | null } = $props();
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
@@ -2701,7 +2700,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number; pressT0Ms?: number; noKeyShift?: boolean } = {}
+		opts: DeckLoadOptions = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -2715,13 +2714,6 @@
 		// generation number, not a boolean, is what makes that safe.
 		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
-			// LIBWS-03: Library mode has no decks; a load would build the
-			// audio engine the mode switch tore down. Inside the try so the
-			// finally still releases a picker reservation.
-			if (library !== null) {
-				pushToast(library.refusal, 'info');
-				return;
-			}
 			if (isRemovedStickRow(row)) {
 				pushToast('cannot load: Stick removed', 'error');
 				return;
@@ -2731,6 +2723,13 @@
 				// Refuse before dispatchPerformanceCommand. Absent and
 				// unchecked/pending rows never become a deck error toast.
 				pushToast(loadRefusal, 'error');
+				return;
+			}
+			// LIBWS-06: Library mode has no decks; building one here would wake
+			// the engine the mode switch tore down, so the load goes to Gig.
+			// Inside the try so the finally still releases a picker reservation.
+			if (library !== null) {
+				library.loadToDeck(row, deck);
 				return;
 			}
 			const target = deck ?? _lowestFreeDeck();
@@ -2772,8 +2771,24 @@
 				// standalone unload (Deck.svelte's Unload button, Quick Draw) does
 				// NOT set this: it must still be able to eject the live master with
 				// no other deck to reassign to (r3920297846).
+				// CMDK-16: loads and unloads this call dispatched itself, for `stillNewest`.
+				let own = 0;
+				// Before the replacement unload too: a load that landed while the intent above was
+				// dispatched is newer than this pick, and must not be the track the unload removes
+				// (Codex r4276791443).
+				if (opts.stillNewest !== undefined && !opts.stillNewest(own)) {
+					console.info(`[cmdk] deck ${target}: a newer load arrived before the replacement; the pick stands down`);
+					return;
+				}
 				if (deck !== null && decks[target].stable_id !== null) {
+					own += 1;
 					await dispatchPerformanceCommand({ type: 'unload', deck: target, refuseIfMaster: true });
+				}
+				// A Cmd K pick re-checks at the last moment: a load an agent or MIDI sent while the
+				// replacement unload ran is newer than this pick, and keeps the deck.
+				if (opts.stillNewest !== undefined && !opts.stillNewest(own)) {
+					console.info(`[cmdk] deck ${target}: a newer load arrived during the replacement; the pick stands down`);
+					return;
 				}
 				await dispatchPerformanceCommand({
 					type: 'load',
@@ -2850,8 +2865,9 @@
 	}
 	/** The browser's load path; the bar checks it committed (a refusal
 	 * returns normally). */
-	export async function commandBarV2Load(row: LoadableRow, deck: DeckId): Promise<void> {
-		await _loadOntoDeck(row, deck, { noKeyShift: true });
+	export async function commandBarV2Load(row: LoadableRow, deck: DeckId, guard?: (own: number) => boolean): Promise<void> {
+		if (!guard) await _loadOntoDeck(row, deck, { noKeyShift: true });
+		else await _loadOntoDeck(row, deck, { noKeyShift: true, stillNewest: guard });
 	}
 	/** This panel's reservations on a deck, which move before a browser load
 	 * commits; the bar adds the engine's own deck state to make its mark. */
@@ -3791,7 +3807,7 @@
 			onkeycardfailed={(message) => pushToast(message, 'error')}
 			onpickdoubledeck={pickDoubleDeck}
 			onloadconfirmcancelled={_releaseDeckReservation}
-			onpreviewseek={library === null ? previewSeek : undefined}
+			onpreviewseek={library === null ? previewSeek : library.preview}
 			onrefused={(reason) => pushToast(reason, 'error')}
 			onrate={rateRow}
 			onrowvisible={rowVisible}

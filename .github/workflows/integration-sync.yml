@@ -1,0 +1,176 @@
+name: Integration sync
+
+# ADR-NEW-post-v1-branch-strategy: keep the version trunks (main-v2, main-v3, ...)
+# merged forward from their upstream, so they never rot the way
+# main-electron-rust (3,266 commits behind main five days after it was cut) and
+# af--windows-integration (3,112 behind) did. Trunks and their order live in
+# ci/integration-trunks.json; the logic is scripts/integration_sync.py.
+#
+# Everything goes through the REST API with GITHUB_TOKEN: a sync branch per
+# upstream tip, a GitHub-side merge into it, then a ci.yml dispatch (tier full)
+# on that branch. Pushes and refs written by GITHUB_TOKEN trigger no workflow,
+# so the only CI this costs is that one dispatched run per trunk per sync.
+# The trunk itself only moves by fast-forward to a commit whose "ci gate" is
+# present and green, and only when vars.INTEGRATION_SYNC_AUTO_FF is 'true'
+# (the maintainer flips it; off by default). A conflict opens a PR from a branch at the
+# upstream tip into the trunk, and the trunk is skipped while that PR is open.
+#
+# Nothing is written at all until vars.INTEGRATION_SYNC_WRITES is 'true': before
+# that, every pass is a dry run that only reports.
+#
+# The daily pass starts syncs. The hourly advance-only pass moves them along: it
+# fast-forwards a green sync, or merges a trunk that moved in the meantime into the
+# sync branch and re-runs its CI, so a green sync lands within the hour instead of
+# needing the trunk to hold still a day. There is no workflow_run trigger: a
+# workflow_run job runs in the default branch's context and zizmor flags it
+# (dangerous-triggers), and the hourly pass needs nothing from the CI run itself.
+
+on:
+  # Schedule only. GitHub runs a scheduled workflow from the default branch's file, so no branch's
+  # code runs with this job's write token. A manual dispatch would run the named branch's file
+  # instead (Sol P1 on #5728), so there is no workflow_dispatch: a dry run is the local script
+  # `python -m scripts.integration_sync --dry-run`, which needs only a `gh` login.
+  schedule:
+    # Once a day, outside the UTC working hours when main merges peak.
+    - cron: "41 3 * * *"
+    # Advance-only backstop: reads only, unless a sync is green or its trunk moved.
+    - cron: "17 * * * *"
+
+env:
+  # Keep .pyc out of the reused self-hosted workspace (#1338).
+  PYTHONDONTWRITEBYTECODE: "1"
+
+permissions:
+  # Create and delete sync--* branches, merge into them, fast-forward a trunk.
+  contents: write
+  # Dispatch ci.yml on a sync branch.
+  actions: write
+  # Read check runs on a sync commit.
+  checks: read
+  # Open a PR from sync--<trunk>--conflict--<sha12> into the trunk when the merge
+  # conflicts, and see whether one is already open. Never a force-push.
+  pull-requests: write
+
+concurrency:
+  group: integration-sync
+  # Never cancel a pass halfway between creating a sync branch and dispatching its CI.
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge each upstream into its version trunk
+    # The branch filter above is the gate; this repeats it so a misread filter
+    # never runs a pass for an unrelated CI run.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    steps:
+      # Belt and braces: a schedule always runs the default branch, and this keeps that true if a
+      # trigger is ever added. The job holds contents, Actions and pull-request write.
+      - name: Refuse a run from any ref but the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ] || {
+            echo "::error::integration sync runs only from refs/heads/$DEFAULT_BRANCH, not $GITHUB_REF"
+            exit 1
+          }
+
+      # The ownership repair below is a recursive chown as root. Before it runs, bound the path it
+      # may touch: a resolved repository directory under a runner's work directory, never / or a home.
+      # The hygiene block itself is shared verbatim with every self-hosted workflow, so the bound lives here.
+      - name: Bound the workspace the ownership repair may change
+        run: |
+          set -euo pipefail
+          ws="$(readlink -f -- "${GITHUB_WORKSPACE:?}")"
+          case "$ws" in
+            */_work/?*/?* | */work/?*/?*) ;;
+            *) echo "::error::refusing to change ownership outside a runner workspace: $ws"; exit 1 ;;
+          esac
+
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history: on a conflict the script names the paths with a local
+          # `git merge-tree` between the trunk and upstream tips.
+          fetch-depth: 0
+          persist-credentials: false
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Install Python deps into the project venv
+        run: uv sync --locked --extra dev
+
+      - name: Preflight gh auth
+        run: scripts/ci_runner_preflight.sh gh
+
+      - name: Sync version trunks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INTEGRATION_SYNC_AUTO_FF: ${{ vars.INTEGRATION_SYNC_AUTO_FF }}
+          INTEGRATION_SYNC_WRITES: ${{ vars.INTEGRATION_SYNC_WRITES }}
+          ADVANCE_ONLY: ${{ (github.event.schedule == '17 * * * *') && '--advance-only' || '' }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ -z "$ADVANCE_ONLY" ] || args+=("$ADVANCE_ONLY")
+          uv run --no-sync python -m scripts.integration_sync "${args[@]}"

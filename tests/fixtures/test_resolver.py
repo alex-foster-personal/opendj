@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.fixtures import _resolver
-from tests.fixtures._resolver import (
+import apps.sync.usb.pioneer.fixture_resolver as _resolver
+from apps.sync.usb.pioneer.fixture_resolver import (
     FixtureContractMismatch,
     FixtureNotAvailable,
     fixture_path,

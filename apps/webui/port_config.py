@@ -108,6 +108,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
     {
         4455,  # apps/desktop/wdio.conf.ts EMBEDDED_WEBDRIVER_PORT
         4456,  # apps/desktop/mcp/smoke.ts WEBDRIVER_PORT
+        7700,  # apps/desktop/{src-tauri/src/engine.rs,electron/src/engine.ts} PREFERRED_ENGINE_PORT (UIURL-01)
         5214,  # tests/e2e/vite.play-analytics.config.ts frontend port
         5216,  # tests/e2e/playwright.desktop-setup.config.ts SETUP_PAGE_PORT
         5228,  # tests/e2e/vite.library-wheel.config.ts frontend port
@@ -125,6 +126,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_FRONTEND_PORT
         5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
         5334,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_FRONTEND_PORT
+        5336,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
         8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
@@ -133,6 +135,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
         8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
         8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
+        8716,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_API_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT

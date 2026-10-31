@@ -2,7 +2,11 @@
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
-import { engineBlockAfter, SCHEDULE_DECK_SERIAL_ANCHOR } from './engine-source.mjs';
+import {
+	ARM_AUDIO_CONTEXT_WATCHDOG_ANCHOR,
+	engineBlockAfter,
+	SCHEDULE_DECK_SERIAL_ANCHOR
+} from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -300,6 +304,11 @@ test('the device-floor row is re-stamped once the context is actually running', 
 		'the stamp must be remembered against THIS context rather than as a sticky ' +
 			"boolean, or a rebuilt graph keeps quoting the previous device's floors"
 	);
+	assert.ok(
+		helper.includes('if (!running) _stampedRunningContext = null;'),
+		'after suspend the running idempotency key must clear, or the next transition to ' +
+			'running is skipped and the authoritative device-floor row is never re-stamped'
+	);
 	// The listener moved on Wed 2 Sep 2026: the engine's own statechange handler
 	// acted on 'running' ONLY, which is how suspended/interrupted/closed fell
 	// through in silence for ~24 minutes. There is now exactly one owner of the
@@ -313,13 +322,14 @@ test('the device-floor row is re-stamped once the context is actually running', 
 	);
 	// #2155 (Sat 12 Sep 2026, commit 1db624ef7) added a third `recreateGraph`
 	// argument to armAudioContextWatchdog's signature for output-stall
-	// recovery; the anchor below is re-pointed at the new signature rather
-	// than deleted, per this file's own regression-line contract.
-	const arming = engineBlockAfter(
-		'export function armAudioContextWatchdog(\n\tctx: AudioContext,\n\tisAnyDeckPlaying: () => boolean,\n\trecreateGraph: (() => Promise<void>) | null = null\n): void {'
-	);
+	// recovery; issue #157 added a fourth `onStateChange` hook so the engine's
+	// deck-audible handling stays in audio-engine while the watchdog owns the
+	// device-floor re-stamp. The anchor below is re-pointed at each new
+	// signature rather than deleted, per this file's own regression-line contract.
+	const arming = engineBlockAfter(ARM_AUDIO_CONTEXT_WATCHDOG_ANCHOR);
 	assert.ok(
-		arming.includes("ctx.state === 'running'") && arming.includes('stampContextDeviceFloors(ctx)'),
+		arming.includes('stampContextDeviceFloors(ctx)') &&
+			(arming.includes("state === 'running'") || arming.includes("ctx.state === 'running'")),
 		'the arming must still re-stamp on the transition to running, or the authoritative ' +
 			'row is never taken for a context that starts suspended'
 	);

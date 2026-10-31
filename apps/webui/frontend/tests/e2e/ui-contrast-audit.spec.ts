@@ -330,6 +330,20 @@ async function _loadTwoDecks(page: Page): Promise<void> {
 	await expect(page.locator('section.rb-deck.loading')).toHaveCount(0, { timeout: 30_000 });
 }
 
+async function _setDeckLayout(page: Page, layout: 'MORE' | 'LESS'): Promise<void> {
+	const btn = page.locator('button.deck-layout-btn', { hasText: layout });
+	await expect(btn).toBeVisible();
+	await expect(async () => {
+		await btn.click();
+		await expect(page.locator('button.deck-layout-btn.active', { hasText: layout })).toBeVisible();
+		if (layout === 'LESS') {
+			await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+		} else {
+			await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
+		}
+	}).toPass({ timeout: 15_000 });
+}
+
 /**
  * Positive control on the instrument (CORE on #5727): the fewest text
  * elements each surface measured in any skin on Wed 7 Oct 2026 with the
@@ -403,15 +417,6 @@ function _allowed(list: AllowEntry[], skin: Skin, surface: Surface, el: string):
 }
 
 test('every visible text element clears WCAG AA in every skin, or is allowlisted with a reason', async ({ page }) => {
-	// NAMED QUARANTINE, not a silent skip (issue #6082). This audit goes red under
-	// runner load on PRs that do not touch it (#6399, #6567, #6293) while main's
-	// e2e passes at b79e0507c6, so it is a load flake, not a trunk red.
-	// Skip only on pull_request. Local runs, push, schedule, and workflow_dispatch
-	// still execute the audit. Delete this skip when #6082 closes.
-	test.skip(
-		process.env.GITHUB_EVENT_NAME === 'pull_request',
-		'QUARANTINED (#6082): contrast audit flakes under runner load on unrelated PRs'
-	);
 	test.setTimeout(240_000);
 	await page.setViewportSize({ width: 1600, height: 900 });
 
@@ -465,11 +470,10 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 		await _applySkin(page, skin);
 		await _loadTwoDecks(page);
 		for (const layout of ['MORE', 'LESS'] as const) {
-			await page.locator('button.deck-layout-btn', { hasText: layout }).click();
-			await expect(page.locator('button.deck-layout-btn.active', { hasText: layout })).toBeVisible();
+			await _setDeckLayout(page, layout);
 			record(skin, layout === 'MORE' ? 'performance-more' : 'performance-less', await _auditPlanted(page));
 		}
-		await page.locator('button.deck-layout-btn', { hasText: 'MORE' }).click();
+		await _setDeckLayout(page, 'MORE');
 		await _forceHover(page, true);
 		record(skin, 'performance-hover', await _auditPlanted(page));
 		await _forceHover(page, false);
@@ -510,7 +514,7 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);
 	await _applySkin(page, 'mono-dev');
-	await page.locator('button.deck-layout-btn', { hasText: 'MORE' }).click();
+	await _setDeckLayout(page, 'MORE');
 
 	// Positive control derived from the W34 defect itself: restore the
 	// pre-fix white label on Gothic's #d6d6d6 accent; the audit must report it.
@@ -550,6 +554,20 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	const faded = (await _audit(page)).probes.find((p) => p.text === 'faded');
 	expect(faded, 'the faded probe was not measured').toBeTruthy();
 	expect(faded!.ratio, 'opacity was not applied to the painted color').toBeLessThan(3);
+
+	// Rounding control (#6082): raw ~4.495 paints as 4.5:1 and must not fail a 4.5 floor.
+	await page.evaluate(() => {
+		const host = document.createElement('div');
+		host.setAttribute('data-contrast-probe', '');
+		host.style.cssText = 'position:fixed;left:0;top:80px;z-index:99999;background:#14171d;padding:4px';
+		host.innerHTML = '<span style="color:#7a8087;font-size:12px">round</span>';
+		document.body.appendChild(host);
+	});
+	const roundReport = await _audit(page);
+	const round = roundReport.probes.find((p) => p.text === 'round');
+	expect(round, 'the rounding probe was not measured').toBeTruthy();
+	expect(round!.ratio).toBe(4.5);
+	expect(roundReport.findings.some((f) => f.text === 'round')).toBe(false);
 
 	// Group-opacity control (Codex on #5727): opacity on an element with its
 	// own opaque fill fades the fill too. Black on white at 0.6 over black

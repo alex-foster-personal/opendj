@@ -441,9 +441,11 @@ export function deckReachedEnd(
 export function playResumePositionSec(
 	positionSec: number,
 	durationSec: number,
-	loop: LoopState | null
+	loop: LoopState | null,
+	/** DECKCTL-6235: where a finished track restarts; AU passes its cue, else 0. */
+	restartSec = 0
 ): number {
-	return deckReachedEnd(positionSec, durationSec, loop) ? 0 : positionSec;
+	return deckReachedEnd(positionSec, durationSec, loop) ? restartSec : positionSec;
 }
 
 /** One constant-rate stretch of transport: a start point, a rate, and the loop
@@ -553,6 +555,17 @@ export function decodedTransportDurationMs(decodedDurationSec: number): number {
 		);
 	}
 	return decodedDurationSec * 1000;
+}
+
+/** DECKCTL-6235 Where a finished track restarts: its cue while AU is on, else 0:00. */
+export function autoCueRestartSec(
+	autoCueOn: boolean,
+	cueMs: number | null,
+	durationSec: number
+): number {
+	if (!autoCueOn || cueMs === null || !Number.isFinite(cueMs) || cueMs < 0) return 0;
+	const sec = cueMs / 1000;
+	return sec < durationSec ? sec : 0;
 }
 
 /** The worklet change object for one schedule: input position, rate, the

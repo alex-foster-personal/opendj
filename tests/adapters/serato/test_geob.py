@@ -201,3 +201,188 @@ def test_markers2_written_by_this_codec_is_laid_out_as_serato_writes_it() -> Non
     """[if] this codec writes a cue [then] the bytes match the hand-built Serato frame, [else stop]."""
     cue = Markers2Cue(index=2, position_ms=61_250, color_rgb=0xCC8800, name="Drop é", kind="hot")
     assert encode_markers2(Markers2(cues=(cue,))) == _serato_frame(_CUE)
+
+
+# ---- Serato Markers_ (legacy, ID3 layout) built byte by byte ---------------
+# serato-tags docs/serato_markers_.md: 02 05, uint32 count 14, then 14 entries
+# of 22 bytes (5 cues then 9 loops), then a 4-byte track color. An entry is
+# set flag, serato32 start, set flag, serato32 end, 00 7f 7f 7f 7f 7f,
+# serato32 RGB, type (1 cue, 3 loop), locked. 7f flags mean "not set".
+
+
+def _s32(value: int) -> bytes:
+    """serato-tags' documented encoder, kept apart from the codec's decoder."""
+    a, b, c = (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
+    z = c & 0x7F
+    y = ((c >> 7) | (b << 1)) & 0x7F
+    x = ((b >> 6) | (a << 2)) & 0x7F
+    w = a >> 5
+    return bytes((w, x, y, z))
+
+
+def _legacy_entry(kind: int, start: int | None = None, end: int | None = None, rgb: int = 0, locked: bool = False) -> bytes:
+    start_bytes = b"\x00" + _s32(start) if start is not None else b"\x7f" * 5
+    end_bytes = b"\x00" + _s32(end) if end is not None else b"\x7f" * 5
+    return start_bytes + end_bytes + b"\x00\x7f\x7f\x7f\x7f\x7f" + _s32(rgb) + bytes((kind, int(locked)))
+
+
+def _legacy_frame(cues: dict[int, tuple[int, int]], loops: dict[int, tuple[int, int, bool]]) -> bytes:
+    entries = [
+        _legacy_entry(1, cues[i][0], rgb=cues[i][1]) if i in cues else _legacy_entry(1)
+        for i in range(5)
+    ] + [
+        _legacy_entry(3, loops[i][0], loops[i][1], locked=loops[i][2]) if i in loops else _legacy_entry(3)
+        for i in range(9)
+    ]
+    return b"\x02\x05" + (14).to_bytes(4, "big") + b"".join(entries) + b"\x07\x7f\x7f\x7f"
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_serato32_matches_the_documented_examples() -> None:
+    """[if] serato-tags' documented serato32 bytes are decoded [then] they give its documented values, [else stop]."""
+    from apps.adapters.serato.geob import _serato32
+
+    assert _serato32(bytes.fromhex("06300000")) == 0xCC0000
+    assert _serato32(bytes.fromhex("077f7f7f")) == 0xFFFFFF
+    assert _serato32(_s32(218_456)) == 218_456
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_markers_legacy_wins_and_a_cue_it_clears_is_not_imported() -> None:
+    """[if] Markers_ moves cue 0 and leaves cue 1 unset [then] cue 0 moves keeping its name, cue 1 is dropped, cue 6 stays, [else stop]."""
+    from apps.adapters.serato.geob import overlay_markers_legacy, parse_markers_legacy
+
+    markers2 = Markers2(
+        cues=(
+            Markers2Cue(index=0, position_ms=1_000, color_rgb=0x0000CC, name="Intro", kind="hot"),
+            Markers2Cue(index=1, position_ms=2_000, color_rgb=0xCC0000, name="Cleared", kind="hot"),
+            Markers2Cue(index=6, position_ms=6_000, color_rgb=0x00CC00, name="Past five", kind="hot"),
+        ),
+        loops=(Markers2Loop(index=0, start_ms=0, end_ms=500, color_rgb=0x27AAE1, name="Roll", locked=False),),
+    )
+    legacy = parse_markers_legacy(_legacy_frame({0: (1_500, 0xCC8800)}, {0: (100, 2_186, True)}))
+
+    merged = overlay_markers_legacy(markers2, legacy)
+
+    assert [(c.index, c.position_ms, c.color_rgb, c.name) for c in merged.cues] == [
+        (0, 1_500, 0xCC8800, "Intro"),
+        (6, 6_000, 0x00CC00, "Past five"),
+    ]
+    assert [(lo.index, lo.start_ms, lo.end_ms, lo.locked, lo.name) for lo in merged.loops] == [
+        (0, 100, 2_186, True, "Roll"),
+    ]
+    # Control: with no readable Markers_, Markers2 stands unchanged.
+    assert overlay_markers_legacy(markers2, None) == markers2
+    assert parse_markers_legacy(b"\x02\x05" + b"\x00" * 10) is None
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_markers_legacy_clears_unset_loop_slots_and_leaves_memory_cues_alone() -> None:
+    """[if] Markers_ leaves loop 1 unset and Markers2 has a memory cue at index 2 [then] loop 1 goes, loop 9 and the memory cue stay, [else stop]."""
+    from apps.adapters.serato.geob import overlay_markers_legacy, parse_markers_legacy
+
+    markers2 = Markers2(
+        cues=(Markers2Cue(index=2, position_ms=3_000, color_rgb=0, name="Memory", kind="memory"),),
+        loops=(
+            Markers2Loop(index=0, start_ms=0, end_ms=500, color_rgb=0, name="Kept", locked=False),
+            Markers2Loop(index=1, start_ms=900, end_ms=1_400, color_rgb=0, name="Cleared", locked=False),
+            Markers2Loop(index=9, start_ms=5_000, end_ms=5_500, color_rgb=0, name="Past nine", locked=False),
+        ),
+    )
+    legacy = parse_markers_legacy(_legacy_frame({}, {0: (100, 600, False)}))
+
+    merged = overlay_markers_legacy(markers2, legacy)
+
+    assert [(c.index, c.kind, c.name) for c in merged.cues] == [(2, "memory", "Memory")]
+    assert [(lo.index, lo.start_ms, lo.name) for lo in merged.loops] == [(0, 100, "Kept"), (9, 5_000, "Past nine")]
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_markers_legacy_end_at_zero_loop_reads_as_unset() -> None:
+    """[if] Markers_ sets loop 0 to end at 0 ms [then] it reads as unset and does not overwrite the Markers2 loop there, [else stop]."""
+    from apps.adapters.serato.geob import overlay_markers_legacy, parse_markers_legacy
+
+    markers2 = Markers2(
+        cues=(),
+        loops=(Markers2Loop(index=0, start_ms=900, end_ms=1_400, color_rgb=0, name="Valid", locked=False),),
+    )
+    legacy = parse_markers_legacy(_legacy_frame({}, {0: (100, 0, False)}))
+
+    assert legacy is not None and legacy.loops == {}
+    assert overlay_markers_legacy(markers2, legacy).loops == ()
+
+def _tamper(frame: bytes, entry: int, offset: int, value: int) -> bytes:
+    at = 6 + entry * 22 + offset
+    return frame[:at] + bytes((value,)) + frame[at + 1 :]
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_a_markers_legacy_frame_off_the_documented_layout_is_ignored() -> None:
+    """[if] Markers_ has extra bytes, entries out of order or a bad set flag [then] it is ignored whole, [else stop]."""
+    from apps.adapters.serato.geob import parse_markers_legacy
+
+    good = _legacy_frame({0: (1_500, 0xCC8800)}, {0: (100, 600, False)})
+    assert parse_markers_legacy(good) is not None  # control: the documented frame reads
+    assert parse_markers_legacy(good + b"\x00") is None  # trailing data
+    assert parse_markers_legacy(_tamper(good, 0, 20, 3)) is None  # a loop in a cue slot
+    assert parse_markers_legacy(_tamper(good, 5, 20, 1)) is None  # a cue in a loop slot
+    assert parse_markers_legacy(_tamper(good, 1, 0, 0x01)) is None  # set flag neither set nor unset
+    assert parse_markers_legacy(_tamper(good, 0, 20, 0)) is None  # a SET entry must say its type
+    loop_start_only = _tamper(_legacy_frame({}, {}), 5, 0, 0x00)  # loop 0: start set, end unset
+    assert parse_markers_legacy(loop_start_only) is None
+    loop_end_only = _tamper(_legacy_frame({}, {}), 6, 5, 0x00)  # loop 1: end set, start unset
+    assert parse_markers_legacy(loop_end_only) is None
+    cue_end_only = _tamper(_legacy_frame({}, {}), 1, 5, 0x00)  # cue 1: end set, start unset
+    assert parse_markers_legacy(cue_end_only) is None
+    cue_both_ends = _tamper(good, 0, 5, 0x00)  # cue 0: start set, end set too
+    assert parse_markers_legacy(cue_both_ends) is None
+    assert parse_markers_legacy(_tamper(good, 0, 1, 0x08)) is None  # set start past 24 bits
+    assert parse_markers_legacy(_tamper(good, 0, 3, 0x80)) is None  # serato32 byte with its high bit set
+    assert parse_markers_legacy(_tamper(good, 5, 6, 0x08)) is None  # set loop end past 24 bits
+    assert parse_markers_legacy(_tamper(good, 2, 2, 0x80)) is None  # unset filler with a high bit
+    assert parse_markers_legacy(_tamper(good, 2, 2, 0x10)) is None  # unset start not the 7f filler
+    assert parse_markers_legacy(_tamper(good, 0, 8, 0x10)) is None  # cue's unset end not the 7f filler
+    assert parse_markers_legacy(_tamper(good, 0, 10, 0x01)) is None  # reserved run, first byte
+    assert parse_markers_legacy(_tamper(good, 7, 15, 0x00)) is None  # reserved run, last byte
+    assert parse_markers_legacy(_tamper(good, 0, 16, 0x08)) is None  # cue color past 24 bits
+    assert parse_markers_legacy(_tamper(good, 0, 18, 0x80)) is None  # cue color byte with its high bit set
+    assert parse_markers_legacy(good[:-1] + b"\x80") is None  # track color byte with its high bit set
+    assert parse_markers_legacy(_tamper(good, 5, 21, 0x02)) is None  # lock neither 0 nor 1
+    assert parse_markers_legacy(good[:-4] + b"\x08\x00\x00\x00") is None  # track color past 24 bits
+    # Controls: the largest valid values and a locked loop still read.
+    edges = _legacy_frame({0: (0xFFFFFF, 0xFFFFFF)}, {0: (0, 0xFFFFFF, True)})
+    parsed_edges = parse_markers_legacy(edges)
+    assert parsed_edges is not None
+    assert parsed_edges.cues == {0: (0xFFFFFF, 0xFFFFFF)} and parsed_edges.loops == {0: (0, 0xFFFFFF, True)}
+    # An UNSET cue entry carrying type 0 is still the documented layout.
+    unset_type0 = parse_markers_legacy(_tamper(good, 2, 20, 0))
+    assert unset_type0 is not None and unset_type0.cues == {0: (1_500, 0xCC8800)}
+    # An UNSET loop entry keeps loop type 3, so type 0 there is off the layout.
+    assert parse_markers_legacy(_tamper(good, 7, 20, 0)) is None
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_a_locked_cue_entry_makes_markers_legacy_unreadable() -> None:
+    """[if] a cue entry in Markers_ has its lock byte set [then] the frame is ignored whole, and a locked loop still reads, [else stop]."""
+    from apps.adapters.serato.geob import parse_markers_legacy
+
+    good = _legacy_frame({0: (1_500, 0xCC8800)}, {0: (100, 600, True)})
+    assert parse_markers_legacy(good) is not None  # control: a locked LOOP is fine
+    assert parse_markers_legacy(_tamper(good, 0, 21, 0x01)) is None  # set cue, locked
+    assert parse_markers_legacy(_tamper(good, 4, 21, 0x01)) is None  # unset cue 4, locked
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_a_black_cue_at_zero_in_markers_legacy_reads_as_unset() -> None:
+    """[if] Markers_ sets a cue at 0 ms with color 0
+    [then] that slot reads as unset, while 0 ms with a color and a black cue later still read, [else stop]."""
+    from apps.adapters.serato.geob import overlay_markers_legacy, parse_markers_legacy
+
+    legacy = parse_markers_legacy(_legacy_frame({0: (0, 0), 1: (0, 0xCC0000), 2: (2_000, 0)}, {}))
+    assert legacy is not None
+    assert legacy.cues == {1: (0, 0xCC0000), 2: (2_000, 0)}
+    markers2 = Markers2(
+        cues=(Markers2Cue(index=0, position_ms=0, color_rgb=0, name="Bogus", kind="hot"),),
+        loops=(),
+    )
+    assert [c.index for c in overlay_markers_legacy(markers2, legacy).cues] == [1, 2]

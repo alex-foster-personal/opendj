@@ -157,9 +157,12 @@ test('every module-level PARITY-TODO constant holds the identical string', () =>
 			declarations.push({ file: file.slice(SRC.length + 1), value: match[2] });
 		}
 	}
+	// Positive control: the scan must find the declaration SettingsOverlay is
+	// pinned to keep (next test). A count floor rotted as controls went live:
+	// LIBWS-04 made the preview bar's Play real, leaving two declarations.
 	assert.ok(
-		declarations.length >= 3,
-		`expected the inert title to be declared in several modules, found ${declarations.length}`
+		declarations.some((d) => d.file.endsWith('settings/SettingsOverlay.svelte')),
+		`the scan found no inert-title constant in SettingsOverlay.svelte, so it is not measuring (found ${declarations.length})`
 	);
 	const drifted = declarations.filter((d) => d.value !== INERT_TITLE);
 	assert.deepEqual(

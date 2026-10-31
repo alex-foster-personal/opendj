@@ -202,6 +202,163 @@ test('isAnlzEntryUsable rejects undefined and non-ready entries', () => {
 	assert.equal(cache.isAnlzEntryUsable({ status: 'error', code: 'FETCH_FAILED' }), false);
 });
 
+// ------------------------------------------ grid edit vs older in-flight fetches
+// Codex P1 BLOCKING on PR #6235: an /anlz fetch issued before a grid edit that
+// settles after the edit's refresh must not publish the pre-edit payload over it.
+const DECODED = { status: 'decoded', reason: null, preview_b64: 'AAAA', preview_max: 200 };
+const EDITED_CUE = { slot: 'A', kind: 'hot_cue', is_loop: false, in_ms: 1002, out_ms: null };
+
+/** First /anlz request hangs until released and answers pre-edit; every later
+ * one answers with the edited payload at once. */
+function editRaceFetch() {
+	let release;
+	const firstAnswered = new Promise((resolve) => (release = resolve));
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		if (calls === 1) {
+			await firstAnswered;
+			return jsonResponse(anlzPayload(DECODED));
+		}
+		return jsonResponse(anlzPayload(DECODED, [EDITED_CUE]));
+	};
+	return { release: () => release(), calls: () => calls };
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('a prefetch issued before a grid edit cannot overwrite the edit refresh when it settles later', async () => {
+	const race = editRaceFetch();
+	try {
+		cache.ensureAnlz('edit-race-prefetch');
+		await cache.refetchAnlzCacheEntry('edit-race-prefetch');
+		assert.deepEqual(cache.getAnlzEntry('edit-race-prefetch').data.cues, [EDITED_CUE], 'positive control: the refresh published');
+		race.release();
+		await settle();
+		const entry = cache.getAnlzEntry('edit-race-prefetch');
+		assert.equal(entry.status, 'ready');
+		assert.deepEqual(entry.data.cues, [EDITED_CUE], 'the pre-edit answer must not revert the edited payload');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a deck load issued before a grid edit retries and lands the edited payload', async () => {
+	const race = editRaceFetch();
+	try {
+		const load = cache.fetchAnlzForDeckLoad('edit-race-load');
+		await cache.refetchAnlzCacheEntry('edit-race-load');
+		race.release();
+		const data = await load;
+		assert.deepEqual(data.cues, [EDITED_CUE], 'the load must not install the pre-edit payload');
+		assert.deepEqual(cache.getAnlzEntry('edit-race-load').data.cues, [EDITED_CUE]);
+		assert.equal(race.calls(), 3, 'one pre-edit fetch, the refresh, and one retry');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a deck load issued after a grid edit never joins a pre-edit request still in flight', async () => {
+	const race = editRaceFetch();
+	try {
+		cache.ensureAnlz('edit-race-join');
+		await cache.refetchAnlzCacheEntry('edit-race-join');
+		const load = cache.fetchAnlzForDeckLoad('edit-race-join');
+		race.release();
+		const data = await load;
+		assert.deepEqual(data.cues, [EDITED_CUE], 'a post-edit load must issue its own request');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('an analysis-source refresh staged before a grid edit re-stages instead of reverting the edit', async () => {
+	// The refresh merges only source-owned fields (the grid) onto the live
+	// payload, so the edit is told apart by the grid itself here, not by cues.
+	const gridPayload = (t0) => ({
+		...anlzPayload(DECODED),
+		beatgrid: { beat_count: 2, beats: [{ n: 1, bpm: 120, t: t0 }, { n: 2, bpm: 120, t: t0 + 0.5 }] },
+		beatgrid_source: 'rekordbox'
+	});
+	let release;
+	const firstAnswered = new Promise((resolve) => (release = resolve));
+	let anlzCalls = 0;
+	globalThis.fetch = async (input) => {
+		const url = String(input instanceof Request ? input.url : input);
+		if (!url.includes('/anlz')) return jsonResponse({ stable_id: 'edit-race-switch', bpm: 120 });
+		anlzCalls += 1;
+		if (anlzCalls === 1) {
+			await firstAnswered;
+			return jsonResponse(gridPayload(0.1));
+		}
+		return jsonResponse(gridPayload(0.102));
+	};
+	try {
+		const deck = { stable_id: 'edit-race-switch', anlz: null, bpm: null, key: null };
+		const refresh = cache.refreshAnalysisSourceDecks([1], { 1: deck });
+		await cache.refetchAnlzCacheEntry('edit-race-switch');
+		assert.equal(cache.getAnlzEntry('edit-race-switch').data.beatgrid.beats[0].t, 0.102, 'positive control: the edit published');
+		release();
+		await refresh;
+		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.102, 'the deck must not be left on the pre-edit grid');
+		assert.equal(cache.getAnlzEntry('edit-race-switch').data.beatgrid.beats[0].t, 0.102);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a grid-edit refresh in flight across an analysis-source switch retries instead of reverting it', async () => {
+	// Codex P1 BLOCKING on PR #6235: a source switch bumps the fetch
+	// generation, not the track revision, so the edit's pre-switch answer
+	// must be retried rather than published over the switch's refresh.
+	const gridPayload = (t0, source) => ({
+		...anlzPayload(DECODED),
+		beatgrid: { beat_count: 2, beats: [{ n: 1, bpm: 120, t: t0 }, { n: 2, bpm: 120, t: t0 + 0.5 }] },
+		beatgrid_source: source
+	});
+	let release;
+	const firstAnswered = new Promise((resolve) => (release = resolve));
+	let anlzCalls = 0;
+	globalThis.fetch = async (input) => {
+		const url = String(input instanceof Request ? input.url : input);
+		if (!url.includes('/anlz')) return jsonResponse({ stable_id: 'edit-across-switch', bpm: 120 });
+		anlzCalls += 1;
+		if (anlzCalls === 1) {
+			await firstAnswered;
+			return jsonResponse(gridPayload(0.1, 'rekordbox'));
+		}
+		return jsonResponse(gridPayload(0.2, 'rekordbox'));
+	};
+	try {
+		const edit = cache.refetchAnlzCacheEntry('edit-across-switch');
+		const deck = { stable_id: 'edit-across-switch', anlz: null, bpm: null, key: null };
+		await cache.refreshAnalysisSourceDecks([1], { 1: deck });
+		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.2, 'positive control: the switch refresh published');
+		release();
+		await edit;
+		assert.equal(cache.getAnlzEntry('edit-across-switch').data.beatgrid.beats[0].t, 0.2, 'the pre-switch answer must not publish');
+		assert.equal(deck.anlz.beatgrid.beats[0].t, 0.2);
+		assert.ok(anlzCalls >= 3, `the edit retried after the switch (${anlzCalls} /anlz calls)`);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('a fetch issued after a grid edit still publishes (no revision change since it was issued)', async () => {
+	// Control for the overshoot: an answer from after the edit is current.
+	globalThis.fetch = async () => jsonResponse(anlzPayload(DECODED, [EDITED_CUE]));
+	try {
+		await cache.refetchAnlzCacheEntry('edit-then-revalidate');
+		globalThis.fetch = async () => jsonResponse(anlzPayload(DECODED));
+		cache.revalidateAnlz('edit-then-revalidate');
+		await settle();
+		await settle();
+		assert.deepEqual(cache.getAnlzEntry('edit-then-revalidate').data.cues, [], 'a post-edit revalidation publishes');
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
 test('fetchAnlzForDeckLoad returns and publishes a terminal answer on the first fetch', async () => {
 	let calls = 0;
 	globalThis.fetch = async () => {

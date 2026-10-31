@@ -1,0 +1,1441 @@
+{
+	"_comment": "Unit tests allowed to read a .svelte component as text without rendering one. Checked by tests/unit/source-regex-test-ratchet.test.mjs (GUARD-15). This list may only shrink: convert a test to a rendered one (see setup-overlay-render.test.mjs) and delete its entry. A new entry needs a specific reason.",
+	"entries": [
+		{
+			"file": "add-to-playlist-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "admin-kpi.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "agent-accessibility-contract.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "analysis-dots-popover.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "analysis-source-features-contract.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "analysis-source-toggle-poll.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "app-init.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "app-mode-selector.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "app-posture.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "artwork-retry.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "auth-login.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "auto-cue-bank-display.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "auto-gain.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "autolists-short-viewport-layout.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "autoplay-curve.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "autoplay-explainer-placement.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "autoplay-feed-snapshot.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "autoplay-pin-role.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "autoplay-queue.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "bauble-label-regression.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "beat-sync-uneven-grid-warning.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "bindthis-null-guards.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "boot-background.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "bpm-cell-no-alt.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "bpm-contrast.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "bpm-hover-grid-verdict.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "brand-alpha-font.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-confirm-dialog.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-confirm-supersede.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-panel-prefetch-invalidation.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-panel-reconcile-init-finally.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-panel-superseded-load-toast.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-row-availability.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-search.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "browser-tray-midi-preview.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "build-identity.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "camelot-rules.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "capability-gating-markup.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "channel-strip-less-floor.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "class-a-visual-feedback.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "click-gated-lazy-ui.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cloudsync-chip-playing-deck.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cloudsync-status-chip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cloudsync-view.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "collapse-motion.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "collection-search-error.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "color-contrast.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "column-tips.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "command-bar-v2-action-identity.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-actions.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-ai.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-eject-generation.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-hold-overtaken.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-open-race.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-pair-failure-keeps-bar.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-pairs.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-pick-command-race.test.mjs",
+			"reason": "pre-existing: landed with #7956 (Cmd K v2 bundle, flags off), written before the ratchet and merged after #8094's seed, Sat 31 Oct 2026"
+		},
+		{
+			"file": "command-bar-v2-preview.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "command-bar-v2.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "command-bar.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "comment-hotkey.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "comment-pin-hotkey-routing.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "compat-panel-placement.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "context-menu-selection.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "control-explainer-demos.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "control-explainer-phase-lock.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "crossfade-curve-select.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-01-practice-mix.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-02-split-cable.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-03-head-delay.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-06-headphone-test-hygiene.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-09-dual-sinks.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-13-mixer-hp-row-fits.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-14-alignment-modes.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-15-calibrate-button-visible.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-17-optional-mic-and-cue-icon.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-25-main-never-cue.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-26-same-device-split.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "cueout-28-split-cue-compact-badge.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-artwork-skip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-controls-p2.test.mjs",
+			"reason": "PR #6235 deck controls, written before GUARD-15 landed (#5857, Sat 31 Oct 2026): pins the AU/MA/loop-source wiring in Deck, JogDial, LoopSourceMenu and LoopCluster markup next to rendered-module IPC tests; render conversion owed by the PR's review-followup"
+		},
+		{
+			"file": "deck-header-key-sync-order.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-header-rating-color.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-header-tempo-key-readout.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-layout-mode.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-loop-beatjump.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-lyric-honesty.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-lyric-layout.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-lyric-line-index.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-mixer-hover-parity.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-observer-emitter.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-picker-corridor.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-slots.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-tempo-warning.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deckux-41-tempo-readout-format.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "dedup-cue-warning.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "device-pixel-ratio.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "drag-sensitivity-settings.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "drag-sensitivity.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "engine-tick-exception-safety.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "fader-shift-select.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "feature-icon-views.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "feedback-explainer-io-gap.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-explainer-toggles.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-logic.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-anchor-highlight.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-badge-visibility.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-card-note-links.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-card.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-global-layer.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-lifecycle.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-reveal.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-shell-boot.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-widget-placement.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "finished-track-eject.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "first-run-overlay.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "footer-midi-contrast.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "gothic-library-palette.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "gothic-no-mix-compat-row-tint.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "grid-edit.test.mjs",
+			"reason": "PR #6235 grid adjust/shift, written before GUARD-15 landed (#5857, Sat 31 Oct 2026): pins GridEditButtons and Deck markup (titles, inert Rust-mode state) beside behavioral tests of the grid-edit modules; render conversion owed by the PR's review-followup"
+		},
+		{
+			"file": "grid-flag-row.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "gridless-transport.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "head-delay-stepper.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "header-status-strip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "headphone-io-panel-css-scope.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "health-14-coverage-at-mount.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "health-boot-retry.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hot-cue-edit-and-greedy-columns.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hot-cue-hover-detail.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hot-cue-mapping-gate.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hot-cue-pad-mode-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hot-cue-rename-on-create.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hotkeys-overlay.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "hp-set-outputs-spacing.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "inert-controls.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "ingest-awaiting-rb.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "io-device-test.test.mjs",
+			"reason": "IOPIN-19 (PR #6835): asserts the ORDER of calls inside HeadphoneCluster.svelte's Test click handler (ioTestRefusal before loadIoAudio, beeps and the microphone only inside the dispatcher-owned testrun); svelte/server render runs no event handler, so a render cannot reach that path. The pure logic it pins is exercised directly through io-device-test-audio.ts in the same file."
+		},
+		{
+			"file": "io-set-outputs-pins.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "iopin-16-device-select-mirror.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "jobs-drawer.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "jog-dial-master-tempo-control.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "jog-phase-visual.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "jog-progress-trail.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "jog-radial-palette.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "jog-radial-waveform.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "key-notation-display.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "key-shift-compat.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "key-sync-copy.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "knip-svelte-compiler.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "knob-control.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "knob-trim-sizing.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "leader-only-writers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "less-view-tidy.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-column-widths.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-columns.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "library-filters.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-health-dots-count.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-index-lazy-assets.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-inspector-summary.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-jobs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-key-filter.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "library-load-indicator-visible-while-loading.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-min-5-rows.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-native-scroll.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-perf-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-prefetch-dot-square.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "library-refresh-coalesce.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-row-hydration.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-scrollbar.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "library-search-placeholder.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "library-source-tabs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "libux-07-remote-glyph.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "libux-37-load-rate-window.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "light-skin-wells.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "load-blend-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "lyr-menu-stage.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "lyric-search-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "master-handoff.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "master-mix-capture.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "master-output-meter.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "master-token-contrast.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "meter-math.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "midi-enabled-setting-runtime.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "midi-lazy-engine.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "midi-panel.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "midi-takeover-ghost-chrome.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "mixer-stem-controls.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "mixux-04-stem-dials.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "mono-dev-decolor-and-table-fixes.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "musical-column-fit.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "native-grid-marker.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "output-menu-explainer-placement.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pairing-library-indicators.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pairings-capture-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pane-row-selection.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pane-tabs-blank-list-header.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pending-availability-settle.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pending-key-buffer.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "perf-meters-card-escapes-topbar.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "perf-meters-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "perf-narrow-deck-reads.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "perf-readout-card.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "perf-ui-short-viewport.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-ipc-remount.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "performance-ipc.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-no-app-nav.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-numeric-readout-explainers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-page-teardown-order.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "performance-preset.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-recorder.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-stage-control.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-1f9711b7-library-load-reserved-strip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-23e87f3e769c-perf-monitor.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-25d6dea6-ghost-seek-blink.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-36e2e2a7-remembered-prompts-have-settings-rows.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-449ee2dc213e-vibe-thumbs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-44bd9b44eded-perf-meter-explainers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-4860c440-pins-scoped-to-page.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-49f9d217-pin-ui-config-snapshot.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-552a810ba13b-planned-tooltips.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-5a833ab52fda-artwork.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-616b54abd179-preview-strip-markers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-6290b14a510c-library-load-indicator.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-64b114a0dd72-lyric-search.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-6b1da5a8-word-lane-backing.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-863616aa65dd-feedback-provenance.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-8cd32a28c36d-stem-margin.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-93b2bc62acca-autolists.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-b90e675a-mix-explainer-arrows-scale.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-be1b8f94f167-library-health-dots.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-c560a53603d4-wave-gutter.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pin-f85c5881-bpm-hover-grid-provenance.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pitch-fader-geometry.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pixel-snap.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "plan-refusal.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "planned-explainers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "play-counter.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-count-alignment.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-forbid-duplicates.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-reorder-hint.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "playlist-set-preview-guard.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-set-tabs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-sidebar-ready.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "playlist-tree-order.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "playlist-tree-toolbar.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "point-floating-action.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pref-02-feedback-mark.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "prep-hub.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "press-audible-floor.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "preview-waveform-contract.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "public-launch-copy-nits.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "quantize-grid-options.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "quick-draw-vocal-fix.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "quick-load-deck-box.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "rating-cell-fit.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "react-deck-flag.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "reconcile-remove-from-library.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "recording-flag.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "refresh-analysis-hover.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "rekordbox-writeback-gate.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "release-stage-badge.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "remote-speaker.test.mjs",
+			"reason": "pins that /performance's unmount cleanup closes the remote speaker's WebRTC peers before the engine teardown; rendering the route needs the whole audio engine, and the ordering inside one cleanup is the subject"
+		},
+		{
+			"file": "route-load-state.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "route-numeric-titles.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "router-01-no-direct-history-state.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "rust-inert.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "rust-mode.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "search-explainer-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "selection-lands.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "settings-link-control.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "settings-overlay-open-untracked-sensitivity.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "settings-panel-offset.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "settings-preview-every-option.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "setup-entry-points.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "setup-overlay.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "shell-theme-contrast.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "single-explainer-per-control.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "skin-cycle-light.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "smartlist-tree-crud.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "smartlist-tree-delete.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "smartlist-tree-live-eval.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "smartlists-api.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stage-overlay-loader.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stem-hold.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "stem-separate.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "stem-tags-hover.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stem-tier-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stems-jobs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stems-prompt.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "stopped-deck-presentation.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "storybook-stories.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "strip-adoption-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "strip-cue-letter-contrast.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "strip-loop-cue-letter.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "suggest-next-chevron-title-overlap.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "suggest-next-chevron-tooltip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "suggest-next-strip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "svelte-const-placement.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "tab-leader-banner-contrast.test.mjs",
+			"reason": "reads the .tab-leader scoped CSS block for its color token, which an SSR render does not emit; the rendered contrast audit covers the composited result"
+		},
+		{
+			"file": "tempo-edit.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "toast-behavior.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "toast-copied-comment-hint.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "toast-repeat-count.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-autoplay-next-affordance.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-clock-login-order.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-menu-surface-token.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-mode-menu-null-bindthis.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-pinned-utility.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-prefs-parity.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-settings-gear.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-signin-affordance.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-views.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "track-clipboard.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-cloud-state.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-drag-drop.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-drag-refusal.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-edit-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-info-overlay-load.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "track-library-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-minor-issues.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-playlists-menu.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-autoplay-icon.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-cell-clip.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-deck-layout-scroll.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-energy-column.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-genre-reason.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-header-markup.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-keyboard.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-observe-row.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-row-chrome.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-table-svg-sized.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "trackify-player.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "transition-chip-explainer.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "transport-visual-feedback.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "ui-chrome-no-emoji.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "ui-explainer-policy.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "ui-no-emoji.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "usb-browse-wiring.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "usb-export-screen.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "usb-import-drain-retry.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "usb-import-wait.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "usb-import.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "usb-stick-session-edits.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "usb-track-guards.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "usb-tracker-helpers.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "v1-hide-unbuilt-ui.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "vibe-meter-thumbs.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "virtual-window.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "vite-bundle-trim.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "vocals-analyze.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "vocals-title-one-source.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "wave-cue-render.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "wave-gutter-deckux-40.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "wave-palette-pref.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "wave-section-bands.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "wave-sections-lazy.test.mjs",
+			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "wave-track-summary-emphasis.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "waveform-preview-parity.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "wheel-sensitivity-settings.test.mjs",
+			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		}
+	]
+}

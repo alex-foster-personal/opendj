@@ -60,7 +60,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.analysis import queue_stale as analysis_queue_stale
 from apps.analysis import queue_store as analysis_queue_store
 from apps.analysis import store as analysis_store
 from apps.autodj import try_picks
@@ -73,8 +72,8 @@ from apps.shared import fingerprints
 from apps.shared.pairings import schema_sql as pairings_sql
 from apps.shared.play_orders import schema as play_orders_schema
 from apps.shared.playlist_sets import schema as playlist_sets_schema
+from apps.shared.state import analysis_stale, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.shared.state import sync_stamp
 from apps.spotify import state_aux as spotify_aux
 from apps.sync_hub import engine_identity_map, stem_meter
 from apps.webui.server import pairings_sqlite
@@ -301,8 +300,8 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     # test_every_state_authority_is_declared_as_one exists to refuse. Both
     # statements are IF NOT EXISTS, so running it twice provisions once.
     Authority(
-        "apps/analysis/queue_stale.py",
-        lambda conn, _path: analysis_queue_stale.ensure_stale_table(conn),
+        "apps/shared/state/analysis_stale.py",
+        lambda conn, _path: analysis_stale.ensure_stale_table(conn),
     ),
     # The genre findings store: one ensure_schema, reached from the genre
     # routes, the genre lane and the genre CLI.

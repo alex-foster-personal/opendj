@@ -1,10 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "opener",
-  "description": "Open Google OAuth consent URLs in the system browser. The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below openUrl would be inert in the shipped app. Scope is limited to opening a URL in the default browser, not the plugin's full default permission set.",
+  "description": "Open the engine's own UI address in the system browser (Settings > Open in browser, http://opendj.localhost:<port>/). The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below openUrl would be inert in the shipped app. open_url checks every URL against the allow scope and refuses anything outside it. The allow list is the two named-host port patterns, the Google consent URL that starts https://accounts.google.com/o/oauth2/v2/auth?, and exactly https://existential.audio/blackhole/; every other URL is refused. The localhost patterns pin a 4 or 5 digit port followed by a slash: open_url glob-matches the raw string, so a looser `opendj.localhost:*` would also match `http://opendj.localhost:7700@attacker.example/`, whose real host is the attacker's. Scope is limited to opening a URL in the default browser, not the plugin's full default permission set.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
   },
-  "permissions": ["opener:allow-open-url"]
+  "permissions": [
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "http://opendj.localhost:[0-9][0-9][0-9][0-9]/*" },
+        { "url": "http://opendj.localhost:[0-9][0-9][0-9][0-9][0-9]/*" },
+        { "url": "https://accounts.google.com/o/oauth2/v2/auth[?]*" },
+        { "url": "https://existential.audio/blackhole/" }
+      ]
+    }
+  ]
 }

@@ -292,6 +292,18 @@ const BUDGETS = [
   // 282,660): auto gain adds 285,293 - 280,578 = 4,715, so 287,375 estimated, next
   // KiB plus 1 KiB of jitter => 288,768 (282 KiB). Payback: the engine deferral named
   // under #3837 above carries this weight out of "/" with the rest of the engine.
+  // RAISED Thu 22 Oct 2026 (+2 KiB, PR #6235, GRIDEDIT-6235..6235d + DECKCTL-6235..6235d deck controls;
+  // JIK's V1 rule, up to 4 KiB per V1 PR): the dispatcher on "/" gains the grid_edit command's
+  // validation (grid-edit-command.ts; the request half is a lazy chunk loaded on the first
+  // press), AU parking and the phrase-quantize seek decision. Local vite build: main c454c7b27
+  // 279,744; main + this PR 281,094 (+1,350, 518 over). The second KiB came from review
+  // (Codex/Sol, same day): the dispatcher binds each queued grid edit to its track and grid
+  // and merges held-button repeats before the persistence-scope wait, all needed at the
+  // first press. Local: 281,880 (+2,136). Payback: none open.
+  // Merge note (PR #6235 x main 4c130633d, Tue 27 Oct 2026): the #6235 raise above
+  // (+2 KiB, +2,136 measured) lands on top of main's auto gain ceiling (288,768,
+  // measured 287,375): 288,768 + 2,048 = 290,816 (284 KiB), the same +2 KiB, no new
+  // raise. Local vite build of the merge: 289,345. Payback: none open.
   // Top bar re-land #6824 of #6201 (TOPVIEW-01/-05), Tue 27 Oct 2026: no raise here. Its
   // Thu 22 Oct +1 KiB raise is dropped: locally, main 4c130633d1 286,471; main + this PR
   // 288,012 (+1,541, under the limit).
@@ -322,10 +334,55 @@ const BUDGETS = [
   // Measured ceiled to KiB (274,432) plus 1 KiB of jitter, which also absorbs the #7658 raise
   // above. Payback: owed by #7594 and #6565 (the #7658 share).
   // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
+  // RAISED Fri 30 Oct 2026, #5886 analysis-while-playing: +1 KiB after payback of 446 B; standing
+  // up-to-4-KiB allowance. One clean local vite build each (Node 22.22.0): main 995cc2493b 279,229;
+  // merged with this PR 280,062 (510 over); with the next-up client (autoplay-next-up.ts) loaded on
+  // first use through autoplay-next-up-lazy.ts 279,616 (64 over). The rest is the xrun detector's
+  // warmup handshake and the next-up loader stubs, first-paint code. Ceiled to the next KiB.
   // RAISED Fri 30 Oct 2026 (+1 KiB, PR #6127, decode-on-bytes deck load and the S2 output-device
   // probe, V1 rule): CI build job 124242420096 at 1dc9b508d measured library 279,864, 312 B over
   // 279,552; ceiled to KiB. Payback: none planned.
-  { name: 'library', limit: 280576, measured: 279864, note: 'initial load of "/"' },
+  // Merge note (#5886 x main 507102f2b9, Fri 30 Oct 2026): #6127 took the same +1 KiB to 280,576 as
+  // #5886 above; both land on one ceiling. One clean local vite build of the merge: 280,458.
+  // RAISED Fri 30 Oct 2026 (+3 KiB, trunk repair after #7957 and #6534): main 8849e7a94e is over
+  // this budget after #7957 (autodj chooser, bundle of 7) and #6534 (Gothic block snapping)
+  // landed through bundle merges, which do not gate on the budget (Tue 27 Oct 2026). One clean
+  // vite build each: main 507102f2b9 (#6127, before both) 279,920; main 8849e7a94e 282,240.
+  // Measured ceiled to KiB (282,624) plus 1 KiB of jitter. Payback: owed by #7957 and #6534.
+  // (Ported into PR #6189 from #8069; PR #6189 adds +421 B, inside this limit.)
+  // Merge note (PR #6235 x main 131f65be61, Fri 30 Oct 2026): main's growth since 4c130633d (#6829's
+  // lazy-settings move among it) re-bases the #6235 raises above onto main's ceiling. Local, one
+  // clean vite build each: main 131f65be61 279,204; main + this PR 281,710 (+2,506).
+  // RAISED +4 KiB over main's ceiling: the measured size ceiled to KiB (282,624) plus 1 KiB of
+  // jitter, within the V1 rule of up to 4 KiB per V1 PR. Payback: none open; these are live deck
+  // controls.
+  // Merged onto main 9ec96943b0 Fri 30 Oct 2026, after #6127 took this ceiling to 280,576: one clean local
+  // vite build of main + this PR measures 282,379. RAISED to the measured size ceiled to KiB (282,624)
+  // plus 1 KiB of jitter, +3 KiB over main's ceiling, within the V1 rule. Payback: none open.
+  // Merged onto main 2729743c1 Fri 30 Oct 2026: main itself measures 282,234 locally, 1,658 B over its own
+  // 280,576 ceiling (no raise landed with that growth). Main + this PR measures 284,862 (+2,628 for #6235).
+  // RAISED to the measured size ceiled to KiB (285,696) plus 1 KiB of jitter; of the +6 KiB over main's
+  // ceiling, 2 KiB is main's own overrun, which is owed by whichever main change grew "/".
+  // Merged onto main 01b93d8b1 Sat 31 Oct 2026: main itself measures 285,226 locally, 4,650 B over its own
+  // 280,576 ceiling (#8069 carries main's repair). Main + this PR measures 287,887 (+2,661 for #6235).
+  // RAISED to the measured size ceiled to KiB (288,768) plus 1 KiB of jitter; of the +9 KiB over main's
+  // ceiling, 5 KiB is main's own overrun, owed by whichever main change grew "/".
+  // Merged onto main 2cd9af583b Sat 31 Oct 2026, after #8069's repair took this ceiling to 283,648: main itself
+  // measures 285,424 locally, 1,776 B over it again; main + this PR 288,027 (+2,603). The measured size
+  // ceiled to KiB (288,768) plus 1 KiB of jitter keeps the limit at 289,792. Payback: none open.
+  // Merged onto main 04e8bdfd4 Sat 31 Oct 2026, after #7956 (Cmd K v2): main itself measures 287,169 locally,
+  // 3,521 B over its 283,648 ceiling; main + this PR 289,659 (+2,490), 133 B under the limit above. RAISED to
+  // the measured size ceiled to KiB (289,792) plus 1 KiB of jitter. Payback: none open.
+  // RAISED Sat 31 Oct 2026 (PR #6835, re-land of #6123/#6196, merged onto main 29a59c570c): one clean local vite build
+  // each, main 285,328 and main + this PR 288,777 (+3,449, this PR, #8092 port included); main is 1,680 B over its own 283,648, inherited; the merged measurement ceiled to KiB => 289,792.
+  // Merged onto main fd170f45c Sat 31 Oct 2026, after #6835's re-land: one clean local vite build each, main
+  // 290,361 (569 B over its own 289,792); main + this PR 293,017 (+2,656). RAISED to the measured size ceiled
+  // to KiB (293,888) plus 1 KiB of jitter. Payback: none open.
+  // RAISED Sat 31 Oct 2026 (+2 KiB, trunk repair after #7956).
+  // One clean vite build of main cc2a31a6c2, after #7956 (the Cmd K v2 bundle, behind flags default off) and #6835: bundle merges do not gate on the budget. Measured 289,990, 198 B over; ceiled to KiB (290,816) plus 1 KiB of jitter. Payback: none planned.
+  // Merged onto main d20ef4367 Sat 31 Oct 2026, after e00c7b879 took main's ceiling to 291,840: main 290,409;
+  // main + this PR 293,053 (+2,644). Ceiled to KiB plus 1 KiB the limit stays 294,912.
+  { name: 'library', limit: 294912, measured: 293053, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
@@ -495,6 +552,15 @@ const BUDGETS = [
   // other-lazy, so a build with the flag off fetches none of them. The raise is the measured size
   // ceiled to KiB (276,480) plus 2 KiB headroom. Payback: when the v2 shell is React, the islands
   // and the Svelte originals they wrap leave this route together.
+  // RAISED Thu 22 Oct 2026 (+3 KiB, PR #6235, GRIDEDIT-6235..6235d + DECKCTL-6235..6235d: grid adjust and
+  // shift buttons and their request queue, AU, MA tempo editor with TAP, Q phase, INT loop source
+  // menu; JIK's V1 rule, up to 4 KiB per V1 PR). Local vite build: main c454c7b27 276,520; main +
+  // this PR 280,957 (+4,437, 2,429 over), of which the grid-edit request chunk moved off "/" is
+  // about 1.5 KiB. Payback: none open; these are six live deck controls replacing inert ones.
+  // Merge note (PR #6235 x main 4c130633d, Tue 27 Oct 2026): with main's own growth this PR
+  // measured 283,545 (main alone 278,339, +5,206), 1,945 over. Paid back inside the same raise:
+  // the grid-edit queue and its re-read now load on the first event or press, and the tempo
+  // editor (MA, double-click on BPM) on first open. Local vite build: 280,203 (+1,864).
   // RAISED Thu 22 Oct 2026 (+1 KiB, PR #6819, re-land of #6195 stem separation UI, V1 rule of
   // up to 4 KiB per V1 PR): the /performance decks ship the "Separate this track" button and
   // the deck's separation view. Local, one clean build each: main b447c807c measured 276,554
@@ -571,7 +637,32 @@ const BUDGETS = [
   // Over the 4 KiB V1 rule net of the move: flagged for the maintainer. Measured ceiled to KiB (300,032)
   // plus 1 KiB of jitter. Payback: none open.
   // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
-  { name: 'performance', limit: 307200, measured: 304114, note: '/performance and children' },
+  // RAISED Fri 30 Oct 2026 (+2 KiB, trunk repair after #7957 and #6534; see the same note on
+  // library): one clean vite build each, main 507102f2b9 306,705; main 8849e7a94e 307,648.
+  // Measured ceiled to KiB (308,224) plus 1 KiB of jitter. Payback: owed by #7957 and #6534.
+  // (Ported into PR #6189 from #8069; PR #6189 adds +20 B, inside this limit.)
+  // Merge note (PR #6235 x main 131f65be61, Fri 30 Oct 2026): main's growth since 4c130633d (#6829's
+  // lazy-settings move among it) re-bases the #6235 raises above onto main's ceiling. Local, one
+  // clean vite build each: main 131f65be61 306,066; main + this PR 307,603 (+1,537).
+  // RAISED +2 KiB over main's ceiling: the measured size ceiled to KiB (308,224) plus 1 KiB of
+  // jitter, within the V1 rule of up to 4 KiB per V1 PR. Payback: none open; these are live deck
+  // controls.
+  // Merged onto main 8849e7a94e Fri 30 Oct 2026: main alone measures 307,648 locally, 448 B over its own
+  // 307,200 ceiling; main + this PR 309,407 (+1,759). RAISED to the measured size ceiled to KiB (310,272)
+  // plus 1 KiB of jitter; 1 KiB of the +4 KiB over main's ceiling is main's own overrun. Payback: none open.
+  // Merged onto main 2cd9af583b Sat 31 Oct 2026, after #8069's repair took this ceiling to 309,248: main measures
+  // 308,633 locally; main + this PR 310,340 (+1,707). RAISED to the measured size ceiled to KiB (311,296)
+  // plus 1 KiB of jitter, +3 KiB over main's ceiling, within the V1 rule. Payback: none open.
+  // RAISED Sat 31 Oct 2026 (PR #6835, re-land of #6123/#6196, merged onto main 29a59c570c): one clean local vite build
+  // each, main 309,179 and main + this PR 311,628 (+2,449, this PR); the merged measurement ceiled to KiB => 312,320.
+  // Merged onto main fd170f45c Sat 31 Oct 2026, after #6835 measured 311,628 against this same 312,320: one clean
+  // local vite build each, main 312,098; main + this PR 313,726 (+1,628). RAISED to the measured size ceiled to
+  // KiB (314,368) plus 1 KiB of jitter, +3 KiB over main's ceiling, within the V1 rule. Payback: none open.
+  // Merged onto main d20ef4367 Sat 31 Oct 2026: main 312,067; main + this PR 313,717 (+1,650). Ceiled to KiB
+  // plus 1 KiB the limit stays 315,392, +3 KiB over main's ceiling, within the V1 rule.
+  // Re-land of #6221 (the I18 remote speaker), merged onto main cbd06578dd Sat 31 Oct 2026: one clean local
+  // vite build each, main 314,035 and main + this PR 314,401 (+366); inside the limit above, so no raise.
+  { name: 'performance', limit: 315392, measured: 313717, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -783,8 +874,18 @@ const BUDGETS = [
   // main 4e77993175 + #6829 (#7743 ceiling 415,744, measured 413,815): this PR's delta stacked on that measured
   // figure (413,815 + 2,472 = 416,287), limit plus delta ceiled to KiB => 418,816. Payback: none planned; the
   // lanes are the feature.
+  // Merge note (PR #6235 x main 131f65be61, Fri 30 Oct 2026): main's growth since 4c130633d (#6829's
+  // lazy-settings move among it) re-bases the #6235 raises above onto main's ceiling. Local, one
+  // clean vite build each: main 131f65be61 421,651; main + this PR 426,383 (+4,732).
+  // RAISED +3 KiB over main's ceiling: the measured size ceiled to KiB (427,008) plus 1 KiB of
+  // jitter, within the V1 rule of up to 4 KiB per V1 PR. Payback: none open; these are live deck
+  // controls.
   // RAISED Fri 30 Oct 2026 (PR #6687, Cmd K preview strip, cue preview and deck picker, behind flags default off): the bar's lazy chunk. One clean local vite
   // build each: before 421,949, after 429,666 (+7,717). Measured ceiled to KiB plus 1 KiB of jitter. Payback: none planned.
+  // RAISED Fri 30 Oct 2026, #5886 analysis-while-playing: +1 KiB; standing up-to-4-KiB allowance. The
+  // "/" payback above moves the next-up client into a lazy chunk charged here: one clean local build
+  // each, main 995cc2493b + this PR 431,077 before the move, 431,626 after (+549, 522 over). Ceiled to
+  // the next KiB.
   // RAISED Fri 30 Oct 2026 (+1 KiB, PR #6634, PREPWS-01 prep hub and LIBM-184 All Tracks badge, V1 rule of
   // up to 4 KiB per V1 PR): the /prep hub page replaces the stub. One clean local vite build each: main
   // 995cc2493b 431,042 (62 B of headroom); main + this PR 431,724 (+682). Limit plus 1 KiB. Payback: none
@@ -794,7 +895,58 @@ const BUDGETS = [
   // on the first snapped 'blocks' row. One clean local vite build each: main 995cc2493 430,952; main +
   // this PR 432,256 (+1,304, one more file). Stacked on #6634's limit: 432,128 + 1,304, ceiled to KiB:
   // 434,176. Payback: none planned; the snapper is the feature.
-  { name: 'other-lazy', limit: 434176, measured: 433039, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 30 Oct 2026, #5886: +1 KiB for the lazy next-up client chunk (976 B gzip); no payback found in this
+  // PR, under JIK's up-to-4-KiB allowance. One clean local vite build of main dadbf24168 + this PR: 432,673.
+  // Merge note (#5886 x main 8849e7a94e, Fri 30 Oct 2026): #6534 stacked its +1,304 on #6634's 432,128 to
+  // 434,176; this PR's +1 KiB stacks on that, so 435,200. Net raise over main is still +1 KiB.
+  // RAISED Fri 30 Oct 2026 (+3 KiB, PR #6189, LIBWS-04/06 Library-mode preview, load to deck and the
+  // preview agent IPC): the Crate Desk's lazy chunk. One clean local vite build each: main 995cc2493b
+  // 430,952, main + this PR 433,759 (+2,807). Main's limit plus the delta, ceiled to KiB => 434,176
+  // (424 KiB). Payback: none planned; the preview player and the exit gate are the feature.
+  // Fri 30 Oct 2026, merged main (other-lazy 432,128 after #6634): this PR's +3 KiB carried onto it => 435,200.
+  // Fri 30 Oct 2026, merged main again (other-lazy 434,176 after #6534): this PR's +3 KiB carried onto it => 437,248.
+  // Merge note (PR #6235 x main 995cc2493b, Fri 30 Oct 2026, after #6687 took this ceiling to 431,104):
+  // local, one clean vite build each: main 995cc2493b 431,042; main + this PR 435,831 (+4,789). Most of it is
+  // the MA tempo editor (TempoEditModal, about 3.7 KB gzip plus its CSS) and the grid-edit request
+  // chunk, which #6235 moved off /performance to load on first use, so they are charged here.
+  // RAISED +6 KiB over main's ceiling: the measured size ceiled to KiB (436,224) plus 1 KiB of jitter.
+  // Over the 4 KiB V1 rule by the deferred editor: flagged for the maintainer. Payback: none open.
+  // Merged onto main dadbf24168 Fri 30 Oct 2026, after #6634 took this ceiling to 432,128 (#6634 measured
+  // 431,724): one clean local vite build of main + this PR measures 436,834. RAISED to the measured size
+  // ceiled to KiB (437,248) plus 1 KiB of jitter, +6 KiB over main's ceiling; same flag and payback as above.
+  // Merged onto main 8849e7a94e Fri 30 Oct 2026, after #6534 took this ceiling to 434,176: one clean local
+  // vite build each, main 433,444; main + this PR 438,612 (+5,168). RAISED to the measured size ceiled to KiB
+  // (439,296) plus 1 KiB of jitter, +6 KiB over main's ceiling; same flag and payback as above.
+  // Merged onto main 2cd9af583b Sat 31 Oct 2026, after #6189 took this ceiling to 437,248: one clean local vite
+  // build each, main 436,742; main + this PR 441,645 (+4,903). RAISED to the measured size ceiled to KiB
+  // (442,368) plus 1 KiB of jitter, +6 KiB over main's ceiling; same flag and payback as above.
+  // Merged onto main 161156a528 Sat 31 Oct 2026 (no budget line moved on main): one clean local vite build of
+  // main + this PR measures 443,369, 23 B under the limit above after main's own growth. RAISED to the
+  // measured size ceiled to KiB (443,392) plus 1 KiB of jitter; same flag and payback as above.
+  // Merged onto main 04e8bdfd4 Sat 31 Oct 2026, after #7956 (Cmd K v2) grew other-lazy past main's own 437,248
+  // ceiling: one clean local vite build each, main 452,486; main + this PR 457,517 (+5,031). RAISED to the
+  // measured size ceiled to KiB (457,728) plus 1 KiB of jitter; same flag and payback as above.
+  // RAISED Sat 31 Oct 2026 (PR #6835, re-land of #6123/#6196, merged onto main bc3008bc8b): one clean local vite build
+  // each, main 438,303 and main + this PR 442,329 (+4,026, this PR); main is 1,055 B over its own 437,248, inherited; the merged measurement ceiled to KiB => 442,368.
+  // Merged onto main fd170f45c Sat 31 Oct 2026, after #6835 set 442,368 (main itself now measures 456,623 locally,
+  // Cmd K v2 among it): main + this PR 461,395 (+4,772). RAISED to the measured size ceiled to KiB (461,824)
+  // plus 1 KiB of jitter; same flag and payback as above.
+  // Merge note (#5886 x main, Sat 31 Oct 2026): this PR's earlier +1 KiB other-lazy raise is dropped. Main's
+  // trunk-repair limit already holds it: main measured 457,097 and this PR adds about +978 B, so about 458,075.
+  // RAISED Sat 31 Oct 2026 (+16 KiB, trunk repair after #7956).
+  // One clean vite build of main cc2a31a6c2, after #7956 (the Cmd K v2 bundle, behind flags default off) and #6835: bundle merges do not gate on the budget. Measured 457,097, 14,729 B over; ceiled to KiB (457,728) plus 1 KiB of jitter. Payback: none planned.
+  // Merged onto main d20ef4367 Sat 31 Oct 2026, after e00c7b879 took main's ceiling to 458,752: main 456,696;
+  // main + this PR 461,582 (+4,886). Ceiled to KiB plus 1 KiB the limit stays 462,848; same flag and payback.
+  // Merged onto main d2ba1fc09 Sat 31 Oct 2026, after #5886: main 457,619; main + this PR 462,662 (+5,043), 186 B
+  // under the limit above. RAISED to the measured size ceiled to KiB (462,848) plus 1 KiB of jitter; same flag and payback.
+  // RAISED Sat 31 Oct 2026 (re-land of #6221, the I18 remote speaker, merged onto main 0c82658f08): one clean
+  // local vite build each, main 456,747 and main + this PR 462,839 (+6,092: the lazily loaded remote speaker
+  // modules and panel section); the merged measurement ceiled to KiB (462,848) plus 1 KiB of jitter => 463,872.
+  // Payback: none planned; the speaker is the feature, and it loads only when a remote speaker order arrives.
+  // Sat 31 Oct 2026, merged main 4f1b2f2010: main 457,591 and main + this PR 463,842 (+6,251).
+  // Sat 31 Oct 2026, merged main cbd06578dd: main 462,764 and main + this PR 468,808 (+6,044); ceiled to KiB
+  // (468,992) plus 1 KiB of jitter => 470,016.
+  { name: 'other-lazy', limit: 470016, measured: 468808, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

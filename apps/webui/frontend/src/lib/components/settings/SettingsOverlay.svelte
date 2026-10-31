@@ -402,6 +402,15 @@
 		return watcherFoldersEditor;
 	}
 
+	// UIURL-03: "Open in browser" loads on demand too, for the same reason: the
+	// overlay rides the library first paint, and a static import put this PR
+	// 431 bytes over the "library" bundle budget (check-bundle-size.sh).
+	let openInBrowserAction: Promise<typeof import('./OpenInBrowserAction.svelte')> | null = null;
+	function loadOpenInBrowserAction(): Promise<typeof import('./OpenInBrowserAction.svelte')> {
+		openInBrowserAction ??= import('./OpenInBrowserAction.svelte');
+		return openInBrowserAction;
+	}
+
 	async function askAiApply(): Promise<void> {
 		const instruction = settingsOverlay.query.trim();
 		if (!instruction || applyBusy) return;
@@ -575,6 +584,11 @@
 				{#if setupError !== null}
 					<span class="so-action-err" title={setupError}>{setupError}</span>
 				{/if}
+				{#await loadOpenInBrowserAction() then { default: OpenInBrowserAction }}
+					<OpenInBrowserAction compact />
+				{:catch err}
+					<span class="so-action-err" title={String(err)}>Open in browser failed to load: {String(err)}</span>
+				{/await}
 			</div>
 
 			<div class="so-body" class:expanded>

@@ -20,6 +20,7 @@ from apps.opendj_cli.origin import EngineOrigin, unreachable
 MIRROR_PATH = "/api/v1/state/ui-mirror"
 COMMANDS_PATH = "/api/v1/commands"
 UI_PREFS_PATH = "/api/v1/ui-prefs"
+UI_URL_PATH = "/api/v1/ui-url"
 
 # A page claims an order within one poll tick (50 ms) and a ramp completes in
 # its own declared duration, so this only fires on a wedged page or a wedged
@@ -71,6 +72,12 @@ class EngineClient:
     def ui_prefs(self) -> dict[str, Any]:
         """Disk-backed ui prefs (includes persisted master_muted)."""
         response = self._request("GET", UI_PREFS_PATH, timeout=MIRROR_TIMEOUT_S)
+        self._require_ok(response)
+        return self._document(response)
+
+    def ui_address(self) -> dict[str, Any]:
+        """The engine's own browser address (UIURL-02); refuses when it serves no UI."""
+        response = self._request("GET", UI_URL_PATH, timeout=MIRROR_TIMEOUT_S)
         self._require_ok(response)
         return self._document(response)
 

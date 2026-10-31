@@ -195,3 +195,42 @@ def test_first_try_success_never_cleans_or_retries(tmp_path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert _call_count(counter) == 1, "a first-try success must not be retried"
     assert not clean_log.exists()
+
+
+def test_cleanup_runs_the_resolved_cargo_not_the_path_one(tmp_path: Path) -> None:
+    """[if] the caller passes a resolved cargo and a different `cargo` is first on PATH [then] the clean runs the resolved one only."""
+    resolved_dir = tmp_path / "resolved"
+    path_dir = tmp_path / "on-path"
+    resolved_dir.mkdir()
+    path_dir.mkdir()
+    counter = tmp_path / "calls"
+    resolved_clean = tmp_path / "resolved-clean.log"
+    path_clean = tmp_path / "path-clean.log"
+
+    resolved = resolved_dir / "cargo"
+    resolved.write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [ "$1" = clean ]; then echo clean >> "{resolved_clean}"; exit 0; fi\n'
+        f'n=$(cat "{counter}" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "{counter}"\n'
+        'if [ "$n" -eq 1 ]; then echo "error[E0786]: found invalid metadata files" >&2; exit 1; fi\n'
+        "exit 0\n"
+    )
+    resolved.chmod(resolved.stat().st_mode | stat.S_IXUSR)
+    on_path = path_dir / "cargo"
+    on_path.write_text(f'#!/usr/bin/env bash\necho clean >> "{path_clean}"\nexit 0\n')
+    on_path.chmod(on_path.stat().st_mode | stat.S_IXUSR)
+
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("[package]\nname = \"x\"\n")
+    env = dict(os.environ, PATH=f"{path_dir}{os.pathsep}{os.environ['PATH']}")
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(manifest), "release", str(resolved), "selfheal-build"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert resolved_clean.exists(), "the clean must run through the resolved cargo"
+    assert not path_clean.exists(), "a PATH-selected cargo must never run the clean"

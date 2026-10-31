@@ -43,11 +43,14 @@ from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wai
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 
+from apps.shared.events import publish as publish_engine_event
+
 from . import queue_store
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends.base import AnalyzerBackend, TrackVanished
 from .jit_warmup import warm_backend_jit
 from .lane_enums import LaneContractError
+from .lanes import parse_own_backend
 from .pool import analyze_one, spawn_pool
 from .queue import CascadeOutcome, QueueError, enqueue, runnable_sizing_inputs
 from .queue_effects import cascade_if_canonical
@@ -153,8 +156,16 @@ def _commit_record(
             backend=record.backend,
             backend_version=record.backend_version,
         )
-        upsert_record(record, conn=conn, cascade=False, version_bump=False)
-        outcomes: list[CascadeOutcome] = cascade_if_canonical(conn, record)
+        # Cascade from what the row now holds: a refused untrusted grid was
+        # replaced by the stored trusted one (UpsertResult.record).
+        written = upsert_record(
+            record,
+            conn=conn,
+            cascade=False,
+            version_bump=False,
+            publish_live_event=False,
+        )
+        outcomes: list[CascadeOutcome] = cascade_if_canonical(conn, written.record)
         settled = queue_store.finish_item(
             conn,
             batch_id=batch_id,
@@ -345,6 +356,12 @@ def _settle_one(
         ctx.summary.discarded_on_cancel += 1
         return
     ctx.summary.cascade_outcomes.extend(outcomes)
+    parsed_backend = parse_own_backend(record.backend)
+    if parsed_backend is not None:
+        publish_engine_event(
+            "analysis.changed",
+            {"stable_id": record.stable_id, "lane": parsed_backend.lane},
+        )
     ctx.summary.completed += 1
     if ctx.on_item is not None:
         ctx.on_item(item, queue_store.ITEM_DONE)

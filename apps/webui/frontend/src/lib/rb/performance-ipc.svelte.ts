@@ -67,10 +67,9 @@ import {
 	type AnalysisSourceFeature
 } from '$lib/rb/analysis-source.svelte';
 import { capturePairing } from '$lib/rb/pairing-capture';
-import { hasTrustedBeatGrid } from '$lib/player/grid-features';
+import { autoCueTargetMs, hasTrustedBeatGrid } from '$lib/player/grid-features';
 import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
-import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S } from '$lib/rb/auto-play-early';
 import { TRANSITION_INTENTS, type TransitionIntent } from '$lib/rb/auto-play-next-plan';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -83,6 +82,7 @@ import {
 	getMasterMode,
 	getMasterReason,
 	installAutomaticRejoinRunner,
+	presentationTickFailure,
 	installScopedSyncRunner,
 	drillGraphRebuild,
 	isMasterMuted,
@@ -99,6 +99,12 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import {
+	createGridNudgeCoalescer,
+	parseGridEditIntent,
+	runGridEditCommand,
+	type GridEditIntent
+} from '$lib/rb/grid-edit-command';
 import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
 import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
@@ -112,8 +118,10 @@ import {
 	setLoopIntervalMode
 } from '$lib/rb/loop-interval-view.svelte';
 import {
+	ObservedCommandScheduler,
 	ScopedCommandInvalidatedError,
-	ScopedCommandScheduler
+	scopesOutsideHold,
+	type ScopeHold
 } from '$lib/rb/performance-command-scheduler';
 import type { WidenScope } from '$lib/player/scoped-sync-runner';
 import {
@@ -123,6 +131,7 @@ import {
 	type DeckId
 } from '$lib/rb/deck-slots';
 import {
+	setAutoCue,
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
@@ -148,6 +157,8 @@ import {
 } from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
+	AnlzBeat,
+	AnlzBeatgridSource,
 	DeckAudioSnapshot,
 	DeckState,
 	HotCue,
@@ -284,7 +295,8 @@ export type PerformanceCommand =
 	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
-	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
+	// quantize false engages the range as given (a stored hot-cue or memory loop, DECKCTL-6235d).
+	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; quantize?: false; if_load_generation?: number }
 	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
@@ -297,10 +309,8 @@ export type PerformanceCommand =
 	// `_quantizeDefaultOn` reverts it to on at dispatch.
 	| { type: 'quantize'; deck: DeckId; enabled: boolean; by_user?: boolean }
 	// Pin a67bafbfc4b0: the quantize GRID, separate from the on/off toggle
-	// above. 1/4/8 are real and change engine.setQuantizeGrid; 'phase'
-	// (match to the detected phase length) is explicitly NOT implemented -
-	// _dispatchUnknown rejects it before it can queue, same shape as
-	// pins_show_other_users' not_implemented rejection.
+	// above. 1/4/8 snap to the beat grid; DECKCTL-6235c 'phase' snaps a pause,
+	// seek or cue to the nearest phrase boundary (Web Audio engine only).
 	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
 	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
@@ -323,6 +333,12 @@ export type PerformanceCommand =
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
+	// GRIDEDIT-6235/-6235d: the deck's grid adjust / grid shift, one press (or a
+	// reset of one half) on the stored grid edit of the track the deck holds.
+	// Queued on the deck's persistence scope, as hot-cue writes are: a preset's
+	// barrier waits for an edit already in flight, and transport commands on
+	// the deck never wait behind its round trip.
+	| { type: 'grid_edit'; deck: DeckId; edit: GridEditIntent }
 	| { type: 'trim'; deck: DeckId; value: number }
 	/** AUTOGAIN-04: the user's own auto gain dB for the loaded track (null = use the analysed one). */
 	| { type: 'auto_gain_offset'; deck: DeckId; offset_db: number | null; stable_id: string }
@@ -377,6 +393,8 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
+	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
+	| { type: 'deck_autocue'; enabled: boolean }
 	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. PLAY-18:
 	 * only a user turns it off, so `enabled: false` needs `by_user: true`. */
 	| { type: 'autoplay'; enabled: boolean; by_user?: boolean }
@@ -409,6 +427,10 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
+	| { type: 'cmdk_open'; query?: string }
+	| { type: 'cmdk_close' }
+	| { type: 'cmdk_pick'; index: number; id?: string; deck?: DeckId; target?: DeckId; confirm?: boolean; vocals_only?: boolean }
+	| { type: 'cmdk_mode'; mode: 'plain' | 'ai' }
 	| {
 			type: 'rescue_resume';
 			decks: Array<{ deck: DeckId; position_ms: number }>;
@@ -461,6 +483,7 @@ export interface PerformanceDeckSnapshot {
 	sync_mode: SyncMode;
 	sync_error: string | null;
 	processor_error: string | null;
+	presentation_clock_error: string | null;
 	/** Last successful load wall ms; null until a load completes (KPI). */
 	last_load_latency_ms: number | null;
 	/** Monotonic successful-load commit number for durable reload observation. */
@@ -583,6 +606,8 @@ export interface PerformanceState {
 	};
 	last_error: string | null;
 	pairing_snapshot: PairingSnapshot | null;
+	/** CMDK-15: the Cmd K bar as an agent sees it; null while no v2 bar is mounted. */
+	cmdk: CmdkSnapshot | null;
 	technically_working: {
 		active: boolean;
 		peeking: boolean;
@@ -596,6 +621,8 @@ export interface PerformanceState {
 		show_stems: boolean;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
 		auto_play_enabled: boolean;
+		/** DECKCTL-6235: the AU switch, so a deck_autocue command can be read back. */
+		deck_autocue: boolean;
 		/** TOPVIEW-06: AutoPlay keeps to decks 1 and 2. */
 		auto_play_two_deck: boolean;
 		/** TOPVIEW-01..03: the view the wavestack area shows. */
@@ -675,6 +702,111 @@ export interface PlaylistHistoryAdapter {
 }
 
 let _playlistHistoryAdapter: PlaylistHistoryAdapter | null = null;
+
+// CMDK-15: the bar's snapshot and adapter shapes live with the bar's own pure
+// logic, so the bar can name them without importing this module.
+/**
+ * CMDK-15: the v2 Cmd K bar's open state, and the adapter it registers. The bar
+ * declares the same two shapes in `$lib/rb/cmdk-actions` so it never imports
+ * this module; /performance's `registerAdapter={registerCmdkAdapter}` binding
+ * type-checks one against the other, so they cannot drift apart unnoticed.
+ */
+export interface CmdkSnapshot {
+	open: boolean;
+	query: string;
+	selected: number;
+	target: DeckId;
+	rows: Array<{
+		kind: 'track' | 'setting' | 'command';
+		id: string;
+		label: string;
+		pair?: 'aligned' | 'loose';
+		fit?: number;
+		/** A setting row: the value it shows (On, Off or the option's label), as the bar draws it (Codex P2 BLOCKING, #6691). */
+		value?: string;
+		/** A setting row: what Enter does to it for the current query, in the row's own words (Codex P2 BLOCKING, #6691). */
+		action?: string;
+	}>;
+	/** CMDK-20: plain search, or AI search (each track row then carries JEV's `fit`). */
+	mode: 'plain' | 'ai';
+	/** CMDK-21: the AI answer's state: idle, working, ready, no-key or error. */
+	ai: 'idle' | 'working' | 'ready' | 'no-key' | 'error';
+	/** With pairs on and a master loaded: the master's pairs lookup (a pair row's id is `pair:<stable_id>:loose` or `pair:<stable_id>:aligned:<basis>`). */
+	pairs?: { status: 'loading' | 'ready' } | { status: 'error'; message: string };
+	/** While open: the collection index and search warmup; `loading` or `error` means the track rows are not a search result yet. */
+	collection?: { status: 'loading' | 'ready' } | { status: 'error'; message: string };
+	/** While open: the deck picker or eject confirmation that holds the bar, so the rows above are not the choice being made (CMDK-15, Codex #6691). */
+	dialog?: { kind: 'deck-picker'; deck: DeckId; title: string; confirming?: boolean } | { kind: 'eject'; deck: DeckId };
+	/** The footer's pick state: an aligned pair loading, else the last pick's failure (CMDK-15). */
+	operation?: { status: 'loading'; title: string; deck: DeckId } | { status: 'error'; message: string };
+}
+export interface CmdkAdapter {
+	open(query: string | null): Promise<void>;
+	close(): void;
+	snapshot(): CmdkSnapshot;
+	/**
+	 * CMDK-19: pick row `index` as Enter does; rejects with the reason when it does not run. With `id`
+	 * (the row id `query().cmdk` reported), a row that is no longer that one is refused, not picked.
+	 * `vocalsOnly` is Shift+Enter: the track loads and its vocals are soloed once the stems are ready.
+	 */
+	pick(index: number, deck: DeckId | null, confirm: boolean, id: string | null, target: DeckId | null, vocalsOnly: boolean, source: 'user-ui' | 'agent-command'): Promise<void>;
+	/** CMDK-20: switch plain and AI search as Tab does; rejects when the bar is closed or the flag is off. */
+	setMode(mode: 'plain' | 'ai'): void;
+}
+
+let _cmdkAdapter: CmdkAdapter | null = null;
+/** The mounted bar, or the reason a cmdk_* command cannot run without it. */
+function _cmdk(type: string): CmdkAdapter {
+	if (_cmdkAdapter === null) throw new Error(`${type} requires the Cmd K v2 bar (flag cmdk.v2) on /performance`);
+	return _cmdkAdapter;
+}
+
+/** Loads and unloads ever dispatched per deck, from any source (CMDK-16). Plain, not reactive: read at a point in time. */
+const _deckLoadDispatches: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+/** How many loads or unloads have been dispatched to `deck` so far, committed or not. */
+export function deckLoadDispatchCount(deck: DeckId): number {
+	return _deckLoadDispatches[deck];
+}
+
+/** Fader writes ever dispatched per deck, from any source (CMDK-19). Plain, not reactive: read at a point in time. */
+const _deckFaderWrites: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+/**
+ * How many fader writes have been dispatched to `deck` so far, counted before
+ * they run: a write of the same value, or one still awaiting the engine, is
+ * newer than any read of the fader taken before it.
+ */
+export function deckFaderWriteCount(deck: DeckId): number {
+	return _deckFaderWrites[deck];
+}
+
+/**
+ * Deck-queue commands ever dispatched per deck other than loads, unloads and beat_sync (CMDK-19):
+ * play, cue, seek, tempo, loops and the rest that claim the deck's own scope. Counted when sent,
+ * before they wait or run, so one queued behind a load is already newer than a read taken before
+ * it. beat_sync is left out because a load under Beat Sync Max queues its own after the load
+ * (DECKUX-37), and an aligned pair turns it off as its first step anyway.
+ */
+const _deckCommandDispatches: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+/** beat_sync commands ever dispatched per deck, counted apart so a reader can date them itself (CMDK-19). */
+const _deckBeatSyncDispatches: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+/**
+ * How many such commands have been dispatched to `deck` so far, run or not; with `'beat_sync'`,
+ * how many beat_sync commands instead, so an aligned pair can see one sent after its own
+ * (Codex r4277769141).
+ */
+export function deckCommandDispatchCount(deck: DeckId, kind?: 'beat_sync'): number {
+	return kind === 'beat_sync' ? _deckBeatSyncDispatches[deck] : _deckCommandDispatches[deck];
+}
+
+export function registerCmdkAdapter(adapter: CmdkAdapter): () => void {
+	_cmdkAdapter = adapter;
+	return () => {
+		if (_cmdkAdapter === adapter) _cmdkAdapter = null;
+	};
+}
 
 export function registerPlaylistHistoryAdapter(adapter: PlaylistHistoryAdapter): () => void {
 	_playlistHistoryAdapter = adapter;
@@ -960,7 +1092,15 @@ let _presetClaim: { id: string } | null = null;
 const _drainHeldAutoGain = setAutoGainLiveGuard(() => (_presetClaim === null ? null : `performance preset ${_presetClaim.id} owns controls`));
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
-const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+type _GridEditCommand = Extract<PerformanceCommand, { type: 'grid_edit' }>;
+// GRIDEDIT-6235: held-button repeats merge before the persistence scope wait.
+const _gridNudges = createGridNudgeCoalescer<_GridEditCommand, PerformanceState>((scope) =>
+	typeof scope === 'string' && scope.startsWith('persistence-') ? Number(scope.slice('persistence-'.length)) : null
+);
+const _commandScheduler = new ObservedCommandScheduler<CommandScope>(
+	(scopes) => _gridNudges.cut(scopes),
+	() => _gridNudges.clear()
+);
 // S1 (round 2): a queued fader step that a newer one has overtaken is a no-op
 // when its turn comes, so a sweep costs one group re-lock, not one per message.
 // A command queued between two tempos is a barrier (tempo-coalesce.ts).
@@ -1513,6 +1653,47 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
+	if (type === 'cmdk_open') {
+		_exactKeys(record, record.query === undefined ? ['type'] : ['type', 'query']);
+		if (record.query === undefined) return { type };
+		if (typeof record.query !== 'string') throw new TypeError('cmdk_open query must be a string');
+		return { type, query: record.query };
+	}
+	if (type === 'cmdk_close') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'cmdk_pick') {
+		_exactKeys(record, [
+			'type',
+			'index',
+			...(record.id === undefined ? [] : ['id']),
+			...(record.deck === undefined ? [] : ['deck']),
+			...(record.target === undefined ? [] : ['target']),
+			...(record.confirm === undefined ? [] : ['confirm']),
+			...(record.vocals_only === undefined ? [] : ['vocals_only'])
+		]);
+		if (typeof record.index !== 'number' || !Number.isInteger(record.index) || record.index < 0) {
+			throw new TypeError('cmdk_pick index must be a non-negative integer');
+		}
+		if (record.id !== undefined && (typeof record.id !== 'string' || record.id === '')) {
+			throw new TypeError('cmdk_pick id must be a non-empty string (the row id query().cmdk reported)');
+		}
+		return {
+			type,
+			index: record.index,
+			...(record.id === undefined ? {} : { id: record.id }),
+			...(record.deck === undefined ? {} : { deck: _deck(record.deck) }),
+			...(record.target === undefined ? {} : { target: _deck(record.target) }),
+			...(record.confirm === undefined ? {} : { confirm: _boolean('confirm', record.confirm) }),
+			...(record.vocals_only === undefined ? {} : { vocals_only: _boolean('vocals_only', record.vocals_only) })
+		};
+	}
+	if (type === 'cmdk_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'plain' && record.mode !== 'ai') throw new TypeError("cmdk_mode mode must be 'plain' or 'ai'");
+		return { type, mode: record.mode };
+	}
 	if (type === 'playlist_undo' || type === 'playlist_redo' || type === 'rescue_stop_all') {
 		_exactKeys(record, ['type']);
 		return { type };
@@ -1564,7 +1745,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
-	if (type === 'show_stems') {
+	if (type === 'show_stems' || type === 'deck_autocue') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
@@ -1694,8 +1875,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, position_ms, snap };
 	} else if (type === 'loop') {
-		_exactKeys(record, ['type', 'deck', 'loop', 'if_load_generation']);
+		_exactKeys(record, ['type', 'deck', 'loop', 'quantize', 'if_load_generation']);
 		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
+		// Validated before the loop-exit return, so a bad quantize fails for null too (Sol P1, #6235).
+		if (record.quantize !== undefined && record.quantize !== false) {
+			throw new TypeError(`loop quantize may only be false; got ${String(record.quantize)}`);
+		}
 		if (record.loop === null) return { type, deck, loop: null, ...condition };
 		const loop = _record(record.loop);
 		_exactKeys(loop, ['in_ms', 'out_ms']);
@@ -1703,6 +1888,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			type,
 			deck,
 			...condition,
+			...(record.quantize === false ? { quantize: false as const } : {}),
 			loop: { in_ms: _finite('loop.in_ms', loop.in_ms), out_ms: _finite('loop.out_ms', loop.out_ms) }
 		};
 	} else if (type === 'beat_loop') {
@@ -1747,7 +1933,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, deck, enabled: _boolean('enabled', record.enabled), by_user: _boolean('by_user', record.by_user) };
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
-		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+		return { type, deck, enabled: _boolean('enabled', record.enabled) } as PerformanceCommand;
 	} else if (type === 'quantize_grid') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		if (record.beats !== 1 && record.beats !== 4 && record.beats !== 8 && record.beats !== 'phase') {
@@ -1780,6 +1966,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`semitones must be -1 or 1, got ${String(record.semitones)}`);
 		}
 		return { type, deck, semitones: record.semitones };
+	} else if (type === 'grid_edit') {
+		_exactKeys(record, ['type', 'deck', 'edit']);
+		return { type, deck, edit: parseGridEditIntent(record.edit) };
 	} else if (type === 'sync_mode') {
 		_exactKeys(record, ['type', 'deck', 'mode']);
 		if (record.mode !== 'beat' && record.mode !== 'bar') {
@@ -2085,6 +2274,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
+		presentation_clock_error: presentationTickFailure(),
 		last_load_latency_ms: deck.last_load_latency_ms,
 		load_generation: deck.load_generation,
 		last_load_stages:
@@ -2232,6 +2422,7 @@ export function queryPerformanceState(): PerformanceState {
 		// of reactive state" - see performance-ipc.test.mjs.
 		pairing_snapshot:
 			_pairingSnapshot === null ? null : structuredClone($state.snapshot(_pairingSnapshot)),
+		cmdk: _cmdkAdapter === null ? null : structuredClone($state.snapshot(_cmdkAdapter.snapshot())),
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
@@ -2256,6 +2447,7 @@ export function queryPerformanceState(): PerformanceState {
 		ui: {
 			show_stems: uiPrefs.show_stems,
 			auto_play_enabled: uiPrefs.auto_play_enabled,
+			deck_autocue: uiPrefs.deck_autocue,
 			auto_play_two_deck: uiPrefs.auto_play_two_deck,
 			perf_view: uiPrefs.perf_view,
 			show_pads: uiPrefs.show_pads,
@@ -2301,6 +2493,48 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 function _completeCommand(command: PerformanceCommand): PerformanceState {
 	notifyRescueTransportEvent(command);
 	return queryPerformanceState();
+}
+
+/** The track and grid a queued grid edit was pressed for, captured at dispatch. */
+interface _GridEditTarget {
+	stable_id: string | null;
+	load_generation: number;
+	source: AnlzBeatgridSource | null;
+}
+const _gridEditTargets = new WeakMap<PerformanceCommand, _GridEditTarget>();
+
+function _sameGridEditTarget(a: PerformanceCommand, b: PerformanceCommand): boolean {
+	const x = _gridEditTargets.get(a);
+	const y = _gridEditTargets.get(b);
+	return x !== undefined && y !== undefined &&
+		x.stable_id === y.stable_id && x.load_generation === y.load_generation && x.source === y.source;
+}
+
+function _bindGridEditTarget(command: PerformanceCommand): void {
+	if (command.type !== 'grid_edit') return;
+	const st = getDeckState(command.deck);
+	_gridEditTargets.set(command, {
+		stable_id: st.stable_id,
+		load_generation: st.load_generation,
+		source: st.anlz?.beatgrid.source ?? null
+	});
+}
+
+/** Neither a load nor an analysis-source switch takes the persistence scope,
+ * so by the time a queued edit runs the deck may hold another track or draw
+ * the other grid; never edit either (each source keeps its own edit). */
+function _assertGridEditTarget(
+	command: Extract<PerformanceCommand, { type: 'grid_edit' }>,
+	st: { stable_id: string | null; load_generation: number; anlz: { beatgrid: { source: AnlzBeatgridSource } } | null }
+): void {
+	const target = _gridEditTargets.get(command);
+	if (target === undefined) return;
+	if (st.stable_id !== target.stable_id || st.load_generation !== target.load_generation) {
+		throw new Error(`grid edit: deck ${command.deck} loaded another track before the edit ran; nothing was written`);
+	}
+	if ((st.anlz?.beatgrid.source ?? null) !== target.source) {
+		throw new Error(`grid edit: deck ${command.deck} switched beatgrid source before the edit ran; nothing was written`);
+	}
 }
 
 function _persistenceScope(deck: DeckId): PersistenceScope {
@@ -2401,8 +2635,13 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'auto_play_decide_now'
 		|| command.type === 'load_play_intent'
 		|| command.type === 'playlist_undo'
+		|| command.type === 'cmdk_open'
+		|| command.type === 'cmdk_close'
+		|| command.type === 'cmdk_pick'
+		|| command.type === 'cmdk_mode'
 		|| command.type === 'playlist_redo'
 		|| command.type === 'feedback_mark'
+		|| command.type === 'deck_autocue'
 	) {
 		return null;
 	}
@@ -2410,6 +2649,7 @@ export function performanceCommandQueueScopes(
 	if (command.type === 'hot_cue_save' || command.type === 'hot_cue_clear' || command.type === 'hot_cue_restore') {
 		return [_persistenceScope(deck)];
 	}
+	if (command.type === 'grid_edit') return [_persistenceScope(deck)];
 	if (
 		command.type === 'play' ||
 		command.type === 'cue' ||
@@ -2537,6 +2777,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 		await _quantizeOnForNewTrack(command.deck);
+		_autoCueNewTrack(command.deck);
 	} else if (command.type === 'load_play_intent') {
 		// Q1: the stamp rides WITH the intent, so the play this eventually
 		// becomes can time from the operator's keydown and not from the load.
@@ -2622,7 +2863,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			};
 		}
 	} else if (command.type === 'loop') {
-		await engine.setLoop(command.deck, command.loop);
+		await engine.setLoop(command.deck, command.loop, command.quantize !== false);
 	} else if (command.type === 'beat_loop') {
 		await engine.engageBeatLoop(command.deck, command.beats, command.start_ms);
 	} else if (command.type === 'beat_jump') {
@@ -2638,11 +2879,6 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'quantize') {
 		engine.setQuantize(command.deck, command.enabled);
 	} else if (command.type === 'quantize_grid') {
-		// 'phase' is rejected earlier in _dispatchUnknown, before this command
-		// can even queue - only 1/4/8 ever reach the engine.
-		if (command.beats === 'phase') {
-			throw new Error('quantize_grid: not_implemented - phase reached _execute unrejected');
-		}
 		engine.setQuantizeGrid(command.deck, command.beats);
 	} else if (command.type === 'beat_sync') {
 		await engine.setBeatSync(command.deck, command.enabled);
@@ -2702,6 +2938,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.setKeySync(command.deck, command.enabled);
 	} else if (command.type === 'key_nudge') {
 		await engine.nudgeKey(command.deck, command.semitones);
+	} else if (command.type === 'grid_edit') {
+		const st = getDeckState(command.deck);
+		_assertGridEditTarget(command, st);
+		// Checked again right before the write: the per-track queue can hold
+		// this press behind another deck's edit of the same track.
+		await runGridEditCommand(st.stable_id, st.anlz, command.edit, () =>
+			_assertGridEditTarget(command, getDeckState(command.deck))
+		);
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
@@ -2774,6 +3018,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'deck_autocue') {
+		await setAutoCue(command.enabled);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
@@ -2957,6 +3203,22 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 	} else if (command.type === 'feedback_mark') {
 		throw new Error('feedback_mark must be captured at the dispatch boundary');
+	} else if (command.type === 'cmdk_open') {
+		await _cmdk(command.type).open(command.query ?? null);
+	} else if (command.type === 'cmdk_close') {
+		_cmdk(command.type).close();
+	} else if (command.type === 'cmdk_pick') {
+		await _cmdk(command.type).pick(
+			command.index,
+			command.deck ?? null,
+			command.confirm === true,
+			command.id ?? null,
+			command.target ?? null,
+			command.vocals_only === true,
+			'agent-command'
+		);
+	} else if (command.type === 'cmdk_mode') {
+		_cmdk(command.type).setMode(command.mode);
 	} else if (command.type === 'playlist_undo') {
 		if (_playlistHistoryAdapter === null) {
 			throw new Error('playlist_undo requires a mounted playlist history panel');
@@ -3082,6 +3344,10 @@ function _invalidateCommandSession(generation: number): void {
 	_activeCommandSession = null;
 	_commandStatusGeneration += 1;
 	_commandScheduler.invalidateQueued(`performance command session ${generation} was invalidated`);
+	// A running Audio I/O Test still opening its microphone gives up now
+	// rather than holding the headphone scope into the next mount.
+	for (const test of _audioIoTestAborts) test.abort(new Error('The performance view closed during the Test.'));
+	_audioIoTestAborts.clear();
 	_resetCommandStatus();
 	// Armed records carry a target time on the route-owned AudioContext, which
 	// dies with this session: a record surviving into the next mount would be
@@ -3089,6 +3355,7 @@ function _invalidateCommandSession(generation: number): void {
 	for (const deckId of DECK_IDS) {
 		waveformSeekArmed[deckId] = null;
 		hotCueArmed[deckId] = null;
+		quantizedLaunchArmed[deckId] = null;
 	}
 }
 
@@ -3454,6 +3721,46 @@ export function abortPreparedPerformancePreset(id: string, reason: string): void
 	_releasePreset(id, 'error', _errorMessage(error));
 }
 
+/**
+ * IOPIN-19: run an Audio I/O Test (panel or agent) under the dispatcher's own
+ * ownership. Refused with no live route session or while a preset owns the
+ * lifecycle; otherwise `work` runs inside the `headphone` scope, so a preset
+ * (whose phases take that scope) and every headphone command wait for it, and
+ * `stillCurrent` lets it stop once the route session tears down mid-Test.
+ */
+/** Each running Audio I/O Test's abort, fired when its route session ends. */
+const _audioIoTestAborts = new Set<AbortController>();
+
+export async function runAudioIoTest<T>(
+	work: (stillCurrent: () => boolean, signal: AbortSignal) => Promise<T>
+): Promise<T> {
+	const refuse = (): void => {
+		if (_activeCommandSession === null) {
+			throw new Error('The performance view is not running, so there is nothing to test. Open it, then test again.');
+		}
+		if (_presetClaim !== null) {
+			throw new Error(
+				`Performance preset ${_presetClaim.id} owns the audio at ${performancePresetLifecycle.phase}. Test again once it finishes.`
+			);
+		}
+	};
+	refuse();
+	const generation = _currentCommandSession();
+	return _commandScheduler.run(['headphone'], async () => {
+		refuse();
+		_assertCommandSession(generation);
+		const abort = new AbortController();
+		_audioIoTestAborts.add(abort);
+		try {
+			const result = await work(() => _commandSessionIsCurrent(generation), abort.signal);
+			_assertCommandSession(generation);
+			return result;
+		} finally {
+			_audioIoTestAborts.delete(abort);
+		}
+	});
+}
+
 // ------------------------------------------------- Q1 quantize default on ---
 
 /** Frames that are the dispatcher itself, never the caller worth naming. */
@@ -3528,12 +3835,24 @@ async function _quantizeOnForNewTrack(deck: DeckId): Promise<void> {
 	console.info(`[quantize] CH${deck}: Quantize back on for the new track (a user off holds for one track)`);
 }
 
+/** DECKCTL-6235: with AU on, park a fresh Web Audio load at its first memory
+ * cue (else its first beat). Rust engine mode does not run this yet. */
+function _autoCueNewTrack(deck: DeckId): void {
+	if (!uiPrefs.deck_autocue) return;
+	const st = getDeckState(deck);
+	const target = autoCueTargetMs(st.anlz, st.duration_ms);
+	if (target === null) return;
+	engine.parkAtCue(deck, target);
+	console.info(`[deck-autocue] CH${deck}: parked at ${Math.round(target)} ms`);
+}
+
 async function _dispatchUnknown(
 	message: unknown,
 	commandGeneration: number,
 	pressT0Ms: number | undefined,
 	caller: string,
-	source: CommandSource
+	source: CommandSource,
+	hold?: CoordinatedHold
 ): Promise<PerformanceState> {
 	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
@@ -3560,6 +3879,12 @@ async function _dispatchUnknown(
 		command = { ...command, stable_id: held };
 	}
 	const deck = _commandDeck(command);
+	_bindGridEditTarget(command);
+	if (command.type === 'grid_edit') {
+		const next = command;
+		const merged = _gridNudges.merge(next, (queued) => _sameGridEditTarget(queued, next));
+		if (merged !== null) return merged;
+	}
 	if (command.type === 'load') {
 		onDeckLoadStart(command.deck);
 	}
@@ -3601,14 +3926,20 @@ async function _dispatchUnknown(
 		_persistCommandError(null, error);
 		throw error;
 	}
-	if (command.type === 'quantize_grid' && command.beats === 'phase') {
-		const error = new Error(
-			'quantize_grid: not_implemented - will match quantize to the detected phase length'
-		);
-		_persistCommandError(command.deck, error, command);
-		throw error;
+	const queueScopes = performanceCommandQueueScopes(command);
+	const scopes = scopesOutsideHold(command.type, queueScopes, hold);
+	if (command.type === 'fader') _deckFaderWrites[command.deck] += 1;
+	if (command.type === 'beat_sync') _deckBeatSyncDispatches[command.deck] += 1;
+	if (
+		deck !== null &&
+		command.type !== 'load' &&
+		command.type !== 'unload' &&
+		command.type !== 'beat_sync' &&
+		queueScopes !== null &&
+		queueScopes.includes(deck)
+	) {
+		_deckCommandDispatches[deck] += 1;
 	}
-	const scopes = performanceCommandQueueScopes(command);
 	if (command.type === 'headphone_output_acquire') {
 		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
@@ -3643,11 +3974,13 @@ async function _dispatchUnknown(
 	const tempoTicket = _tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
+	if (deck !== null && (command.type === 'load' || command.type === 'unload')) _deckLoadDispatches[deck] += 1;
 	let started = false;
 
 	const run = async (): Promise<PerformanceState> => {
 		_assertCommandSession(commandGeneration);
 		started = true;
+		if (command.type === 'grid_edit') _gridNudges.started(command);
 		performanceCommandStatus.queued -= 1;
 		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
@@ -3677,6 +4010,7 @@ async function _dispatchUnknown(
 			if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
 		}
 	});
+	if (command.type === 'grid_edit') _gridNudges.queued(command, settled);
 	if (command.type !== 'load') return settled;
 	// DECKUX-37: a load under Beat Sync Max queues that deck's own beat_sync
 	// command AFTER the load releases its scope (inside it, it would deadlock).
@@ -3696,15 +4030,41 @@ async function _dispatchUnknown(
 export async function dispatchPerformanceCommand(
 	command: PerformanceCommand,
 	pressT0Ms?: number,
-	source: CommandSource = 'app-command'
+	source: CommandSource = 'app-command',
+	hold?: CoordinatedHold
 ): Promise<PerformanceState> {
 	return _dispatchUnknown(
 		command,
 		_currentCommandSession(),
 		pressT0Ms,
 		dispatchCallerFromStack(new Error().stack),
-		source
+		source,
+		hold
 	);
+}
+
+/** CMDK-19: the decks plus 'sync' a coordinated operation holds (`runCoordinatedFromUi`). */
+export type CoordinatedHold = ScopeHold<CommandScope>;
+
+/**
+ * CMDK-19 (AGENTS.md: operations that coordinate master and followers claim
+ * the shared sync scope): run `work` holding these decks plus 'sync' for its
+ * whole lifetime, so no seek, tempo or play from MIDI, IPC or AutoPlay reaches
+ * them between its steps. `work` sends its own commands through the run
+ * function it is given; they run inside the hold, through the full dispatcher.
+ */
+export async function runCoordinatedFromUi(
+	decks: readonly DeckId[],
+	work: (run: (command: PerformanceCommand) => Promise<PerformanceUiCommandResult>) => Promise<void>
+): Promise<void> {
+	const hold: CoordinatedHold = { scopes: new Set<CommandScope>([...decks, 'sync']), open: true };
+	try {
+		await _commandScheduler.run([...hold.scopes], () =>
+			work((command) => runPerformanceCommandFromUi(command, performance.now(), hold))
+		);
+	} finally {
+		hold.open = false;
+	}
 }
 
 /**
@@ -3733,10 +4093,12 @@ export type PerformanceUiCommandResult =
  */
 export async function runPerformanceCommandFromUi(
 	command: PerformanceCommand,
-	pressT0Ms: number = performance.now()
+	pressT0Ms: number = performance.now(),
+	hold?: CoordinatedHold,
+	source: 'user-ui' | 'agent-command' = 'user-ui'
 ): Promise<PerformanceUiCommandResult> {
 	try {
-		await dispatchPerformanceCommand(command, pressT0Ms, 'user-ui');
+		await dispatchPerformanceCommand(command, pressT0Ms, source, hold);
 		return { ok: true };
 	} catch (error) {
 		if (error instanceof ScopedCommandInvalidatedError) {

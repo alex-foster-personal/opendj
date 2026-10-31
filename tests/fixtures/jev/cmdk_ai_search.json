@@ -1,0 +1,120 @@
+{
+  "captured": "Wed 14 Oct 2026, live OpenRouter decisions API, model ~typesafe/jev-latest, invented tracks",
+  "request": {
+    "model": "~typesafe/jev-latest",
+    "questions": {
+      "t1": {
+        "instructions": "Does track 1 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 1 only.",
+        "type": "noul"
+      },
+      "t2": {
+        "instructions": "Does track 2 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 2 only.",
+        "type": "noul"
+      },
+      "t3": {
+        "instructions": "Does track 3 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 3 only.",
+        "type": "noul"
+      },
+      "t4": {
+        "instructions": "Does track 4 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 4 only.",
+        "type": "noul"
+      },
+      "t5": {
+        "instructions": "Does track 5 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 5 only.",
+        "type": "noul"
+      },
+      "t6": {
+        "instructions": "Does track 6 fit what the DJ is looking for (uplifting vocal house for a sunset set)? Judge track 6 only.",
+        "type": "noul"
+      }
+    },
+    "state": "The STATE lists tracks from a DJ's music library by number, with whatever artist, title, album, genre, tempo and key the library knows. The DJ is looking for: uplifting vocal house for a sunset set\n\nTrack 1: Artist: Lumen Harbor; Title: Midnight Ferry (Vocal Mix); Genre: Deep House; BPM: 122; Key: 8A\nTrack 2: Artist: Copper Orchard; Title: Steel Rain; Genre: Techno; BPM: 128; Key: 9A\nTrack 3: Artist: Velvet Atlas; Title: Sing Me Home (Extended Vocal); Genre: Vocal House; BPM: 124; Key: 8B\nTrack 4: Artist: Northline; Title: Pressure Valve; Genre: Tech House; BPM: 125; Key: 7A\nTrack 5: Artist: Paper Tides; Title: Slow Bloom; Genre: Ambient; BPM: 90; Key: 8A\nTrack 6: Artist: Marisol Grey; Title: Golden Hour (feat. June Ash); Genre: Disco House; BPM: 123; Key: 9B"
+  },
+  "response": {
+    "answers": {
+      "t1": {
+        "noul": 0.22,
+        "type": "noul"
+      },
+      "t2": {
+        "noul": 0.03,
+        "type": "noul"
+      },
+      "t3": {
+        "noul": 0.77,
+        "type": "noul"
+      },
+      "t4": {
+        "noul": 0.06,
+        "type": "noul"
+      },
+      "t5": {
+        "noul": 0.02,
+        "type": "noul"
+      },
+      "t6": {
+        "noul": 0.47,
+        "type": "noul"
+      }
+    },
+    "id": "gen-dec-1791988913-Ko7QwPNOLiy02srNoPoI",
+    "model": "typesafe/jev-1.13-20260917",
+    "provider": "TypeSafe",
+    "usage": {
+      "cost": 3.0198e-05,
+      "input_tokens": 719,
+      "output_tokens": 106
+    }
+  },
+  "tracks": [
+    {
+      "artist": "Lumen Harbor",
+      "bpm": 122.0,
+      "genre": "Deep House",
+      "key": "8A",
+      "stable_id": "ai-01",
+      "title": "Midnight Ferry (Vocal Mix)"
+    },
+    {
+      "artist": "Copper Orchard",
+      "bpm": 128.0,
+      "genre": "Techno",
+      "key": "9A",
+      "stable_id": "ai-02",
+      "title": "Steel Rain"
+    },
+    {
+      "artist": "Velvet Atlas",
+      "bpm": 124.0,
+      "genre": "Vocal House",
+      "key": "8B",
+      "stable_id": "ai-03",
+      "title": "Sing Me Home (Extended Vocal)"
+    },
+    {
+      "artist": "Northline",
+      "bpm": 125.0,
+      "genre": "Tech House",
+      "key": "7A",
+      "stable_id": "ai-04",
+      "title": "Pressure Valve"
+    },
+    {
+      "artist": "Paper Tides",
+      "bpm": 90.0,
+      "genre": "Ambient",
+      "key": "8A",
+      "stable_id": "ai-05",
+      "title": "Slow Bloom"
+    },
+    {
+      "artist": "Marisol Grey",
+      "bpm": 123.0,
+      "genre": "Disco House",
+      "key": "9B",
+      "stable_id": "ai-06",
+      "title": "Golden Hour (feat. June Ash)"
+    }
+  ],
+  "words": "uplifting vocal house for a sunset set"
+}

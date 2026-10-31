@@ -1,0 +1,10 @@
+[package]
+name = "opendj-desktop-opener-scope"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Matcher evidence for the desktop opener URL scope using glob 0.3.4"
+
+[dev-dependencies]
+glob = "=0.3.4"
+serde_json = "1"

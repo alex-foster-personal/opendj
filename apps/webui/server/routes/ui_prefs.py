@@ -60,6 +60,9 @@ _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
 _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH = True
 _DEFAULT_MASTER_MUTED = False
+# DECKCTL-6235 (alpha status I11): the deck AU button. Off by default so a load
+# still lands at 0:00 until the DJ turns it on.
+_DEFAULT_DECK_AUTOCUE = False
 # TOPVIEW-04 / TOPVIEW-06: the PAD toggle and two-deck AutoPlay.
 _DEFAULT_SHOW_PADS = True
 _DEFAULT_AUTO_PLAY_TWO_DECK = False
@@ -69,6 +72,7 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "auto_play_enforce_order": _DEFAULT_AUTO_PLAY_ENFORCE_ORDER,
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
     "master_muted": _DEFAULT_MASTER_MUTED,
+    "deck_autocue": _DEFAULT_DECK_AUTOCUE,
     "show_pads": _DEFAULT_SHOW_PADS,
     "auto_play_two_deck": _DEFAULT_AUTO_PLAY_TWO_DECK,
 }
@@ -1021,6 +1025,7 @@ class UiPrefsOut(BaseModel):
     perf_view: PerfView = _DEFAULT_PERF_VIEW
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
+    deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
     key_notation: KeyNotation = _DEFAULT_KEY_NOTATION
@@ -1077,6 +1082,10 @@ class UiPrefsPatch(BaseModel):
     # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
     deck_default_quantize: StrictBool | None = None
     show_sections: bool | None = None
+    # Strict for the same reason: AU is deck-wide, a coerced 1 or "yes" would arm it.
+    # Omitted means unchanged; an explicit null is refused (Sol P1, PR #6235),
+    # so the contract advertises it as omittable but never nullable.
+    deck_autocue: StrictBool | SkipJsonSchema[None] = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
     key_notation: KeyNotation | None = None
@@ -1105,7 +1114,8 @@ class UiPrefsPatch(BaseModel):
 
 
 # library_key_filter (#7599): [] clears it, so an explicit null is never "clear" (Sol P1, #7743).
-_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "library_key_filter")
+# deck_autocue: omitted means unchanged, so an explicit null is refused too (Sol P1, PR #6235).
+_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "library_key_filter", "deck_autocue")
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:

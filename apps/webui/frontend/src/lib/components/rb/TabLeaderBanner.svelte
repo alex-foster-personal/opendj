@@ -36,7 +36,7 @@
 		border: 1px solid var(--rb-border);
 		border-radius: 4px;
 		background: var(--rb-panel);
-		color: var(--rb-text-dim);
+		color: var(--rb-text);
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
 		/* No opacity: at 0.92 the dim label blended to 4.5:1 and failed UICONTRAST-01. */

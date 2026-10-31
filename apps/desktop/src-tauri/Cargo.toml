@@ -86,6 +86,9 @@ path = "src/main.rs"
 name = "odj-output-probe"
 path = "src/bin/odj-output-probe.rs"
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.dev]
 opt-level = 0
 debug = true

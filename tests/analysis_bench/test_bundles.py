@@ -40,6 +40,16 @@ def _sealed(root: Path, **kwargs) -> Path:
     return staged
 
 
+def test_payload_paths_returns_string_sorted_relpaths(tmp_path: Path) -> None:
+    """Walk order follows Path parts; the returned list must be string-sorted POSIX relpaths."""
+    bundle = tmp_path / "bundle"
+    (bundle / "a-b").mkdir(parents=True)
+    (bundle / "a").mkdir(parents=True)
+    (bundle / "a-b" / "x").write_bytes(b"1")
+    (bundle / "a" / "b").write_bytes(b"2")
+    assert bundles.payload_paths(bundle) == ["a-b/x", "a/b"]
+
+
 def test_sealed_bundle_verifies(tmp_path: Path) -> None:
     bundle = _sealed(tmp_path)
     report = bundles.verify_bundle(bundle)

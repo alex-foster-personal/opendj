@@ -37,6 +37,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
 from ..rb_vendor_pkg.cached_pssi import apply_cached_pssi
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
+from .grid_edit import apply_stored_grid_edit
 from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
 from .vocals import _own_vocals
 
@@ -478,6 +479,8 @@ def get_track_anlz(
         source=phrase_source_for_request(request),
         share=getattr(request.state, "share_audience", "local") == "share",
     )
+    # GRIDEDIT-6235b: the user's grid adjust / shift for the grid just resolved.
+    payload = apply_stored_grid_edit(request, stable_id, payload)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

@@ -107,23 +107,32 @@ export function createCuePreview(ports: CuePreviewPorts) {
 	let history: number[] = [];
 
 	/** The bar as it stood before a jump: a refused jump puts it back (Sol P2, #6687). Null for a fresh start. */
-	type JumpRestore = { anchor: number; history: number[]; message: string } | null;
+	type JumpRestore = { anchor: number; history: number[]; message: string; landed: string } | null;
 
 	const seek = latestOnly(async (job: { stable_id: string; bar: number; ask: number; fresh: boolean; restore: JumpRestore; owned: boolean }) => {
 		const current = track;
 		if (job.ask !== ask) return;
 		if (current === null || current.stable_id !== job.stable_id || current.duration_s === null) return;
 		const send = async (): Promise<boolean> => {
+			// Every read here is of the live track, not the one the job began with: the grid, the length and the bpm
+			// of this same track can be replaced while the job waits (Codex P2 BLOCKING, #6691). A shorter or empty
+			// grid no longer has the bar, so say so and play nothing rather than throw (Sol P1, #6691).
+			const live = track;
+			if (live === null || live.stable_id !== current.stable_id || live.duration_s === null) {
+				if (job.ask === ask) state.message = 'The beat grid changed while this jump waited';
+				return false;
+			}
+			if (live.downbeats.length === 0) {
+				if (job.ask === ask) state.message = 'No beat grid yet, so it cannot jump by bars';
+				return false;
+			}
+			if (job.bar >= live.downbeats.length) {
+				if (job.ask === ask) state.message = 'The beat grid changed while this jump waited';
+				return false;
+			}
 			const phase = ports.masterPhase();
 			if (phase === 'unknown') {
 				if (job.ask === ask) state.message = MASTER_PHASE_UNKNOWN;
-				return false;
-			}
-			// The grid is read again here, after the waits above: a refresh can replace it with an empty one or a
-			// shorter one while this job queued, and the bar must be in the live grid (Sol P2, #6689).
-			const live = track;
-			if (live === null || live.stable_id !== current.stable_id || live.duration_s === null || job.bar >= live.downbeats.length) {
-				if (job.ask === ask) state.message = 'The beat grid changed while this jump waited';
 				return false;
 			}
 			const start = inPhaseStartSec(live.downbeats, job.bar, phase ?? 0);
@@ -166,11 +175,12 @@ export function createCuePreview(ports: CuePreviewPorts) {
 				state.started = false;
 				sourceLanded = false;
 			}
-			// A refused jump puts back the bar that still sounds: its anchor and trail. Its line is left to the
-			// reason send() set, so a named refusal is not overwritten (Codex, #6687).
+			// A refused jump puts back the bar that still sounds: its anchor and trail, and its line unless
+			// something newer has written one, such as the reason send() set (Sol P2 and Codex, #6687).
 			else if (job.restore !== null) {
 				state.anchor = job.restore.anchor;
 				history = job.restore.history;
+				if (state.message === job.restore.landed) state.message = job.restore.message;
 			}
 			return;
 		}
@@ -223,7 +233,7 @@ export function createCuePreview(ports: CuePreviewPorts) {
 		// cold decode); a preview that ended or was stopped elsewhere starts over.
 		const fresh = !state.started || (inFlight === 0 && !ports.sounding(current.stable_id));
 		// What a refused jump puts back: the bar as it stood before this press.
-		const restore: JumpRestore = fresh ? null : { anchor: state.anchor, history: [...history], message: state.message };
+		const before = { anchor: state.anchor, history: [...history], message: state.message };
 		if (fresh) {
 			state.anchor = 0;
 			history = [];
@@ -244,6 +254,7 @@ export function createCuePreview(ports: CuePreviewPorts) {
 		}
 		state.started = true;
 		ask += 1;
+		const restore: JumpRestore = fresh ? null : { ...before, landed: state.message };
 		return seek({ stable_id: current.stable_id, bar: state.anchor, ask, fresh, restore, owned: !fresh && sourceLanded });
 	}
 

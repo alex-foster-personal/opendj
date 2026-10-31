@@ -459,6 +459,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ahead-analysis/next-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Next Up
+         * @description Name the tracks analyzed WHILE a deck plays; the drain keeps the first few.
+         *
+         *     A page names itself with the ui-mirror lease header, and a PUT from a page
+         *     that does not hold the live lease, including one whose lease lapsed with
+         *     nobody else holding it, is refused (409), so a former leader's late request
+         *     cannot overwrite the current leader's chain. The leader renews its lease
+         *     with every mirror publish, and the page retries a refused PUT. ``async`` on
+         *     purpose: the check and the write run on the event loop with no await
+         *     between them, as the mirror PUT that moves the lease does. A PUT without the
+         *     header (the CLI, agents) is applied as before.
+         */
+        put: operations["put_next_up_api_v1_ahead_analysis_next_up_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ahead-analysis/retry": {
         parameters: {
             query?: never;
@@ -1919,6 +1948,40 @@ export interface paths {
          * @description One spoke round trip against ``hub_url``, journaled for ``/status``.
          */
         post: operations["run_sync_round_api_v1_cloudsync_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cmdk/ai-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ai Search */
+        post: operations["ai_search_api_v1_cmdk_ai_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cmdk/ai-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Status */
+        get: operations["ai_status_api_v1_cmdk_ai_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4405,6 +4468,189 @@ export interface paths {
          *     the caller's intent (nothing playing on the preview voice) is satisfied.
          */
         post: operations["post_preview_stop_api_v1_performance_headphones_preview_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Link
+         * @description The sending link: idle, linking, linked, failed or disconnected.
+         */
+        get: operations["get_link_api_v1_performance_remote_speaker_link_get"];
+        put?: never;
+        /**
+         * Post Link
+         * @description Send MAIN to a speaker at ``address`` (host:port) with its 6-digit ``code``.
+         */
+        post: operations["post_link_api_v1_performance_remote_speaker_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/link/offer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Link Offer
+         * @description Page-internal: relay this page's offer to the speaker and return its answer.
+         */
+        post: operations["post_link_offer_api_v1_performance_remote_speaker_link_offer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/link/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Link Report
+         * @description Page-internal: the sending link's WebRTC state after it was made.
+         *
+         *     ``link_id`` names the link the report is about; one about an older link is ignored.
+         */
+        post: operations["post_link_report_api_v1_performance_remote_speaker_link_report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/speaker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Speaker
+         * @description The speaker session: status, code, LAN address and port, linked peer.
+         */
+        get: operations["get_speaker_api_v1_performance_remote_speaker_speaker_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/speaker/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Speaker Report
+         * @description Page-internal: the receiving link's WebRTC state. A gone peer frees the session.
+         *
+         *     ``link_id`` names the link the report is about; one about an older link is ignored.
+         *     ``error``, when given, is why the page dropped the link (for example the
+         *     browser refused to start playback), so a silent speaker never reads linked.
+         */
+        post: operations["post_speaker_report_api_v1_performance_remote_speaker_speaker_report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/speaker/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Speaker Start
+         * @description Be a speaker: the page agrees to receive, then the LAN listener opens.
+         *
+         *     Optional ``port`` (default 47800; 0 picks a free one). The listener binds
+         *     0.0.0.0 and serves only ``POST /remote-speaker/offer``; the engine API is
+         *     not widened. The page answers first, so a build with the feature off
+         *     refuses here and no port is opened.
+         */
+        post: operations["post_speaker_start_api_v1_performance_remote_speaker_speaker_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/speaker/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Speaker Stop
+         * @description Stop being a speaker: the listener closes and the page drops its link.
+         *
+         *     Idempotent. With no page attached the listener still closes. A stop waits
+         *     for a start still in flight, so a start that began earlier can never
+         *     reopen the listener after the stop has answered.
+         *
+         *     Optional ``epoch``: stop only the session with that epoch. The page sends
+         *     it as it leaves /performance; it has already dropped its own link, so the
+         *     page is not ordered again, and a newer session (another page) is left on.
+         */
+        post: operations["post_speaker_stop_api_v1_performance_remote_speaker_speaker_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-speaker/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Unlink
+         * @description Stop sending to the speaker. Idempotent; a link attempt still in flight is superseded.
+         */
+        post: operations["post_unlink_api_v1_performance_remote_speaker_unlink_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7117,6 +7363,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/grid-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Grid Edit */
+        get: operations["get_grid_edit_api_v1_tracks__stable_id__grid_edit_get"];
+        /** Set Grid Edit */
+        put: operations["set_grid_edit_api_v1_tracks__stable_id__grid_edit_put"];
+        post?: never;
+        /**
+         * Reset Grid Edit
+         * @description Back to the measured grid. A write of the identity, so history keeps the old edit.
+         *
+         *     ``part`` resets one half and keeps the other, read and written in the same
+         *     transaction, so an agent's concurrent edit of the kept half is never lost.
+         */
+        delete: operations["reset_grid_edit_api_v1_tracks__stable_id__grid_edit_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/grid-edit/nudge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nudge Grid Edit
+         * @description Move the grid by a step: ``offset_ms`` is grid adjust, ``beats`` grid shift.
+         */
+        post: operations["nudge_grid_edit_api_v1_tracks__stable_id__grid_edit_nudge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/grid-provenance": {
         parameters: {
             query?: never;
@@ -7634,6 +7925,23 @@ export interface paths {
          * @description LIBM-129: existence check before save. The folder-rescan scheduler watches them.
          */
         post: operations["validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ui-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ui Url */
+        get: operations["ui_url_api_v1_ui_url_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -10213,6 +10521,48 @@ export interface components {
             /** Revision */
             revision: string;
         };
+        /** CmdkAiSearchIn */
+        CmdkAiSearchIn: {
+            /** Tracks */
+            tracks: components["schemas"]["CmdkAiTrackIn"][];
+            /** Words */
+            words: string;
+        };
+        /** CmdkAiSearchOut */
+        CmdkAiSearchOut: {
+            /** Cost */
+            cost: number | null;
+            /** Model */
+            model: string | null;
+            /** Scores */
+            scores: {
+                [key: string]: number;
+            };
+        };
+        /** CmdkAiStatusOut */
+        CmdkAiStatusOut: {
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
+        };
+        /** CmdkAiTrackIn */
+        CmdkAiTrackIn: {
+            /** Album */
+            album?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Genre */
+            genre?: string | null;
+            /** Key */
+            key?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title?: string | null;
+        };
         /** CollectIn */
         CollectIn: {
             /**
@@ -11258,6 +11608,8 @@ export interface components {
              */
             status: string;
             syncthing?: components["schemas"]["HealthSyncthing"] | null;
+            /** Ui Url */
+            ui_url: string | null;
             /** Version */
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
@@ -12008,6 +12360,46 @@ export interface components {
             owner_email: string;
             /** Token */
             token: string;
+        };
+        /** GridEditNudgeIn */
+        GridEditNudgeIn: {
+            /**
+             * Beats
+             * @default 0
+             */
+            beats: number;
+            /**
+             * Offset Ms
+             * @default 0
+             */
+            offset_ms: number;
+            /** Source */
+            source?: ("rekordbox" | "own") | null;
+        };
+        /** GridEditOut */
+        GridEditOut: {
+            /** Beat Shift */
+            beat_shift: number;
+            /** Modified At */
+            modified_at: string | null;
+            /** Offset Ms */
+            offset_ms: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rekordbox" | "own";
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** GridEditSetIn */
+        GridEditSetIn: {
+            /** Beat Shift */
+            beat_shift: number;
+            /** Offset Ms */
+            offset_ms: number;
+            /** Source */
+            source?: ("rekordbox" | "own") | null;
         };
         /** GridProvenanceOut */
         GridProvenanceOut: {
@@ -13037,6 +13429,27 @@ export interface components {
              */
             ok: boolean;
         };
+        /** LinkAnswerOut */
+        LinkAnswerOut: {
+            /** Sdp */
+            sdp: string;
+        };
+        /** LinkStateOut */
+        LinkStateOut: {
+            /** Address */
+            address: string | null;
+            /** Delay Note */
+            delay_note: string;
+            /** Error */
+            error: string | null;
+            /** Linked At */
+            linked_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "linking" | "linked" | "failed" | "disconnected";
+        };
         /**
          * LinksPatchIn
          * @description Partial 'links' object; each supplied key REPLACES that key's list.
@@ -13939,6 +14352,14 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /**
+         * NextUpIn
+         * @description AutoPlay's next tracks, in play order; [] clears them (NATIVE-5886).
+         */
+        NextUpIn: {
+            /** Stable Ids */
+            stable_ids: string[];
         };
         /** NoSourceClearOut */
         NoSourceClearOut: {
@@ -16756,6 +17177,34 @@ export interface components {
             /** Track Stable Id */
             track_stable_id: string | null;
         };
+        /** SpeakerStateOut */
+        SpeakerStateOut: {
+            /** Address */
+            address: string | null;
+            /** Address Error */
+            address_error: string | null;
+            /** Code */
+            code: string | null;
+            /** Delay Note */
+            delay_note: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Linked At */
+            linked_at: string | null;
+            /** Max Wrong Codes */
+            max_wrong_codes: number;
+            /** Peer */
+            peer: string | null;
+            /** Port */
+            port: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "off" | "listening" | "answering" | "linked" | "locked_out";
+            /** Wrong Codes */
+            wrong_codes: number;
+        };
         /** SpokeBillingBody */
         SpokeBillingBody: Record<string, never>;
         /** SpokeCheckoutBody */
@@ -18835,6 +19284,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Deck Autocue
+             * @default false
+             */
+            deck_autocue: boolean;
+            /**
              * Deck Default Quantize
              * @default true
              */
@@ -19015,6 +19469,8 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Deck Autocue */
+            deck_autocue?: boolean;
             /** Deck Default Quantize */
             deck_default_quantize?: boolean | null;
             /** Deck Right Mirror */
@@ -19082,6 +19538,22 @@ export interface components {
             /** Vocals Filter */
             vocals_filter?: boolean | null;
             wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
+        };
+        /** UiUrlOut */
+        UiUrlOut: {
+            /** Loopback Url */
+            loopback_url: string;
+            /** Named Host */
+            named_host: string;
+            /** Port */
+            port: number;
+            /**
+             * Served By
+             * @enum {string}
+             */
+            served_by: "engine" | "dev-frontend";
+            /** Ui Url */
+            ui_url: string;
         };
         /** UndoIn */
         UndoIn: {
@@ -20709,6 +21181,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    put_next_up_api_v1_ahead_analysis_next_up_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description AGENT-18: the writing page's client id; refused while another page holds the mirror lease. */
+                "x-opendj-lease"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NextUpIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23432,6 +23940,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    ai_search_api_v1_cmdk_ai_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CmdkAiSearchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CmdkAiSearchOut"];
+                };
+            };
+            /** @description cmdk.v2 or cmdk.v2.ai is off. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No OPENROUTER_API_KEY is configured. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description JEV failed or answered without every track. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ai_status_api_v1_cmdk_ai_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CmdkAiStatusOut"];
                 };
             };
         };
@@ -27718,6 +28300,333 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HeadphoneStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_link_api_v1_performance_remote_speaker_link_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkStateOut"];
+                };
+            };
+        };
+    };
+    post_link_api_v1_performance_remote_speaker_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkStateOut"];
+                };
+            };
+            /** @description bad address or code, or the page or speaker refused (detail says which) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description a link is already being made */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_link_offer_api_v1_performance_remote_speaker_link_offer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkAnswerOut"];
+                };
+            };
+            /** @description the speaker refused the code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no link is being made */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the speaker could not be reached or sent no answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_link_report_api_v1_performance_remote_speaker_link_report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_speaker_api_v1_performance_remote_speaker_speaker_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeakerStateOut"];
+                };
+            };
+        };
+    };
+    post_speaker_report_api_v1_performance_remote_speaker_speaker_report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeakerStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_speaker_start_api_v1_performance_remote_speaker_speaker_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeakerStateOut"];
+                };
+            };
+            /** @description a speaker session is already running, or the port is in use */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_speaker_stop_api_v1_performance_remote_speaker_speaker_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeakerStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_unlink_api_v1_performance_remote_speaker_unlink_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkStateOut"];
                 };
             };
             /** @description Validation Error */
@@ -33038,6 +33947,143 @@ export interface operations {
             };
         };
     };
+    get_grid_edit_api_v1_tracks__stable_id__grid_edit_get: {
+        parameters: {
+            query?: {
+                source?: ("rekordbox" | "own") | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_grid_edit_api_v1_tracks__stable_id__grid_edit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GridEditSetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_grid_edit_api_v1_tracks__stable_id__grid_edit_delete: {
+        parameters: {
+            query?: {
+                source?: ("rekordbox" | "own") | null;
+                part?: ("adjust" | "shift") | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nudge_grid_edit_api_v1_tracks__stable_id__grid_edit_nudge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GridEditNudgeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get: {
         parameters: {
             query?: never;
@@ -34144,6 +35190,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ui_url_api_v1_ui_url_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiUrlOut"];
                 };
             };
         };

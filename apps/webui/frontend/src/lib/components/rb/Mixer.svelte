@@ -18,6 +18,7 @@
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
+		runAudioIoTest,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -252,6 +253,7 @@
 				onmode={handleHeadphoneOutputMode}
 				oncalibrate={openCueAlignModal}
 				onAlignmentMode={handleAlignmentMode}
+				testrun={runAudioIoTest}
 			/>
 		</div>
 		<div class="xfade-row">

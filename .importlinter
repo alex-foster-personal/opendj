@@ -130,20 +130,6 @@ source_modules =
     apps
 forbidden_modules =
     tests
-; apps/sync/usb/pioneer/differ.py reaches into `tests` for fixture helpers at
-; two call sites. That makes a shipped wheel depend on files the wheel does
-; not contain (tests/* is excluded in [tool.setuptools.packages.find]), so it
-; is an ImportError waiting for the first user who is not running from a
-; source checkout.
-;
-; DEBT (measured Sun 17 Aug 2026): 2 imports, both function-local in
-; differ.py, both of tests.fixtures._resolver (lines 743 and 854). Fix by
-; moving the resolver into apps/sync/usb/pioneer/ or a shipped fixtures
-; package, then delete the line below.
-; (External imports are squashed to their top-level package by grimp, so the
-; edge below reads `-> tests` rather than the full dotted path.)
-ignore_imports =
-    apps.sync.usb.pioneer.differ -> tests
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:module-public-surface]
@@ -184,7 +170,12 @@ composition_roots =
 ; registries whose targets are data, and dependency probes (`find_spec` over a backend's own
 ; list of required modules, which imports a dotted name's parents); the scripts entries are
 ; dev tools that load by path or by computed name (this gate's contract reader, spec loaders
-; of sibling files, a tool runner, a remote worker, a sitecustomize syntax check). The gate also refuses an entry that no
+; of sibling files, a tool runner, a remote worker, a sitecustomize syntax check). scripts.ci_plan_sources
+; loads nothing: it is the CI planner's static reader, and its tables map each loader name to the
+; module that defines it (`PROVIDERS["import_module"]`) so a call counts only through that binding;
+; the names are the data it matches, so they cannot be written as tested-only text. scripts.ci_test_selection_rules
+; loads nothing either: it reads test files' ASTs to decide selection, and its frozensets name `__import__`,
+; `import_module`, `exec`, `eval` and `compile` as the calls it looks for (Sat 31 Oct 2026). The gate also refuses an entry that no
 ; longer loads that way, so this list only shrinks; add to it only in a PR that says why
 ; the target cannot be named in source.
 dynamic_loaders =
@@ -199,7 +190,9 @@ dynamic_loaders =
     apps.vocals.from_stems
     scripts.arch_contract_schema
     scripts.build_engine_payload
+    scripts.ci_plan_sources
     scripts.ci_stale_install_guard
+    scripts.ci_test_selection_rules
     scripts.lyrics_stem_coverage
     scripts.modal_align_spike
     scripts.modal_beat_farm

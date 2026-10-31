@@ -10,6 +10,7 @@ const API_BASE = 'https://browser-capture.example.test';
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 
 let reporting;
+let perfLog;
 let originalFetch;
 let store;
 let listeners;
@@ -77,16 +78,25 @@ function fire(type, event, capture = false) {
 	}
 }
 
+function readQueueLength() {
+	const raw = store.getItem(QUEUE_KEY);
+	if (raw === null) return 0;
+	const parsed = JSON.parse(raw);
+	return Array.isArray(parsed) ? parsed.length : 0;
+}
+
 before(async () => {
 	originalFetch = globalThis.fetch;
 	installBrowserGlobals();
 	reporting = await loadTypeScriptModule('src/lib/client-error-reporting.ts', {
 		viteApiBase: API_BASE
 	});
+	perfLog = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
 	reporting.__setConsoleSampleGateForTests(() => 0);
 });
 
 afterEach(() => {
+	globalThis.fetch = originalFetch;
 	installBrowserGlobals();
 	reporting.__resetClientErrorReportingForTests();
 	reporting.__setConsoleSampleGateForTests(() => 0);
@@ -226,6 +236,29 @@ test('console.error is sampled and forwarded as console-error', async () => {
 	await waitFor(() => posted.length === 1, 'console-error POST');
 	assert.equal(posted[0].kind, 'console-error');
 	assert.match(posted[0].message, /deck load probe/);
+});
+
+test('isPerfEventConsoleLine matches recordPerfEvent console prefixes', () => {
+	assert.equal(
+		reporting.isPerfEventConsoleLine('[perf-event] mirror-stall: gap 2500ms (probe)'),
+		true
+	);
+	assert.equal(reporting.isPerfEventConsoleLine('genuine operator warn'), false);
+});
+
+test('[perf-event] console.warn rows are not sampled into reportClientError', async () => {
+	// No fetch stub: assert on the durable queue reportClientError writes synchronously.
+	// A failed POST leaves the row queued, which is enough to prove sampling ran.
+	reporting.__setConsoleSampleGateForTests(() => 0);
+	reporting.installClientErrorReporting();
+	perfLog.recordPerfEvent('mirror-stall', 'gap 2500ms (probe)', null, 'warn');
+	await waitFor(() => readQueueLength() === 0, 'perf-event warn stays off client-errors queue', 50);
+	assert.equal(readQueueLength(), 0);
+	console.warn('genuine operator warn');
+	await waitFor(() => readQueueLength() === 1, 'ordinary console.warn enqueues client-error');
+	const queue = JSON.parse(store.getItem(QUEUE_KEY));
+	assert.equal(queue[0].kind, 'console-warn');
+	assert.match(queue[0].message, /genuine operator warn/);
 });
 
 test('console.warn respects the sample gate', async () => {

@@ -308,7 +308,7 @@ jobs:
 
       - name: Setup uv for isolated dependency contracts
         timeout-minutes: 1
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       - name: Stale-install guard - the interpreter imports only this checkout
         timeout-minutes: 1
@@ -474,8 +474,9 @@ jobs:
             --ignore=tests/health_lights/test_ahead_analysis_live_engine.py
           )
           # Mode: full | affected | empty, one line on stdout. A selector
-          # that cannot answer (crash, hang, nonsense) means FULL, loudly:
-          # an unknown selection must never become a smaller run.
+          # that cannot answer (crash, hang, nonsense) FAILS this shard: under
+          # the hard cap FULL is the uncapped lane, so an unknown selection is
+          # never widened. CI_PR_TEST_SELECTION != affected is the off-switch.
           selection_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pr-test-selection"
           selection_rc=0
           mode="$(timeout --kill-after=10 300 .venv/bin/python -m scripts.ci_test_selection select \
@@ -485,9 +486,13 @@ jobs:
           case "$selection_rc:$mode" in
             0:full|0:affected|0:empty) ;;
             *)
-              printf '\n::warning title=PR test selection UNKNOWN (shard %s of 5)::the selector exited %s with mode [%s]; running the FULL suite\n' \
+              # Any other answer (refusal 3, unreadable budget 2, a crash, a timeout, a mode we do not
+              # know) fails this shard: FULL is the uncapped lane, so under the hard cap an unknown
+              # selection is never widened. The off-switch is CI_PR_TEST_SELECTION (the selector then
+              # answers `full` without reading the budget); see ci/test-budget.yml.
+              printf '\n::error title=PR test selection REFUSED (shard %s of 5)::the selector exited %s with mode [%s] and cannot honor the hard cap (reason in the log above); FULL would exceed it, so this shard fails\n' \
                 "${{ matrix.shard }}" "$selection_rc" "$mode"
-              mode=full
+              exit 1
               ;;
           esac
           echo "selection_mode=$mode" >> "$GITHUB_OUTPUT"

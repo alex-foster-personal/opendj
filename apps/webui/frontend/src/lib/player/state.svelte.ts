@@ -23,7 +23,7 @@ import { currentDeckDefaults, onDeckDefaultsChange } from '$lib/rb/deck-default-
 import { recordDeckStateBaseline } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
-import type { PitchRange } from '$lib/player/constants';
+import { DECK_DEFAULT_PRE_GAIN, type PitchRange } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -92,7 +92,7 @@ export function _hotCueRevisionsFrom(slots: HotCueSlotState[]): Record<HotCueSlo
 export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 	return {
 		deck_id,
-		trim: 0.5,
+		trim: DECK_DEFAULT_PRE_GAIN,
 		eq_high: 0.5,
 		eq_mid: 0.5,
 		eq_low: 0.5,

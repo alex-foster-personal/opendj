@@ -10,6 +10,7 @@ import {
 	queueEntriesForChain,
 	type AutoPlayQueueEntry
 } from '$lib/rb/auto-play';
+import { publishAutoPlayNextUp } from '$lib/rb/autoplay-next-up-lazy';
 
 /** Read-only charted AutoPlay order for the open playlist (library column). */
 export const autoPlayOrder = $state<{
@@ -30,6 +31,7 @@ export function activateAutoPlayQueue(): void {
 
 function _publishQueue(chain: readonly string[]): void {
 	autoPlayQueue.entries = queueEntriesForChain(chain, getAutoPlayPlaylist());
+	publishAutoPlayNextUp(chain);
 }
 
 /** Publish a new charted order. An unchanged chain is a no-op, so a 250 ms

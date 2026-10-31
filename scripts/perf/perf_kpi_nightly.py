@@ -127,8 +127,15 @@ def build_ledger_rows(
     git_sha: str,
     now: dt.datetime,
     measurements: list[WarmMedian],
+    withheld: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """`captured_at` is fixed-width UTC, so readers order same-date rows by capture time."""
+    """`captured_at` is fixed-width UTC, so readers order same-date rows by capture time.
+
+    ``withheld`` maps a profile key to the reason its timings are not a
+    measurement of that profile (PR #6388, Codex P2/BLOCKING): such rows keep
+    the raw median in the note as evidence but publish ``measured: false``.
+    """
+    withheld = withheld or {}
     rows: list[dict[str, Any]] = []
     for item in measurements:
         name = kpi_name(item.leg, item.profile_key)
@@ -154,6 +161,19 @@ def build_ledger_rows(
                     "note": item.error,
                 }
             )
+        elif item.profile_key in withheld:
+            rows.append(
+                {
+                    **common,
+                    "value": None,
+                    "status": "withheld",
+                    "measured": False,
+                    "note": (
+                        f"withheld: {withheld[item.profile_key]}; raw warm median "
+                        f"{item.leg} {item.median_ms} ms kept here as evidence only"
+                    ),
+                }
+            )
         else:
             rows.append(
                 {
@@ -164,6 +184,23 @@ def build_ledger_rows(
                 }
             )
     return rows
+
+
+def stemless_profiles(s5_rows: list[dict[str, Any]]) -> dict[str, str]:
+    """``{"stemmed_mp3": reason}`` when tonight's S5 found no stem bundle for
+    the pinned stemmed track (``capture_s5.stems_payload_is_ready``'s message)."""
+    for row in s5_rows:
+        note = str(row.get("note") or "")
+        if "has no stem bundle" in note:
+            reason = note.split("stemmed: ", 1)[-1]
+            return {
+                "stemmed_mp3": (
+                    f"S5 in the same capture reports {reason}, so this timed a track "
+                    "without a stem bundle, not the stemmed_mp3 population "
+                    "((private path))"
+                )
+            }
+    return {}
 
 
 def find_ceiling_breaches(
@@ -536,9 +573,9 @@ def _append_and_judge(
     ``written`` as soon as it is on disk, so `run_nightly` can report exactly
     what reached the ledger if anything after it raises."""
     today = now.date()
-    rows = build_ledger_rows(config, git_sha=git_sha, now=now, measurements=measurements)
-    append_entries(config.ledger_path, rows)
-    written.append(rows)
+    # S5 runs first so its stem-bundle check can gate tonight's stemmed rows:
+    # a stemmed track with no bundle times an ordinary MP3, which must not be
+    # published as the stemmed_mp3 population (PR #6388, Codex P2/BLOCKING).
     s5_rows = capture_s5_against_engine(
         engine=base_url,
         ledger=config.ledger_path,
@@ -551,6 +588,13 @@ def _append_and_judge(
     written.append(s5_rows)
     for s5_row in s5_rows:
         print(format_appended(s5_row))
+    withheld = stemless_profiles(s5_rows)
+    rows = build_ledger_rows(
+        config, git_sha=git_sha, now=now, measurements=measurements, withheld=withheld
+    )
+    append_entries(config.ledger_path, rows)
+    written.append(rows)
+    measurements = [m for m in measurements if m.profile_key not in withheld]
     ledger = load_ledger(config.ledger_path)
     breaches = find_ceiling_breaches(ledger["entries"], measurements, today=today)
     unknowns = find_ceiling_unknowns(ledger["entries"], measurements, today=today)

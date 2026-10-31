@@ -182,6 +182,7 @@ def create_app(  # noqa: PLR0913
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     app.state.coverage_drain_armed = auto_coverage_drain
     app.state.ahead_analysis_armed = auto_ahead_analysis
+    app.state.frontend_port = frontend_port
     if audio_access_timeout_s <= 0:
         raise ValueError(f"audio_access_timeout_s must be > 0, got {audio_access_timeout_s}")
     app.state.audio_access_timeout_s = audio_access_timeout_s

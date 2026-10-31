@@ -53,7 +53,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from apps.webui.server import rb_vendor  # noqa: E402
 from scripts.bench.timing import Sample, interleaved_samples  # noqa: E402
-from tests.fixtures._resolver import (  # noqa: E402
+from apps.sync.usb.pioneer.fixture_resolver import (  # noqa: E402
     FixtureNotAvailable,
     fixture_path,
     verify_fixture_contract,

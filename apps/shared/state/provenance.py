@@ -59,6 +59,10 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # flag ("I know, stop telling me"). A bool, set from the Err column or
         # PUT /beatgrid-flags/{id}/dismissed.
         "grid_flag_dismissed",
+        # GRIDEDIT-6235b: the deck's grid adjust / grid shift, one
+        # {"offset_ms", "beat_shift"} per grid source, applied when /anlz
+        # serves the grid (apps/shared/state/grid_edit.py).
+        "beatgrid_edit",
         # AUTOGAIN-04: the user's own auto gain offset in dB (a float), set
         # from the deck's AG readout or PUT /auto-gain/tracks/{id}/user-offset.
         "auto_gain_user_db",

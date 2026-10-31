@@ -987,3 +987,56 @@ test('both recovery edges are wired to noteRecoveryOpportunity, and armed', () =
 			'another pair of listeners onto a context that has been closed'
 	);
 });
+
+test('an intentional suspend (the IOPIN-18 output reopen) raises no alarm, and only while it is marked', async () => {
+	const mod = _watchdog();
+	const harness = fakeEffects();
+	const ctx = fakeAudioContext({ resumeSucceeds: true });
+	ctx.__nowMs = harness.nowMs;
+	const detach = mod.installAudioContextWatchdog(ctx, harness.effects, () => true);
+	mod.beginIntentionalSuspend(ctx);
+	ctx.__enter('suspended');
+	await settle();
+	assert.equal(harness.toasts.length, 0, 'a reopen suspend must not toast "Audio stopped"');
+	assert.equal(harness.perf.filter((row) => row.kind === 'audio-unexpected-pause').length, 0);
+	assert.equal(ctx.resumeAtMs.length, 0, 'the watchdog must not race the reopen with its own resume');
+	// A recovery edge (window visible, device list changed) mid-reopen is excused too.
+	mod.noteRecoveryOpportunity('the window became visible');
+	await settle();
+	assert.equal(ctx.resumeAtMs.length, 0, 'a recovery edge must not resume a context the reopen holds suspended');
+	// interrupted is never excused, even mid-reopen.
+	ctx.__enter('interrupted');
+	await settle();
+	assert.ok(harness.toasts.some((toast) => toast.kind === 'error'));
+	// Control: once the reopen ends, a suspend is an incident again.
+	mod.endIntentionalSuspend(ctx);
+	harness.toasts.length = 0;
+	ctx.__enter('running');
+	ctx.__enter('suspended');
+	await settle();
+	assert.ok(harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]')));
+	if (typeof detach === 'function') detach();
+});
+
+test('overlapping intentional suspends stay excused until the last one ends', async () => {
+	const mod = _watchdog();
+	const harness = fakeEffects();
+	const ctx = fakeAudioContext({ resumeSucceeds: true });
+	ctx.__nowMs = harness.nowMs;
+	const detach = mod.installAudioContextWatchdog(ctx, harness.effects, () => true);
+	// Two reopens of one room overlap: the first to finish must not unmark the other.
+	mod.beginIntentionalSuspend(ctx);
+	mod.beginIntentionalSuspend(ctx);
+	mod.endIntentionalSuspend(ctx);
+	ctx.__enter('suspended');
+	await settle();
+	assert.equal(harness.toasts.length, 0, 'a suspend still held by the other reopen must not toast');
+	assert.equal(ctx.resumeAtMs.length, 0, 'the watchdog must not resume a room the other reopen holds');
+	// Control: once the last reopen ends, a suspend is an incident again.
+	mod.endIntentionalSuspend(ctx);
+	ctx.__enter('running');
+	ctx.__enter('suspended');
+	await settle();
+	assert.ok(harness.toasts.some((toast) => toast.kind === 'error' && toast.message.includes('[suspended]')));
+	if (typeof detach === 'function') detach();
+});

@@ -107,6 +107,7 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ),
     ("apps/desktop/wdio.conf.ts", "const EMBEDDED_WEBDRIVER_PORT = 4455;", 4455),
     ("apps/desktop/mcp/smoke.ts", "const WEBDRIVER_PORT = 4456;", 4456),
+    ("apps/desktop/electron/src/engine.ts", "export const PREFERRED_ENGINE_PORT = 7700;", 7700),
     ("apps/desktop/mcp/smoke.ts", "const CDP_PORT = 9336;", 9336),
     ("apps/webui/frontend/tests/e2e/vite.play-analytics.config.ts", "port: 5214,", 5214),
     ("apps/webui/frontend/tests/e2e/vite.library-wheel.config.ts", "port: 5228,", 5228),
@@ -184,6 +185,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/playwright.cloudsync-ui.config.ts",
         "export const CLOUDSYNC_UI_FRONTEND_PORT = 5331;",
         5331,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-pick-race.config.ts",
+        "export const CMDK_PICK_RACE_FRONTEND_PORT = 5336;",
+        5336,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-pick-race.config.ts",
+        "export const CMDK_PICK_RACE_API_PORT = 8716;",
+        8716,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.rekordbox-gate.config.ts",

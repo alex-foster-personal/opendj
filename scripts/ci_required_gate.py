@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.ci_pr_scope import (
+    CI_FIXED_JOBS,
     IN_RUN_PULL_REQUEST_SCOPES,
     ci_fixed_jobs_to_skip,
     e2e_gate_scripts,
@@ -100,7 +101,7 @@ def decide_scope(
     workflow: str,
     event_name: str,
     changed_files: Sequence[str],
-    gate_scripts: Collection[str] = frozenset(),
+    gate_scripts: Collection[str],
 ) -> ScopeDecision:
     """Whether `workflow`'s heavy jobs must run for this event and change set.
 
@@ -109,6 +110,8 @@ def decide_scope(
     are the `scripts/` files e2e.yml itself runs (`e2e_gate_scripts`), always full tier.
     """
     tiered = workflow == "e2e.yml"
+    if tiered and not gate_scripts:
+        raise ValueError("e2e.yml runs gate helpers under scripts/; an empty gate_scripts would classify them smoke")
     if workflow not in IN_RUN_PULL_REQUEST_SCOPES:
         raise ValueError(
             f"{workflow} has no in-run scope in scripts/ci_pr_scope.py; known: {sorted(IN_RUN_PULL_REQUEST_SCOPES)}"
@@ -185,6 +188,7 @@ def gate_verdict(needs: Mapping[str, Mapping[str, object]]) -> Verdict:
     outputs = scope.get("outputs")
     in_scope = outputs.get(SCOPE_OUTPUT) if isinstance(outputs, Mapping) else None
     skipped_by_scope = _decided_skips(outputs)
+    not_waivable = sorted(skipped_by_scope - set(CI_FIXED_JOBS))
     lines = [
         f"scope: result={scope_result} {SCOPE_OUTPUT}={in_scope} {SKIP_OUTPUT}={','.join(sorted(skipped_by_scope))}"
     ]
@@ -193,6 +197,9 @@ def gate_verdict(needs: Mapping[str, Mapping[str, object]]) -> Verdict:
         lines.extend(f"     {job}: {result}" for job, result in sorted(gated.items()))
         return Verdict(False, tuple(lines))
     ok = True
+    if not_waivable:
+        ok = False
+        lines.append(f"FAIL {SKIP_OUTPUT}: names {not_waivable}, which are not fixed jobs the scope decision may skip")
     for job, result in sorted(gated.items()):
         if in_scope == "false":
             expected, why = "skipped", "ran although out of scope"

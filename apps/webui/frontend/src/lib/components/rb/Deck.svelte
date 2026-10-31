@@ -5,8 +5,8 @@
 	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts +
 	// position tick, pitch fader + 8/16/WIDE range switcher. Stems are live
 	// only for validated real Demucs artifacts.
-	// INERT (plannedTitle per control): HOT CUE dropdown, grid-adjust stacks,
-	// AU, MA.
+	// Grid adjust / grid shift (GRIDEDIT-6235) live in deck/GridEditButtons.
+	// INERT (plannedTitle per control): HOT CUE dropdown, AU, MA.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -53,7 +53,7 @@
 		primaryDroppedStableId
 	} from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { DeckState, QuantizeGrid } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import BeatJump from './deck/BeatJump.svelte';
@@ -79,7 +79,7 @@
 	import { SeparateEndProbe, lookForBundle, separateRunId } from '$lib/rb/stem-separate-probe';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import GridEditButtons from './deck/GridEditButtons.svelte';
 	import ReactIsland from '$lib/react/ReactIsland.svelte';
 	import { reactDeckEnabled } from '$lib/react/react-deck-flag';
 
@@ -112,7 +112,10 @@
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
 	const pending: boolean = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
 	const controlError: string | null = $derived(
-		performanceCommandStatus.deck_errors[deckId] ?? deck.sync_error ?? deck.processor_error
+		performanceCommandStatus.deck_errors[deckId] ??
+			deck.sync_error ??
+			deck.processor_error ??
+			queryPerformanceState().decks[deckId].presentation_clock_error
 	);
 
 	/**
@@ -266,8 +269,13 @@
 		);
 	}
 
-	async function disengageLoop(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null });
+	/** DECKCTL-6235d: engage a stored hot-cue or memory loop exactly. */
+	async function engageStoredLoop(loop: { in_ms: number; out_ms: number }): Promise<boolean> {
+		return (await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop, quantize: false })).ok;
+	}
+
+	async function disengageLoop(): Promise<boolean> {
+		return (await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null })).ok;
 	}
 
 	async function beatJump(beats: number): Promise<void> {
@@ -304,10 +312,9 @@
 		});
 	}
 
-	/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats). 'phase' is
-	 * plumbed but not implemented, so it never reaches here - JogDial's own
-	 * phase option is disabled and calls nothing. */
-	async function setQuantizeGrid(beats: 1 | 4 | 8): Promise<void> {
+	/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats, or
+	 * DECKCTL-6235c 'phase': snap to the nearest phrase boundary). */
+	async function setQuantizeGrid(beats: QuantizeGrid): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'quantize_grid', deck: deckId, beats });
 	}
 
@@ -599,16 +606,16 @@
 		class="main-row"
 		class:mirror-main-row={(deckId === 2 || deckId === 4) ? uiPrefs.deck_right_mirror : uiPrefs.deck_left_mirror}
 	>
-		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3), then the
-		     HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the row
-		     under the pads for the lyric strip. -->
-		<div class="grid-adjust">
-			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
-				<span class="ticks">&#9475;&#9475;&#9475;</span>
-			</button>
-			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-shift')} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
-				<span class="ticks">&#9478;&#9478;&#9478;</span>
-			</button>
+		<!-- Left edge: grid adjust (top) and grid shift (bottom), GRIDEDIT-6235, then
+		     the HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the
+		     row under the pads for the lyric strip. -->
+		<div class="left-edge">
+			<GridEditButtons
+				{deck}
+				{deckId}
+				press={(edit) => void runPerformanceCommandFromUi({ type: 'grid_edit', deck: deckId, edit })}
+				reportError={(message: string) => pushToast(message, 'error')}
+			/>
 			{#if reactDeck}
 				<ReactIsland load={() => import('./deck/PadModeMenu.tsx')} props={{ deckId, stacked: true }} />
 			{:else}
@@ -644,7 +651,7 @@
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col">
-			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} />
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} />
 			<BeatJump {deck} {pending} onJump={beatJump} />
 		</div>
 
@@ -663,6 +670,7 @@
 			onQuantize={toggleQuantize}
 			onQuantizeGrid={setQuantizeGrid}
 			onMasterTempo={toggleMasterTempo}
+			onAutoCue={(enabled) => void runPerformanceCommandFromUi({ type: 'deck_autocue', enabled })}
 			onSlip={toggleSlip}
 		/>
 
@@ -833,18 +841,11 @@
 	.main-row.mirror-main-row {
 		flex-direction: row-reverse;
 	}
-	.grid-adjust {
+	.left-edge {
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
 		flex: 0 0 auto;
-	}
-	.grid-adjust button {
-		padding: 2px 3px;
-	}
-	.ticks {
-		font-size: 8px;
-		letter-spacing: 1px;
 	}
 	.loop-col {
 		display: flex;

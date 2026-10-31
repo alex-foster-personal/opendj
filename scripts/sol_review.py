@@ -75,6 +75,7 @@ import socket
 import subprocess
 import sys
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -105,6 +106,48 @@ from scripts.review_prompt import ReviewPromptConfig, SOL_FENCE, build_prompt
 from scripts.review_sol import is_sol_artifact, marker
 
 
+#: ssh alias of the second subscription seat tried under `--seat auto` (#5639).
+REMOTE_SEAT_ENV = "MDT_SOL_REMOTE_SEAT"
+#: Comma-separated hostnames on which that seat runs directly instead of over ssh.
+REMOTE_SEAT_HOSTNAMES_ENV = "MDT_SOL_REMOTE_SEAT_HOSTNAMES"
+#: Stage-1 defaults, kept until every review host sets the variables (ADR-0317).
+DEFAULT_REMOTE_SEAT = "nucbox-wsl"
+DEFAULT_REMOTE_SEAT_HOSTNAMES: frozenset[str] = frozenset({"NucBoxEVO-X2"})
+#: One ssh alias or hostname: no option-looking leading dash, no shell syntax.
+_HOST_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
+
+
+def _host_name(variable: str, value: str) -> str:
+    if not _HOST_NAME_RE.fullmatch(value):
+        raise TriageError(f"{variable}: {value!r} is not an ssh host alias or hostname")
+    return value
+
+
+def remote_seat(environ: Mapping[str, str] | None = None) -> str:
+    """The remote seat's ssh alias; unset or blank keeps the stage-1 default."""
+    env = os.environ if environ is None else environ
+    return _host_name(REMOTE_SEAT_ENV, (env.get(REMOTE_SEAT_ENV) or "").strip() or DEFAULT_REMOTE_SEAT)
+
+
+def remote_seat_hostnames(environ: Mapping[str, str] | None = None) -> frozenset[str]:
+    """Hostnames where the remote seat is this machine; unset or blank keeps the default."""
+    env = os.environ if environ is None else environ
+    names = {_host_name(REMOTE_SEAT_HOSTNAMES_ENV, n.strip())
+             for n in (env.get(REMOTE_SEAT_HOSTNAMES_ENV) or "").split(",") if n.strip()}
+    return frozenset(names) or DEFAULT_REMOTE_SEAT_HOSTNAMES
+
+
+def configured_seats(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """Seat order for `--seat auto`; reads env on each call."""
+    return ("local", remote_seat(environ))
+
+
+def local_seat_hosts(environ: Mapping[str, str] | None = None) -> dict[str, frozenset[str]]:
+    """Hostnames where a named remote seat runs directly; reads env on each call."""
+    seat = remote_seat(environ)
+    return {seat: remote_seat_hostnames(environ)}
+
+
 class CFG:
     """Everything a reader needs to see to predict what a run will do."""
 
@@ -124,12 +167,6 @@ class CFG:
     #: falling back; `_require_pinned_config` also checks codex's own header.
     MODEL: str = "gpt-5.6-sol"
     EFFORT: str = "high"
-    SEATS: tuple[str, ...] = ("local", "nucbox-wsl")
-    #: Hostnames on which a named seat executes directly. This inspectable
-    #: registry avoids treating a remote nucbox seat as local on another host.
-    LOCAL_SEAT_HOSTS: ClassVar[dict[str, frozenset[str]]] = {
-        "nucbox-wsl": frozenset({"NucBoxEVO-X2"}),
-    }
     #: Substrings in codex output that mean THIS seat is spent. Failing over
     #: on these is safe; failing over on any other error would hide a real bug.
     SPENT_MARKERS: tuple[str, ...] = ("hit your usage limit", "usage limit reached")
@@ -191,8 +228,8 @@ def _is_local_seat(seat: str, hostname: str | None = None) -> bool:
     """Whether `seat` executes directly on the current configured host."""
     if seat == "local":
         return True
-    elif seat in CFG.LOCAL_SEAT_HOSTS:  # noqa: RET505 - seat kinds stay explicit.
-        return (hostname or socket.gethostname()) in CFG.LOCAL_SEAT_HOSTS[seat]
+    elif seat in local_seat_hosts():  # noqa: RET505 - seat kinds stay explicit.
+        return (hostname or socket.gethostname()) in local_seat_hosts()[seat]
     return False
 
 
@@ -422,7 +459,7 @@ def review_with_codex(prompt: str, seat: str) -> tuple[str, str, str]:
     Any error that is not a quota wall is raised, because failing over on it
     would run the same bug twice and hide it.
     """
-    seats = CFG.SEATS if seat == "auto" else (seat,)
+    seats = configured_seats() if seat == "auto" else (seat,)
     spent: list[str] = []
     for candidate in seats:
         proc = _run_seat(candidate, prompt)

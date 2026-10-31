@@ -7,6 +7,7 @@ Regression lines:
 """
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
@@ -16,6 +17,28 @@ import pytest
 
 from apps.shared import process_priority
 from apps.webui.server import ahead_analysis as aa
+
+
+class _FinishedChild:
+    """A queue child that has already exited, so the drain's reader threads finish."""
+
+    def __init__(self) -> None:
+        self.returncode = 0
+        self.pid = 0
+        self.stdout = io.StringIO("")
+        self.stderr = io.StringIO("")
+
+    def poll(self) -> int:
+        return 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="os.nice is POSIX-only; Windows arm below")
@@ -36,19 +59,26 @@ def test_windows_arm_uses_a_priority_class_not_preexec_fn(
     assert process_priority.lowered_priority(5) == {"creationflags": 0x4000}
 
 
+@pytest.mark.parametrize("stoppable", [False, True])
 def test_ahead_analysis_starts_its_queue_child_through_the_seam(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, stoppable: bool
 ) -> None:
     seen: dict[str, Any] = {}
 
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen.update(kwargs)
+        seen.update(kwargs, via="run")
         return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def fake_popen(argv: list[str], **kwargs: Any) -> Any:
+        seen.update(kwargs, via="Popen")
+        return _FinishedChild()
 
     monkeypatch.setattr(process_priority.sys, "platform", "win32")
     monkeypatch.setattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x4000, raising=False)
     monkeypatch.setattr(aa.subprocess, "run", fake_run)
-    assert aa._queue_cli(["status"], os.devnull)[0] == 0
+    monkeypatch.setattr(aa.subprocess, "Popen", fake_popen)
+    assert aa._queue_cli(["status"], os.devnull, (lambda: False) if stoppable else None)[0] == 0
+    assert seen["via"] == ("Popen" if stoppable else "run")
     assert "preexec_fn" not in seen and seen["creationflags"] == 0x4000
 
 

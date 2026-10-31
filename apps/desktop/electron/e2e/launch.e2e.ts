@@ -106,7 +106,7 @@ test('the page sees the shell globals and the bridge, and no Node', async () => 
 	assert.equal(seen.quitHook, 'function');
 	assert.equal(seen.pending, true);
 	assert.equal(seen.bridgeKind, 'electron');
-	assert.deepEqual(seen.bridgeFns, ['applyUpdate', 'exit', 'openExternal', 'pickFolder', 'relaunch']);
+	assert.deepEqual(seen.bridgeFns, ['applyUpdate', 'exit', 'openExternal', 'pickFolder', 'relaunch', 'setAudioEngineChoice']);
 	assert.equal(seen.require, 'undefined');
 	assert.equal(seen.process, 'undefined');
 });
@@ -119,6 +119,28 @@ test('the shell publishes its health port and reports the engine running', async
 	const health = await polledHealth();
 	assert.equal(health.engine, 'running');
 	assert.equal(health.lock_port, Number(new URL(page.url()).port));
+});
+
+test('the audio engine choice is saved to disk and handed to the next page load', async () => {
+	const file = path.join(dataDir, 'audio-engine-choice.json');
+	const scope = () => (globalThis as unknown as Record<string, unknown>).OPENDJ_AUDIO_ENGINE_CHOICE ?? null;
+	// A fresh data dir has saved nothing, so the page gets no choice and uses its default.
+	assert.equal(fs.existsSync(file), false);
+	assert.equal(await page.evaluate(scope), null);
+	await page.evaluate(() =>
+		(globalThis as unknown as { opendjShell: { setAudioEngineChoice: (c: string) => Promise<void> } }).opendjShell.setAudioEngineChoice('webaudio')
+	);
+	assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { choice: 'webaudio' });
+	await page.reload();
+	assert.equal(await page.evaluate(scope), 'webaudio');
+	// A value the page has no engine for is refused, and the saved one stays.
+	const refused = await page.evaluate(() =>
+		(globalThis as unknown as { opendjShell: { setAudioEngineChoice: (c: string) => Promise<void> } }).opendjShell
+			.setAudioEngineChoice('tauri')
+			.then(() => 'saved', (error: unknown) => String(error))
+	);
+	assert.match(refused, /must be webaudio\|rust/);
+	assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { choice: 'webaudio' });
 });
 
 test('a navigation to an untrusted URL is refused and the page stays put', async () => {

@@ -51,6 +51,7 @@ import os
 import logging
 import queue
 import secrets
+import signal
 import subprocess
 import threading
 import time
@@ -127,6 +128,22 @@ class _Pending:
     done: threading.Event = field(default_factory=threading.Event)
     result: dict[str, Any] | None = None
     gone: str | None = None
+
+
+# Signals that mean "please stop", as a POSIX return code reports them
+# (-signum). Windows has no such return codes, so this never matches there.
+_STOP_SIGNALS: tuple[str, ...] = ("SIGTERM", "SIGINT", "SIGHUP")
+
+
+def _stop_signal_name(code: int | None) -> str | None:
+    """The stop signal that ended the engine, or None if it was not one."""
+    if code is None or code >= 0:
+        return None
+    for name in _STOP_SIGNALS:
+        sig = getattr(signal, name, None)
+        if sig is not None and -int(sig) == code:
+            return name
+    return None
 
 
 @dataclass
@@ -295,13 +312,15 @@ class AudioEngineSupervisor:
             _close_quietly(proc.stdin)
         if thread is not None:
             thread.join(max(0.0, deadline - time.monotonic() - 0.5))
-        if thread is not None and thread.is_alive():
-            remaining = deadline - time.monotonic()
-            if remaining > 0:
-                with self._lock:
-                    live = self._proc
-                if live is not None and live.poll() is None:
-                    self._terminate(live, kill_after_s=min(0.4, remaining))
+        # Gate on the retained process, not the thread: an "alive" outcome
+        # ends the supervisor while _proc still runs.
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            with self._lock:
+                live = self._proc
+            if live is not None and live.poll() is None:
+                self._terminate(live, kill_after_s=min(0.4, remaining))
+            if thread is not None:
                 thread.join(max(0.0, deadline - time.monotonic()))
         with self._lock:
             live = self._proc
@@ -404,6 +423,18 @@ class AudioEngineSupervisor:
                 self._set(state="stopped")
                 return
             if outcome == "fatal":
+                return
+            stopped_by = _stop_signal_name(self._status.last_exit_code)
+            if stopped_by is not None:
+                # Someone outside asked it to stop (the app quitting sends the
+                # whole process group SIGTERM before stop() runs): restarting
+                # would fight the shutdown. A SIGKILL (the OOM killer) still
+                # restarts.
+                self._set(
+                    state="stopped",
+                    error=f"odj-audio was stopped by {stopped_by}; not restarting",
+                )
+                log.info("odj-audio stopped by %s; not restarting", stopped_by)
                 return
             now = time.monotonic()
             crashes.append(now)

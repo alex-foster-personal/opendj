@@ -43,6 +43,8 @@ from apps.analysis_beatgrid.tempo_family import TempoFamily
 # rather than a tie-break nobody can see.
 OCTAVE_RANGE_MIN_BPM = 70.0
 OCTAVE_RANGE_MAX_BPM = 180.0
+# Geometric center of the ordinary-BPM band; tie-break target when multiple octaves fit.
+_OCTAVE_BAND_CENTER_BPM = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
 
 # Octave ladder searched, in multiples of the raw fitted tempo. Two steps each
 # way covers 4x and 1/4x, which is past any metrical level a DJ track uses.
@@ -84,6 +86,12 @@ class BpmEstimate:
 # ----- The fit ------------------------------------------------------------
 
 
+def linear_fit_intercept(n: int, mean_t: float, period_s: float) -> float:
+    """``t(0)`` for ``t(i) = intercept + period_s * i`` with index-centered least squares."""
+    mean_i = (n - 1) / 2.0
+    return mean_t - period_s * mean_i
+
+
 def least_squares_bpm(times: Sequence[float]) -> tuple[float, float] | None:
     """Fit `t_i = intercept + period * i` and return `(bpm, residual_rms_s)`.
 
@@ -107,7 +115,7 @@ def least_squares_bpm(times: Sequence[float]) -> tuple[float, float] | None:
     if period_s <= 0:
         return None
 
-    intercept = mean_t - period_s * mean_i
+    intercept = linear_fit_intercept(n, mean_t, period_s)
     residual_rms = math.sqrt(
         sum((t - (intercept + period_s * i)) ** 2 for i, t in enumerate(beats)) / n
     )
@@ -206,7 +214,7 @@ def _band_octave(
     if model_level:
         multiple, bpm = model_level[0]
         return bpm, multiple, REASON_AMBIGUOUS_MODEL_LEVEL, True
-    center = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
+    center = _OCTAVE_BAND_CENTER_BPM
     reason = REASON_AMBIGUOUS_NEAREST_CENTER if in_range else REASON_NO_OCTAVE_IN_RANGE
     multiple, bpm = min(in_range or candidates, key=lambda mb: _log_distance(mb[1], center))
     return bpm, multiple, reason, True

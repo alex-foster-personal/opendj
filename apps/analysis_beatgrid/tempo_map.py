@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.analysis_beatgrid.activations import require_activations_for_fit
-from apps.analysis_beatgrid.bpm import confidence_from_fit_residual, least_squares_bpm
+from apps.analysis_beatgrid.bpm import (
+    confidence_from_fit_residual,
+    least_squares_bpm,
+    linear_fit_intercept,
+)
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 
@@ -33,14 +37,6 @@ class TempoMap:
     anchors: tuple[TempoAnchor, ...]
 
 
-def _ls_intercept(segment_times: Sequence[float], bpm: float) -> float:
-    n = len(segment_times)
-    mean_i = (n - 1) / 2.0
-    mean_t = sum(segment_times) / n
-    period_s = 60.0 / bpm
-    return mean_t - period_s * mean_i
-
-
 def _fit_segment_anchor(
     beat_times: Sequence[float], lo: int, hi: int
 ) -> TempoAnchor:
@@ -52,7 +48,8 @@ def _fit_segment_anchor(
             "or a non-positive period"
         )
     bpm, residual_rms_s = fit
-    at_s = _ls_intercept(segment_times, bpm)
+    n = len(segment_times)
+    at_s = linear_fit_intercept(n, sum(segment_times) / n, 60.0 / bpm)
     return TempoAnchor(
         at_s=at_s,
         beat_index=lo,

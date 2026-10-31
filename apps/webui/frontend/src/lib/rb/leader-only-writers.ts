@@ -25,6 +25,16 @@ export interface LeaderOnlyWriterDeps {
 	leadership: Pick<TabLeadership, 'isLeader' | 'subscribe'>;
 	/** Loads decks from the rescue ring; resolves true when it handled the restore. */
 	runRescueAutoRestore: () => Promise<boolean>;
+	/**
+	 * LIBWS-06: the Library exit hold. Leaving Library mode sets it; it stays set,
+	 * across demotion, re-promotion and a remount of this route, until the first
+	 * deck restore after the arrival settles. `handoff()` is true while held AND
+	 * the URL names a deck (Load to deck): the rescue ring then holds the Gig the
+	 * operator LEFT, and replaying it would reload the old set and, being
+	 * rescue-handled, skip the requested `dN` load. A plain return from Library
+	 * (no deck in the URL) still gets RESCUE-02, as PERFMODE-14 says.
+	 */
+	libraryRescueHold?: { handoff: () => boolean; release: () => void };
 	/** Restores the session snapshot (unless skipped) and starts its writer. */
 	installSessionRestore: (opts: {
 		skipDeckRestore: boolean;
@@ -54,7 +64,7 @@ export function installLeaderOnlyEventWriters(
 export function installLeaderOnlyRestore(
 	deps: Pick<
 		LeaderOnlyWriterDeps,
-		'leadership' | 'runRescueAutoRestore' | 'installSessionRestore' | 'installRescueRingWriter'
+		'leadership' | 'runRescueAutoRestore' | 'libraryRescueHold' | 'installSessionRestore' | 'installRescueRingWriter'
 	>
 ): () => void {
 	// True once a deck restore ran to its end in THIS tab. Until then a
@@ -69,7 +79,10 @@ export function installLeaderOnlyRestore(
 			// the previous leader), so Take control continues the set rather than starting
 			// it again; a demoted tab was silenced, so there is nothing local to keep. The
 			// browser-local session snapshot only restores decks on the first promotion.
-			const rescueHandled = await deps.runRescueAutoRestore();
+			// LIBWS-06: a Load to deck hand-off from Library skips the ring, which holds
+			// the set the operator left; a plain return from Library keeps RESCUE-02.
+			const rescueHandled =
+				deps.libraryRescueHold?.handoff() === true ? false : await deps.runRescueAutoRestore();
 			// Leadership can be lost (or the route unmount) while the rescue
 			// fetch is in flight; nothing installed after that would be undone.
 			if (stopped) return;
@@ -81,6 +94,7 @@ export function installLeaderOnlyRestore(
 				resumeInterruptedRestore: resume,
 				onDeckRestoreSettled: () => {
 					deckRestoreSettled = true;
+					deps.libraryRescueHold?.release();
 				}
 			});
 			uninstallRescueWriter = deps.installRescueRingWriter();

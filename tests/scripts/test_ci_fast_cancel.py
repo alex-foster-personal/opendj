@@ -26,10 +26,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from scripts import ci_failure_ids, ci_fast_cancel
+from scripts.ci_health_core import PreconditionError
 
 pytestmark = pytest.mark.requirement("INFRA-03")
 
@@ -61,10 +63,10 @@ def _log(tmp_path: Path, text: str = LOG) -> Path:
 
 
 def _forbid_gh(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _refuse(*_a: object, **_k: object) -> None:
-        pytest.fail("gh was called")
+    def _refuse(_args: list[str]) -> NoReturn:
+        raise AssertionError("gh was called")
 
-    monkeypatch.setattr(ci_fast_cancel.subprocess, "run", _refuse)
+    monkeypatch.setattr(ci_fast_cancel, "_run_gh", _refuse)
 
 
 def test_failed_identities_read_pytest_summary_lines() -> None:
@@ -75,19 +77,62 @@ def test_failed_identities_read_pytest_summary_lines() -> None:
     }
 
 
+def test_not_yet_queued_cancel_does_not_claim_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """if GitHub returns not-yet-queued 409 then the leg must not print cancelled"""
+    audit_log = tmp_path / "cancel-audit.log"
+    monkeypatch.setenv("MDT_ACTIONS_CANCEL_LOG", str(audit_log))
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    def _not_queued(_args: list[str]) -> str:
+        raise PreconditionError(
+            "gh api --method POST repos/example/actions/runs/777/cancel failed with exit 1: "
+            "gh: Cannot cancel a workflow run that has not been queued yet. (HTTP 409)"
+        )
+
+    monkeypatch.setattr(ci_fast_cancel, "_run_gh", _not_queued)
+    log = _log(tmp_path)
+    baseline = _baseline(tmp_path, ["FAILED tests/a/test_x.py::test_two"])
+    rc = ci_fast_cancel.main(
+        ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline), "--leg", "2 of 4"]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "cancel skipped for run 777" in out
+    assert "cancelled run 777" not in out
+    assert "outcome=skipped_not_yet_queued" in audit_log.read_text(encoding="utf-8")
+    assert "cancel skipped (not yet queued)" in summary.read_text(encoding="utf-8")
+
+
 def test_genuine_failure_cancels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """if a failure absent from main's red set does not cancel the run then broken"""
-    calls: list[list[str]] = []
-    monkeypatch.setattr(ci_fast_cancel.subprocess, "run", lambda cmd, **_: calls.append(cmd))
+    gh_calls: list[list[str]] = []
+    audit_log = tmp_path / "cancel-audit.log"
+    monkeypatch.setenv("MDT_ACTIONS_CANCEL_LOG", str(audit_log))
+
+    def _record_gh(args: list[str]) -> str:
+        gh_calls.append(args)
+        return ""
+
+    monkeypatch.setattr(ci_fast_cancel, "_run_gh", _record_gh)
     log = _log(tmp_path)
     baseline = _baseline(tmp_path, ["FAILED tests/a/test_x.py::test_two"])
     rc = ci_fast_cancel.main(
         ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
     )
     assert rc == 0
-    assert calls == [["gh", "run", "cancel", "777"]]
+    assert gh_calls == [
+        ["api", "--method", "POST", "repos/private_owner/music-dj-tools/actions/runs/777/cancel"]
+    ]
+    audit = audit_log.read_text(encoding="utf-8")
+    assert "run_id=777" in audit
+    assert "outcome=cancel_requested" in audit
+    assert "outcome=cancelled" in audit
     out = capsys.readouterr().out
     assert "genuine ERROR tests/b/test_y.py::test_three[param-1]" in out
     assert "cancelled run 777" in out
@@ -274,15 +319,23 @@ def test_one_new_failure_beside_five_known_ones_is_still_genuine(
     The opposite direction of the test above. Making every verdict KNOWN would satisfy
     that one perfectly and disarm the feature, so this is the control that refuses it.
     """
-    calls: list[list[str]] = []
-    monkeypatch.setattr(ci_fast_cancel.subprocess, "run", lambda cmd, **_: calls.append(cmd))
+    gh_calls: list[list[str]] = []
+    audit_log = tmp_path / "cancel-audit.log"
+    monkeypatch.setenv("MDT_ACTIONS_CANCEL_LOG", str(audit_log))
+
+    def _record_gh(args: list[str]) -> str:
+        gh_calls.append(args)
+        return ""
+
+    monkeypatch.setattr(ci_fast_cancel, "_run_gh", _record_gh)
     log = _log(tmp_path, PARITY_LOG + "FAILED tests/new/test_n.py::test_new - boom\n")
     baseline = _baseline(tmp_path, sorted(ci_failure_ids.failed_identities(PARITY_LOG)))
     rc = ci_fast_cancel.main(
         ["--log", str(log), "--run-id", "777", "--main-red-json", str(baseline)]
     )
     assert rc == 0
-    assert calls == [["gh", "run", "cancel", "777"]]
+    assert gh_calls
+    assert "outcome=cancelled" in audit_log.read_text(encoding="utf-8")
     out = capsys.readouterr().out
     assert "genuine FAILED tests/new/test_n.py::test_new" in out
     assert "test_strip_energy_prefix" not in out, "a known identity must not read as genuine"

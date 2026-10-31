@@ -2,7 +2,7 @@
 	// Compact track identity in a waveform gutter (DECKUX-40): artwork the full
 	// row height, then the title over the live key and BPM. Missing or loading
 	// artwork is empty space with a hover reason, never a labelled slate.
-	import { deckArtworkUrl } from '$lib/rb/api-rb';
+	import { deckArtworkUrl } from '$lib/rb/artwork-url';
 	import { playbackBpm } from '$lib/rb/beat-sync-math';
 	import { camelotKeyColor } from '$lib/rb/camelot-color';
 	import type { DeckState } from '$lib/rb/deck-state-types';

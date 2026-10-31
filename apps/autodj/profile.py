@@ -593,8 +593,8 @@ def trim_db_of_knob(knob: float) -> float:
 #: (`[ReplayGain] DefaultBoost`) resets to -6 dB (mixxx 2.4 src/preferences/dialog/dlgprefreplaygain.cpp,
 #: slotResetToDefaults: `SliderDefaultBoost->setValue(-6)`).
 HEADROOM_DB = -6.0
-#: Round 22 (ADR-0135 superseded on the default): decks load at unity. Set this to HEADROOM_DB to opt into the pre-gain.
-DECK_LOAD_TRIM_DB = 0.0
+#: Every deck loads at the same headroom default as the live mixer.
+DECK_LOAD_TRIM_DB = HEADROOM_DB
 
 
 def trim_knob(trim_db: float) -> float:

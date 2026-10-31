@@ -6,7 +6,7 @@
 	// own flag) is a slimmer copy drawn inside the highlighted row. The cue
 	// preview's playhead and the bar the last jump landed on are DOM overlays,
 	// so the canvas is painted once per track and data change, never per tick.
-	import type { AnlzData } from '$lib/rb/anlz-types';
+	import type { AnlzData } from '$lib/rb/cmdk-preview-grid';
 	import type { PreviewAssets } from '$lib/rb/cmdk-preview-data.svelte';
 	import { previewStripDataToStripBands } from '$lib/rb/deck-strip-preview';
 	import type { WaveformDesign } from '$lib/rb/waveform-design';

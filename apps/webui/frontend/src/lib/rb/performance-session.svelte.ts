@@ -29,6 +29,7 @@ import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 import { restoreStemControls } from '$lib/rb/stem-restore';
 import {
 	consumeLibraryModeExitFlag,
+	libraryRescueHold,
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
@@ -422,9 +423,16 @@ export function installPerformanceSessionRestore(
 	const urlDeckIds = parseLv2Ids(location.search ?? '');
 	let writer: SessionSnapshotWriter | null = null;
 	activeSessionWriter = null;
-	const skipFromLibrary = shouldSkipPerformanceSessionRestore();
-	if (skipFromLibrary) consumeLibraryModeExitFlag();
-	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
+	const exitMarked = shouldSkipPerformanceSessionRestore();
+	if (exitMarked) consumeLibraryModeExitFlag();
+	// The exit marker is one-shot, but a route remount before the deck restore
+	// settles is still the same arrival from Library: the hold, released only
+	// when that restore settles, carries it (Codex P1, PR #6189).
+	const skipFromLibrary = exitMarked || libraryRescueHold.held();
+	// LIBWS-06: arriving from Library mode drops the old session (PERFMODE-14),
+	// but a deck the URL names is the Library's own load-to-deck request.
+	const libraryHandoff = skipFromLibrary && Object.keys(urlDeckIds).length > 0;
+	const skipDeckRestore = (opts.skipDeckRestore ?? false) || (skipFromLibrary && !libraryHandoff);
 	let disposed = false;
 	const assertActive = (): void => {
 		if (disposed) throw new Error(RESTORE_DISPOSED);
@@ -435,7 +443,7 @@ export function installPerformanceSessionRestore(
 	const restore = opts.resumeInterruptedRestore === true && !skipFromLibrary
 		? _resumeUrlDecks(guardedDispatch, guardedQuery, urlDeckIds)
 		: _restoreSession(
-			guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore,
+			guardedDispatch, guardedQuery, skipFromLibrary ? null : snapshot, urlDeckIds, skipDeckRestore,
 			nowFn, opts.autoPlayEnabled ?? (() => false)
 		);
 	void restore.finally(() => {

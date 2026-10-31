@@ -2,7 +2,8 @@
 //
 // Port of apps/desktop/src-tauri/src/engine.rs, rule for rule:
 //
-// 1. The port is chosen by the OS, never hardcoded.
+// 1. The port is PREFERRED, never required: PREFERRED_ENGINE_PORT when free,
+//    otherwise an OS-assigned loopback port.
 // 2. The data directory is this app's own data directory, never the repo's
 //    data/ and never a real rekordbox library.
 // 3. Rekordbox writeback is actively unset before the engine is spawned.
@@ -77,6 +78,84 @@ export function audioEngineEnv(payloadDir: string, platform: NodeJS.Platform = p
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ----- port ---------------------------------------------------------------
+/**
+ * The port the packaged engine asks for first, so the browser address
+ * (`http://opendj.localhost:7700/`) survives a relaunch.
+ *
+ * Chosen to sit outside every port this repo hands out or binds: below the
+ * worktree pools (backend 8680+, frontend 9400+, every lane shifts upward),
+ * clear of the dev defaults 8585/5173, of every fixed port in
+ * `(private path)`, and of every e2e suite port; it is itself listed
+ * in `RESERVED_FIXED_PORTS` (`apps/webui/port_config.py`) so the worktree
+ * allocator never hands it out. Also clear of macOS's own AirPlay receiver
+ * (5000/7000). Mirrors `PREFERRED_ENGINE_PORT` in
+ * `apps/desktop/src-tauri/src/engine.rs`.
+ */
+export const PREFERRED_ENGINE_PORT = 7700;
+
+const FALLBACK_PORT_TRIES = 20;
+
+function listenAndClose(host: string, port: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const server = net.createServer();
+		server.once('error', reject);
+		server.listen(port, host, () => {
+			server.close((error) => (error ? reject(error) : resolve()));
+		});
+	});
+}
+
+/**
+ * Free means the engine's own bind (127.0.0.1) would succeed AND nobody
+ * holds the port on ::1. The second half matters because macOS resolves
+ * `opendj.localhost` to ::1 first: a stranger on [::1]:port would answer
+ * the browser before the engine did. A host with no IPv6 loopback cannot
+ * bind ::1 at all, which is not "in use" (EADDRNOTAVAIL and any other
+ * ::1 error besides EADDRINUSE counts as not taken).
+ */
+export async function loopbackPortIsFree(port: number): Promise<boolean> {
+	try {
+		await listenAndClose('127.0.0.1', port);
+	} catch {
+		return false;
+	}
+	try {
+		await listenAndClose('::1', port);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') return false;
+	}
+	return true;
+}
+
+/**
+ * `preferred` when it is free on loopback right now, else an OS-assigned
+ * port that also passes `loopbackPortIsFree`. A fallback is written to the
+ * shell log with both ports first (UIURL-01). A free preferred port is not
+ * logged. Never fails because the preferred port is taken.
+ */
+export async function pickLoopbackPort(preferred: number): Promise<number> {
+	if (await loopbackPortIsFree(preferred)) return preferred;
+	for (let attempt = 0; attempt < FALLBACK_PORT_TRIES; attempt++) {
+		const candidate = await freeLoopbackPort();
+		if (await loopbackPortIsFree(candidate)) {
+			appendShellLog(
+				'INFO',
+				`preferred engine port ${preferred} is in use; using OS-assigned port ${candidate}`
+			);
+			return candidate;
+		}
+	}
+	throw new EngineError(
+		'Open DJ could not reserve a local port.',
+		`Could not find a free loopback port after ${FALLBACK_PORT_TRIES} attempts.`
+	);
+}
+
+/** The engine's port: the preferred one when nobody holds it, otherwise one the OS assigns. */
+export function enginePort(): Promise<number> {
+	return pickLoopbackPort(PREFERRED_ENGINE_PORT);
+}
+
 /** Ask the OS for a loopback port nobody is using right now. */
 export function freeLoopbackPort(): Promise<number> {
 	return new Promise((resolve, reject) => {

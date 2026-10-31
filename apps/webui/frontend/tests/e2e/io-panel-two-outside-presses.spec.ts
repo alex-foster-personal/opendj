@@ -24,8 +24,27 @@ import { expect, test, type Page } from '@playwright/test';
 
 const TRACK_ROW = '[data-testid="track-row"]';
 
+/** Wait until the open panel stops changing size: a section that loads on
+ * demand (the remote speaker, I18) can grow it over a point found earlier. */
+async function _panelSettled(page: Page): Promise<void> {
+	const panel = page.locator('[data-audio-io-panel]');
+	let last = '';
+	await expect
+		.poll(
+			async () => {
+				const box = JSON.stringify(await panel.boundingBox());
+				const settled = box === last;
+				last = box;
+				return settled;
+			},
+			{ timeout: 20_000, intervals: [250] }
+		)
+		.toBe(true);
+}
+
 /** Center of row `index`, checked to hit the row itself and not the panel. */
 async function _outsidePoint(page: Page, index: number): Promise<{ x: number; y: number }> {
+	await _panelSettled(page);
 	const point = await page.locator(TRACK_ROW).nth(index).evaluate((row) => {
 		const r = row.getBoundingClientRect();
 		// Several cells across the row, in case the panel covers part of it.
@@ -95,17 +114,22 @@ test('IOPIN-20 control: a press inside the panel resets the count, so it takes t
 	const panel = page.getByRole('dialog', { name: 'Audio I/O settings' });
 	await expect(panel).toBeVisible();
 
-	const outside = await _outsidePoint(page, 1);
-	await page.mouse.click(outside.x, outside.y);
+	// Each press re-finds an uncovered point: a section that loads on demand
+	// (the remote speaker, I18) can grow the panel over a point found earlier.
+	const pressOutside = async (): Promise<void> => {
+		const outside = await _outsidePoint(page, 1);
+		await page.mouse.click(outside.x, outside.y);
+	};
+	await pressOutside();
 	await expect(panel).toBeVisible();
 
 	// A press on the panel's own header text is inside: the count starts over.
 	await panel.locator('.hp-panel-header strong').click();
-	await page.mouse.click(outside.x, outside.y);
+	await pressOutside();
 	await page.waitForTimeout(300);
 	await expect(panel, 'an inside press must reset the count; one more outside press must not close').toBeVisible();
 
-	await page.mouse.click(outside.x, outside.y);
+	await pressOutside();
 	await expect(panel).toBeHidden();
 });
 

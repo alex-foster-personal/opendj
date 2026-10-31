@@ -129,7 +129,11 @@ test('LibraryLoadIndicator keeps an honest visible track for determinate and ind
 	);
 	assert.match(src, /outline: 1px solid/, 'the track endpoint must remain visible');
 	assert.match(src, /height: 2px/, 'the bar must match the 2px vocal-bar height');
-	assert.match(src, /#4fb2ff/, 'the bar must use the vocal-bar blue');
+	assert.match(
+		src,
+		/\.lli-bar \{[\s\S]*?background: var\(--lli-ink\);/,
+		'the bar must take its color from the skin token (LIBUX-50), not a literal'
+	);
 });
 
 // pin 02717d4ea496: "loading bug - appears above col titles". The indicator
@@ -137,8 +141,10 @@ test('LibraryLoadIndicator keeps an honest visible track for determinate and ind
 // column-header row down the page for the length of every load. The fix at
 // the time moved it into TrackTable's `bodyOverlay` slot, which stopped the
 // headers moving but painted the indicator over the first track rows (pins
-// 1f9711b7, dd5fad7f, e452be6b). It is now a reserved, always-present strip:
-// see pin-1f9711b7-library-load-reserved-strip.test.mjs for that contract.
+// 1f9711b7, dd5fad7f, e452be6b). It became a reserved, always-present strip,
+// and since LIBUX-50 (W16) a zero-height anchor whose strip is an absolute
+// overlay: see pin-1f9711b7-library-load-reserved-strip.test.mjs and
+// libux-50-library-load-strip-idle-and-skin.test.mjs for that contract.
 //
 // What this pin still owns is its original complaint: the headers must not
 // move when a load starts or ends.
@@ -157,8 +163,13 @@ test('the library load strip never moves the column headers', () => {
 	);
 	assert.match(
 		src,
-		/\.lli-root \{[\s\S]*?height: var\(--lli-strip-h\);/,
-		'the strip must hold one fixed height whether or not a load is in flight'
+		/\.lli-root \{[\s\S]*?height: 0;/,
+		'the root must hold one height (zero) whether or not a load is in flight'
+	);
+	assert.match(
+		src,
+		/\.lli-strip \{[\s\S]*?position: absolute;/,
+		'the strip must be out of flow, so showing it cannot push the headers'
 	);
 });
 

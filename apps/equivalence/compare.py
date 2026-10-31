@@ -15,7 +15,6 @@ Two rules from SKILL 4b drive the shape of this module:
 from __future__ import annotations
 
 import csv
-import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +27,7 @@ from apps.equivalence.normalisers import (
     NormaliseError,
     is_comparable_unit,
     normalise,
+    pair_notation_form,
 )
 from apps.equivalence.probe import SUSPICIOUS_FACTORS
 from apps.equivalence.sources import Pairing
@@ -242,28 +242,6 @@ def _numeric_interpretation(signature: str) -> str:
     return "repeated delta signature"
 
 
-# --------------------------------------------------------- notation forms
-
-_CAMELOT_FORM = re.compile(r"^\s*(1[0-2]|[1-9])\s*[AaBb]\s*$")
-_MUSICAL_FORM = re.compile(r"^\s*[A-Ga-g][#b♭♯]?\s*(m|min|minor|maj|major|M)?\s*$")
-
-
-def _raw_form(value: Any, kind: str) -> str:
-    """Label the raw NOTATION of one value, so a per-notation bug is visible."""
-    if kind != "key":
-        return "numeric"
-    text = str(value).strip()
-    if _CAMELOT_FORM.match(text):
-        return "camelot"
-    if _MUSICAL_FORM.match(text):
-        return "musical"
-    return "other"
-
-
-def _pair_form(left_raw: Any, right_raw: Any, kind: str) -> str:
-    return f"rb={_raw_form(left_raw, kind)}|mik={_raw_form(right_raw, kind)}"
-
-
 # ------------------------------------------------------------- comparison
 
 
@@ -285,7 +263,7 @@ def compare_pair(
         if canon_left is None or canon_right is None:
             continue  # missing, unmapped, or the unit blocks comparison
         agree, delta, signature = _judge(canon_left, canon_right, spec)
-        form = _pair_form(raw_left, raw_right, spec.left.kind)
+        form = pair_notation_form(raw_left, raw_right, spec.left.kind)
         counts["comparable"] += 1
         form_counts[form] += 1
         counts["agree" if agree else "disagree"] += 1

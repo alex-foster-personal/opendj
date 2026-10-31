@@ -70,6 +70,119 @@ export function noteRecoveryOpportunity(reason: string): void {
 	for (const listener of _recoveryListeners) listener(reason);
 }
 
+/**
+ * Deliberate suspends in flight, per context. The output re-bind
+ * (`audio-output-rebind.ts`) suspends and resumes a running context on purpose
+ * to re-open a stalled output stream; without this the watchdog read its own
+ * `suspended` edge as a drop, toasted "Audio stopped" and raced the re-bind's
+ * resume with a recovery loop (issue #5887). Only `suspended` is excused:
+ * `interrupted` and `closed` are never something the re-bind causes.
+ */
+const _expectedSuspends = new WeakMap<object, number>();
+
+/**
+ * Mark a deliberate suspend/resume cycle on `ctx`. Returns the release, which
+ * the caller runs once the cycle is over, failed or not. Releasing re-offers
+ * recovery, so a cycle whose resume failed still leaves a suspended context to
+ * the watchdog's bounded retries rather than to nothing.
+ */
+export function beginExpectedSuspend(ctx: object): () => void {
+	_expectedSuspends.set(ctx, (_expectedSuspends.get(ctx) ?? 0) + 1);
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		// A release with no counter means some other path already cleared this
+		// context's marks, so the excuse has been wrong for an unknown stretch
+		// (Sol P1 BLOCKING on #8045). Say so rather than defaulting the count.
+		// Recovery is still re-offered first: the context is left to the
+		// watchdog either way, and only then does the broken invariant surface.
+		const held = _expectedSuspends.get(ctx);
+		if (held === undefined) {
+			noteRecoveryOpportunity('expected suspend ended');
+			throw new Error('expected-suspend release with no counter for this context');
+		}
+		if (held > 1) _expectedSuspends.set(ctx, held - 1);
+		else _expectedSuspends.delete(ctx);
+		noteRecoveryOpportunity('expected suspend ended');
+	};
+}
+
+/** Contexts the app is suspending on purpose right now (the IOPIN-18 output
+ * reopen suspends and at once resumes the room). Their `suspended` edge is not
+ * an incident: no toast, no unexpected-pause row, no competing recovery. */
+const _intentionalSuspends = new WeakMap<object, number>();
+
+/** Mark `ctx` as suspended on purpose until the matching
+ * {@link endIntentionalSuspend}. Marks are counted, so one reopen finishing
+ * does not unmark another that still holds the room suspended. An
+ * `interrupted` or `closed` edge still alarms: only `suspended` is excused. */
+export function beginIntentionalSuspend(ctx: object): void {
+	_intentionalSuspends.set(ctx, (_intentionalSuspends.get(ctx) ?? 0) + 1);
+}
+
+export function endIntentionalSuspend(ctx: object): void {
+	const count = _intentionalSuspends.get(ctx) ?? 0;
+	if (count <= 1) _intentionalSuspends.delete(ctx);
+	else _intentionalSuspends.set(ctx, count - 1);
+}
+
+/** Contexts with an app suspend still pending past its excuse (an IOPIN-18
+ * reopen suspend that timed out and outlived its grace), and whether one just
+ * landed. Such a suspend may still land at any time, but a suspend that never
+ * settles must not blind the watchdog, so a `suspended` edge on such a context
+ * is not excused outright: its verdict waits one task, and is excused only if
+ * the pending suspend reports it landed in between ({@link endLateSuspend}).
+ * The landing is held until a `suspended` edge consumes it, bounded by
+ * LATE_LANDING_EDGE_MS: the spec settles the promise before it queues the
+ * edge, while some engines fire the edge first, so either order is excused
+ * and a genuine pause after the consumed edge still alarms. */
+/** `landing` waits for its edge and is consumed by it; `recent` marks the same
+ * landing for the whole wait, so a recovery edge in it never resumes our pause. */
+type LateSuspend = { pending: number; landing: object | null; recent: object | null };
+const _lateSuspends = new WeakMap<object, LateSuspend>();
+
+/** How long a late suspend's landing waits for the `suspended` edge it caused. */
+export const LATE_LANDING_EDGE_MS = 1000;
+
+/** Register an app suspend on `ctx` still pending past its excuse. */
+export function beginLateSuspend(ctx: object): void {
+	const entry = _lateSuspends.get(ctx) ?? { pending: 0, landing: null, recent: null };
+	entry.pending += 1;
+	_lateSuspends.set(ctx, entry);
+}
+
+function _dropSettledLateSuspend(ctx: object, entry: LateSuspend): void {
+	if (entry.pending <= 0 && entry.recent === null && _lateSuspends.get(ctx) === entry) _lateSuspends.delete(ctx);
+}
+
+/** That suspend settled; `landed` when it left `ctx` suspended. The landing
+ * excuses one `suspended` edge, the one it caused, never a later one. */
+export function endLateSuspend(ctx: object, landed: boolean): void {
+	const entry = _lateSuspends.get(ctx);
+	if (entry === undefined) return;
+	entry.pending -= 1;
+	if (landed) {
+		const landing = {};
+		entry.landing = entry.recent = landing;
+		setTimeout(() => {
+			if (entry.landing === landing) entry.landing = null;
+			if (entry.recent === landing) entry.recent = null;
+			_dropSettledLateSuspend(ctx, entry);
+		}, LATE_LANDING_EDGE_MS);
+	} else {
+		_dropSettledLateSuspend(ctx, entry);
+	}
+}
+
+/** Consume a late suspend's landing for the `suspended` edge it caused. */
+function _consumeLateLanding(ctx: object, entry: LateSuspend): boolean {
+	if (entry.landing === null) return false;
+	entry.landing = null;
+	_dropSettledLateSuspend(ctx, entry);
+	return true;
+}
+
 /** The states that mean audio has stopped coming out. */
 const NON_RUNNING = new Set(['suspended', 'interrupted', 'closed']);
 
@@ -79,6 +192,7 @@ export interface ContextWatchdogEffects {
 	recordPerfEvent?(kind: string, message: string, severity?: 'info' | 'warn' | 'error'): void;
 	sleep(ms: number): Promise<void>;
 	noteUnexpectedPause(state: string): void;
+	onStateChange?(state: string): void;
 }
 
 /** Only what this module reads, so a test needs no real AudioContext. */
@@ -116,6 +230,12 @@ export function installAudioContextWatchdog(
 ): () => void {
 	let recovering = false;
 	let heldOpportunity = false;
+	// A `suspended` edge that the expected-suspend excuse swallowed WHILE a deck
+	// was playing (Codex P2 on #8045). It was accepted when it landed, so the
+	// excuse ending must run recovery even if the operator has paused since:
+	// the playing gate applies on arrival, never again later, as for
+	// `heldOpportunity` below.
+	let excusedWhilePlaying = false;
 
 	async function recover(state: string): Promise<void> {
 		// Re-entrancy guard: a successful resume fires statechange from INSIDE
@@ -199,10 +319,32 @@ export function installAudioContextWatchdog(
 
 	function onStateChange(): void {
 		const state = ctx.state;
+		effects.onStateChange?.(state);
 		const running = state === 'running';
 		effects.recordPerfTiming('audio-context', { context_running: running ? 1 : 0 });
 		if (running || !NON_RUNNING.has(state)) return;
+		if (state === 'suspended' && _expectedSuspends.has(ctx)) {
+			if (isAnyDeckPlaying()) excusedWhilePlaying = true;
+			return;
+		}
 		if (!isAnyDeckPlaying()) return;
+		if (state === 'suspended' && _intentionalSuspends.has(ctx)) return;
+		const late = state === 'suspended' ? _lateSuspends.get(ctx) : undefined;
+		// A late suspend that already landed: this is the edge it caused.
+		if (late !== undefined && _consumeLateLanding(ctx, late)) return;
+		if (late !== undefined && late.pending > 0) {
+			// An app suspend may be landing: judge the edge once it has had the
+			// chance to say so.
+			setTimeout(() => {
+				if (_consumeLateLanding(ctx, late) || ctx.state !== 'suspended' || !isAnyDeckPlaying()) return;
+				alarm('suspended');
+			}, 0);
+			return;
+		}
+		alarm(state);
+	}
+
+	function alarm(state: string): void {
 		// The state name travels in the message on purpose: "something went wrong
 		// with audio" is not actionable in the middle of a set.
 		effects.pushToast(
@@ -225,8 +367,25 @@ export function installAudioContextWatchdog(
 	 * concurrent loop.
 	 */
 	const onRecoveryOpportunity: RecoveryListener = (): void => {
+		if (ctx.state === 'suspended' && _expectedSuspends.has(ctx)) return;
+		const accepted = excusedWhilePlaying;
+		excusedWhilePlaying = false;
 		if (ctx.state === 'running' || !NON_RUNNING.has(ctx.state)) return;
-		if (!isAnyDeckPlaying()) return;
+		if (ctx.state === 'suspended' && _intentionalSuspends.has(ctx)) return;
+		if (!accepted && !isAnyDeckPlaying()) return;
+		// The same one-task verdict `onStateChange` gives a suspended edge while
+		// an app suspend is still pending past its excuse: if that suspend is
+		// what silenced the room, it says so before this runs, and resuming it
+		// would be a recovery competing with our own pause.
+		const late = ctx.state === 'suspended' ? _lateSuspends.get(ctx) : undefined;
+		if (late?.recent != null) return;
+		if (late !== undefined && late.pending > 0) {
+			setTimeout(() => {
+				if (late.recent !== null || ctx.state !== 'suspended' || (!accepted && !isAnyDeckPlaying())) return;
+				void recover('suspended');
+			}, 0);
+			return;
+		}
 		// The bare STATE, not a composed sentence: `recover` passes this to
 		// `_describe`, which matches the three state names exactly and otherwise
 		// falls through to "an unexpected state (...)". Handing it "interrupted
@@ -249,5 +408,6 @@ export function installAudioContextWatchdog(
 		// would otherwise re-arm against a context this route already closed --
 		// the same teardown the rebind module's `heldDuringRebind` needs.
 		heldOpportunity = false;
+		excusedWhilePlaying = false;
 	};
 }

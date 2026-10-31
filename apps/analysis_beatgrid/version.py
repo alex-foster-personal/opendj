@@ -43,7 +43,11 @@ from typing import Literal
 #: 1.6.0 is the union of both, from the Preview integration (PR #4974): a record
 #: written at 1.4.0 lacks the new offset and one at 1.5.0 lacks the new default
 #: fit, so both re-queue. The runner's beats are unchanged throughout.
-PRODUCER_VERSION = "1.6.0"
+#: 1.7.0 (NATIVE-34) changes the grid fit only: a below-floor bar vote serves
+#: the tempo-line grid flagged `bar_phase_untrusted` instead of failing, and a
+#: beat just before zero snaps to 0 keeping its bar number. A 1.6.0 grid or
+#: terminal failure is not current, so the drain re-runs it.
+PRODUCER_VERSION = "1.7.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
 #: contract parses the backend name and checks it against the record body, so

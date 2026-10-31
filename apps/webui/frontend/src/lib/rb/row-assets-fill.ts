@@ -85,6 +85,9 @@ export async function fetchPreviewAsset(
 	stable_id: string
 ): Promise<{ strip: PreviewStripData | null; vocals: Vocals; pending: boolean } | null> {
 	const answer = await fetchRowAssets([stable_id]);
+	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
+		throw new Error('POST /library/row-assets answered without assets or pending');
+	}
 	const asset = answer.assets[stable_id];
 	if (asset === undefined) return null;
 	return {

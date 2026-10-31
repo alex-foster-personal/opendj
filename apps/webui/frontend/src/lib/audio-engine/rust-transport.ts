@@ -579,7 +579,8 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 		case 'cue':
 			return _pressCue(command.deck);
 		case 'seek':
-			return _seek(command.deck, command.position_ms, { quantize: true });
+			// An exact seek (an aligned Cmd K pair's offset) skips the quantize snap, as in the JS engine (Codex r4279308132).
+			return _seek(command.deck, command.position_ms, { quantize: command.exact !== true });
 		case 'tempo':
 			return _setTempo(command.deck, command.ratio);
 		case 'beat_sync':
@@ -613,6 +614,9 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			return;
 		}
 		case 'quantize_grid':
+			if (command.beats === 'phase') {
+				throw new Error('phrase quantize (DECKCTL-6235c) runs on the Web Audio engine only for now');
+			}
 			if (command.beats !== 1 && command.beats !== 4 && command.beats !== 8) {
 				throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
 			}

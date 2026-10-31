@@ -368,3 +368,31 @@ export function mixWithoutBeatSync(
 	pushToast(notice, 'warn');
 	recordPerfEvent(GRIDLESS_MASTER_PERF_KIND, `${notice}; decks [${followers.join(',')}] play unsynced`, master, 'warn');
 }
+
+/**
+ * DECKCTL-6235 (alpha status I11): where the deck AU button parks a load.
+ * rekordbox's Auto Cue parks a loaded track at its first memory cue or memory
+ * loop, else at the start of the music; Open DJ reads "start of the music" as the first
+ * beat of the grid the deck draws, so a silent lead-in parks on beat 1 rather
+ * than 0:00. With AU on, a finished track restarts from that cue too
+ * (`autoCueRestartSec` in player/transport/schedule-math).
+ */
+export function autoCueTargetMs(
+	anlz: Pick<AnlzData, 'cues' | 'beatgrid'> | null,
+	durationMs: number | null
+): number | null {
+	if (anlz === null) return null;
+	const limit = durationMs !== null && durationMs > 0 ? durationMs : Number.POSITIVE_INFINITY;
+	let firstMemory: number | null = null;
+	for (const cue of anlz.cues) {
+		// A memory loop (rekordbox Kind 0 with an out point) is a memory entry too.
+		if (cue.kind !== 'memory' && cue.kind !== 'loop') continue;
+		if (!Number.isFinite(cue.in_ms) || cue.in_ms < 0 || cue.in_ms >= limit) continue;
+		if (firstMemory === null || cue.in_ms < firstMemory) firstMemory = cue.in_ms;
+	}
+	if (firstMemory !== null) return firstMemory;
+	const first = anlz.beatgrid.beats[0];
+	if (first === undefined || !Number.isFinite(first.t) || first.t <= 0) return null;
+	const ms = first.t * 1000;
+	return ms < limit ? ms : null;
+}

@@ -73,10 +73,10 @@ function watchWire(page: Page): Wire {
 	return wire;
 }
 
-async function waitIdle(request: APIRequestContext): Promise<void> {
+async function waitIdle(request: APIRequestContext, timeout = 30_000): Promise<void> {
 	await expect
 		.poll(async () => ((await (await request.get(STATUS)).json()) as { running: boolean }).running, {
-			timeout: 30_000
+			timeout
 		})
 		.toBe(false);
 }
@@ -384,6 +384,11 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		page,
 		request
 	}) => {
+		// The real sweep's length depends on the runner's load (#5764), and the
+		// suite's 30 s test budget also had to cover three page loads and up to
+		// 200 status reads. The budget is the run's, so it is set here, and the
+		// end is read from the engine before the page is asked to show it.
+		test.setTimeout(240_000);
 		// The overshoot of the ordering above is dropping a snapshot of the run
 		// already shown; mid-run progress (log, step count, badges) would then
 		// freeze until the run ends.
@@ -448,6 +453,13 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			});
 			await release();
 			await page.unroute(matcher);
+			// First the engine's own end of the run, bounded by the measured
+			// run length rather than a guess about the page; then the page,
+			// which polls every second while the popover is open, has 30 s to
+			// apply the terminal phase and raise the run-end toast under test.
+			const endWait = Date.now();
+			await waitIdle(request, 180_000);
+			console.log(`[refresh-progress] the engine ended the run ${Date.now() - endWait} ms after release`);
 			// The run is still followed to its end: the polled terminal phase is
 			// applied, and the page raised exactly one run-end toast for it. Read
 			// from the toast record, not the tray, so the 5 s on-screen life of the

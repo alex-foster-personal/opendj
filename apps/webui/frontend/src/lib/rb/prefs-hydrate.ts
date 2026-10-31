@@ -38,6 +38,7 @@ export type UiTheme = 'dark' | 'light';
 
 export type TopbarDiskPrefKey =
 	| 'beat_sync_max'
+	| 'deck_autocue'
 	| 'auto_play_enabled'
 	| 'auto_play_enforce_order'
 	| 'auto_play_maximize_reach';
@@ -112,6 +113,7 @@ export type DiskPrefsPatch = {
 	app_posture?: AppPosturePref;
 	gig_helper?: GigHelperPref;
 	beat_sync_max?: boolean;
+	deck_autocue?: boolean;
 	auto_play_enabled?: boolean;
 	auto_play_enforce_order?: boolean;
 	auto_play_maximize_reach?: boolean;
@@ -210,6 +212,7 @@ export interface PrefsHydrateTarget {
 	gig_helper: GigHelperPref;
 	app_mode: AppModePrefs['app_mode'];
 	beat_sync_max: boolean;
+	deck_autocue: boolean;
 	auto_play_enabled: boolean;
 	auto_play_enforce_order: boolean;
 	auto_play_maximize_reach: boolean;
@@ -296,7 +299,73 @@ export function makeLibraryKeyFilterRehydrator(deps: {
 	};
 }
 
+/** DECKCTL-6235: re-read the AU preference on a `ui_prefs` change event, so an
+ * agent's PUT lights AU and governs the next load without a page reload.
+ * An event that lands while a read is in flight owes one more read after it,
+ * since the read in flight may already hold the older value. A failed read is
+ * retried (AUTO_CUE_READ_ATTEMPTS in all); when every attempt fails, `report`
+ * says so out loud, because AU may now be stale. Resolves true only when the
+ * last read landed, so a caller that must confirm AU (the `deck_autocue`
+ * command, Codex P2 on PR #6235) can fail instead of trusting a stale value. */
+export const AUTO_CUE_READ_ATTEMPTS = 3;
+
+export function makeAutoCueRefresher(
+	uiPrefs: Pick<PrefsHydrateTarget, 'deck_autocue'>,
+	persist: () => void,
+	report: (message: string, cause: unknown) => void,
+	retryDelayMs = 1000
+): () => Promise<boolean> {
+	let inFlight: Promise<boolean> | null = null;
+	let owed = false;
+	async function readOnce(): Promise<void> {
+		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
+		// The response always carries a boolean; anything else is a failed read
+		// (retried, then reported), never a confirmation (Sol P1, PR #6235).
+		if (typeof body.deck_autocue !== 'boolean') {
+			throw new Error(`ui-prefs answered without a boolean deck_autocue: ${JSON.stringify(body.deck_autocue)}`);
+		}
+		if (body.deck_autocue !== uiPrefs.deck_autocue) {
+			uiPrefs.deck_autocue = body.deck_autocue;
+			persist();
+		}
+	}
+	async function readWithRetry(): Promise<boolean> {
+		for (let attempt = 1; ; attempt += 1) {
+			try {
+				await readOnce();
+				return true;
+			} catch (error) {
+				if (attempt >= AUTO_CUE_READ_ATTEMPTS) {
+					report('Auto cue (AU) changed elsewhere, but this page could not re-read it; AU may be stale until reload', error);
+					return false;
+				}
+				await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+			}
+		}
+	}
+	return () => {
+		if (inFlight !== null) {
+			owed = true;
+			return inFlight;
+		}
+		inFlight = (async () => {
+			try {
+				let read: boolean;
+				do {
+					owed = false;
+					read = await readWithRetry();
+				} while (owed);
+				return read;
+			} finally {
+				inFlight = null;
+			}
+		})();
+		return inFlight;
+	};
+}
+
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
+
 export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 	const { uiPrefs, persist, applyThemeDom, storageKey, defaults } = deps;
 	const isConfirmUnsaved = deps.isConfirmUnsaved ?? (() => false);
@@ -425,6 +494,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		}
 		for (const key of [
 			'beat_sync_max',
+			'deck_autocue',
 			'auto_play_enabled',
 			'auto_play_enforce_order',
 			'auto_play_maximize_reach',

@@ -108,6 +108,8 @@
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/performance-playwright-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/comment-hotkey-gate-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-pick-race-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-pick-race-data-home/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-preview-cue-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/cmdk-preview-cue-data-home/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/", "kind": "build_output", "data_class": null},

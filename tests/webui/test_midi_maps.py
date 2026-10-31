@@ -3,7 +3,7 @@
 The document these routes carry is the SAME shape the browser registers at
 runtime (camelCase, `DeviceMap` in apps/webui/frontend/src/lib/rb/midi/
 midi-types.ts) plus per-binding provenance. Design:
-specs/controller-onboarding.md section 3.1-3.2.
+(private path) section 3.1-3.2.
 
 Regression lines:
   if a document with an action outside the union installs then broken
@@ -113,6 +113,17 @@ def test_list_is_empty_rather_than_404_before_anything_is_installed(
     r = midi_client.get("/api/v1/midi/maps")
     assert r.status_code == 200
     assert r.json()["maps"] == []
+
+
+def test_list_skips_a_map_removed_between_glob_and_read(
+    midi_client: TestClient, tmp_path: Path
+) -> None:
+    midi_client.put("/api/v1/midi/maps/test-device", json=_doc())
+    maps_dir = tmp_path / "data" / "state" / "controller-maps"
+    (maps_dir / "gone-device.json").symlink_to(maps_dir / "never-written.json")
+    r = midi_client.get("/api/v1/midi/maps")
+    assert r.status_code == 200
+    assert [row["id"] for row in r.json()["maps"]] == ["test-device"]
 
 
 def test_put_replaces_an_existing_map_in_place(midi_client: TestClient) -> None:

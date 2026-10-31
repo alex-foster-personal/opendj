@@ -394,6 +394,15 @@ again without adding a row here.
 Owner and payback: `baseline.json` entry `WAVE_ARTWORK_API_RB_FAN_IN`. The
 same split that #677 names for `client.ts` applies to `api-rb.ts`.
 
+### Fri 9 Oct 2026: Library preview crosses the stores.svelte.ts ceiling
+
+| metric                | was | now | what is in the gap |
+| --------------------- | --- | --- | ------------------ |
+| `frontend.max_fan_in` | 56  | 57  | Main already measured 57 (`api-rb.ts` and `stores.svelte.ts` tied, inside the slack). #6189's `library-preview.svelte.ts` imports `pushToast`, making `stores.svelte.ts` 58; its `api-rb.ts` import is paid back in the same PR by moving `deckArtworkUrl` to `artwork-url.ts`. |
+
+Owner and payback: `baseline.json` entry `LIBRARY_PREVIEW_STORES_FAN_IN`. 50 of
+the 58 importers take only `pushToast`, so a leaf toast module is the split.
+
 ## What each evaluator answers
 
 | evaluator    | tool                        | the question it answers                                                                                                                                                              |

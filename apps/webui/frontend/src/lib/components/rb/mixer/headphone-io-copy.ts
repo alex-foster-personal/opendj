@@ -25,7 +25,8 @@ export const modeBullets = [
 ];
 
 export const inputPickBullets = [
-	'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
+	'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.',
+	'Test plays a few beeps on the master output. The thin meter is this input.'
 ];
 
 export const ioBullets = ['Click for Speaker / Headphone CUE quick settings without interrupting audio.'];

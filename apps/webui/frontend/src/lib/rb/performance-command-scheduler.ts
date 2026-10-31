@@ -97,3 +97,56 @@ export class ScopedCommandScheduler<Scope extends PropertyKey> {
 		return result;
 	}
 }
+
+/** A scheduler that tells `onSchedule` the scopes of everything it queues, and
+ * `onInvalidate` when its queue is dropped, before either takes effect. */
+export class ObservedCommandScheduler<Scope extends PropertyKey> extends ScopedCommandScheduler<Scope> {
+	readonly #onSchedule: (scopes: readonly Scope[]) => void;
+	readonly #onInvalidate: () => void;
+
+	constructor(onSchedule: (scopes: readonly Scope[]) => void, onInvalidate: () => void) {
+		super();
+		this.#onSchedule = onSchedule;
+		this.#onInvalidate = onInvalidate;
+	}
+
+	override run<T>(scopes: readonly Scope[], command: () => Promise<T>): Promise<T> {
+		this.#onSchedule(scopes);
+		return super.run(scopes, command);
+	}
+
+	override invalidateQueued(reason: string): void {
+		this.#onInvalidate();
+		super.invalidateQueued(reason);
+	}
+}
+
+/**
+ * CMDK-19: scopes a coordinated operation holds for its whole run, so a
+ * command it sends INSIDE that run, already covered by the hold, runs at once
+ * instead of queueing behind the hold (which would deadlock).
+ */
+export interface ScopeHold<Scope> {
+	readonly scopes: ReadonlySet<Scope>;
+	open: boolean;
+}
+
+/**
+ * The scopes a command still has to claim: its own when it was not sent from
+ * inside a hold, none (null) when the hold covers all of them. A command the
+ * hold does not cover, or one sent after the hold ended, is refused rather
+ * than deadlocked or run unscoped.
+ */
+export function scopesOutsideHold<Scope>(
+	label: string,
+	scopes: readonly Scope[] | null,
+	hold: ScopeHold<Scope> | undefined
+): readonly Scope[] | null {
+	if (hold === undefined || scopes === null) return scopes;
+	if (!hold.open) throw new Error(`${label}: its coordinated operation has already ended`);
+	const outside = scopes.filter((scope) => !hold.scopes.has(scope));
+	if (outside.length > 0) {
+		throw new Error(`${label} needs ${outside.map(String).join(', ')}, which its coordinated operation does not hold`);
+	}
+	return null;
+}

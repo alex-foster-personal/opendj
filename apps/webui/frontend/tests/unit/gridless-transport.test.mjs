@@ -134,7 +134,7 @@ const TRANSPORT_ANCHORS = [
 	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {',
-	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
+	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null, quantize = true): Promise<void> {'
 ];
 
 test('no transport method can refuse a deck for want of a beat grid', () => {
@@ -155,7 +155,7 @@ test('every transport quantize site reads the grid through the never-throwing he
 		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {',
 		// Public setLoop only delegates. The quantize read lives in _setLoop so a
 		// beat-loop can pass an already-resolved length and skip a second snap.
-		'	private async _setLoop(\n\t\tdeck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null\n\t): Promise<void> {'
+		'	private async _setLoop(\n\t\tdeck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null, quantize = true\n\t): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
@@ -397,13 +397,15 @@ test('a gridded deck still snaps to the exact PQTZ beat, ties going earlier', ()
 
 test('pause still stores a snapped cue when the deck does have a grid', () => {
 	const body = engineBlockAfter('	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {');
+	// DECKCTL-6235c: the snap goes through snappedPositionMs, which keeps the
+	// 1/4/8 beat snap and adds the phrase choice.
 	assert.ok(
-		body.includes('quantizedPositionMs('),
+		body.includes('snappedPositionMs('),
 		'if pause stops snapping then a gridded deck lost rekordbox parity on the memory cue'
 	);
 	assert.match(
 		body,
-		/pauseBeats !== null[\s\S]{0,160}quantizedPositionMs\(/,
+		/pauseBeats !== null[\s\S]{0,160}snappedPositionMs\(/,
 		'if the snapped branch is no longer guarded by a resolved grid then pause is ' +
 			'back to depending on one'
 	);

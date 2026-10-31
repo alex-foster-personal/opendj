@@ -11,7 +11,7 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 283648 then the figure moved
+// - if the library limit stops being exactly 294912 then the figure moved
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
@@ -29,7 +29,7 @@
 //   #4014 with main measured 264,845 against the shared 264,192 ceiling
 //   (653 over); +5% ceil-to-KiB => 278,528. +1 KiB Wed 14 Oct 2026 (PR #6585's
 //   rawAnlz, +89 bytes, main 2 bytes over) => 279,552. Later raises and moves are dated in
-//   the gate; the latest, +1 KiB Fri 30 Oct 2026 (PR #6127, 312 bytes over) => 280,576. Any further move is a deliberate act with
+//   the gate; then +1 KiB Fri 30 Oct 2026 (PR #6127, 312 bytes over) => 280,576; the latest, +3 KiB Fri 30 Oct 2026 (trunk repair after #7957 and #6534, main 1,664 bytes over) => 283,648; +6 KiB Sat 31 Oct 2026 (PR #6835, the #6123/#6196 re-land) => 289,792 (main 1,680 B over, inherited). Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -142,20 +142,23 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 280576: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move', () => {
+test('the library limit is exactly 294912: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move, plus the #6835 re-land, the #6235 deck controls and its #7956 and fd170f45c merges', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 280576,/,
+    /\{ name: 'library', limit: 294912,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, same PR, merged onto main e5fb30dcfd\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 16 Oct 2026 \(\+1 KiB, PR #6786/, 'the raise must carry its note');
+  assert.match(source, /RAISED Thu 22 Oct 2026 \(\+2 KiB, PR #6235/, 'the raise must carry its note');
+  assert.match(source, /Merge note \(PR #6235 x main [0-9a-f]+, Fri 30 Oct 2026\)/, 'the re-base onto main must carry its note');
   assert.match(source, /LOWERED Wed 28 Oct 2026 \(-17 KiB, PR #6829, re-land of #6205/, 'the move must carry its note');
   assert.match(source, /RAISED Fri 30 Oct 2026 \(\+1 KiB, PR #6127, decode-on-bytes/, 'the raise must carry its note');
+  assert.match(source, /RAISED Fri 30 Oct 2026 \(\+3 KiB, trunk repair after #7957 and #6534\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 28 Oct 2026 \(trunk repair #7658\)/, 'the raise must carry its note');
@@ -174,6 +177,8 @@ test('the library limit is exactly 280576: the inherited 256000 plus the reviewe
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4014/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4906/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6687 then PR #6689/, 'the raise must carry its note');
+  assert.match(source, /RAISED Fri 30 Oct 2026, #5886 analysis-while-playing: \+1 KiB after payback of 446 B/, 'the raise must carry its note');
+  assert.match(source, /RAISED Sat 31 Oct 2026 \(PR #6835, re-land of #6123\/#6196, merged onto main 29a59c570c\)/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

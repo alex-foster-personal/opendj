@@ -13,9 +13,11 @@ import {
 	isTrustedPage,
 	parseDiagnosticFlag,
 	permissionAllowed,
+	readAudioEngineChoice,
 	readBuildStamp,
 	shellBuildIdentity,
-	startingWindowSize
+	startingWindowSize,
+	writeAudioEngineChoice
 } from '../src/policy';
 import { scratchDir } from './helpers';
 
@@ -120,4 +122,26 @@ test('a missing or corrupt stamp file is unstamped, not a crash', () => {
 	const file = path.join(scratchDir('stamp-bad'), 'build-identity.json');
 	fs.writeFileSync(file, '{');
 	assert.deepEqual(readBuildStamp(file), {});
+});
+
+// ----- audio engine choice (NAE-8118) -------------------------------------------------
+test('the audio engine choice round-trips through its file and a missing file is no choice', () => {
+	const file = path.join(scratchDir('engine-choice'), 'nested', 'audio-engine-choice.json');
+	assert.equal(readAudioEngineChoice(file), null);
+	assert.equal(writeAudioEngineChoice(file, 'webaudio'), 'webaudio');
+	assert.equal(readAudioEngineChoice(file), 'webaudio');
+	writeAudioEngineChoice(file, 'rust');
+	assert.equal(readAudioEngineChoice(file), 'rust');
+	assert.deepEqual(fs.readdirSync(path.dirname(file)), ['audio-engine-choice.json']);
+});
+
+test('an unknown audio engine choice is refused on write and on read, never defaulted', () => {
+	const file = path.join(scratchDir('engine-choice-bad'), 'audio-engine-choice.json');
+	writeAudioEngineChoice(file, 'rust');
+	assert.throws(() => writeAudioEngineChoice(file, 'tauri'), /must be webaudio\|rust/);
+	assert.equal(readAudioEngineChoice(file), 'rust');
+	fs.writeFileSync(file, JSON.stringify({ choice: 'tauri' }));
+	assert.throws(() => readAudioEngineChoice(file), /is not one of webaudio, rust/);
+	fs.writeFileSync(file, 'not json');
+	assert.throws(() => readAudioEngineChoice(file));
 });

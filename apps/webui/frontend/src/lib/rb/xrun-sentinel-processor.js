@@ -170,7 +170,11 @@ class XrunSentinelProcessor extends AudioWorkletProcessor {
 			worst_gap_ms: this.worstGapMs,
 			window_ms: windowMs,
 			threshold_ms: this.thresholdMs,
-			clock: this.clock
+			clock: this.clock,
+			// Whether this worklet is classifying gaps yet. The main thread
+			// publishes the detector as armed only after a report says so,
+			// because every gap during warmup is ignored on purpose.
+			judging: this.judging
 		});
 		if (this.judging) this.remeasureCadence();
 		this.windowStartMs = nowMs;

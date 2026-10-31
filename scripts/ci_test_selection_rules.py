@@ -45,6 +45,7 @@ on; the default `Policy()` is the behavior above, unchanged:
 from __future__ import annotations
 
 import ast
+import heapq
 import itertools
 import math
 import re
@@ -476,11 +477,47 @@ class Selection:
     demoted: dict[str, list[str]] = field(default_factory=dict)
     #: Every module path in the import graph, so a caller can size the lane universe.
     graph_paths: list[str] = field(default_factory=list)
+    #: How far each selected module sits from the change (TEST-BUDGET round 5): 0 for a
+    #: changed module, 1 for its direct importers and test-area data, n for n import hops, a
+    #: conftest's reach one past the conftest, and the fixed ranks below for the rules that
+    #: carry no graph position. A hard budget keeps the nearest modules first.
+    distance: dict[str, int] = field(default_factory=dict)
 
-    def add(self, module: str, rule: str) -> None:
+    def add(self, module: str, rule: str, distance: int | None = None) -> None:
         rules = self.reasons.setdefault(module, [])
         if rule not in rules:
             rules.append(rule)
+        if distance is not None and distance < self.distance.get(module, distance + 1):
+            self.distance[module] = distance
+
+
+#: Ranks for the rules with no import-graph position, after the direct importers (1) and
+#: before the far reaches of the graph: the whole-tree guards scan the tree, a named
+#: reference is a string match, a coupling is a declared folder pairing.
+ALWAYS_RUN_DISTANCE = 2
+NAMED_REFERENCE_DISTANCE = 3
+COUPLING_DISTANCE = 4
+
+
+def reach_depths(
+    seeds: set[str], importers: dict[str, set[str]], *, one_hop_seeds: frozenset[str] = frozenset()
+) -> dict[str, int]:
+    """Import hops from the nearest seed to every module that reaches one, seeds at 0.
+
+    `one_hop_seeds` start at 1 (the importers of a deleted module: the deleted module is the
+    origin, so they are its direct importers, not changed modules), unless also a seed.
+    """
+    depth = dict.fromkeys(seeds, 0)
+    queue = sorted(seeds)
+    for name in sorted(one_hop_seeds - seeds):
+        depth[name] = 1
+        queue.append(name)
+    for name in queue:
+        for importer in sorted(importers.get(name, ())):
+            if importer not in depth:
+                depth[importer] = depth[name] + 1
+                queue.append(importer)
+    return depth
 
 
 @dataclass(frozen=True)
@@ -632,15 +669,34 @@ def _format_all(
         return set()
     if len(formats) * math.prod(map(len, [*arg_sets, *keyword_sets.values()])) > _FOLD_CAP:
         return _mark_cut(names)
+    parts = [value for values in [*arg_sets, *keyword_sets.values()] for value in values]
+    if any(_renders_too_long(fmt, parts) for fmt in formats):
+        return _mark_cut(names)
     rendered: set[str] = set()
     for fmt in formats:
         for values in itertools.product(*arg_sets):
             for chosen in itertools.product(*keyword_sets.values()):
                 try:
-                    rendered.add(render(fmt, list(values), dict(zip(keyword_sets, chosen, strict=True))))
+                    text = render(fmt, list(values), dict(zip(keyword_sets, chosen, strict=True)))
                 except (TypeError, ValueError, KeyError, IndexError):
                     continue
+                if len(text) > _FOLD_LEN:
+                    return _mark_cut(names)
+                rendered.add(text)
     return rendered
+
+
+def _renders_too_long(fmt: str, parts: list[str]) -> bool:
+    """Whether `fmt` filled with `parts` could exceed `_FOLD_LEN`, checked before rendering.
+
+    Bounds what one render can allocate: each `{` or `%` field takes at most the longest
+    part, and a width (`{:2000}`, `%2000s`, or a width handed in as a part) is refused
+    outright past `_FOLD_LEN`, so `"{0}{0}".format(n)` chains and huge widths stop folding.
+    """
+    fields = fmt.count("{") + fmt.count("%")
+    if len(fmt) + fields * max(map(len, parts), default=0) > _FOLD_LEN:
+        return True
+    return any(int(number) > _FOLD_LEN for text in (fmt, *parts) for number in re.findall(r"\d+", text))
 
 
 #: Passes `_string_names` folds for: a chain of names this deep, written in any order, resolves.
@@ -1404,7 +1460,9 @@ def _importers_of_deleted(deleted: list[str], graph: Graph, root: Path) -> tuple
     carries = _importer_closure(named | composers, graph)
     # A caller may compose the name it hands the helper (`load("apps.core" + ".gone")`).
     joined = (named & reach) | (composers & reach) | (reach & carries) | (requests & reach)
-    return imported | joined, named - joined
+    # A composer no loader meets is still a name for a module (`TARGET = "apps.core" + ".gone"`
+    # handed to `runpy.run_module`): kept as a weak named reference, like a literal one.
+    return imported | joined, (named | composers) - joined
 
 
 def _requested_attributes(tree: ast.AST) -> set[str]:
@@ -1614,11 +1672,17 @@ def _select_through_named_helpers(
     # imports the tree's path (`from paths import ROOT`, `ROOT.glob`), or a third module that
     # imports both and hands one to the other (`files(ROOT)`).
     walking |= reverse_reach(pointing, graph.importers) & reverse_reach(reading, graph.importers)
-    _select_through_helpers(named, "named reference", graph, universe, selection, through_conftests=True)
+    _select_through_helpers(
+        named, "named reference", graph, universe, selection,
+        through_conftests=True, distance=NAMED_REFERENCE_DISTANCE,
+    )  # fmt: skip
     # A conftest that walks the workflows, or imports a helper that does, runs at collection
     # for every test under it, so those tests are selected too. Shared fixtures are not
     # item 3 (they stay FULL until #7228), so the fixture resolver never reaches this.
-    _select_through_helpers(walking, "coupling `by name`", graph, universe, selection, through_conftests=True)
+    _select_through_helpers(
+        walking, "coupling `by name`", graph, universe, selection,
+        through_conftests=True, distance=COUPLING_DISTANCE,
+    )  # fmt: skip
 
 
 def _code_of(text: str) -> str:
@@ -1654,8 +1718,13 @@ def _select_through_helpers(
     selection: Selection,
     *,
     through_conftests: bool,
+    distance: int,
 ) -> None:
-    """Tests importing a helper, and with `through_conftests` tests under a conftest that imports one."""
+    """Tests importing a helper, and with `through_conftests` tests under a conftest that imports one.
+
+    `distance` ranks them for a hard cap: a name is a string match (NAMED_REFERENCE_DISTANCE), a
+    tree walk a declared coupling (COUPLING_DISTANCE); the fit refuses a module with no distance.
+    """
     universe_set = set(universe)
     for name in sorted(reverse_reach(helpers, graph.importers)):
         path = graph.path_of[name]
@@ -1667,9 +1736,9 @@ def _select_through_helpers(
                 raise FullSuite(f"a changed file is named by `{path}`, which configures every test")
             for test in universe:
                 if _under(test, directory):
-                    selection.add(test, f"{link} via conftest `{path}`")
+                    selection.add(test, f"{link} via conftest `{path}`", distance)
         elif path in universe_set:
-            selection.add(path, f"{link} via helper")
+            selection.add(path, f"{link} via helper", distance)
 
 
 def _seed_modules(changed: list[str], graph: Graph) -> set[str]:
@@ -1690,6 +1759,51 @@ def _seed_modules(changed: list[str], graph: Graph) -> set[str]:
     return seeds
 
 
+def _reach_through_packages(
+    seeds: set[str], graph: Graph, *, one_hop_seeds: frozenset[str] = frozenset()
+) -> dict[str, int]:
+    """`reach_depths`, where a reached package initializer also reaches its package's modules.
+
+    Importing `apps.core.other` runs `apps/core/__init__.py` first, so a module reached
+    through an initializer (one that imports a changed or deleted module) breaks every
+    importer of any module in that package, though none of them imports the initializer by
+    name. `_seed_modules` already expands a CHANGED initializer this way; this expands one
+    the reach arrives at, repeated until no depth improves. A package module counts one hop
+    past its initializer, even when another path reached it first by a longer route.
+    """
+    starts = dict.fromkeys(seeds, 0)
+    starts.update(dict.fromkeys(one_hop_seeds - seeds, 1))  # a deleted module's direct importers
+    while True:
+        reached = _reach_from(starts, graph.importers)
+        packages = {
+            name: depth for name, depth in reached.items() if PurePosixPath(graph.path_of[name]).name == "__init__.py"
+        }
+        improved = False
+        for module in graph.path_of:
+            through = [depth + 1 for package, depth in packages.items() if module.startswith(package + ".")]
+            if through and min(through) < reached.get(module, min(through) + 1):
+                starts[module] = min(through)
+                improved = True
+        if not improved:
+            return reached
+
+
+def _reach_from(starts: dict[str, int], importers: dict[str, set[str]]) -> dict[str, int]:
+    """`reach_depths` from seeds that each start at their own depth: the shortest hops to each module."""
+    depth: dict[str, int] = {}
+    heap = [(hops, name) for name, hops in starts.items()]
+    heapq.heapify(heap)
+    while heap:
+        hops, name = heapq.heappop(heap)
+        if name in depth:
+            continue
+        depth[name] = hops
+        for importer in importers.get(name, ()):
+            if importer not in depth:
+                heapq.heappush(heap, (hops + 1, importer))
+    return depth
+
+
 def _select_test_areas(changed: list[str], universe: list[str], selection: Selection) -> None:
     """Data under tests/<area>/ selects that area; a file directly in tests/ is left to names."""
     for path in changed:
@@ -1698,10 +1812,10 @@ def _select_test_areas(changed: list[str], universe: list[str], selection: Selec
             area = "/".join(parts[:2])
             for test in universe:
                 if _under(test, area):
-                    selection.add(test, f"test-area data `{path}`")
+                    selection.add(test, f"test-area data `{path}`", 1)
 
 
-def _select_by_conftest(reached: set[str], graph: Graph, universe: list[str], selection: Selection) -> None:
+def _select_by_conftest(reached: dict[str, int], graph: Graph, universe: list[str], selection: Selection) -> None:
     for name in sorted(reached):
         path = graph.path_of[name]
         if PurePosixPath(path).name != "conftest.py":
@@ -1711,7 +1825,7 @@ def _select_by_conftest(reached: set[str], graph: Graph, universe: list[str], se
             raise FullSuite(f"changed code is imported by `{path}`, which configures every test")
         for test in universe:
             if _under(test, directory):
-                selection.add(test, f"conftest reach `{path}`")
+                selection.add(test, f"conftest reach `{path}`", reached[name] + 1)
 
 
 def _select_by_source(
@@ -1724,10 +1838,10 @@ def _select_by_source(
     for test in universe:
         text = (root / test).read_text(encoding="utf-8", errors="replace")
         if names.named_by(_source_tokens(text)):
-            selection.add(test, "named reference")
+            selection.add(test, "named reference", NAMED_REFERENCE_DISTANCE)
         for coupling in couplings:
             if coupling.matches(text):
-                selection.add(test, f"coupling `{coupling.changed_prefix}`")
+                selection.add(test, f"coupling `{coupling.changed_prefix}`", COUPLING_DISTANCE)
 
 
 #: Whole-tree guard test modules a narrowed PR head always runs, whatever it changed
@@ -1752,16 +1866,23 @@ def always_run_modules(root: Path) -> list[str]:
     return [entry for entry in entries if entry]
 
 
-def _select_always_run(universe: list[str], root: Path, selection: Selection) -> None:
-    """Whole-tree guards scan the tree, not a changed module, so no link reaches them."""
+def _collected_always_run(universe: list[str], root: Path) -> list[str]:
+    """Every always-run entry, each checked against the lane; an absent one is FullSuite, never skipped."""
     collected = set(universe)
-    for module in always_run_modules(root):
+    modules = always_run_modules(root)
+    for module in modules:
         if module not in collected:
             raise FullSuite(
                 f"always-run entry `{module}` is not a test module the lane collects "
                 f"(renamed, deleted or lane-ignored); fix `{ALWAYS_RUN_NAME}`"
             )
-        selection.add(module, "always run (whole-tree guard)")
+    return modules
+
+
+def _select_always_run(universe: list[str], root: Path, selection: Selection) -> None:
+    """Whole-tree guards scan the tree, not a changed module, so no link reaches them."""
+    for module in _collected_always_run(universe, root):
+        selection.add(module, "always run (whole-tree guard)", ALWAYS_RUN_DISTANCE)
 
 
 def _demote_weak_links(selection: Selection, policy: Policy) -> None:
@@ -1784,13 +1905,14 @@ def select_tests(changed: list[str], ignores: list[str], root: Path = REPO, poli
     selection = Selection(modules=[], graph_paths=list(graph.path_of.values()))
     _select_test_areas(changed, universe, selection)
     importers_of_deleted, namers_of_deleted = _importers_of_deleted(deleted, graph, root)
-    seeds = _seed_modules(changed, graph) | importers_of_deleted
-    reached = reverse_reach(seeds, graph.importers)
+    reached = _reach_through_packages(
+        _seed_modules(changed, graph), graph, one_hop_seeds=frozenset(importers_of_deleted)
+    )
     _select_by_conftest(reached, graph, universe, selection)
     universe_set = set(universe)
-    for name in reached:
+    for name, depth in reached.items():
         if graph.path_of[name] in universe_set:
-            selection.add(graph.path_of[name], "import graph")
+            selection.add(graph.path_of[name], "import graph", depth)
     names = Names()
     for path in changed:
         names.add(path, graph.name_of.get(path) or (_dotted_from_path(path) if path in deleted else None))
@@ -1800,10 +1922,68 @@ def select_tests(changed: list[str], ignores: list[str], root: Path = REPO, poli
     available = COUPLINGS + by_name
     couplings = [c for c in available if any(c.fires_for(p) for p in changed)]
     _select_by_source(names, couplings, universe, root, selection)
-    _select_through_helpers(namers_of_deleted, "named reference", graph, universe, selection, through_conftests=True)
+    _select_through_helpers(
+        namers_of_deleted, "named reference", graph, universe, selection,
+        through_conftests=True, distance=NAMED_REFERENCE_DISTANCE,
+    )  # fmt: skip
     if policy.ci_config_by_name:
         _select_through_named_helpers(changed, couplings, graph, universe, root, selection)
     _select_always_run(universe, root, selection)
     _demote_weak_links(selection, policy)
+    selection.modules = sorted(selection.reasons)
+    return selection
+
+
+#: Ranks inside a capped full-suite fallback (TEST-BUDGET round 5): the whole-tree guards are the
+#: tests written for exactly this case, the tests under a changed conftest or test area are its
+#: nearest neighbours, and the rest of the lane is taken cheapest first until the cap is spent.
+CAPPED_GUARD_DISTANCE = 0
+CAPPED_NEIGHBOUR_DISTANCE = 1
+CAPPED_REST_DISTANCE = 5
+
+
+def _changed_test_neighbourhoods(changed: list[str], universe: set[str]) -> list[str]:
+    """Directories whose tests a changed path under tests/ reaches (distance 1).
+
+    A changed test module the lane collects is not a neighbourhood: it ranks at distance 0 itself.
+    Any other changed file (a conftest, a helper) reaches its own directory, a conftest.py even
+    when that is `tests/` (every test); non-Python data under `tests/<area>/` reaches the whole
+    area, the same first-two-components rule `_select_test_areas` applies on the narrowed path.
+    """
+    near: set[str] = set()
+    for path in changed:
+        pure = PurePosixPath(path)
+        if pure.parts[:1] != ("tests",) or path in universe:
+            continue
+        parent = _parent(path)
+        if parent != "." and (parent != "tests" or pure.name == "conftest.py"):
+            near.add(parent)
+        if len(pure.parts) >= 3 and not path.endswith(".py"):
+            near.add("/".join(pure.parts[:2]))
+    return sorted(near)
+
+
+def capped_full_selection(changed: list[str], ignores: list[str], root: Path = REPO) -> Selection:
+    """The whole lane, ranked for a hard cap, when `select_tests` could not narrow the change.
+
+    Only a hard budget calls this: the nightly full suite and the trunk checkpoint still run
+    everything, and the checkpoint reverts what a capped run let through.
+    """
+    graph = Graph.load(root)
+    universe = lane_universe(list(graph.path_of.values()), ignores, root)
+    selection = Selection(modules=[], graph_paths=list(graph.path_of.values()))
+    neighbourhoods = _changed_test_neighbourhoods(changed, set(universe))
+    changed_set = set(changed)
+    for test in universe:
+        rule = "capped full suite: rest of the lane, cheapest first"
+        distance = CAPPED_REST_DISTANCE
+        near = next((d for d in neighbourhoods if _under(test, d)), None)
+        if test in changed_set:
+            rule, distance = "capped full suite: the changed test itself", CAPPED_GUARD_DISTANCE
+        elif near:
+            rule, distance = f"capped full suite: under changed `{near}`", CAPPED_NEIGHBOUR_DISTANCE
+        selection.add(test, rule, distance)
+    for module in _collected_always_run(universe, root):
+        selection.add(module, "capped full suite: whole-tree guard", CAPPED_GUARD_DISTANCE)
     selection.modules = sorted(selection.reasons)
     return selection

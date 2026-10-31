@@ -114,7 +114,7 @@ pub enum EngineCmd {
     Quantize { deck: DeckId, enabled: bool },
     QuantizeGrid { deck: DeckId, beats: u8 },
     Seek { deck: DeckId, position_ms: f64, quantize: bool },
-    Loop { deck: DeckId, bounds_ms: Option<(f64, f64)> },
+    Loop { deck: DeckId, bounds_ms: Option<(f64, f64)>, quantize: bool },
     BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
     BeatJump { deck: DeckId, beats: f64 },
     Tempo { deck: DeckId, ratio: f64 },
@@ -317,7 +317,7 @@ impl Engine {
             Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
             Seek { deck, position_ms, quantize } => self.deck_mut(deck)?.seek_with_quantize(position_ms, quantize)?,
-            Loop { deck, bounds_ms } => self.deck_mut(deck)?.set_loop(bounds_ms)?,
+            Loop { deck, bounds_ms, quantize } => self.deck_mut(deck)?.set_loop_with(bounds_ms, quantize)?,
             BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
             Tempo { deck, ratio } => self.deck_mut(deck)?.set_tempo(ratio)?,
@@ -901,7 +901,7 @@ mod tests {
         e.apply(EngineCmd::BeatLoop { deck: 1, beats: 4.0, start_ms: Some(1000.0) }).unwrap();
         let d = e.snapshot().decks[0];
         assert_eq!((d.loop_ms, d.loop_beats), (Some((1000.0, 3000.0)), Some(4.0)));
-        e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)) }).unwrap();
+        e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)), quantize: true }).unwrap();
         assert_eq!(e.snapshot().decks[0].loop_beats, None);
     }
 

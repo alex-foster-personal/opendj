@@ -71,6 +71,7 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-section-body': '#6e8fa8',
   'rb-section-neutral': '#80868d',
   'rb-master': '#c9b35a',
+  'rb-pair': '#a46ef0',
   'rb-master-ink': '#1a1608',
   'rb-master-text': '#e8d78a',
 };
@@ -103,6 +104,7 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-section-body': '#486a85',
   'rb-section-neutral': '#6b6660',
   'rb-master': '#856500',
+  'rb-pair': '#7a3fd6',
   'rb-master-ink': '#fffdf8',
   'rb-master-text': '#4a3700',
   // Light-only skin hooks (CHROME-19); Default and Gothic leave them unset.

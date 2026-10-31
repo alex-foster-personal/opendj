@@ -40,27 +40,30 @@ on:
     branches: [main]
     # A push run needs no aggregator to exist, so push keeps its trigger-level
     # filter. GitHub reads trigger filters only from this file, so this is a
-    # literal copy of E2E_PATHS_IGNORE in scripts/ci_pr_scope.py, pinned equal
+    # literal copy of e2e_push_paths() in scripts/ci_pr_scope.py (E2E_PATHS_IGNORE
+    # as a `paths` list: GitHub documents `!` only under `paths`, and a push that
+    # changes only tests/fixtures or tests/support must still run), pinned equal
     # to it by (private path).
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "handoffs/**"
-      - ".planning/**"
-      - "specs/**"
-      - "blog/**"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/e2e.yml"
-      - "tests/perf/**"
-      - "tests/docs/**"
-      - "reqs.json"
-      - ".test_durations"
-      - "app_docs/**"
-      - "(private path)"
-      - "tests/**"
-      - ".agents/**"
-      - "!tests/fixtures/**"
-      - "!tests/support/**"
+    paths:
+      - "**"
+      - "!**.md"
+      - "!docs/**"
+      - "!handoffs/**"
+      - "!.planning/**"
+      - "!specs/**"
+      - "!blog/**"
+      - "!.github/workflows/docs.yml"
+      - "!.github/workflows/e2e.yml"
+      - "!tests/perf/**"
+      - "!tests/docs/**"
+      - "!reqs.json"
+      - "!.test_durations"
+      - "!app_docs/**"
+      - "!(private path)"
+      - "!tests/**"
+      - "!.agents/**"
+      - "tests/fixtures/**"
+      - "tests/support/**"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.
@@ -868,7 +871,7 @@ jobs:
           python-version: "3.11"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
           # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
@@ -1232,7 +1235,15 @@ jobs:
         # No webServer, no port, no data dir; it synthesizes its own audio.
         # STRETCH_QUALITY_PLAN is deliberately unset so the smoke arm runs and
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
-        run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
+        # `svelte-kit sync` first: stretch-adapter.ts imports `$lib`, which
+        # resolves only through .svelte-kit/tsconfig.json, and
+        # ci_clean_untracked.sh deletes that file. On main this passed only
+        # because an earlier gate had booted vite, which regenerates it; run
+        # alone (a selection naming just ` stretch `) it failed with
+        # "Cannot find package '$lib'".
+        run: |
+          pnpm exec svelte-kit sync
+          pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
       - name: Hermetic gate - master12-cue34 output topology
         # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
@@ -1282,6 +1293,23 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 8696 -- \
             pnpm exec playwright test --config tests/e2e/playwright.comment-hotkey-gate.config.ts --output test-results/comment-hotkey-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
+      # -- Cmd K pick-race gate, real engine + fixture library (CMDK-16) -----
+      # Issue #6091 (Codex r4266506832 on #6089): a Cmd K pick of a row whose
+      # availability is still pending waits on rb-meta; an IPC or MIDI load
+      # sent to the same deck during that wait must win, whether it already
+      # committed or is still queued. Same PREFLIGHT-01 reason as above for a
+      # real engine and a throwaway generated-audio library, with cmdk.v2 on in
+      # that library's own feature-flags.json. Own ports 5336/8716, held under
+      # their own host lock. Measured locally: 3/3 in ~50s, and removing the
+      # queue wait in cmdk-load.ts turns the queued-load test red.
+      - name: Cmd K pick-race gate - real engine, fixture library
+        # Runs only when the scope job's selection names it (scripts/ci_e2e_selection.py).
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' cmdk-pick-race ')) }}
+        # The orchestration lives in a Python helper that resolves bash and pnpm by path
+        # (PORTABLE BY DEFAULT); see scripts/ci_cmdk_pick_race_gate.py. The interpreter is the
+        # one the job's Setup Python step installed, as in the cue-preview gate above.
+        run: $pythonLocation/bin/python3 "$GITHUB_WORKSPACE/scripts/ci_cmdk_pick_race_gate.py"
+
       # -- AutoPlay stall-banner gate, real backend + fixture library --------
       # Same PREFLIGHT-01 library-attached reason as comment-hotkey: without
       # a fixture library, /performance parks on "Starting up" and the banner
@@ -1318,7 +1346,8 @@ jobs:
       # cue dispatch in CommandBarV2.svelte turns it red.
       - name: Cmd K cue-preview gate - real engine, fixture library
         working-directory: apps/webui/frontend
-        if: ${{ !cancelled() }}
+        # Runs only when the scope job's selection names it (scripts/ci_e2e_selection.py).
+        if: ${{ !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' cmdk-preview-cue ')) }}
         # The orchestration lives in a Python helper that resolves gcc, cargo and
         # pnpm by path (PORTABLE BY DEFAULT), as scripts/ci_cmdk_preview_cue_gate.py does
         # The interpreter is the one the job's Setup Python step installed (no `if:`,
@@ -1802,7 +1831,7 @@ jobs:
           python-version: "3.11"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
           # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
@@ -1830,7 +1859,9 @@ jobs:
           scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
-        run: uv sync --extra dev
+        # analysis: the performance config seeds its rescue-playback fixture
+        # with the librosa backend, same as the gate job's install.
+        run: uv sync --locked --extra dev --extra analysis
 
       - name: Runner preflight - node tools and disk
         # Fail here, naming the runner, rather than mid-install with a cryptic

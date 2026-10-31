@@ -18,6 +18,7 @@ import {
 	buildProfileFor,
 	freeLoopbackPort,
 	healthOk,
+	pickLoopbackPort,
 	pumpStream,
 	spawnEngine,
 	signalGroup,
@@ -26,8 +27,12 @@ import {
 	EngineCleanupError,
 	windowsTaskkill
 } from '../src/engine';
-import { verifyLogWritable } from '../src/shell-log';
+import { appendShellLog, installShellLogging, verifyLogWritable } from '../src/shell-log';
 import { FAKE_ENGINE, fakePayload, pidGone, scratchDir, statusServer, waitFor } from './helpers';
+
+// Port-picker decisions go to the shell log, as in the Tauri shell.
+const portPickerLog = path.join(scratchDir('port-picker'), 'engine.log');
+installShellLogging(portPickerLog);
 
 // ----- build profile: both directions (SAND-04) ------------------------------
 test('a container env var selects the appstore profile', () => {
@@ -173,6 +178,60 @@ test('freeLoopbackPort hands out a port that can be bound right away', async () 
 	await new Promise<void>((resolve, reject) => {
 		const server = net.createServer().once('error', reject).listen(port, '127.0.0.1', () => server.close(() => resolve()));
 	});
+});
+
+test('a free preferred port is returned as is', async () => {
+	const port = await freeLoopbackPort();
+	assert.equal(await pickLoopbackPort(port), port);
+	// The control line proves this file is the shell log. Absence of a
+	// preferred-port line is then a real measurement, not an empty file.
+	appendShellLog('INFO', `port-picker control ${port}`);
+	const text = fs.readFileSync(portPickerLog, 'utf8');
+	assert.match(text, new RegExp(`\\[shell INFO\\] port-picker control ${port}\\n`));
+	assert.equal(text.includes(`preferred engine port ${port} is in use`), false);
+});
+
+test('a preferred port held on 127.0.0.1 falls back to a bindable port', async () => {
+	const holder = net.createServer();
+	await new Promise<void>((resolve, reject) => {
+		holder.once('error', reject).listen(0, '127.0.0.1', () => resolve());
+	});
+	const address = holder.address();
+	assert.ok(address !== null && typeof address !== 'string');
+	const held = address.port;
+	try {
+		const picked = await pickLoopbackPort(held);
+		assert.notEqual(picked, held);
+		const text = fs.readFileSync(portPickerLog, 'utf8');
+		const line = `[shell INFO] preferred engine port ${held} is in use; using OS-assigned port ${picked}\n`;
+		assert.ok(text.includes(line), `shell log missing fallback line:\n${text}`);
+		await new Promise<void>((resolve, reject) => {
+			const server = net.createServer();
+			server.once('error', reject).listen(picked, '127.0.0.1', () => server.close(() => resolve()));
+		});
+	} finally {
+		await new Promise<void>((resolve) => holder.close(() => resolve()));
+	}
+});
+
+test('a preferred port held only on ::1 is not free', async (t) => {
+	const holder = net.createServer();
+	try {
+		await new Promise<void>((resolve, reject) => {
+			holder.once('error', reject).listen(0, '::1', () => resolve());
+		});
+	} catch {
+		t.skip('no IPv6 loopback on this host');
+		return;
+	}
+	const address = holder.address();
+	assert.ok(address !== null && typeof address !== 'string');
+	const held = address.port;
+	try {
+		assert.notEqual(await pickLoopbackPort(held), held);
+	} finally {
+		await new Promise<void>((resolve) => holder.close(() => resolve()));
+	}
 });
 
 // ----- spawn contract ----------------------------------------------------------

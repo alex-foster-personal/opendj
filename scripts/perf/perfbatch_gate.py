@@ -31,8 +31,12 @@ Allowlist (see (private path) for the reasoning and residuals):
              ``except (...)`` / ``contextlib.suppress(...)`` tuple on a
              code line to a strict superset that adds no broad base;
              wrapping an existing import in
-             ``try: ... except ImportError: <name> = None``. A source that
-             does not tokenize on either side refuses the file.
+             ``try: ... except ImportError: <name> = None``; a line whose
+             only change is a consistent rename of an argparse ``choices``
+             value (issue #5639, ``perfbatch_rename.py``: the literal, a
+             ``--option value`` mention, or the word in ``help=`` text,
+             with the whole file holding one complete rename). A source
+             that does not tokenize on either side refuses the file.
     Markdown every line (prose is never executed).
     Other    nothing, including TypeScript, Svelte and shell: without a
              tokenizer a template literal or heredoc makes ``//`` and ``#``

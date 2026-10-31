@@ -6,6 +6,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -472,6 +473,32 @@ def test_claim_keeps_its_pair_while_its_matching_engine_is_running(
         assert claim_ports(repo_root=repo_root, common_dir=common_dir, environ={}) == first
 
 
+
+def _pool_pair(slot: int) -> WebuiPorts:
+    return WebuiPorts(backend=BACKEND_POOL_START + slot, frontend=FRONTEND_POOL_START + slot)
+
+
+def _a_pool_slot_bindable_on_this_host(
+    *, starting_at: int = 0, excluding: Iterable[int] = ()
+) -> int:
+    """A lane-0 slot whose two ports this host can bind right now.
+
+    A test that binds a "configured" port itself, or expects the allocator to
+    hand out one particular slot, must start from ports it has just proven
+    free. The pool-start pair is not free on a shared host: on the bifrost1
+    Windows runner another process held 127.0.0.1:9400, and slot 50 was taken
+    too (Windows parity dispatch 39015887315, Sat 17 Oct 2026).
+    """
+    skip = set(excluding)
+    for offset in range(POOL_SIZE):
+        slot = (starting_at + offset) % POOL_SIZE
+        pair = _pool_pair(slot)
+        if slot in skip or {pair.backend, pair.frontend} & set(RESERVED_FIXED_PORTS):
+            continue
+        if port_config._pair_is_available(pair):
+            return slot
+    raise AssertionError(f"no lane-0 pool slot is bindable on this host (of {POOL_SIZE})")
+
 @pytest.mark.requirement("INFRA-10")
 def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
     tmp_path: Path,
@@ -495,7 +522,7 @@ def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
-    configured = WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
     monkeypatch.setattr(
         "apps.webui.port_config._backend_listener_matches_pair",
         lambda ports: ports == configured,
@@ -534,7 +561,7 @@ def test_claim_moves_off_the_configured_pair_when_a_foreign_process_holds_it(
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
-    configured = WebuiPorts(backend=BACKEND_POOL_START, frontend=FRONTEND_POOL_START)
+    configured = _pool_pair(_a_pool_slot_bindable_on_this_host())
     monkeypatch.setattr(
         "apps.webui.port_config._backend_listener_matches_pair",
         lambda ports: False,
@@ -674,14 +701,26 @@ def test_guard_accepts_the_worktree_it_was_loaded_from(
     assert assert_source_tree_matches_worktree() == PROJECT_ROOT.resolve()
 
 
+def _outside_any_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """chdir into a directory git cannot resolve to any worktree.
+
+    ``tmp_path`` is not guaranteed to be outside a repository: the Windows parity
+    gate passes ``--basetemp`` under the checkout's own ``.tmp``, so git walked up
+    from there and found the repo root. ``GIT_CEILING_DIRECTORIES`` stops that walk
+    at ``tmp_path`` on every platform.
+    """
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.chdir(outside)
+
+
 def test_guard_is_inapplicable_outside_any_git_worktree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If the working directory is not in a worktree then no port contract applies."""
-    outside = tmp_path / "not-a-repo"
-    outside.mkdir()
-    monkeypatch.chdir(outside)
+    _outside_any_worktree(tmp_path, monkeypatch)
 
     assert assert_source_tree_matches_worktree() is None
 
@@ -692,9 +731,7 @@ def test_show_ports_names_a_missing_worktree_instead_of_crashing(
 ) -> None:
     """An installed build has no Git worktree; show_ports must refuse loudly, not
     let ``git``'s subprocess.CalledProcessError escape uncaught (issue #2786)."""
-    outside = tmp_path / "not-a-repo"
-    outside.mkdir()
-    monkeypatch.chdir(outside)
+    _outside_any_worktree(tmp_path, monkeypatch)
 
     with pytest.raises(WorktreeUnavailableError) as exc_info:
         show_ports()
@@ -799,7 +836,11 @@ def test_allocate_pair_falls_through_a_reserved_slot_to_the_next_free_one() -> N
     capacity the fixed-port suites never claimed."""
     reserved_port = 8690
     reserved_slot = reserved_port - BACKEND_POOL_START
-    free_slot = 50  # far from any RESERVED_FIXED_PORTS entry; see that set's own values
+    # The slot right after the reserved one when this host can bind it, so an
+    # off-by-one that also excludes the next slot is what the test catches.
+    free_slot = _a_pool_slot_bindable_on_this_host(
+        starting_at=reserved_slot + 1, excluding={reserved_slot}
+    )
     assert BACKEND_POOL_START + free_slot not in RESERVED_FIXED_PORTS
     assert FRONTEND_POOL_START + free_slot not in RESERVED_FIXED_PORTS
 
@@ -842,6 +883,21 @@ def test_claim_ports_rejects_an_explicit_request_for_a_reserved_fixed_port(
         )
 
 
+# The cross-uid ownership markers exist only where os.getuid does: Windows has
+# neither the uid nor the sticky world-writable /tmp they rely on, and there
+# claim/release write no marker at all, which is the degradation pinned on every
+# platform by test_ownership_marker_functions_are_a_no_op_without_os_getuid.
+_needs_owner_markers = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "ownership markers need os.getuid and POSIX modes (0o644 files, a 0o1777 "
+        "directory), which Windows lacks; there no marker is written, as pinned by "
+        "test_ownership_marker_functions_are_a_no_op_without_os_getuid"
+    ),
+)
+
+
+@_needs_owner_markers
 def test_claim_ports_writes_a_cross_uid_readable_ownership_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -866,6 +922,7 @@ def test_claim_ports_writes_a_cross_uid_readable_ownership_marker(
     assert marker.stat().st_mode & 0o777 == 0o644
 
 
+@_needs_owner_markers
 def test_release_ports_removes_its_ownership_markers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -936,8 +993,10 @@ def test_owner_registry_dir_is_the_shared_path_the_reaper_reads() -> None:
     assert registry_dir == Path("/tmp/music-dj-tools-port-owners")
 
     script = (PROJECT_ROOT / "scripts" / "ci_reap_port_holders.sh").read_text(encoding="utf-8")
+    # as_posix: the reaper is bash and reads the POSIX spelling; str() of the
+    # same Path on Windows is \tmp\..., which no bash default could match.
     assert (
-        f"${{MDT_CI_PORT_OWNER_REGISTRY_DIR:-{port_config.PORT_OWNER_REGISTRY_DIR}}}"
+        f"${{MDT_CI_PORT_OWNER_REGISTRY_DIR:-{port_config.PORT_OWNER_REGISTRY_DIR.as_posix()}}}"
     ) in script, "the reaper's default marker directory has drifted from PORT_OWNER_REGISTRY_DIR"
 
 
@@ -1037,6 +1096,7 @@ def test_write_owner_marker_tolerates_a_directory_it_cannot_chmod(
     assert claimed.backend not in RESERVED_FIXED_PORTS  # the claim itself still succeeded
 
 
+@_needs_owner_markers
 def test_write_owner_marker_reraises_a_chmod_failure_on_a_wrong_mode_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

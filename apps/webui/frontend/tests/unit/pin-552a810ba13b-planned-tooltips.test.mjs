@@ -68,8 +68,9 @@ const CONVERTED = {
 	'mixer/CrossfadeCurveSelect.svelte': 'crossfade-curve',
 	'FeedbackPinVisibilityActions.svelte': 'feedback-pin-visibility',
 	'ContextMenu.svelte': 'context-menu-unavailable',
-	'browser/TrackTable.svelte': 'track-table-filter',
-	'deck/JogDial.svelte': 'quantize-grid-phase'
+	'browser/TrackTable.svelte': 'track-table-filter'
+	// 'deck/JogDial.svelte': 'quantize-grid-phase' left this list when DECKCTL-6235c
+	// built phrase quantize (alpha status I13).
 };
 
 let components;

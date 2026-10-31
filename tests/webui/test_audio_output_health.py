@@ -187,11 +187,18 @@ def _serve_once(respond: bool) -> tuple[int, threading.Event]:
     return port, done
 
 
-def _shell_client_on(tmp_path: Path, port: int, monkeypatch: pytest.MonkeyPatch) -> ShellOutputHealthClient:
+def _shell_client_on(
+    tmp_path: Path,
+    port: int,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    production_timeout: bool = False,
+) -> ShellOutputHealthClient:
     from apps.webui.server import shell_output_health
 
     monkeypatch.setattr(shell_output_health.sys, "platform", "darwin")
-    monkeypatch.setattr(shell_output_health, "SHELL_TIMEOUT_S", 0.3)
+    if not production_timeout:
+        monkeypatch.setattr(shell_output_health, "SHELL_TIMEOUT_S", 0.3)
     (tmp_path / ".engine.shell.json").write_text(json.dumps({"health_port": port}), encoding="utf-8")
     return ShellOutputHealthClient(data_dir=tmp_path)
 
@@ -307,6 +314,11 @@ def test_control_a_refused_connection_is_unknown_not_a_timeout(
     probe.bind(("127.0.0.1", 0))
     closed_port = probe.getsockname()[1]
     probe.close()
-    payload = _shell_client_on(tmp_path, closed_port, monkeypatch).get_output_health()
+    # The production timeout, not the helper's 0.3 s: Linux and macOS refuse a
+    # closed loopback port at once, but Windows retries the SYN and reports
+    # WSAECONNREFUSED only after about 2 s, inside the shipped 3 s timeout, so
+    # this is the verdict a user on each platform actually gets.
+    client = _shell_client_on(tmp_path, closed_port, monkeypatch, production_timeout=True)
+    payload = client.get_output_health()
     assert payload["verdict"] == "unknown"
     assert "request failed" in payload["reason"]

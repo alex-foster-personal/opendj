@@ -53,6 +53,10 @@ if sys.platform == "win32":
     def unlock(fd: int, *, nt_offset: int = NT_LOCK_OFFSET) -> None:
         _lock_byte(fd, msvcrt.LK_UNLCK, nt_offset)
 
+    def lock_exclusive(fd: int, *, nt_offset: int = NT_LOCK_OFFSET) -> None:
+        """Block until the exclusive lock is acquired."""
+        _lock_byte(fd, msvcrt.LK_LOCK, nt_offset)
+
 elif os.name == "posix":
     import fcntl
 
@@ -71,8 +75,13 @@ elif os.name == "posix":
         del nt_offset  # Windows-only: flock locks the whole file
         fcntl.flock(fd, fcntl.LOCK_UN)
 
+    def lock_exclusive(fd: int, *, nt_offset: int = NT_LOCK_OFFSET) -> None:
+        """Block until the exclusive lock is acquired."""
+        del nt_offset  # Windows-only: flock locks the whole file
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
 else:
     raise ImportError(f"file_lock has no exclusive file lock for {sys.platform=}")
 
 
-__all__ = ["NT_LOCK_OFFSET", "SYNC_NT_LOCK_OFFSET", "try_lock", "unlock"]
+__all__ = ["NT_LOCK_OFFSET", "SYNC_NT_LOCK_OFFSET", "lock_exclusive", "try_lock", "unlock"]

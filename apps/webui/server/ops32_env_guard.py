@@ -8,12 +8,14 @@ counts as forbidden here" -- never the route body, which changes for
 unrelated reasons.
 
 Mirrored 1:1 by ``FORBIDDEN_ENV_PREFIXES`` in
-``.agents/skills/ship-dmg/scripts/ship_dmg.sh``. The two are pinned equal by
-``tests/scripts/test_ship_dmg_relaunch_env_scrub.py``'s
+``(private path)``. The two are pinned equal by
+``(private path)``'s
 ``test_forbidden_env_prefixes_bash_and_python_agree``, which parses BOTH
 real files rather than trusting a copied value in either direction.
 """
 from __future__ import annotations
+
+import sys
 
 OPS32_FORBIDDEN_ENV_PREFIXES: tuple[str, ...] = (
     "R2_",
@@ -21,3 +23,10 @@ OPS32_FORBIDDEN_ENV_PREFIXES: tuple[str, ...] = (
     "TAURI_SIGNING_",
     "DOPPLER_",
 )
+
+#: The variable every real process on this OS carries, read by the health
+#: body's ``process_env_home_present`` positive control. POSIX (and a
+#: launchd-started macOS app) always has ``HOME``; Windows does not set
+#: ``HOME`` by default, and every real Windows process has ``USERPROFILE``
+#: instead, so reading ``HOME`` there reported false for a genuine read.
+OPS32_HOME_ENV_VAR: str = "USERPROFILE" if sys.platform == "win32" else "HOME"

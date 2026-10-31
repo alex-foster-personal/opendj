@@ -27,6 +27,7 @@ import json
 import math
 import sys
 import time
+import webbrowser
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,6 +90,8 @@ _REFUSALS = (NoPerformancePage, OrderTimedOut, OrderRejected, MalformedResult)
 _STATE_COMMAND = "state"
 _STATUS_COMMAND = "status"
 _OPEN_COMMAND = "open"
+_OPEN_BROWSER_TARGET = "browser"
+_OPEN_USAGE = "usage: opendj open performance | opendj open browser"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
@@ -243,8 +246,10 @@ def _run_open(args: argparse.Namespace, origin: EngineOrigin, rest: Sequence[str
     from apps.opendj_cli.shell_navigate import open_performance
 
     if len(rest) != 1:
-        raise InvocationError("usage: opendj open performance")
+        raise InvocationError(_OPEN_USAGE)
     target = rest[0]
+    if target == _OPEN_BROWSER_TARGET:
+        return _run_open_browser(args, origin)
     if target not in ("performance", "/performance"):
         raise InvocationError(
             f"unknown route {target!r}; only performance (/performance) is supported"
@@ -257,6 +262,23 @@ def _run_open(args: argparse.Namespace, origin: EngineOrigin, rest: Sequence[str
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         print(f"opened {result['route']} (client_open={result['client_open']})")
+    return EXIT_CONFIRMED
+
+
+def _run_open_browser(args: argparse.Namespace, origin: EngineOrigin) -> int:
+    """Open the engine's UI in the default browser (UIURL-02, Settings > Open in browser)."""
+    client = EngineClient(origin=origin, timeout_s=args.timeout)
+    try:
+        address = client.ui_address()
+    except _REFUSALS as error:
+        return _refusal(args, error)
+    url = str(address["ui_url"])
+    if not webbrowser.open(url):
+        return _fail(args, "browser_unavailable", f"no browser could open {url}", EXIT_FAILED)
+    if args.json:
+        print(json.dumps({**address, "opened": True}, indent=2, sort_keys=True))
+    else:
+        print(f"opened {url} (same library as the app window; also {address['loopback_url']})")
     return EXIT_CONFIRMED
 
 
@@ -635,7 +657,7 @@ def _head(tokens: Sequence[str]) -> tuple[str, list[str]]:
     if head == _STATUS_COMMAND and rest:
         raise InvocationError(f"status takes no arguments, got {rest[0]!r}")
     if head == _OPEN_COMMAND and not rest:
-        raise InvocationError("usage: opendj open performance")
+        raise InvocationError(_OPEN_USAGE)
     return head, rest
 
 

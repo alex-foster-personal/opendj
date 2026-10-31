@@ -66,8 +66,12 @@
 		const node = el;
 		if (node === null || typeof ResizeObserver === 'undefined') return;
 		const ro = new ResizeObserver(() => {
-			panelW = node.offsetWidth;
-			panelH = node.offsetHeight;
+			// Fractional size, not offsetWidth/offsetHeight: those round, so a
+			// 273.17px-wide box measured as 273 lands 0.17px past the inset
+			// edge when placeFloating clamps it there.
+			const box = node.getBoundingClientRect();
+			panelW = box.width;
+			panelH = box.height;
 		});
 		ro.observe(node);
 		return () => ro.disconnect();

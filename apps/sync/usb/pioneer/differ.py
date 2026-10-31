@@ -1,6 +1,6 @@
 """Structural diff for Pioneer USB exports (``exportLibrary.db`` focus).
 
-This module is the typed successor of ``scripts/scratch/diff_usb_exports.py``.
+This module is the typed successor of ``(private path)``.
 That script grew organically while we chased the writer-vs-real-export
 divergence for CAT-06; the logic is sound but the outputs were ad-hoc
 markdown strings, which is awkward to consume from pytest or from a
@@ -32,7 +32,7 @@ Here we split the work into three layers:
 
 Plus :func:`diff_pair_cli` — the original ad-hoc markdown report that
 the scratch tool used to emit. Kept working so existing docs
-(``docs/rb-usb-export-writer-diff-report.md``) can be regenerated
+(``(private path)``) can be regenerated
 byte-identically; the scratch CLI now delegates to this function.
 
 Why keep both shapes?
@@ -695,7 +695,7 @@ def diff_pair_cli(argv: list[str] | None = None) -> int:
 
     Preserved so ``scripts.scratch.diff_usb_exports`` keeps working for
     humans regenerating pair-wise reports (e.g. the existing
-    ``docs/rb-usb-export-writer-diff-report.md``).
+    ``(private path)``).
     """
     ap = argparse.ArgumentParser(
         description="Compare two Pioneer USB export trees (pair-wise)."
@@ -733,13 +733,13 @@ def discover_fixtures(glob_pattern: str = "rb-usb-export*") -> list[str]:
 
     The output is a stable sorted list of logical names. Resolution to
     a real path is deferred — callers should pass each name through
-    :func:`tests.fixtures._resolver.fixture_path`.
+    :func:`.fixture_resolver.fixture_path`.
 
     This function does not touch the file contents — discovery is
     cheap and safe to run during pytest collection.
     """
     # Import lazily so this module stays usable outside the repo.
-    from tests.fixtures._resolver import FIXTURES_ROOT  # type: ignore[import-not-found]
+    from .fixture_resolver import FIXTURES_ROOT
 
     names: set[str] = set()
     for entry in sorted(FIXTURES_ROOT.iterdir()):
@@ -864,7 +864,7 @@ def _resolve_matrix_fixture(name: str, *, optional: bool) -> tuple[Path | None, 
     pytest matrix and this CLI-facing implementation cannot silently
     diverge on which fixtures a missing host is allowed to hide.
     """
-    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+    from .fixture_resolver import (
         FixtureContractMismatch,
         FixtureNotAvailable,
         fixture_path,

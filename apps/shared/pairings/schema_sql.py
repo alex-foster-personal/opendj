@@ -14,6 +14,7 @@ silently redirecting capture data into an incompatible table or view.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 PAIRING_CAPTURE_SCHEMA_VERSION = 1
@@ -173,6 +174,23 @@ _CAPTURE_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
         }
     ),
 }
+
+
+def prepare_repo_connection(
+    conn: sqlite3.Connection,
+    schema_initializer: Callable[[sqlite3.Connection], object],
+    *,
+    ensure_schema: bool,
+) -> sqlite3.Connection:
+    """Return ``conn`` after optionally running ``schema_initializer`` on it.
+
+    Default construction keeps a repository usable against a new state database
+    (idempotent CREATE-IF-NOT-EXISTS). Callers that have already migrated may
+    pass ``ensure_schema=False`` to skip the initializer.
+    """
+    if ensure_schema:
+        schema_initializer(conn)
+    return conn
 
 
 def ensure_phase08_tables(conn: sqlite3.Connection) -> None:

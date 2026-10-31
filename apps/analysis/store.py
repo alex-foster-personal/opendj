@@ -34,16 +34,18 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from apps.shared.events import publish as publish_engine_event
 from apps.shared.state import db as state_db
+from apps.shared.state.analysis_stale import STALE_AUDIO_REPLACED, WHOLE_RECORD
 from apps.shared.state.events import EventBus
 from apps.shared.state.types import Event
 
 from . import queue_store
-from .canonical import refresh_for_record
+from .canonical import canonical_pointer, refresh_for_record
 from .lane_enums import LANE_STATUSES
 from .lane_payloads_shared import bar_phase_untrusted
 from .record import AnalysisRecord, RecordContractError, validate_record_contract
@@ -207,6 +209,11 @@ def open_conn(db_path: Path | None = None) -> sqlite3.Connection:
 class UpsertResult:
     inserted: bool
     unchanged: bool
+    # What the row now holds, which is not always what the caller passed: a
+    # refused untrusted grid is replaced by the stored trusted one. Post-write
+    # effects (the analyze event, the dependency cascade) must read THIS, or a
+    # cascade hashes the rejected grid and drops a still-valid key.
+    record: AnalysisRecord
 
 
 def _record_to_json(record: Any) -> str:
@@ -240,9 +247,9 @@ def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
         raise StoredRecordError(f"{label} is not JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise StoredRecordError(f"{label} is a {type(data).__name__}, not an object")
-    lanes = data.get("lanes")
-    if lanes is None:
+    if "lanes" not in data:
         return None
+    lanes = data["lanes"]
     if not isinstance(lanes, dict):
         raise StoredRecordError(f"{label} has lanes of type {type(lanes).__name__}, not an object")
     if "beatgrid" not in lanes:
@@ -282,6 +289,30 @@ def _untrusted_bar_phase_would_replace_trusted(
     if bar_phase_untrusted(old):
         return False
     return bar_phase_untrusted(new)
+
+
+def _served_beatgrid_json(
+    conn: sqlite3.Connection, stable_id: str, retired: set[tuple[str, str]]
+) -> str | None:
+    """The record JSON the canonical beatgrid pointer names, or None when nothing (current) is served."""
+    pointer = canonical_pointer(conn, stable_id, "beatgrid")
+    if pointer is None or pointer in retired:
+        return None
+    served = conn.execute(
+        "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+        (stable_id, pointer[0], pointer[1]),
+    ).fetchone()
+    return None if served is None else served[0]
+
+
+def _with_stored_grid(record: AnalysisRecord, stored: AnalysisRecord) -> AnalysisRecord:
+    """``record`` with the stored trusted beatgrid lane and its tempo put back."""
+    return replace(
+        record,
+        bpm=stored.bpm,
+        bpm_confidence=stored.bpm_confidence,
+        lanes={**record.lanes, "beatgrid": stored.lanes["beatgrid"]},
+    )
 
 
 def _semantic_equal(old_json: str, new_json: str) -> bool:
@@ -351,17 +382,33 @@ def upsert(
             (record.stable_id, record.backend, record.backend_version),
         ).fetchone()
         new_json = _record_to_json(record)
+        # Rows of bytes the file no longer holds (folder ingest's whole-record
+        # marker): their grid describes other audio, so it is never kept.
+        retired = queue_store.stale_rows(conn, record.stable_id, WHOLE_RECORD)
+        # The trusted grid this write could displace: the same row's when it
+        # holds one, else the one the canonical pointer serves now. A
+        # producer-version bump (1.6.0 -> 1.7.0) writes a NEW row, and a
+        # same-version row whose grid failed or is absent is not served, so
+        # checking only that row would let an untrusted 1.7.0 grid outrank a
+        # trusted 1.6.0 one on the pointer.
+        trusted_json = next(
+            (
+                candidate
+                for candidate in (
+                    row[0] if row is not None and (record.backend, record.backend_version) not in retired else None,
+                    _served_beatgrid_json(conn, record.stable_id, retired),
+                )
+                if candidate is not None
+                and _untrusted_bar_phase_would_replace_trusted(candidate, new_json, record.stable_id)
+            ),
+            None,
+        )
+        if trusted_json is not None:
+            # Only the grid (and the tempo it carries) is refused; every other
+            # lane and scalar in this record still lands.
+            record = _with_stored_grid(record, AnalysisRecord.from_json(trusted_json))
+            new_json = _record_to_json(record)
         unchanged = row is not None and _semantic_equal(row[0], new_json)
-        if (
-            row is not None
-            and not unchanged
-            and _untrusted_bar_phase_would_replace_trusted(
-                row[0], new_json, record.stable_id
-            )
-        ):
-            # Keep the stored trusted grid. The projection rebuild below
-            # reads that row, not this newer untrusted payload.
-            unchanged = True
 
         # ONE atomic unit: the record row, the canonical pointer, and the
         # whole projection rebuild. open_rw hands back an AUTOCOMMIT
@@ -400,6 +447,15 @@ def upsert(
                         new_json,
                     ),
                 )
+            # This write is its producer's claim about the current bytes, so the
+            # audio-replaced markers for the whole row and for every lane it
+            # supplies no longer withhold it. A lane it does not supply stays stale.
+            for lane in (WHOLE_RECORD, *record.lanes):
+                conn.execute(
+                    "DELETE FROM analysis_stale WHERE stable_id = ? AND lane = ? AND backend = ?"
+                    " AND backend_version = ? AND reason = ?",
+                    (record.stable_id, lane, record.backend, record.backend_version, STALE_AUDIO_REPLACED),
+                )
             # Refresh even when unchanged: an unchanged row can become
             # canonical once a HIGHER-versioned sibling is deleted, and a
             # pointer that only moved on a content change would go stale in
@@ -407,8 +463,8 @@ def upsert(
             refresh_for_record(conn, record)
 
         if unchanged:
-            return UpsertResult(inserted=False, unchanged=True)
-        return UpsertResult(inserted=row is None, unchanged=False)
+            return UpsertResult(inserted=False, unchanged=True, record=record)
+        return UpsertResult(inserted=row is None, unchanged=False, record=record)
     finally:
         if owned:
             conn.close()
@@ -510,6 +566,7 @@ def upsert_record(
     conn: sqlite3.Connection | None = None,
     cascade: bool = True,
     version_bump: bool = True,
+    publish_live_event: bool = True,
 ) -> UpsertResult:
     """Persist ``record``; emit an ``analyze`` event on insert/update.
 
@@ -522,6 +579,8 @@ def upsert_record(
     outcomes stay visible on ``RunSummary``.
     """
     result = upsert(record, db_path=db_path, conn=conn)
+    # The persisted record, not the argument: see UpsertResult.record.
+    record = result.record
     if not result.unchanged:
         publish(
             event_type="analyze",
@@ -539,6 +598,17 @@ def upsert_record(
             db_path=db_path,
             conn=conn,
         )
+        # The websocket invalidation bus is the live signal for loaded decks.
+        # Keep the lane explicit so consumers can refresh only the affected
+        # track and preserve the terminal missing-answer polling rule.
+        from .lanes import parse_own_backend
+
+        parsed_backend = parse_own_backend(record.backend)
+        if publish_live_event and parsed_backend is not None:
+            publish_engine_event(
+                "analysis.changed",
+                {"stable_id": record.stable_id, "lane": parsed_backend.lane},
+            )
         if cascade or version_bump:
             from .queue_effects import apply_record_write_effects
 

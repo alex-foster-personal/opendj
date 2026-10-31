@@ -32,7 +32,7 @@ test('pin 6290b14a510c: LibraryLoadIndicator shows mark, bar, and indeterminate 
 	assert.match(src, /class:lli-indeterminate=\{pct === null\}/, 'null denominator uses indeterminate sweep');
 	assert.match(src, /class="lli-track"/, 'visible progress track');
 	assert.match(src, /height: 2px/, 'bar height matches vocal bars');
-	assert.match(src, /#4fb2ff/, 'bar uses vocal-bar blue');
+	assert.match(src, /background: var\(--lli-ink\);/, 'bar color comes from the skin token (LIBUX-50)');
 	assert.match(src, /outline: 1px solid/, 'track end must stay visible');
 	assert.match(src, /mask: url\('\/favicon\.svg'\)/, 'monochrome spinning oDj icon');
 	assert.match(src, /library-mark-reveal 180ms step-end both/, 'mark waits briefly before appearing');

@@ -11,6 +11,7 @@
 	import { catalogLinkSettings } from '$lib/settings/catalog';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { pushToast } from '$lib/stores.svelte';
+	import OpenInBrowserAction from '$lib/components/settings/OpenInBrowserAction.svelte';
 
 	let settings = $state<SettingsOut | null>(null);
 	const cloudsyncLinks = catalogLinkSettings('cloudsync');
@@ -72,6 +73,16 @@
 	>
 		{RUN_SETUP_LABEL}
 	</button>
+</section>
+
+<section class="settings-group" aria-label="Open in browser">
+	<h3>Browser</h3>
+	<p style="color: var(--muted);">
+		The engine serves this whole app, so a browser tab and the app window are the
+		same library. In the installed app the address survives a relaunch unless
+		port 7700 is already in use.
+	</p>
+	<OpenInBrowserAction />
 </section>
 
 <section class="settings-group" aria-label="CloudSync">

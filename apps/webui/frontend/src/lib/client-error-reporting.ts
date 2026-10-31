@@ -110,6 +110,9 @@ function _notifyAck(ack: ClientErrorAck): void {
 
 export function __resetClientErrorReportingForTests(): void {
 	installed = false;
+	flushing = false;
+	interceptingConsole = false;
+	recent.clear();
 }
 
 export function __setConsoleSampleGateForTests(gate?: () => number): void {
@@ -207,6 +210,11 @@ function formatConsoleArgs(args: unknown[]): string {
 	return truncate(parts.join(' '), 4096);
 }
 
+/** Perf rows log through console.* for DevTools; they must not enter the sampled client-error sink. */
+export function isPerfEventConsoleLine(message: string): boolean {
+	return message.startsWith('[perf-event]');
+}
+
 function consolePassesSample(kind: 'console-error' | 'console-warn'): boolean {
 	const cutoff =
 		kind === 'console-error' ? CONSOLE_ERROR_SAMPLE_CUTOFF : CONSOLE_WARN_SAMPLE_CUTOFF;
@@ -219,6 +227,7 @@ function patchConsole(kind: 'console-error' | 'console-warn'): void {
 		original(...args);
 		if (interceptingConsole) return;
 		const message = formatConsoleArgs(args);
+		if (isPerfEventConsoleLine(message)) return;
 		if (!consolePassesSample(kind)) return;
 		interceptingConsole = true;
 		try {

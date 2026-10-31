@@ -389,6 +389,22 @@ test('adoptAuthoritativeGrid nulls the deck BPM when a successful own grid is de
 	assert.equal(h.bpm[1], null, 'a demotion back to rekordbox must not strand the own grid\'s BPM');
 });
 
+// Codex P2 on PR #6235: a grid nudge or shift on a rekordbox track publishes
+// through this adoption, and rekordbox blocks carry no beatgrid.bpm, so the
+// deck header read --.-- until reload.
+test('adoptAuthoritativeGrid keeps the track BPM on a rekordbox-to-rekordbox grid edit', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	h.bpm[1] = 128;
+	const edited = _anlz('sid-a', _beats(8, 128).map((beat) => ({ ...beat, t: beat.t + 0.002 })));
+	edited.beatgrid = { ...edited.beatgrid, source: 'rekordbox', edit: { offset_ms: 2, beat_shift: 0 } };
+	h.guards.adoptAuthoritativeGrid('sid-a', edited);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(h.anlz[1].beatgrid.edit, { offset_ms: 2, beat_shift: 0 }, 'control: the edited grid was adopted');
+	assert.equal(h.bpm[1], 128, 'the grid edit leaves the track BPM in place');
+});
+
 test('adoptAuthoritativeGrid carries tempo_changes and performance_hints alongside beatgrid, both ways', async () => {
 	// Own-to-own: an own dynamic grid must land WITH its markers, not a bare
 	// beatgrid stranding the deck's stale (or absent) tempo_changes.
@@ -548,6 +564,33 @@ test(
 );
 
 test(
+	"adoptAuthoritativeGrid lands an unmapped track's own grid under a 'rekordbox' selection (GRIDEDIT-6235d)",
+	async () => {
+		// STANDALONE-06: a track rekordbox never mapped is served its own grid
+		// whatever the lane selection says, and `beatgrid_source_basis` says so.
+		// A grid edit on such a track re-reads /anlz and must move the deck; a
+		// bare stamp compare read it as a straggler and dropped it silently.
+		const h = _harness({}, () => 'rekordbox');
+		h.stableIds[1] = 'sid-a';
+		h.anlz[1] = { ..._anlz('sid-a', _beats(8, 128), 'own'), beatgrid_source_basis: 'unmapped-default' };
+		const edited = { ..._anlz('sid-a', _beats(16, 124), 'own'), beatgrid_source_basis: 'unmapped-default' };
+		h.guards.adoptAuthoritativeGrid('sid-a', edited);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(h.anlz[1].beatgrid.beats.length, 16, "an unmapped track's own grid is never a straggler");
+
+		// Overshoot control: a MAPPED track's own grid (basis selection) under a
+		// confirmed 'rekordbox' selection is still the straggler it always was.
+		const g = _harness({}, () => 'rekordbox');
+		g.stableIds[1] = 'sid-b';
+		g.anlz[1] = _anlz('sid-b', _beats(8, 128), 'rekordbox');
+		const straggler = { ..._anlz('sid-b', _beats(16, 124), 'own'), beatgrid_source_basis: 'selection' };
+		g.guards.adoptAuthoritativeGrid('sid-b', straggler);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(g.anlz[1].beatgrid.beats.length, 8, 'a mapped own straggler must still be rejected');
+	}
+);
+
+test(
 	'adoptAuthoritativeGrid accepts a payload matching the last confirmed selection',
 	async () => {
 		const h = _harness({}, () => 'own');
@@ -623,6 +666,70 @@ test('adoptAuthoritativeGrid skips a deck that reloaded before the claim was gra
 		8,
 		'a replacement track must never inherit the grid adopted for the track it replaced'
 	);
+});
+
+function _revisionGuards(h, revision) {
+	return createBeatgridResyncGuards({
+		ports: _ports(),
+		deckRuntime: (deck) => h.runtimes[deck],
+		deckLoadToken: (deck) => h.tokens[deck],
+		deckStableId: (deck) => h.stableIds[deck],
+		deckAnlz: (deck) => h.anlz[deck],
+		publishDeckAnlz: (deck, next) => (h.anlz[deck] = next),
+		publishDeckBpm: (deck, next) => (h.bpm[deck] = next),
+		setDeckAnlzError: (deck, code) => (h.anlzError[deck] = code),
+		reconcileDeckLoop: () => {},
+		reportError: () => {},
+		desiredBeatgridSource: () => undefined,
+		trackRevision: () => revision.value
+	});
+}
+
+test('adoptAuthoritativeGrid replaces a fallback-marked grid even when the authoritative beats match it', async () => {
+	// Sentry on PR #8132: the fallback marker rides on the grid, so an /anlz
+	// grid equal to the fallback's beats must still replace it, or grid edits
+	// stay refused on a track that can now take them.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128), 'own');
+	h.anlz[1].beatgrid = { ...h.anlz[1].beatgrid, fallback: true };
+	h.guards.adoptAuthoritativeGrid('sid-a', _anlz('sid-a', _beats(8, 128), 'own'));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[1].beatgrid.fallback, undefined);
+});
+
+test('adoptAuthoritativeGrid drops a queued edit adoption that a later grid edit superseded', async () => {
+	// Codex P2 on PR #6235: a +2 ms edit's adoption waits on the deck scope; a
+	// reset then refetches (bumping the revision) and matches the deck's grid,
+	// so it adopts nothing. The queued +2 ms payload must not install after.
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	const revision = { value: 1 };
+	const guards = _revisionGuards(h, revision);
+	guards.installScopedSyncRunner(async (deck, task) => {
+		revision.value += 1; // the reset's refetch lands while this claim waits
+		await task((work) => work());
+	});
+	const nudged = _anlz('sid-a', _beats(8, 128).map((beat) => ({ ...beat, t: beat.t + 0.002 })));
+	guards.adoptAuthoritativeGrid('sid-a', nudged);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[1].beatgrid.beats[1].t, _beats(8, 128)[1].t, 'the deck keeps the reset grid, not the superseded nudge');
+});
+
+test('control: a queued edit adoption still installs when no later edit bumped the revision', async () => {
+	const h = _harness();
+	h.stableIds[1] = 'sid-a';
+	h.anlz[1] = _anlz('sid-a', _beats(8, 128));
+	const guards = _revisionGuards(h, { value: 1 });
+	guards.installScopedSyncRunner(async (deck, task) => {
+		await Promise.resolve();
+		await task((work) => work());
+	});
+	const nudged = _anlz('sid-a', _beats(8, 128).map((beat) => ({ ...beat, t: beat.t + 0.002 })));
+	guards.adoptAuthoritativeGrid('sid-a', nudged);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(h.anlz[1].beatgrid.beats[1].t, _beats(8, 128)[1].t + 0.002);
 });
 
 test('adoptAuthoritativeGrid skips a published replacement that retained its new load token', async () => {

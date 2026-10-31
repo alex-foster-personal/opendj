@@ -106,8 +106,16 @@ export default {
 		// Same shape: the Beat Sync phase-lock workload, run directly against a live
 		// engine's real beatgrids (read-only).
 		'tests/live/phase-lock-jitter-workload.mjs',
+		// The live-engine AutoPlay arm. tests/health_lights/test_ahead_analysis_live_engine.py
+		// runs the .mjs, which loads the .ts through the unit bundler. Neither is
+		// imported by the app, so without an entry knip reports both as orphans.
+		'tests/live/arm-autoplay-next-up.mjs',
+		'tests/live/arm-autoplay-next-up.ts',
 		// Direct real-runtime keyboard acceptance for focused controls (#5761).
 		'tests/live/performance-focused-controls.mjs',
+		// Same shape: the two-Chromium remote speaker loopback proof (REMOTE-SPK-8119g) and
+		// the browser entry it bundles with esbuild.
+		'tests/live/remote-speaker-{loopback.mjs,harness-entry.ts}',
 		// Same shape: the stem-load-under-playback scorer, imported into an open
 		// /performance page by a person or an agent (PERF-STEMDEC-04 rounds).
 		'tests/live/stem-load-under-playback-scorer.js',

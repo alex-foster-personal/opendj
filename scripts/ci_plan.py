@@ -28,7 +28,8 @@ import argparse
 import re
 import subprocess
 import sys
-from collections.abc import Callable, Iterable
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -39,12 +40,19 @@ from scripts.ci_plan_sources import (
     PlanError,
     _read_source,
     imported_modules,
+    imported_test_helpers,
+    is_test_module,
+    loaded_test_helpers,
     mentioned_strings,
 )
 
 REPO = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO / "ci" / "test-scopes.yml"
-SUPPORTED_CONFIG_VERSIONS = frozenset({2})
+CONFIG_LISTS = {  # each schema version and the lists it requires; nothing else is accepted
+    2: ("full_triggers", "helper_carried", "always", "scopes"),
+    3: ("full_triggers", "helper_carried", "helper_carried_paths", "always", "scopes"),  # per-file carry
+}
+SUPPORTED_CONFIG_VERSIONS = frozenset(CONFIG_LISTS)
 CAP_FRACTION = 0.6
 
 
@@ -92,6 +100,10 @@ class Config:
     # `apps/webui/`, and a prefix trigger on the parent would swallow the child. Derived by
     # `helper_carried_scopes` and held to it by a guard. Round 9.
     helper_carried: tuple[str, ...] = ()
+    # Round 22: inside a carried scope, the `.py` files a global helper's import closure reaches
+    # (exact paths), or a scope's source prefix where that closure cannot be read off the imports.
+    # A `.py` change outside it plans like its scope. `None` is round 19: every file is carried.
+    helper_carried_paths: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -239,6 +251,14 @@ def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
     return out
 
 
+def _helper_reaches(path: str, config: Config) -> bool:
+    """Whether a global helper can reach this file of a carried scope. A non-Python file may be
+    read as data, which no import reader sees, so it is always reached."""
+    if config.helper_carried_paths is None or not path.endswith(".py"):
+        return True
+    return matches(path, config.helper_carried_paths)
+
+
 def plan(changes: tuple[Change, ...], config: Config, cap_fraction: float = CAP_FRACTION) -> Plan:
     """The plan for one diff. Pure: no filesystem, no git, no network."""
     if not changes:
@@ -264,7 +284,9 @@ def plan(changes: tuple[Change, ...], config: Config, cap_fraction: float = CAP_
         return Plan(Verdict.FULL, (), (), f"full trigger: {triggered[0]}")
     owner_of = _owner_index(config)
     carried = [
-        p for p in paths if (o := owner_of(p)) is not None and o.name in config.helper_carried
+        p
+        for p in paths
+        if (o := owner_of(p)) is not None and o.name in config.helper_carried and _helper_reaches(p, config)
     ]
     if carried:
         return Plan(
@@ -341,16 +363,16 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
     # into no full triggers at all, which is a safety rule deleted by a typo and a narrower
     # plan reported as a correct one. An unknown schema version is refused for the same
     # reason: a newer config may mean something this planner would silently misread.
-    # Sol's P1 on #3339.
-    unknown = sorted(set(raw) - {"version", "full_triggers", "helper_carried", "always", "scopes"})
+    # Sol's P1 on #3339. Version 2 predates `helper_carried_paths` and reads as it always did, each
+    # helper-carried scope carried whole (None); version 3 requires the list (Sol on #7495).
+    version = raw.get("version")
+    if version not in SUPPORTED_CONFIG_VERSIONS:
+        raise PlanError(f"{path} declares version {version!r}; this planner reads {sorted(SUPPORTED_CONFIG_VERSIONS)}")
+    lists = CONFIG_LISTS[version]
+    unknown = sorted(set(raw) - {"version", *lists})
     if unknown:
-        raise PlanError(f"{path} has unknown key(s): {', '.join(unknown)}")
-    if raw.get("version") not in SUPPORTED_CONFIG_VERSIONS:
-        raise PlanError(
-            f"{path} declares version {raw.get('version')!r}; "
-            f"this planner reads {sorted(SUPPORTED_CONFIG_VERSIONS)}"
-        )
-    for key in ("full_triggers", "helper_carried", "always", "scopes"):
+        raise PlanError(f"{path} has unknown key(s) for version {version}: {', '.join(unknown)}")
+    for key in lists:
         if not isinstance(raw.get(key), list):
             raise PlanError(f"{path} is missing a list `{key}`, or it is not a list")
     scopes = raw["scopes"]
@@ -379,12 +401,11 @@ def read_config(path: Path = CONFIG_PATH) -> Config:
             for entry in scopes
         ),
         tuple(raw["helper_carried"]),
+        tuple(raw["helper_carried_paths"]) if "helper_carried_paths" in lists else None,
     )
 
 
-def observed_dependents(
-    config: Config, test_files: Iterable[Path], root: Path = REPO
-) -> dict[str, tuple[str, ...]]:
+def observed_dependents(config: Config, test_files: Iterable[Path], root: Path = REPO) -> dict[str, tuple[str, ...]]:
     """For each scope, the OTHER scopes whose test modules import its source packages.
 
     The DERIVATION behind `Scope.dependents`. A hand-kept list of who depends on whom is a
@@ -404,8 +425,9 @@ def observed_dependents(
     owner_of = _test_owner_index(config)
     reaches = _source_reachability(config, root)
     found: dict[str, set[str]] = {scope.name: set() for scope in config.scopes}
-    for file in test_files:
-        relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
+    inputs = {(file.relative_to(root) if file.is_absolute() else file).as_posix(): file for file in test_files}
+    importers = _helper_importers(inputs, root)
+    for relative, file in inputs.items():
         owner = owner_of(relative)
         if owner is None:
             # THREE cases here, and an earlier version conflated the first two on an
@@ -422,7 +444,17 @@ def observed_dependents(
             # everything", and `full_triggers` says exactly that in one line per scope
             # instead of roughly 1600 dependent entries. `helper_carried_scopes` derives the
             # set and a guard holds the config to it.
+            #
+            # Round 19 places the helper whose importers are all placed TEST modules: their
+            # owners are the suites to run, so it gets one edge per owner and carries nothing.
             if matches(relative, config.always):
+                if not is_test_module(relative) and _consumed_only_by_placed_tests(
+                    relative, importers[relative], owner_of, config
+                ):
+                    owners = {o for c in importers[relative] if (o := owner_of(c)) is not None}
+                    for scope in _consumed_scopes(_read_source(file, relative), relative, config):
+                        for upstream in reaches[scope.name]:
+                            found[upstream] |= owners - {upstream}
                 continue
             if _consumed_scopes(_read_source(file, relative), relative, config):
                 raise PlanError(
@@ -440,6 +472,85 @@ def observed_dependents(
                 if upstream != owner:
                     found[upstream].add(owner)
     return {name: tuple(sorted(names)) for name, names in found.items() if names}
+
+
+SESSION_LOAD = "<pytest_plugins>"  # a consumer no scope owns: a session-wide or unresolved load
+
+
+def _helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set[str]]:
+    """For each pytest input, the other inputs that load it: by import, or by `import_module` with a
+    literal name. One that `pytest_plugins` names is loaded for the whole session, a load the reader
+    cannot resolve may be any of them, and a computed path load may be any file its module names:
+    each adds SESSION_LOAD, which no rule places. So does every helper the rootdir `conftest.py`
+    (outside `tests/`, loaded for every session) loads or imports, and one a call that merely looks
+    like a loader names."""
+    importers: dict[str, set[str]] = {relative: set() for relative in inputs}
+    sources = [(relative, file, relative) for relative, file in inputs.items()]
+    if (rootdir_conftest := root / "conftest.py").is_file():
+        sources.append(("conftest.py", rootdir_conftest, SESSION_LOAD))  # every session loads it
+    unresolved = False
+    path_targets: set[str] = set()
+    by_folded: dict[str, list[str]] = defaultdict(list)
+    for relative in inputs:
+        by_folded[relative.casefold()].append(relative)
+    for relative, file, consumer in sources:
+        text = _read_source(file, relative)
+        loads = loaded_test_helpers(text, relative)
+        unresolved |= loads.unresolved
+        path_targets |= loads.path_targets
+        for target in _helper_files(imported_test_helpers(text, relative) | loads.by_call, importers):
+            if target != relative:
+                importers[target].add(consumer)
+        for target in _helper_files(loads.by_plugins | loads.lookalike, importers):
+            importers[target].add(SESSION_LOAD)
+        named = imported_test_helpers(text, relative) | loads.by_call | loads.by_plugins | loads.lookalike
+        for target in _case_variants(named, by_folded):
+            importers[target].add(SESSION_LOAD)
+    for target, consumers in importers.items():
+        name = target.rsplit("/", 1)[-1].casefold()
+        if unresolved or name in path_targets or name.removesuffix(".py") in path_targets:
+            consumers.add(SESSION_LOAD)
+    return importers
+
+
+def _helper_files(names: Iterable[str], importers: dict[str, set[str]]) -> list[str]:
+    """The pytest inputs that dotted `tests.*` names are, skipping names no input is. A wildcard
+    import (`from tests.pkg import *`, read as `tests.pkg.*`) imports every submodule the package's
+    `__all__` lists (Sol on #7121), so it names every module under the package, a superset of what
+    `__all__` can list. No test module in the tree imports one (Fri 30 Oct 2026)."""
+    found: list[str] = []
+    for name in names:
+        if name.endswith(".*"):
+            package = name.removesuffix("*").replace(".", "/")
+            found += [target for target in importers if target.startswith(package)]
+        elif (target := name.replace(".", "/") + ".py") in importers:
+            found.append(target)
+    return found
+
+
+def _case_variants(names: Iterable[str], by_folded: Mapping[str, list[str]]) -> list[str]:
+    """The pytest inputs a name reaches only in another case: `run_path(r"Tests\\Rig.py")` runs
+    `tests/rig.py` on a case-insensitive (Windows) checkout and fails elsewhere, so the load depends
+    on the platform and no scope can own it."""
+    spelled = {name.replace(".", "/") + ".py" for name in names}
+    return [target for path in spelled for target in by_folded.get(path.casefold(), []) if target not in spelled]
+
+
+_COLLECTION_LOADED = {"conftest.py", "__init__.py"}  # pytest runs these for every test beneath them
+
+
+def _consumed_only_by_placed_tests(
+    helper: str, consumers: set[str], owner_of: Callable[[str], str | None], config: Config
+) -> bool:
+    """True when every module importing `helper` is a test that a scope owns or `always` runs,
+    so its imports are a dependency of known suites: an edge to each owner, none for an always-run
+    test. Empty consumers is NOT that: a helper reached through `pytest_plugins`, a fixture name or
+    nothing at all cannot be placed, nor can a `conftest.py` or a package `__init__.py`, which
+    pytest runs while collecting every test beneath it rather than for an importer, or one a
+    helper imports, whose own consumers this does not follow. Unplaceable stays widest."""
+    if helper.rsplit("/", 1)[-1] in _COLLECTION_LOADED or not consumers:
+        return False
+    return all(is_test_module(c) and (owner_of(c) is not None or matches(c, config.always)) for c in consumers)
 
 
 def _consumed_scopes(text: str, where: str, config: Config) -> list[Scope]:

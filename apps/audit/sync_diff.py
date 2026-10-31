@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.audit.matches_csv import DEFAULT_MIN_MATCH_CONFIDENCE, iter_match_pairs
+from apps.audit.rekordbox_db_util import close_db_quietly
 from apps.shared import paths
 from apps.shared.normalised import NormalisedAnalysis
 from apps.sync.conflict import resolve_conflict
@@ -171,10 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         rb_analysis = {a.uuid_or_id: a for a in rb_iter_analysis(rb_db)}
         rb_ratings = {str(t.id): (t.rating or 0) for t in rb_iter_tracks(rb_db)}
     finally:
-        try:
-            rb_db.close()
-        except Exception:
-            pass
+        close_db_quietly(rb_db)
 
     djay_analysis = {a.uuid_or_id: a for a in djay_iter_analysis(paths.DJAY_WORKING_DB)}
     djay_ratings = {t.uuid: (t.rating or 0) for t in djay_iter_tracks(paths.DJAY_WORKING_DB)}

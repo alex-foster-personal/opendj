@@ -60,3 +60,42 @@ export function tempoWritesFromTargetBpm(input: {
 	writes.push({ type: 'tempo', deck: input.deck, ratio });
 	return writes;
 }
+
+/** Send `writes` in order through `run`; true only when every one was taken.
+ * The first refused write (a preset owns the controls, the deck unloaded)
+ * stops the rest, so a tempo is never sent against a range that was refused. */
+export async function runTempoWrites(
+	writes: readonly TempoWrite[],
+	run: (write: TempoWrite) => Promise<{ ok: boolean }>
+): Promise<boolean> {
+	for (const write of writes) {
+		if (!(await run(write)).ok) return false;
+	}
+	return true;
+}
+
+/** A gap longer than this between taps starts a new tap run. */
+export const TAP_TEMPO_RESET_MS = 2000;
+/** Taps needed before a tapped tempo is applied (three intervals). */
+export const TAP_TEMPO_MIN_TAPS = 4;
+/** The tempo is the mean of at most this many of the latest intervals. */
+export const TAP_TEMPO_WINDOW = 8;
+
+/** I12 (TEMPO-SRC-01): add one tap at `nowMs` to a tap run. A gap longer
+ * than TAP_TEMPO_RESET_MS, or a clock that went backwards, starts a new run
+ * rather than averaging across it. Keeps only the taps the window needs. */
+export function pushTempoTap(taps: readonly number[], nowMs: number): number[] {
+	if (!Number.isFinite(nowMs)) throw new RangeError(`tap time must be finite, got ${nowMs}`);
+	const last = taps.length > 0 ? taps[taps.length - 1] : null;
+	if (last === null || nowMs <= last || nowMs - last > TAP_TEMPO_RESET_MS) return [nowMs];
+	return [...taps, nowMs].slice(-(TAP_TEMPO_WINDOW + 1));
+}
+
+/** The tempo a tap run marks, or null until TAP_TEMPO_MIN_TAPS taps landed. */
+export function tapTempoBpm(taps: readonly number[]): number | null {
+	if (taps.length < TAP_TEMPO_MIN_TAPS) return null;
+	const recent = taps.slice(-(TAP_TEMPO_WINDOW + 1));
+	const spanMs = recent[recent.length - 1] - recent[0];
+	if (!(spanMs > 0)) return null;
+	return (60000 * (recent.length - 1)) / spanMs;
+}

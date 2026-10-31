@@ -837,9 +837,10 @@
 			fromKeyboard: boolean;
 		}
 	): void {
-		// LIBWS-03: no deck to confirm in Library mode; the load path says why.
+		// LIBWS-04: Library mode has no deck to confirm; a double-click
+		// previews the track from its start instead.
 		if (libraryMode) {
-			onloadrow(row, null);
+			onpreviewseek?.(row, 0);
 			return;
 		}
 		const picked = onpickdoubledeck?.(row, {

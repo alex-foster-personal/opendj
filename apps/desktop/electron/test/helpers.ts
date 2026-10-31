@@ -6,6 +6,17 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+/** Repo root for subprocesses that import `apps.*` (compiled tests live under dist-test/). */
+export const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
+
+/** Repo venv interpreter for subprocesses that import `apps.*`. */
+export function resolveRepoPython(): string {
+	const venvRel = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
+	const venvPython = path.join(REPO_ROOT, '.venv', venvRel);
+	if (fs.existsSync(venvPython)) return venvPython;
+	throw new Error(`missing repo venv at ${venvPython}; run uv sync in ${REPO_ROOT}`);
+}
+
 /** The fixture sources live beside the TS tests, not in the compiled tree. */
 export const FIXTURES = path.resolve(__dirname, '..', '..', 'test', 'fixtures');
 export const FAKE_ENGINE = path.join(FIXTURES, 'fake-engine.js');

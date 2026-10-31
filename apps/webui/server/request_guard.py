@@ -18,9 +18,14 @@ from starlette.responses import JSONResponse, Response
 from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 from apps.shared.sync_bind_guard import is_loopback_host
 from apps.webui.port_config import WEBUI_ENV_FILE, _read_dotenv, _resolved_raw_value
+from apps.webui.server.ui_url import NAMED_LOCAL_HOST, named_origin
 
 SHARE_ORIGIN_ENV = "MUSIC_DJ_SHARE_ORIGIN"
 _LOOPBACK_HOSTNAMES: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
+# UIURL-01: the one name admitted by default beside loopback. Exactly one name,
+# never a `*.localhost` wildcard: DNS-rebinding protection rests on every
+# admitted Host being one an attacker page cannot be served from.
+_DEFAULT_ALLOWED_HOSTNAMES: frozenset[str] = _LOOPBACK_HOSTNAMES | {NAMED_LOCAL_HOST}
 _MUTATING_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _BENCH_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1):87\d\d$"
 # Fixed vite dev-server ports that a Playwright e2e suite serves the SPA
@@ -77,8 +82,8 @@ def build_allowed_hostnames(
     environ: Mapping[str, str] | None = None,
     daemon_hostname: str | None = None,
 ) -> frozenset[str]:
-    """Loopback + share-tunnel host + operator allowlist + this daemon's own
-    configured hostname.
+    """Loopback + opendj.localhost + share-tunnel host + operator allowlist +
+    this daemon's own configured hostname.
 
     ``daemon_hostname`` is ``app.state.hostname`` -- the same value the real
     entry point sets from ``MUSIC_DJ_HOSTNAME`` (``_build_default_app``) and
@@ -86,7 +91,7 @@ def build_allowed_hostnames(
     left a client that addresses this daemon by its own advertised LAN
     hostname (rather than a loopback IP) 403ing on every request.
     """
-    hostnames = set(_LOOPBACK_HOSTNAMES)
+    hostnames = set(_DEFAULT_ALLOWED_HOSTNAMES)
     if share_config.host:
         hostnames.add(share_config.host)
     if daemon_hostname:
@@ -110,6 +115,7 @@ def build_trusted_origins(
             [
                 f"http://localhost:{frontend_port}",
                 f"http://127.0.0.1:{frontend_port}",
+                named_origin(frontend_port),
             ]
         )
     if backend_port is not None:
@@ -118,6 +124,7 @@ def build_trusted_origins(
                 f"http://localhost:{backend_port}",
                 f"http://127.0.0.1:{backend_port}",
                 f"http://[::1]:{backend_port}",
+                named_origin(backend_port),
             ]
         )
     share_origin = effective.get(SHARE_ORIGIN_ENV, "").strip()

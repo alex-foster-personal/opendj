@@ -257,3 +257,210 @@ def test_an_operator_directory_already_stamped_by_our_own_warmup_is_trusted(
     result = _ensure_owned_numba_cache_dir_via_subprocess(env)
 
     assert result == str(shared)
+
+
+@pytest.mark.requirement("META-01")
+@pytest.mark.rb_parity
+def test_this_platform_provisions_a_directory_or_refuses_without_raising(
+    tmp_path: Path,
+) -> None:
+    """[if] this platform crashes, or trusts a directory it cannot prove it owns [then] fail, [else stop].
+
+    windows-latest job 115807584571: ``os.getuid()`` raised AttributeError
+    there, every ``apps.analysis.run`` with work to do exited 5 before its
+    first track, and the drain read a vanished target (3) and an unavailable
+    backend (4) as a systemic fault instead. Enrolled in the Windows parity
+    gate so the real Windows ``os`` (no ``getuid``) runs this, not a stand-in.
+    With a uid the default path is provisioned; without one, ownership cannot
+    be proven, so the answer is a refusal (no purge), not a crash and not an
+    assumed owner (Sol review at 7110a58d7)."""
+    result = _ensure_owned_numba_cache_dir_via_subprocess(
+        _env_without_numba_cache_dir(tmp_path)
+    )
+
+    if not hasattr(os, "getuid"):
+        assert result == "None", "with no uid, ownership is unproven and must refuse"
+        assert not any(tmp_path.iterdir()), "a refusal must not create a directory"
+        return
+    assert result != "None", "the default path must provision a directory, not refuse"
+    path = Path(result)
+    assert path.parent == tmp_path
+    assert path.is_dir()
+    assert (path / ".mdt-numba-cache-owned").is_file(), (
+        "the dedication marker must still be planted, or purge_stale has "
+        "nothing proving the directory is this cache's alone"
+    )
+
+
+def _run_without_platform_primitive(
+    tmp_path: Path, *, hide: str, body: str
+) -> str:
+    """Run ``body`` in a fresh process where ``os.getuid`` or ``fcntl`` is absent.
+
+    ``hide="nothing"`` runs it against this platform's real primitives.
+
+    Reproduces the Windows shape on a POSIX host without touching this
+    process: ``hide="getuid"`` deletes ``os.getuid`` and ``hide="fcntl"``
+    makes ``import fcntl`` raise ImportError, before any repo module loads.
+    ``body`` prints its result on the last line.
+    """
+    hiding = {
+        "getuid": "import os\nif hasattr(os, 'getuid'):\n    del os.getuid",
+        "fcntl": "sys.modules['fcntl'] = None",
+        "nothing": "",
+    }[hide]
+    driver = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(REPO_ROOT)!r})\n"
+        f"{hiding}\n"
+        f"{textwrap.dedent(body)}"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", driver],
+        cwd=str(REPO_ROOT), env=_env_without_numba_cache_dir(tmp_path),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout
+    return proc.stdout.strip().splitlines()[-1]
+
+
+@pytest.mark.requirement("JIT-06")
+def test_without_a_uid_no_private_directory_is_trusted_or_created(
+    tmp_path: Path,
+) -> None:
+    """[if] a missing uid lets an unproven directory pass as ours [then] fail, [else stop].
+
+    Sol review at 7110a58d7 (P1): treating every real directory as owned when
+    ``os.getuid`` is absent let a directory another account prepared pass the
+    trust boundary. Both the lock directory and the cache directory must
+    refuse instead, and must not be created on the way."""
+    existing = tmp_path / "already-here"
+    existing.mkdir()
+    out = _run_without_platform_primitive(
+        tmp_path,
+        hide="getuid",
+        body=f"""
+        from pathlib import Path
+        from apps.analysis._warmup_lock import (
+            _ensure_lock_dir, _is_owned_dir, ensure_owned_numba_cache_dir,
+        )
+        print(
+            _is_owned_dir(Path({str(existing)!r})),
+            _ensure_lock_dir(Path({str(tmp_path / "lock")!r}), shared=False),
+            ensure_owned_numba_cache_dir(),
+        )
+        """,
+    )
+
+    assert out == "False False None"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["already-here"]
+
+
+@pytest.mark.requirement("JIT-06")
+def test_with_a_uid_the_same_checks_still_pass(tmp_path: Path) -> None:
+    """[if] the no-uid refusal overshoots into refusing a POSIX host [then] fail, [else stop].
+
+    The overshoot control for the test above: the same helper and body with
+    nothing hidden must still own, create and provision."""
+    if not hasattr(os, "getuid"):
+        pytest.skip("POSIX control: this platform has no getuid")
+    existing = tmp_path / "already-here"
+    existing.mkdir()
+    out = _run_without_platform_primitive(tmp_path, hide="nothing", body=f"""
+        from pathlib import Path
+        from apps.analysis._warmup_lock import (
+            _ensure_lock_dir, _is_owned_dir, ensure_owned_numba_cache_dir,
+        )
+        print(
+            _is_owned_dir(Path({str(existing)!r})),
+            _ensure_lock_dir(Path({str(tmp_path / "lock")!r}), shared=False),
+            ensure_owned_numba_cache_dir() is not None,
+        )
+        """)
+
+    assert out == "True True True"
+    assert (tmp_path / "lock").is_dir()
+
+
+@pytest.mark.requirement("JIT-06")
+def test_without_fcntl_the_warmup_lock_refuses_rather_than_runs_unlocked(
+    tmp_path: Path,
+) -> None:
+    """[if] a platform with no fcntl warms a cold cache unlocked [then] fail, [else stop].
+
+    Sol review at 7110a58d7 (P1): ``_compile_lock`` used to yield
+    ``proceed=True`` when ``fcntl`` was missing, so Windows warmed with no
+    cross-process lock at all, against JIT-06. It must refuse instead."""
+    out = _run_without_platform_primitive(
+        tmp_path,
+        hide="fcntl",
+        body=f"""
+        from pathlib import Path
+        from apps.analysis.jit_warmup import _compile_lock
+        with _compile_lock(
+            Path({str(tmp_path / "x.lock")!r}), 1.0, require_self_owned=True
+        ) as (held, proceed, _waited):
+            print(held, proceed)
+        """,
+    )
+
+    assert out == "False False"
+
+
+@pytest.mark.requirement("META-01")
+@pytest.mark.rb_parity
+def test_a_symlinked_directory_is_refused_on_this_platform(
+    tmp_path: Path,
+) -> None:
+    """[if] dropping the uid half of the check also drops the no-symlink half [then] fail, [else stop].
+
+    the overshoot control for the test above: on Windows, where no uid exists,
+    making ownership pass must not make a planted symlink pass with it"""
+    target = tmp_path / "victim"
+    target.mkdir()
+    planted = tmp_path / "cache-symlink"
+    try:
+        os.symlink(target, planted, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"this account may not create directory symlinks: {exc}")
+    env = {**os.environ, "NUMBA_CACHE_DIR": str(planted)}
+
+    result = _ensure_owned_numba_cache_dir_via_subprocess(env)
+
+    assert result == "None", "a symlinked NUMBA_CACHE_DIR must refuse, not be purged into"
+    assert not (target / ".mdt-numba-cache-owned").exists()
+
+
+@pytest.mark.requirement("JIT-06")
+@pytest.mark.rb_parity
+def test_the_real_compile_lock_on_this_platform_locks_or_refuses(
+    tmp_path: Path,
+) -> None:
+    """[if] this platform's real compile lock lets a warm-up run with no cross-process lock [then] fail, [else stop].
+
+    Codex review at 5c7e6fb75 (P1): the no-fcntl test above simulates Windows
+    on a POSIX host. Enrolled in the Windows parity gate, this one runs the
+    real ``_compile_lock`` with nothing hidden: where ``fcntl`` exists it must
+    hold the lock and proceed, and where it does not (Windows) it must refuse."""
+    out = _run_without_platform_primitive(
+        tmp_path,
+        hide="nothing",
+        body=f"""
+        import importlib.util
+        from pathlib import Path
+        from apps.analysis.jit_warmup import _compile_lock
+        with _compile_lock(
+            Path({str(tmp_path / "x.lock")!r}), 1.0, require_self_owned=True
+        ) as (held, proceed, _waited):
+            print(importlib.util.find_spec("fcntl") is not None, held, proceed)
+        """,
+    )
+
+    has_fcntl, held, proceed = out.split()
+    if has_fcntl == "True":
+        assert (held, proceed) == ("True", "True"), out
+    else:
+        assert (held, proceed) == ("False", "False"), (
+            "with no fcntl the warm-up must refuse, not run unlocked: " + out
+        )

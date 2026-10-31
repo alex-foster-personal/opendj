@@ -1166,10 +1166,10 @@ def test_the_trim_matches_the_incoming_track_to_the_outgoing_lufs() -> None:
     assert match_trim_db(out_p, in_p) == (-6.0, "match -3.0 to -9.0 LUFS: -6.0 dB")
     assert trim_knob(-6.0) == pytest.approx(10 ** (-6 / 20) / 2, abs=1e-6)
     proposals = propose_transition(out_p, in_p, out_deck=1, in_deck=2, intent="smooth")["proposals"]
-    # Offline, the outgoing deck is assumed loaded at unity (round 22), so the match is the plain -6 dB.
-    assert proposals and all(row["plan"]["in"]["trim_db"] == -6.0 for row in proposals)
+    # Offline, the outgoing deck is assumed loaded at -6 dB, so the incoming matches that effective level.
+    assert proposals and all(row["plan"]["in"]["trim_db"] == -12.0 for row in proposals)
     order = compile_plan(parse_plan(proposals[0]["plan"]), in_p, plan_id="p", live=None)["plan"]
-    assert {"type": "trim", "deck": 2, "value": trim_knob(-6.0)} in order["prepare"]
+    assert {"type": "trim", "deck": 2, "value": trim_knob(-12.0)} in order["prepare"]
     # A quiet incoming track past the knob's top is capped, and the reason says so.
     capped, why = match_trim_db(_loud("trk-out", -6.0), _loud("trk-in", -20.0))
     assert capped == 6.02 and "capped" in why
@@ -1692,16 +1692,17 @@ def test_a_partial_or_malformed_live_mixer_is_refused_never_read_as_unity_trim(l
         _outgoing_trim_db(live, 1)
 
 
-def test_unity_outgoing_trim_only_offline_or_without_a_mixer_and_always_with_its_reason() -> None:
+def test_default_outgoing_trim_is_used_offline_or_without_a_mixer() -> None:
     """[if] there is no live mirror, or it carries no mixer [then] the outgoing trim is assumed, with its reason, [else stop].
 
-    Offline it is the trim decks load at, unity since round 22 (ADR-0135); a live mirror without a mixer stays unity."""
+    Offline and incomplete live mirrors use the shared deck-load trim."""
     from apps.autodj.profile import trim_knob
     from apps.autodj.propose import _outgoing_trim_db
 
     db, reason = _outgoing_trim_db(None, 1)
-    assert db == 0.0 and "offline" in (reason or "")
+    assert db == -6.0 and "offline" in (reason or "")
     assert "no mixer" in (_outgoing_trim_db({"decks": {}}, 1)[1] or "")
+    assert _outgoing_trim_db({"decks": {}}, 1)[0] == -6.0
     db, reason = _outgoing_trim_db({"mixer": {"channels": {"1": {"trim": trim_knob(-6.0)}}}}, 1)
     assert db == pytest.approx(-6.0, abs=0.01) and reason is None  # control: a real trim is read as is
 

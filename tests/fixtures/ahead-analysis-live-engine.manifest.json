@@ -1,0 +1,40 @@
+{
+  "contract_version": 1,
+  "fixture": "ahead-analysis-live-engine",
+  "immutable": "Canonical fixture audio for the ahead-analysis live engine acceptance. Verify contract_version and sha256 before copying into a disposable directory. Tests must not regenerate, edit, or replace these files.",
+  "provenance": "Pinned Thu 8 Oct 2026 from the bytes already in tests/fixtures/phase7-dedup and tests/fixtures/conformance/03-8-hot-cues/audio/cues.mp3. The manifest lives outside those directories so a pin file is not imported as another track.",
+  "files": {
+    "phase7-dedup/other-silent-intro.mp3": {
+      "sha256": "sha256:db8d8671be0f6375714e8fefde362ec9d8e43bcc3c725c82a97ba305e9baf45a",
+      "bytes": 73083
+    },
+    "phase7-dedup/src-128.mp3": {
+      "sha256": "sha256:922d6cfa0886ef5a6ae195af01d992782d2680bc40244940254934c9aee7c4d0",
+      "bytes": 49363
+    },
+    "phase7-dedup/src-320.mp3": {
+      "sha256": "sha256:3614b47af8c2d7ae2696f97b7f3e9658fbf26f68ed7f6854c5909b77d62c44b0",
+      "bytes": 61694
+    },
+    "phase7-dedup/src-v2.mp3": {
+      "sha256": "sha256:bc7c41b952684864814f94bde97528e9364b21c16b4f2c270b53d5ca6cb29fce",
+      "bytes": 61734
+    },
+    "phase7-dedup/src.flac": {
+      "sha256": "sha256:097aaa60892594e030549ab364528b9963130048009774713a0a98a0d75e99c9",
+      "bytes": 28985
+    },
+    "phase7-dedup/src.m4a": {
+      "sha256": "sha256:a4154a2261bb53c81e8a8b1d02aa5e5202f2d90e633bcafbb4bb15d8e9f5521c",
+      "bytes": 24832
+    },
+    "phase7-dedup/src.wav": {
+      "sha256": "sha256:babd53ed1d5fde0b9112105a37ab6874407e7f538c632a5ef659c0459a20bf0c",
+      "bytes": 132378
+    },
+    "conformance/03-8-hot-cues/audio/cues.mp3": {
+      "sha256": "sha256:922d6cfa0886ef5a6ae195af01d992782d2680bc40244940254934c9aee7c4d0",
+      "bytes": 49363
+    }
+  }
+}

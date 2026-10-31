@@ -234,6 +234,7 @@ const TRACK = {
 test('null artwork availability identifies an unavailable reader without requesting artwork', async ({ page }) => {
 	const artworkRequests: string[] = [];
 	const unexpectedRequests: string[] = [];
+	const nextUpRequests: { method: string; body: { stable_ids: string[] } }[] = [];
 	const pageErrors: string[] = [];
 	page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -456,6 +457,17 @@ test('null artwork availability identifies an unavailable reader without request
 			}
 		})
 	);
+	// NATIVE-5886: the page tells the engine which tracks AutoPlay loads next.
+	// The first health reading is a sync point, so a page with nothing charted
+	// sends one empty list to clear whatever an earlier page left on the engine
+	// (autoplay-next-up.ts `noteEngineBoot`). Answered the way the engine
+	// answers (routes/ahead_analysis.py `put_next_up`) and counted below: left
+	// to the catch-all's abort, the client retried it and this spec saw six.
+	await page.route('**/api/v1/ahead-analysis/next-up', (route) => {
+		const body = route.request().postDataJSON() as { stable_ids: string[] };
+		nextUpRequests.push({ method: route.request().method(), body });
+		return route.fulfill({ json: { ok: true, next_up: body.stable_ids } });
+	});
 	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
 	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));
 	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
@@ -654,5 +666,8 @@ test('null artwork availability identifies an unavailable reader without request
 
 	expect(artworkRequests).toEqual([]);
 	expect(unexpectedRequests).toEqual([]);
+	// Exactly one: the boot clear. A second would be a resend of an unchanged
+	// list or a retry of a request the engine accepted.
+	expect(nextUpRequests).toEqual([{ method: 'PUT', body: { stable_ids: [] } }]);
 	expect(pageErrors).toEqual([]);
 });

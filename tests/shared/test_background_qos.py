@@ -9,6 +9,7 @@ Regression lines:
 """
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
@@ -18,6 +19,29 @@ import pytest
 
 from apps.shared import process_priority as pp
 from apps.webui.server import ahead_analysis as aa
+
+
+class _FinishedChild:
+    """A queue child that has already exited, so the drain's reader threads finish."""
+
+    def __init__(self) -> None:
+        self.returncode = 0
+        self.pid = 0
+        self.stdout = io.StringIO("")
+        self.stderr = io.StringIO("")
+
+    def poll(self) -> int:
+        return 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
+
 
 pytestmark = pytest.mark.requirement("PERF-DRAIN-01")
 
@@ -48,20 +72,31 @@ def test_missing_taskpolicy_on_darwin_fails_fast(tmp_path: Any) -> None:
         pp.background_argv(ARGV, platform="darwin", taskpolicy=missing)
 
 
+@pytest.mark.parametrize("stoppable", [False, True])
 @pytest.mark.parametrize(("platform", "wrapped"), [("darwin", True), ("linux", False)])
 def test_the_drain_queue_child_goes_through_the_qos_seam(
-    monkeypatch: pytest.MonkeyPatch, platform: str, wrapped: bool
+    monkeypatch: pytest.MonkeyPatch, platform: str, wrapped: bool, stoppable: bool
 ) -> None:
-    """[if] _queue_cli skips the QoS seam on any platform [then] fail, [else stop]."""
+    """[if] _queue_cli skips the QoS seam on any platform [then] fail, [else stop].
+
+    Both ways it starts a child: the plain bounded call every idle run makes,
+    and the stoppable one a while-playing run makes.
+    """
     seen: dict[str, Any] = {}
 
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        seen["argv"] = argv
+        seen.update(argv=argv, via="run")
         return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def fake_popen(argv: list[str], **kwargs: Any) -> Any:
+        seen.update(argv=argv, via="Popen")
+        return _FinishedChild()
 
     monkeypatch.setattr(pp.sys, "platform", platform)
     monkeypatch.setattr(pp, "TASKPOLICY", sys.executable)
     monkeypatch.setattr(aa.subprocess, "run", fake_run)
-    assert aa._queue_cli(["status"], os.devnull)[0] == 0
+    monkeypatch.setattr(aa.subprocess, "Popen", fake_popen)
+    assert aa._queue_cli(["status"], os.devnull, (lambda: False) if stoppable else None)[0] == 0
+    assert seen["via"] == ("Popen" if stoppable else "run"), "an idle call must be the plain bounded call"
     assert (seen["argv"][:2] == [sys.executable, "-b"]) is wrapped
     assert seen["argv"][-4:] == ["--db", os.devnull, "--json", "status"]

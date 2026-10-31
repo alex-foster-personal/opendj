@@ -21,7 +21,13 @@
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
 import { ApiError, api, readApiErrorCode, readApiErrorStatus, unwrap } from '../api';
-import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
+import {
+	subscribe,
+	subscribeKind,
+	subscribeResync,
+	TOPIC_ANALYSIS_CHANGED,
+	type EventEnvelope
+} from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,
 	anlzCacheIdsAwaitingSections,
@@ -610,6 +616,7 @@ function _anyFeatureIsOwn(): boolean {
  * Returns the unsubscribe for the caller's effect cleanup. */
 export function subscribeAnalysisRecordChanges(): () => void {
 	const unsubscribeKind = subscribeKind('tracks', _onTracksChanged);
+	const unsubscribeAnalysis = subscribe(TOPIC_ANALYSIS_CHANGED, _onAnalysisChanged);
 	// The bus fires resync on reconnect, a sequence gap, a malformed frame and a
 	// slow-consumer drop, and it replays NOTHING: `_fireResync` walks the resync
 	// listeners only, never the kind listeners (events-bus.ts) -- "a consumer
@@ -639,9 +646,54 @@ export function subscribeAnalysisRecordChanges(): () => void {
 	const unsubscribeSections = subscribeKind('sections', _onSectionsChanged);
 	return () => {
 		unsubscribeKind();
+		unsubscribeAnalysis();
 		unsubscribeResync();
 		unsubscribeSections();
 	};
+}
+
+/** Refresh only loaded decks named by the canonical-record landing signal.
+ * Missing remains terminal for ambient polling; this explicit event is the
+ * sole retry trigger for a track whose own record was absent at load time. */
+function _onAnalysisChanged(envelope: EventEnvelope): void {
+	const { stable_id, lane } = envelope.payload;
+	if (typeof stable_id !== 'string' || typeof lane !== 'string') return;
+	if (lane !== 'beatgrid' || analysisSourceState.features.beatgrid !== 'own') return;
+	const holders = DECK_IDS.filter((deck) => deckStates[deck].stable_id === stable_id);
+	if (holders.length === 0) return;
+	void _refreshLandedAnalysisDecks(stable_id, lane, holders);
+}
+
+/** Retries a landing refresh without dropping the explicit signal on a transient
+ * `/anlz` failure. The work is limited to the named decks, but its scheduler
+ * claim is deliberately wide because beatgrid adoption reconciles sync state
+ * across the deck pair just like a source toggle. */
+const ANALYSIS_LANDING_RETRIES = 3;
+const ANALYSIS_LANDING_RETRY_MS = 5_000;
+
+async function _refreshLandedAnalysisDecks(
+	stable_id: string,
+	lane: string,
+	holders: (typeof DECK_IDS)[number][],
+	attempt = 0
+): Promise<void> {
+	const wanted = holders.map((deck) => [deck, stable_id] as const);
+	try {
+		if (_refreshRunner === null) throw new Error('no analysis source refresh runner is installed');
+		await _refreshRunner(() => refreshAnalysisSourceDecks(holders, deckStates, () => false));
+	} catch (exc) {
+		if (attempt >= ANALYSIS_LANDING_RETRIES) {
+			console.error(`[analysis-source] landed ${lane} refresh failed; giving up until resync for ${stable_id}`, exc);
+			return;
+		}
+		console.error(`[analysis-source] landed ${lane} refresh failed; retrying for ${stable_id}`, exc);
+		setTimeout(() => {
+			const still = wanted.filter(([deck, id]) => deckStates[deck].stable_id === id);
+			if (still.length > 0) {
+				void _refreshLandedAnalysisDecks(stable_id, lane, still.map(([deck]) => deck), attempt + 1);
+			}
+		}, ANALYSIS_LANDING_RETRY_MS);
+	}
 }
 
 /** STRUCT-06: own-fast sections for these tracks just landed on the server

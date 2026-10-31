@@ -67,17 +67,20 @@ export interface AudioEngine {
 	/** Semantic alias for setPitch: ratio controls tempo, while Master Tempo
 	 * independently controls whether pitch is preserved. */
 	setTempoRatio(deck: DeckId, ratio: number): Promise<void>;
+	/** DECKCTL-6235: park a freshly loaded, paused deck at `ms` and make it the
+	 * cue point (the AU button). A deck already playing is left alone. */
+	parkAtCue(deck: DeckId, ms: number): void;
 	/** Engage a loop range (ms) or disengage with null. */
-	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void>;
+	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null, quantize?: boolean): Promise<void>;
 	/** Save current engaged loop as the one-slot safety loop (armed). */
 	saveSafetyLoop(deck: DeckId): void;
 	setSafetyLoopArmed(deck: DeckId, armed: boolean): void;
 	clearSafetyLoop(deck: DeckId): void;
 	/** Enable/disable PQTZ snapping. Defaults true per deck. */
 	setQuantize(deck: DeckId, enabled: boolean): void;
-	/** Change the quantize grid (1/4/8 beats). 'phase' is rejected upstream
-	 * in performance-ipc, never reaches here. */
-	setQuantizeGrid(deck: DeckId, beats: Exclude<QuantizeGrid, 'phase'>): void;
+	/** Change the quantize grid (1/4/8 beats, or DECKCTL-6235c 'phase': snap to
+	 * the nearest phrase boundary; loops keep whole beats). */
+	setQuantizeGrid(deck: DeckId, beats: QuantizeGrid): void;
 	/** Enable/disable master tempo/phase following. Defaults true per deck. */
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */

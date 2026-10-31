@@ -317,10 +317,14 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         set_live_transport_probe(
             lambda: mirror_transport_live(getattr(app.state, "ui_mirror", None))
         )
+        from apps.webui.server.ui_url import resolve_ui_address
+
+        ui_address = resolve_ui_address(app.state)
         print(
             f"[OK] opendj engine {ENGINE_VERSION} boot_id={lock.boot_id} "
             f"contract_rev={app.state.contract_rev} "
-            f"data_dir={cfg.data_dir} http://{cfg.host}:{cfg.port}",
+            f"data_dir={cfg.data_dir} http://{cfg.host}:{cfg.port} "
+            f"ui_url={ui_address.ui_url if ui_address else 'none (no SPA bundle)'}",
             flush=True,
         )
         def _begin_shutdown() -> None:

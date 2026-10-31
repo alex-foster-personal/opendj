@@ -13,13 +13,15 @@ import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll, readAgentPlanMirror } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
 import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
-import { readXrunSessionCounter } from './xrun-sentinel';
+import { readXrunSentinelMirror } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { outputTopologyMirror } from '$lib/rb/audio-output-status.svelte';
 import { readPerfEvents, recordPerfEvent } from './perf-event-log';
 import { buildAudioHealthMirror } from './audio-health-mirror';
 import {
+	browserLongTaskObserver,
 	classifyMirrorPublishGap,
+	createMirrorGapTracker,
 	mirrorStallMessage
 } from './mirror-publish-stall';
 import { startMirrorPublishTicker } from './mirror-publish-ticker';
@@ -32,7 +34,7 @@ import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-m
 /** AGENT-20: matches UI_MIRROR_SCHEMA in apps/webui/server/routes/state.py. */
 export const UI_MIRROR_SCHEMA = 2;
 
-const MIRROR_CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+export const MIRROR_CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /** `buildUiMirror` runs on the mirror publish tick, so an uncaught throw
  * here would abort the whole publish - every sibling field (decks, audio
@@ -115,7 +117,7 @@ export function buildUiMirror(): Record<string, unknown> {
 		// graph actually wired, and the stereo-fallback reason when they differ.
 		output_topology: outputTopologyMirror(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
-		xrun_sentinel: readXrunSessionCounter(),
+		xrun_sentinel: readXrunSentinelMirror(),
 		mixer: state.mixer,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
@@ -188,6 +190,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		autoplay_enabled: autoPlay.autoplay_enabled,
 		autoplay_armed: autoPlay.autoplay_armed,
 		autoplay_disarm_reason: autoPlay.autoplay_disarm_reason,
+		// DECKCTL-6235: the AU switch, which `opendj deck_autocue` confirms against.
+		deck_autocue: state.ui.deck_autocue,
 		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) =>
 			controlPreferredName(element, index)
 		),
@@ -210,6 +214,16 @@ export function installUiMirror(leadership: TabLeadership): () => Promise<void> 
 	// silent toward the engine, so it can neither overwrite the playing tab's
 	// state nor execute an order the operator's tab should run.
 	let lastPublishAtMs: number | null = null;
+	// What the page saw between publishes, so a stall names its likely cause.
+	const gapTracker = createMirrorGapTracker({
+		now: () => performance.now(),
+		isHidden: () => document.visibilityState === 'hidden',
+		onVisibilityChange: (listener) => {
+			document.addEventListener('visibilitychange', listener);
+			return () => document.removeEventListener('visibilitychange', listener);
+		},
+		observeLongTasks: browserLongTaskObserver
+	});
 	const mirror = createLeasedMirrorPublisher({
 		leadership,
 		clientId: MIRROR_CLIENT_ID,
@@ -217,15 +231,18 @@ export function installUiMirror(leadership: TabLeadership): () => Promise<void> 
 		isPlaying: _anyDeckPlaying,
 		isVisible: () => document.visibilityState === 'visible',
 		beforePublish: (nowMs) => {
+			const evidence = gapTracker.take();
 			if (
 				lastPublishAtMs !== null &&
 				classifyMirrorPublishGap(nowMs - lastPublishAtMs) === 'stall'
 			) {
 				recordPerfEvent(
 					'mirror-stall',
-					mirrorStallMessage(nowMs - lastPublishAtMs),
+					mirrorStallMessage(nowMs - lastPublishAtMs, evidence),
 					null,
-					'error'
+					// warn, not error: a stall is local diagnosis (OBS-08). Only error rows
+					// escalate to client-errors, so this keeps it out of the sink.
+					'warn'
 				);
 			}
 			lastPublishAtMs = nowMs;
@@ -273,6 +290,7 @@ export function installUiMirror(leadership: TabLeadership): () => Promise<void> 
 			stopPublishTicker();
 			closeMirrorIfLeader();
 			unsubscribeLeadership();
+			gapTracker.dispose();
 		});
 	};
 }

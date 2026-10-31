@@ -2,6 +2,7 @@ export { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silen
 export {
 	notePresentationClock,
 	notePresentationTickFailure,
+	presentationTickFailure,
 	readOutputTimestamp,
 	resetPresentationClockStall
 } from '$lib/rb/presentation-clock-report';

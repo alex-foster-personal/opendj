@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
-from apps.shared.pairings.schema_sql import ensure_phase08_tables
+from apps.shared.pairings.schema_sql import ensure_phase08_tables, prepare_repo_connection
 from apps.shared.smartlists import (
     SmartlistRow,
     validate_rule,
@@ -118,9 +118,11 @@ class SmartlistsRepo:
         *,
         ensure_schema: bool = True,
     ) -> None:
-        self.conn = conn
-        if ensure_schema:
-            ensure_phase08_tables(conn)
+        self.conn = prepare_repo_connection(
+            conn,
+            ensure_phase08_tables,
+            ensure_schema=ensure_schema,
+        )
 
     def unused_name(self, base: str) -> str:
         """Return ``base`` or the first unused ``base N`` among live rows."""

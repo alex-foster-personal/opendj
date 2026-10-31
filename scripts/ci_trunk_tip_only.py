@@ -49,7 +49,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
 from urllib.parse import quote
 
 try:
@@ -63,6 +62,8 @@ try:
         _run_gh,
     )
     from scripts.ci_phantom_runs import JobsOf, one_page_jobs, skip_phantoms
+    from scripts.gh_actions_run_cancel import CancelOutcome
+    from scripts.gh_actions_run_cancel import cancel_run as _cancel_run_logged
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.ci_trunk_tip_only") from None
@@ -84,16 +85,6 @@ PAGE_SIZE = 100
 # attempt disagreed.
 CENSUS_MAX_ATTEMPTS = 3
 CENSUS_RETRY_SLEEP_SECONDS = 1.5
-
-_NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
-
-
-class CancelOutcome(Enum):
-    """Result of one cancel POST."""
-
-    CANCELLED = "cancelled"
-    SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
-    ALREADY_COMPLETED = "already_completed"
 
 
 @dataclass(frozen=True)
@@ -472,25 +463,16 @@ def _cancel_skip_log_line(run: QueuedRun, trunk_tip: str) -> str:
     )
 
 
-def _is_not_yet_queued_cancel_conflict(exc: PreconditionError) -> bool:
-    message = str(exc)
-    return all(marker in message for marker in _NOT_YET_QUEUED_CANCEL_MARKERS)
-
-
 def _cancel_run(run_id: int) -> CancelOutcome:
-    try:
-        _run_gh(["api", "--method", "POST", f"repos/{REPO}/actions/runs/{run_id}/cancel"])
-    except PreconditionError as exc:
-        if _is_not_yet_queued_cancel_conflict(exc):
-            return CancelOutcome.SKIPPED_NOT_YET_QUEUED
-        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}") if "HTTP 409" in str(exc) else None
-        if isinstance(status, dict) and status.get("status") == "completed":
-            line = f"cancel-already-completed run_id={run_id} reason=already-completed"
-            print(f"::notice::{line}")
-            print(line)
-            return CancelOutcome.ALREADY_COMPLETED
-        raise
-    return CancelOutcome.CANCELLED
+    # Tests monkeypatch this module's ``_run_gh`` / ``_gh_api_json``; pass them through so
+    # ``gh_actions_run_cancel.cancel_run`` does not hit the live GitHub API.
+    return _cancel_run_logged(
+        run_id,
+        repo=REPO,
+        reason="trunk-tip-only-sweep",
+        run_gh=_run_gh,
+        gh_api_json=_gh_api_json,
+    )
 
 
 def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:

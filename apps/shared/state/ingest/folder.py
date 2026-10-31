@@ -45,8 +45,8 @@ from typing import Any
 from apps.shared import audio_files, audio_playable, fs_access, fs_residency, hashing
 from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
+from apps.shared.state import analysis_stale, deleted_tracks
 from apps.shared.state import db as state_db
-from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state import provenance as state_provenance
@@ -66,6 +66,11 @@ _ClockFn = Callable[[], _dt.datetime]
 #: ``(done, total, message)``. Total is known before the first write because
 #: the walk completes first -- a bar that cannot say "of what" is a spinner.
 ProgressFn = Callable[[int, int, str], None]
+
+
+#: Retagging leaves the audio payload hash alone, so more real byte rewrites
+#: than this in one write pass looks like a mass event; the rest waits a cycle.
+MAX_ANALYSIS_DROPS_PER_CYCLE = 100
 
 
 @dataclasses.dataclass
@@ -107,6 +112,8 @@ class FolderIngestReport:
     #: so every track it creates has no bpm, no key and no beatgrid, and the
     #: number is reported rather than left for someone to discover.
     tracks_without_analysis: int = 0
+    #: Rewritten rows over ``MAX_ANALYSIS_DROPS_PER_CYCLE``: unserved now, redone next pass.
+    analysis_drops_withheld: int = 0
     duration_s: float = 0.0
     dry_run: bool = True
 
@@ -190,7 +197,9 @@ def ingest_folder(
 
     try:
         with state_db.write_unit(conn, "setup_ingest_folder", keep=not dry_run):
-            _write_tracks(writer, files, report, on_progress, restore_removed=restore_removed)
+            drop_budget = AnalysisDropBudget(limit=MAX_ANALYSIS_DROPS_PER_CYCLE)
+            _write_tracks(writer, files, report, on_progress, drop_budget, restore_removed=restore_removed)
+            report.analysis_drops_withheld = drop_budget.withheld
             writer.register_adapter(
                 ADAPTER_ID,
                 last_run_at=now_fn().isoformat(),
@@ -303,11 +312,34 @@ def _rows_to_write_onto(
     return rows
 
 
+@dataclasses.dataclass
+class AnalysisDropBudget:
+    """How many rows one write pass may strip of analysis, and what it withheld.
+
+    A row over the limit keeps its stored hash and every analysis record, so
+    the next cycle sees the rewrite again and drains it. Its records are
+    marked stale at once and leave the serving pointers, so nothing serves
+    analysis of the old bytes meanwhile; only deletion and recomputation wait.
+    """
+
+    limit: int
+    dropped: int = 0
+    withheld: int = 0
+
+    def take(self) -> bool:
+        if self.dropped >= self.limit:
+            self.withheld += 1
+            return False
+        self.dropped += 1
+        return True
+
+
 def _write_tracks(
     writer: StateWriter,
     files: list[audio_files.AudioFile],
     report: FolderIngestReport,
     on_progress: ProgressFn | None,
+    drop_budget: AnalysisDropBudget,
     *,
     restore_removed: bool = False,
 ) -> None:
@@ -392,6 +424,21 @@ def _write_tracks(
             # Same audio under another id (a new path): the file is written as
             # the new row below and the old tombstone is left as it is.
 
+        # A changed hash drops the old analysis. A missing prior hash is not
+        # proof either way; see _analysis_may_describe_other_bytes. A new row
+        # has no analysis to drop.
+        written_at = _last_changed_at(entry.path, entry.mtime)
+        drop = (
+            existing is not None
+            and bool(audio_hash)
+            and _row_may_describe_other_bytes(writer.raw_conn, rows[0], audio_hash, written_at, duration_ms)
+        )
+        if drop and not drop_budget.take():
+            _retire_analysis_of_replaced_bytes(writer.raw_conn, stable_id, delete=False)
+            for sibling in _siblings_that_would_drop(writer.raw_conn, rows[1:], audio_hash, written_at, duration_ms):
+                drop_budget.withheld += 1
+                _retire_analysis_of_replaced_bytes(writer.raw_conn, str(sibling[0]), delete=False)
+            continue
         title, artists, album, row_duration_ms = _metadata_to_write(
             existing, metadata, entry, duration_ms
         )
@@ -411,13 +458,10 @@ def _write_tracks(
             report.tracks_inserted += 1
         else:
             report.tracks_unchanged += 1
-        # A missing prior hash is not proof the stored analysis describes
-        # these bytes. Drop it on a refresh of an existing row. A new row
-        # has no analysis to drop.
+        if drop:
+            _retire_analysis_of_replaced_bytes(writer.raw_conn, stable_id, delete=True)
         if existing is not None and audio_hash:
-            if prior_hash != audio_hash:
-                _drop_analysis_for_replaced_bytes(writer.raw_conn, stable_id)
-            _refresh_other_live_rows(writer, rows[1:], audio_hash)
+            _refresh_other_live_rows(writer, rows[1:], audio_hash, written_at, duration_ms, drop_budget)
         report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
         write_file_tag_metadata(writer, stable_id, metadata, report)
         # A folder import analyses nothing. A tag BPM / key is the file's own
@@ -428,29 +472,140 @@ def _write_tracks(
             on_progress(index, total, f"{index} of {total}: {entry.path.name}")
 
 
+#: Backends the ahead drain (``ahead_analysis.LANE_ORDER``) regenerates from the
+#: file's bytes. Only their records are deleted on a rewrite; any other record
+#: (imported, vendor, user-edited) cannot be made again and is kept, stale.
+_DRAIN_REGENERATED_BACKENDS: tuple[str, ...] = (
+    "own_loudness.backfill",
+    "own_beatgrid.backfill",
+    "own_key.backfill",
+    "own_waveform.backfill",
+)
+
 # Literal DELETE statements. These tables are machine-local analysis, not
 # synced entity tables. An f-string target is what the soft-delete guard
 # rejects, because it cannot see that the name is outside the synced set.
 _ANALYSIS_DROP_SQL: tuple[tuple[str, str], ...] = (
-    ("analysis", "DELETE FROM analysis WHERE stable_id = ?"),
+    ("analysis", "DELETE FROM analysis WHERE stable_id = ? AND backend = ?"),
+    ("analysis_stale", "DELETE FROM analysis_stale WHERE stable_id = ? AND backend = ?"),
+)
+# The pointer and projection name only eligible own rows; every row left after
+# the drop is stale, so neither may keep pointing at it.
+_POINTER_DROP_SQL: tuple[tuple[str, str], ...] = (
     ("analysis_canonical", "DELETE FROM analysis_canonical WHERE stable_id = ?"),
     ("analysis_projection", "DELETE FROM analysis_projection WHERE stable_id = ?"),
-    ("analysis_stale", "DELETE FROM analysis_stale WHERE stable_id = ?"),
+)
+_KEPT_LANES_SQL: str = (
+    "SELECT a.backend, a.backend_version, l.key FROM analysis AS a, "
+    "json_each(a.record_json, '$.lanes') AS l WHERE a.stable_id = ? UNION ALL "
+    "SELECT backend, backend_version, '*' FROM analysis WHERE stable_id = ?"
 )
 
 
+#: Further apart than this, a stored and a read duration are two recordings.
+_SAME_RECORDING_TOLERANCE_MS = 1000
+
+
+def _last_changed_at(path: Path, mtime: float) -> float:
+    """When the file last changed: its mtime, or its inode change if later.
+
+    A copy or rewrite that restores the old mtime (``cp -p``, ``rsync -t``)
+    still moves POSIX ``st_ctime``, which no ordinary tool can set back, so a
+    hash-less row cannot keep analysis of the bytes it replaced (Sol P1 on
+    #5886). Windows has no inode change time: there ``st_ctime`` (and
+    ``st_birthtime`` from Python 3.12) is creation time, which a copy also
+    moves. A file that cannot be read now counts as changed now.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return time.time()
+    changed = getattr(st, "st_birthtime", st.st_ctime) if sys.platform == "win32" else st.st_ctime
+    return max(mtime, changed)
+
+
+def _analysis_may_describe_other_bytes(
+    conn: Any,
+    stable_id: str,
+    prior_hash: str | None,
+    audio_hash: str,
+    file_mtime: float,
+    *,
+    stored_duration_ms: int | None,
+    file_duration_ms: int | None,
+) -> bool:
+    """True when a refresh must drop ``stable_id``'s analysis.
+
+    A row with no analysis records has nothing to drop. Otherwise a stored
+    hash decides on its own: equal keeps, different drops. With no
+    stored hash (a row written before audio hashes existed, or one whose
+    file could not be read then) the bytes are unknown, and dropping on that
+    alone would erase every such row's analysis on the first rescan that
+    walks its folder. So the analysis is kept only when the file is as long
+    as the row says (a duration that cannot be read on either side is no
+    match) and every record for the row was made after the file last changed
+    (``file_mtime`` is :func:`_last_changed_at`: write or inode change); a
+    record older than that, or one whose time cannot be read, may describe
+    other bytes.
+    """
+    if prior_hash is not None and prior_hash == audio_hash:
+        return False
+    # A row with no analysis has nothing to drop, so it must not spend the
+    # per-cycle drop budget and be withheld for it (Sol P2 on #5886).
+    stamps = [
+        str(row[0])
+        for row in conn.execute(
+            "SELECT analyzed_at FROM analysis WHERE stable_id = ?", (stable_id,)
+        ).fetchall()
+    ] if _table_exists(conn, "analysis") else []
+    if not stamps:
+        return False
+    if prior_hash is not None:
+        return True
+    if (
+        stored_duration_ms is None
+        or file_duration_ms is None
+        or abs(int(stored_duration_ms) - file_duration_ms) > _SAME_RECORDING_TOLERANCE_MS
+    ):
+        return True
+    written = _dt.datetime.fromtimestamp(file_mtime, tz=_dt.UTC)
+    for stamp in stamps:
+        try:
+            analyzed = _dt.datetime.fromisoformat(stamp)
+        except ValueError:
+            return True
+        if analyzed.tzinfo is None:
+            # The store writes every analyzed_at with its zone. A naive one is
+            # unreadable here, not UTC: guessing could keep analysis of
+            # replaced bytes, so it fails safe like an unparsable stamp.
+            return True
+        if analyzed < written:
+            return True
+    return False
+
+
 def _refresh_other_live_rows(
-    writer: StateWriter, rows: list[tuple[Any, ...]], audio_hash: str
+    writer: StateWriter,
+    rows: list[tuple[Any, ...]],
+    audio_hash: str,
+    file_mtime: float,
+    file_duration_ms: int | None,
+    drop_budget: AnalysisDropBudget,
 ) -> None:
     """Give every other live row at this path the rewritten bytes' hash.
 
     The strongest identity already took the tag refresh. These rows are not
     merged and not deleted. A hash that still describes the previous bytes
     is replaced, and that row's analysis is dropped, or a deck keeps serving
-    the old BPM from the duplicate.
+    the old BPM from the duplicate. A row over ``drop_budget`` keeps its hash
+    and records, retired from serving until a later cycle drains it.
     """
     for row in rows:
         if row[3] == audio_hash:
+            continue
+        drop = _row_may_describe_other_bytes(writer.raw_conn, row, audio_hash, file_mtime, file_duration_ms)
+        if drop and not drop_budget.take():
+            _retire_analysis_of_replaced_bytes(writer.raw_conn, str(row[0]), delete=False)
             continue
         writer.upsert_track(
             stable_id=str(row[0]),
@@ -464,14 +619,41 @@ def _refresh_other_live_rows(
             content_hash=row[9],
             audio_hash=audio_hash,
         )
-        _drop_analysis_for_replaced_bytes(writer.raw_conn, str(row[0]))
+        if drop:
+            _retire_analysis_of_replaced_bytes(writer.raw_conn, str(row[0]), delete=True)
+
+
+def _row_may_describe_other_bytes(
+    conn: Any, row: tuple[Any, ...], audio_hash: str, file_mtime: float, file_duration_ms: int | None
+) -> bool:
+    return _analysis_may_describe_other_bytes(
+        conn, str(row[0]), row[3], audio_hash, file_mtime,
+        stored_duration_ms=row[8], file_duration_ms=file_duration_ms,
+    )
+
+
+def _siblings_that_would_drop(
+    conn: Any, rows: list[tuple[Any, ...]], audio_hash: str, file_mtime: float, file_duration_ms: int | None
+) -> list[tuple[Any, ...]]:
+    """The other live rows at a withheld path whose analysis would drop too."""
+    return [
+        row for row in rows
+        if row[3] != audio_hash and _row_may_describe_other_bytes(conn, row, audio_hash, file_mtime, file_duration_ms)
+    ]
 
 
 def _stored_artists(row: tuple[Any, ...]) -> list[str]:
     """The artist list a stored row carries. A value that is not a JSON list raises."""
-    parsed = json.loads(row[6]) if row[6] else []
+    # NULL and "" are not JSON lists either: every tracks writer stores
+    # json.dumps(list), so reading them as [] would write an empty artist list
+    # over a malformed row and hide the drift (NATIVE-30).
+    raw = row[6]
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else None
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"track {row[0]} artists_json must be a JSON list, got {raw!r}") from exc
     if not isinstance(parsed, list):
-        raise ValueError(f"track {row[0]} artists_json must be a JSON list")
+        raise ValueError(f"track {row[0]} artists_json must be a JSON list, got {raw!r}")
     return [str(name) for name in parsed]
 
 
@@ -495,19 +677,41 @@ def _metadata_to_write(
     return _title(metadata, entry), _artists(metadata), album, duration_ms
 
 
-def _drop_analysis_for_replaced_bytes(conn: Any, stable_id: str) -> None:
-    """Forget analysis of the previous bytes so the drain runs the new ones.
+def _retire_analysis_of_replaced_bytes(conn: Any, stable_id: str, *, delete: bool) -> None:
+    """Stop serving analysis of the previous bytes; with ``delete``, let the drain redo it.
 
-    The tables are created by the analysis store, not by every state file, so
-    a missing table is a library that has never analysed anything.
+    ``delete`` forgets drain-made records so the drain runs the new bytes. A
+    record no drain lane can remake, and every record when ``delete`` is off
+    (a rewrite over the drop budget), is kept and marked stale per lane, so
+    it leaves the canonical pointer without being erased; a whole-record
+    marker also withholds it, lanes or none, from the latest-record readers. The tables are
+    created by the analysis store, not by every state file, so a missing
+    table is a library that has never analysed anything.
     """
-    for table, sql in _ANALYSIS_DROP_SQL:
-        present = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
-        ).fetchone()
-        if present is not None:
+    if not _table_exists(conn, "analysis"):
+        return
+    analysis_stale.ensure_stale_table(conn)
+    for _table, sql in _ANALYSIS_DROP_SQL if delete else ():
+        for backend in _DRAIN_REGENERATED_BACKENDS:
+            conn.execute(sql, (stable_id, backend))
+    for table, sql in _POINTER_DROP_SQL:
+        if _table_exists(conn, table):
             conn.execute(sql, (stable_id,))
+    for backend, backend_version, lane in conn.execute(_KEPT_LANES_SQL, (stable_id, stable_id)).fetchall():
+        analysis_stale.mark_stale(
+            conn,
+            stable_id=stable_id,
+            lane=str(lane),
+            backend=str(backend),
+            backend_version=str(backend_version),
+            reason=analysis_stale.STALE_AUDIO_REPLACED,
+        )
+
+
+def _table_exists(conn: Any, table: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone() is not None
 
 
 def _identify(
@@ -681,6 +885,7 @@ def run_cli(args: argparse.Namespace) -> int:
 
 __all__ = [
     "ADAPTER_ID",
+    "MAX_ANALYSIS_DROPS_PER_CYCLE",
     "FolderIngestReport",
     "ProgressFn",
     "collect_audio",

@@ -96,7 +96,7 @@ def test_every_control_exists_on_http_and_on_the_cli() -> None:
 @pytest.mark.requirement("PERFBATCH-05")
 def test_every_control_is_documented_in_openapi_json() -> None:
     """[if] a library-jobs route exists [then] openapi.json documents it, [else stop]."""
-    spec = json.loads(OPENAPI.read_text())
+    spec = json.loads(OPENAPI.read_text(encoding="utf-8"))
     documented = set(spec["paths"])
     assert "/api/v1/library-jobs/enqueue" in documented
     assert "/api/v1/library-jobs" in documented
@@ -110,9 +110,9 @@ def test_every_control_is_reachable_from_the_ui_panel() -> None:
     """[if] a library-jobs control exists [then] the UI panel reaches it, [else stop]."""
     assert PANEL.exists(), f"{PANEL} is missing; the UI half of parity is absent"
     assert API_CLIENT.exists(), f"{API_CLIENT} is missing"
-    client_src = API_CLIENT.read_text()
-    panel_src = PANEL.read_text()
-    browser_src = BROWSER.read_text()
+    client_src = API_CLIENT.read_text(encoding="utf-8")
+    panel_src = PANEL.read_text(encoding="utf-8")
+    browser_src = BROWSER.read_text(encoding="utf-8")
     for needle in (
         "library-jobs/enqueue",
         "enqueueLibraryJobs",

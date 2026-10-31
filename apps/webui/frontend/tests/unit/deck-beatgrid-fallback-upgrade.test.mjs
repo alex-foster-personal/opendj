@@ -359,6 +359,8 @@ test('an unmapped analyzed track ends up with a real grid on st.anlz', async () 
 
 	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS);
 	assert.equal(st.anlz.beatgrid.beat_count, REAL_BEATS.length);
+	// Sentry on PR #8132: the deck's fallback grid carries its marker, so grid edits refuse it.
+	assert.equal(st.anlz.beatgrid.fallback, true);
 	// Everything the 200 payload genuinely carried survives the merge.
 	assert.deepEqual(st.anlz.waveform, before.waveform);
 	assert.deepEqual(st.anlz.vocals, { status: 'not_analyzed' });
@@ -385,6 +387,7 @@ test('a vendor mapping landing mid-flight (anlz_available: true) re-fetches /anl
 	});
 
 	assert.deepEqual(st.anlz.beatgrid.beats, REAL_BEATS, 'the refetched ANLZ grid lands, never the synthetic fallback');
+	assert.equal(st.anlz.beatgrid.fallback, undefined, 'control: a refetched /anlz grid is not marked as the fallback');
 	assert.deepEqual(calls, [{ deck: 1, landed: true }]);
 	assert.deepEqual(paths.map((p) => p.split('/').pop()), ['rb-meta', 'beatgrid-fallback', 'anlz']);
 });

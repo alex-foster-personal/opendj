@@ -440,7 +440,9 @@ def _outgoing_trim_db(live: Mapping[str, Any] | None, out_deck: int) -> tuple[fl
             f"offline proposal: no live outgoing trim, so the match assumes the deck loaded at {DECK_LOAD_TRIM_DB:+.0f} dB"
         )
     if "mixer" not in live:
-        return 0.0, "the live mirror carries no mixer, so the match assumes the outgoing trim at unity"
+        return DECK_LOAD_TRIM_DB, (
+            f"the live mirror carries no mixer, so the match assumes the outgoing trim at {DECK_LOAD_TRIM_DB:+.0f} dB"
+        )
     mixer = live_mapping(live["mixer"], "live mirror mixer")
     channels = live_mapping(_present(mixer, "channels", "live mirror mixer"), "live mirror channels")
     channel = live_mapping(_present(channels, str(out_deck), "live mirror channels"), "live mirror channel")

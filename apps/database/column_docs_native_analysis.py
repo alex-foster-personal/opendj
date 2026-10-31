@@ -7,7 +7,7 @@ so callers still read one map.
 
 Schema authority: ``apps/analysis/store.py`` (``_ANALYSIS_TABLES_SQL``),
 mirrored into the consolidated engine schema's ``native_analysis_v1`` domain.
-Design: ``specs/native-analysis-v1.md`` section 3.
+Design: ``(private path)`` section 3.
 
 -Claude
 """
@@ -133,9 +133,9 @@ NATIVE_ANALYSIS_COLUMN_DOCS: dict[str, dict[str, str]] = {
 },
 "analysis_stale": {
     "stable_id": "Track whose record went stale.",
-    "lane": "Lane of the stale record.",
+    "lane": "Lane of the stale record, or * for the whole record.",
     "backend": "Stale record's backend. With the version, names one row.",
     "backend_version": "Stale record's producer semver.",
-    "reason": "Why: today only dependency_record_changed.",
+    "reason": "Why: dependency_record_changed or audio_bytes_replaced.",
     "detected_at": "UTC RFC 3339 the cascade marked it.",
 },}

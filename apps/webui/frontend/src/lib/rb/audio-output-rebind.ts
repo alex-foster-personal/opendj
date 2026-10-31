@@ -61,6 +61,7 @@ import {
 	AudioContextIoTimeoutError,
 	withAudioContextIoTimeout
 } from '$lib/rb/audio-context-io-timeout';
+import { beginExpectedSuspend } from '$lib/rb/audio-context-watchdog';
 
 export const REBIND_DEBOUNCE_MS = 400;
 export const REBIND_COOLDOWN_MS = 10_000;
@@ -190,8 +191,14 @@ export function installOutputRebind(
 		}
 		rebinding = true;
 		lastRebindAt = effects.now();
+		let releaseExpectedSuspend: (() => void) | null = null;
 		try {
 			if (ctx.state === 'running') {
+				// This suspend is ours: the context watchdog must not report it as a
+				// drop or race the resume (issue #5887). Marked only when we actually
+				// suspend, so a context that was already suspended (a genuine drop whose
+				// statechange is still queued) is still reported and recovered.
+				releaseExpectedSuspend = beginExpectedSuspend(ctx);
 				await withAudioContextIoTimeout('suspend', ctx.suspend(), ioTimeoutMs);
 			}
 			await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
@@ -213,12 +220,18 @@ export function installOutputRebind(
 			effects.recordPerfEvent('audio-output-rebind-failed', `${reason}: ${message}`, 'error');
 			effects.pushToast(`Audio output could not be re-bound after ${reason}: ${message}`, 'error');
 		} finally {
-			rebinding = false;
-			if (heldDuringRebind) {
-				heldDuringRebind = false;
-				// Re-entry lands in the cooldown branch above and arms the residual
-				// wait, so the rate limit is untouched: still one cycle per cooldown.
-				void rebind(deferredReason, true);
+			// The release throws on a broken counter; the re-bind must still
+			// clear its own in-flight state, or no re-bind would ever run again.
+			try {
+				releaseExpectedSuspend?.();
+			} finally {
+				rebinding = false;
+				if (heldDuringRebind) {
+					heldDuringRebind = false;
+					// Re-entry lands in the cooldown branch above and arms the residual
+					// wait, so the rate limit is untouched: still one cycle per cooldown.
+					void rebind(deferredReason, true);
+				}
 			}
 		}
 	}

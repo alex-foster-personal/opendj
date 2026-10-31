@@ -264,7 +264,16 @@ fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
     }
 }
 
-use supervisor::{start_runtime_supervisor, Supervised, SupervisorPaths, RuntimeSupervisorState};
+use supervisor::{
+    release_parent_watch_ownership, start_runtime_supervisor, write_parent_file as record_parent_file,
+    BootSupervisedGuard, Supervised, SupervisorPaths, RuntimeSupervisorState,
+};
+
+fn write_parent_file(data_dir: &Path) -> Result<(), engine::EngineError> {
+    record_parent_file(data_dir).map_err(|detail| {
+        engine::EngineError::new("Open DJ could not record its shell parent.", detail)
+    })
+}
 
 /// Where the installed app keeps its library.
 ///
@@ -286,27 +295,6 @@ fn payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
         detail: format!("Resolving the bundle resource directory failed: {err}"),
     })?;
     Ok(resources.join(engine::PAYLOAD_DIR))
-}
-
-fn write_parent_file(data_dir: &Path) -> Result<(), engine::EngineError> {
-    let path = data_dir.join(PARENT_FILE);
-    std::fs::write(&path, format!("{}\n", std::process::id())).map_err(|err| {
-        engine::EngineError::new(
-            "Open DJ could not record its shell parent.",
-            format!("{}: {err}", path.display()),
-        )
-    })?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|err| {
-            engine::EngineError::new(
-                "Open DJ could not secure its shell parent file.",
-                format!("{}: {err}", path.display()),
-            )
-        })?;
-    }
-    Ok(())
 }
 
 fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
@@ -343,6 +331,7 @@ fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
         LaunchPlan::Adopt { pid, host, port } => {
             write_parent_file(&data_dir)?;
             if !engine::health_ok(port) {
+                release_parent_watch_ownership(&data_dir);
                 return Err(engine::EngineError::new(
                     "Open DJ could not adopt the running engine.",
                     format!(
@@ -371,10 +360,13 @@ fn spawn_fresh_engine(
     log_path: &Path,
 ) -> Result<Supervised, engine::EngineError> {
     write_parent_file(data_dir)?;
-    let port = engine::free_loopback_port()?;
+    let port = engine::engine_port()?;
     let mut running = engine::spawn(payload, data_dir, log_path, port)?;
     match running.wait_until_healthy(engine::BOOT_TIMEOUT) {
-        Ok(()) => Ok(Supervised::Spawned(running)),
+        Ok(()) => {
+            engine::log_ui_address(port);
+            Ok(Supervised::Spawned(running))
+        }
         Err(mut failure) => {
             let lock_path = launch::lock_path(data_dir);
             match launch::inspect_lock(&lock_path, engine::health_ok) {
@@ -382,6 +374,7 @@ fn spawn_fresh_engine(
                     running.shutdown();
                     write_parent_file(data_dir)?;
                     if !engine::health_ok(port) {
+                        release_parent_watch_ownership(data_dir);
                         return Err(engine::EngineError::new(
                             "Open DJ could not adopt the running engine.",
                             format!(
@@ -583,6 +576,7 @@ fn main() {
                     Err(failure) => fail_visibly(&failure),
                 },
             };
+            let mut boot_engine = BootSupervisedGuard::new(running, data_dir.clone());
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
             // CUEOUT-22: the native headphone cue output. A failure to start it
@@ -641,7 +635,7 @@ fn main() {
                 })
                 .build()?;
 
-            if let Some(started) = running {
+            if let Some(started) = boot_engine.take() {
                 let payload = payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
                 let paths = SupervisorPaths {
                     payload,

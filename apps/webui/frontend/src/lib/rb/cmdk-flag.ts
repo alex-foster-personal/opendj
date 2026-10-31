@@ -36,3 +36,27 @@ export function cmdkPreviewMode(): 'off' | 'above' | 'inline' {
 	void buildFlags.load();
 	return cmdkPreviewModeIn(buildFlags.flags);
 }
+
+/** CMDK-11..14 (issue #6091): settings and commands as results, and the quick pick. */
+export const CMDK_ACTIONS_FLAG_ID = 'cmdk.v2.actions';
+
+export function cmdkActionsEnabled(): boolean {
+	void buildFlags.load();
+	return cmdkFlagIn(buildFlags.flags, CMDK_ACTIONS_FLAG_ID);
+}
+
+/** CMDK-17..19 (issue #6092): the master deck's pairs on open, with the Comet edge. */
+export const CMDK_PAIRS_FLAG_ID = 'cmdk.v2.pairs';
+
+export function cmdkPairsEnabled(): boolean {
+	void buildFlags.load();
+	return cmdkFlagIn(buildFlags.flags, CMDK_PAIRS_FLAG_ID);
+}
+
+/** CMDK-20..22 (issue #6093): Tab for AI search via JEV. */
+export const CMDK_AI_FLAG_ID = 'cmdk.v2.ai';
+
+export function cmdkAiEnabled(): boolean {
+	void buildFlags.load();
+	return cmdkFlagIn(buildFlags.flags, CMDK_AI_FLAG_ID);
+}

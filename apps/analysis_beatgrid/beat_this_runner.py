@@ -84,7 +84,7 @@ survey identifies for this project's dynamic-tempo under-gridding: round 0
 measured 6 of 137 dynamic tracks gridded not at all and 42 under-gridded, and
 the SMC analysis attributes exactly that shape to activations dipping below the
 threshold during tempo drift
-(docs/research/beatgrid-and-segmentation-sota-20260906-a-beat-tracking.md
+((private path)
 section 2.2). So `_pick_peaks` reproduces `Postprocessor.postp_minimal` step
 for step with the threshold exposed.
 
@@ -137,11 +137,11 @@ audio minute above a ~330 MB floor. The short arm is what makes that a
 measurement rather than a number. Consequence for the backfill: a 4-worker
 drain over 20-minute material wants roughly 6.5 GB, so worker count is chosen
 against track length, not core count. `--measure-rss` reports the peak on every
-run so the figure stays a measurement. See specs/native-analysis-v1.md
-section 4 and docs/perf/performance-register.md.
+run so the figure stays a measurement. See (private path)
+section 4 and (private path).
 
 DEVICE: `auto` is mps, then cuda, then cpu. CPU is the REQUIRED path
-(specs/native-analysis-v1.md section 4, "CPU-only path"), so `--device cpu`
+((private path) section 4, "CPU-only path"), so `--device cpu`
 must always work and the benchmark's honest timing figure is the CPU one; a
 laptop analysing a library in the background is the target, not a GPU box.
 """
@@ -166,7 +166,7 @@ from beat_this.inference import Audio2Frames, Postprocessor, load_audio
 # ----- Named constants ----------------------------------------------------
 
 PRODUCER = "own_beatgrid.backfill"
-PRODUCER_VERSION = "1.6.0"
+PRODUCER_VERSION = "1.7.0"
 
 FPS = 50                      # Beat This! framewise prediction rate.
 CHUNK_SIZE_FRAMES = 1500      # 30 s; the bound on inference memory.
@@ -201,7 +201,7 @@ def resolve_checkpoint_sha256(checkpoint: str) -> tuple[str | None, str | None]:
     torch hub cache that can be replaced, and `--checkpoint` accepts an
     arbitrary path, so two runs recording the same name can have loaded
     different weights. The spec makes model sha256 part of every record
-    (specs/native-analysis-v1.md sections 2 and 3) precisely because the weights
+    ((private path) sections 2 and 3) precisely because the weights
     are a direct input to every beat emitted. Reported as None rather than
     guessed when the file cannot be located, so an absent digest is visible
     instead of being a plausible-looking name (Codex P1 on PR #1514).
@@ -360,7 +360,7 @@ def analyze_one(
 
     os.makedirs(activations_dir, exist_ok=True)
     # Keep in lockstep with `activations.activation_npz_name`; tested in
-    # `tests/analysis_beatgrid/test_activations.py`.
+    # `(private path)`.
     # The BASENAME alone collides: one run over two directories holding the
     # same filename wrote both tracks to one npz, the second overwriting the
     # first, while both JSON rows pointed at it. These are retained for
@@ -703,7 +703,7 @@ def main() -> int:
         # runner reported "done: 0/1" and returned 0, and an artifact with no
         # results looked like a completed shard. In a sharded backfill that is
         # a missing shard the merge would accept, which is the exit-code
-        # false-green `.claude/rules/verification.md` names first.
+        # false-green `(private path)` names first.
         #
         # DELIBERATELY NOT "any failure": GTZAN's corrupt jazz.00054 fails on
         # every legitimate run of the committed round-2 corpus, so failing on

@@ -205,4 +205,14 @@ test('reconcileLoopForAuthoritativeGrid: idle loop re-derives, engaged loop keep
 	assert.equal(engaged.loop.in_ms, 5000, 'an ENGAGED live loop must keep its own time bounds untouched');
 	assert.equal(engaged.loop.out_ms, 6000, 'an ENGAGED live loop must keep its own time bounds untouched');
 	assert.equal(engaged.loop.beat_length, null, 'the engaged loop bounds do not land on a beat in the new grid, so beat_length is null');
+
+	// Codex P2 on PR #6235: a range-engaged (stored) loop whose ends DO land on
+	// the new grid keeps beat_length null, so it never reads as INT.
+	const stored = { loop: { in_ms: 0, out_ms: 1000, engaged: true, beat_length: null } };
+	guards.reconcileLoopForAuthoritativeGrid(stored, newAnlz);
+	assert.deepEqual(stored.loop, { in_ms: 0, out_ms: 1000, engaged: true, beat_length: null });
+	// Control: an INT loop still re-measures its count against the new grid.
+	const int = { loop: { in_ms: 0, out_ms: 1000, engaged: true, beat_length: 4 } };
+	guards.reconcileLoopForAuthoritativeGrid(int, newAnlz);
+	assert.equal(int.loop.beat_length, 2);
 });

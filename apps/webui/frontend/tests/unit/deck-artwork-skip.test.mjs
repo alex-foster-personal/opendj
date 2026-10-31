@@ -33,7 +33,7 @@ for (const [name, rel, size] of [
 }
 
 test('deckArtworkUrl adds online=true to the plain artwork url', () => {
-	const api = read('src/lib/rb/api-rb.ts');
+	const api = read('src/lib/rb/artwork-url.ts');
 	assert.match(api, /export function deckArtworkUrl[\s\S]*?\$\{artworkUrl\(stable_id, size\)\}&online=true/);
 });
 

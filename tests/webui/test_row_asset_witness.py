@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from apps.shared import fd_anchored_walk
 from apps.shared.fd_anchored_walk import identity_of
 from apps.webui.server.rb_vendor_pkg import row_assets
 from apps.webui.server.rb_vendor_pkg import row_hydration_cache as rhc
@@ -88,6 +89,14 @@ def test_directory_witness_ignores_the_directory_s_own_times(tmp_path: Path) -> 
     assert rhc.directory_witness(after) == rhc.directory_witness(before)
 
 
+@pytest.mark.skipif(
+    not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED,
+    reason=(
+        "needs a directory file descriptor and os.stat(dir_fd=...), which Windows "
+        "lacks (os.open on a directory is EACCES); lstat_below is only reached "
+        "through a row plan, and _plan_for refuses every row on such a platform"
+    ),
+)
 def test_lstat_below_does_not_follow_the_last_symlink(tmp_path: Path) -> None:
     (tmp_path / "real").mkdir()
     os.symlink(tmp_path / "real", tmp_path / "link")
@@ -175,6 +184,15 @@ def test_only_plain_share_relative_paths_are_planned(vendor_path: str) -> None:
     assert row_assets._share_parts(vendor_path) is None
 
 
+@pytest.mark.skipif(
+    not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED,
+    reason=(
+        "no row is planned without the descriptor-anchored walk (Windows has no "
+        "directory file descriptors), so there are no planned siblings to compare; "
+        "the fallback itself is pinned by "
+        "test_a_row_is_planned_only_where_the_anchored_walk_exists"
+    ),
+)
 @pytest.mark.parametrize(
     "leaf", ["ANLZ0000.DAT", "ANLZ0000", ".hidden", "two.dots.DAT", "ANLZ0000.dat"]
 )
@@ -192,6 +210,23 @@ def test_planned_siblings_are_the_ones_the_uncached_path_derives(leaf: str) -> N
     assert plan.analysis_candidates == tuple(
         PurePosixPath(leaf).with_suffix(suffix).name for suffix in (".2EX", ".EXT", ".DAT")
     )
+
+
+def test_a_row_is_planned_only_where_the_anchored_walk_exists() -> None:
+    """[if] the platform has no descriptor-anchored walk (Windows) [then] every
+    row takes the uncached path, so the cache never reaches lstat_below,
+    [else stop]. Asserted against this platform's real capability flag; the
+    Windows parity lane runs the refusing arm."""
+    from apps.adapters.rekordbox.models import RbRowMeta
+
+    meta = RbRowMeta(
+        vendor_id="1", folder_path=None, analysis_data_path="/PIONEER/USBANLZ/ANLZ0000.DAT",
+        comment=None, genre=None, play_count=0, image_path=None,
+    )
+    if fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED:
+        assert row_assets._plan_for(meta) is not None
+    else:
+        assert row_assets._plan_for(meta) is None
 
 
 def test_a_leaf_ending_in_a_dot_takes_the_uncached_path() -> None:

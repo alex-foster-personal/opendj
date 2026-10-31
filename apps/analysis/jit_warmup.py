@@ -296,9 +296,10 @@ def _compile_lock(
     file - a planted symlink, FIFO, or unopenable file at a predictable path
     (issue #1401). There the warm-up is REFUSED rather than run unlocked:
     compiling a cold shared cache without the cross-process lock is the state
-    documented as corrupting it permanently. A lock-hold timeout or a missing
-    ``fcntl`` still yields ``proceed=True`` - degraded and logged at ERROR, but
-    the caller may warm, as before.
+    documented as corrupting it permanently. A missing ``fcntl`` (Windows) is
+    the same case, refused for the same reason until a Windows lock exists
+    (issue #7227). A lock-hold timeout still yields ``proceed=True`` -
+    degraded and logged at ERROR, but the caller may warm, as before.
 
     ``flock`` is released by the kernel when the fd closes, including when the
     holder is killed, so a dead process cannot leave a stale lock behind.
@@ -308,12 +309,11 @@ def _compile_lock(
         import fcntl
     except ImportError:  # pragma: no cover - non-POSIX (Windows)
         log.error(
-            "jit-warmup: fcntl unavailable on %s; warming WITHOUT a "
-            "cross-process lock, so a concurrent cold compile can still "
-            "corrupt the numba cache",
+            "jit-warmup: fcntl unavailable on %s; warm-up REFUSED rather "
+            "than compile a cold cache without a cross-process lock (#7227)",
             sys.platform,
         )
-        yield False, True, 0.0
+        yield False, False, 0.0
         return
 
     fd = _open_lock_safe(path, require_self_owned=require_self_owned)

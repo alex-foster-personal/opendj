@@ -160,7 +160,7 @@ IN_RUN_PULL_REQUEST_SCOPES: dict[str, tuple[tuple[str, ...] | None, tuple[str, .
 #: so an unfamiliar path can only add tests, never drop them. Measured on the 441 PRs
 #: merged Thu 1 to Fri 16 Oct 2026: 179 (41%) are smoke tier, 172 (39%) full, 90 out of scope.
 E2E_SMOKE_TIER_PATHS: tuple[str, ...] = (
-    "apps/**",
+    "apps/*.py",
     "ops/**",
     "ci/**",
     "scripts/**",
@@ -175,11 +175,22 @@ E2E_SMOKE_TIER_PATHS: tuple[str, ...] = (
 )
 
 #: Always full tier, whatever else the change set holds: the web app and the engine that
-#: every Playwright run boots. The scripts e2e.yml runs are read from the workflow itself
-#: (`e2e_gate_scripts`), so a new gate helper needs no entry here.
-E2E_FULL_TIER_PATHS: tuple[str, ...] = ("apps/webui/**",)
+#: every Playwright run boots, and e2e.yml itself (a change to the workflow can break a full-only
+#: step, which a smoke run would skip and then pass). The scripts e2e.yml runs are read from the
+#: workflow itself (`e2e_gate_scripts`), so a new gate helper needs no entry here.
+E2E_FULL_TIER_PATHS: tuple[str, ...] = ("apps/webui/**", ".github/workflows/e2e.yml")
 
 E2E_TIERS = ("smoke", "full")
+
+
+def e2e_push_paths() -> tuple[str, ...]:
+    """`E2E_PATHS_IGNORE` as a `paths` filter, for e2e.yml's push trigger.
+
+    GitHub documents `!` only under `paths`; under `paths-ignore` a re-inclusion (`!tests/fixtures/**`)
+    is not a documented form. `paths` expresses the same set: everything, then each ignore as a
+    negation, then each re-inclusion as a plain pattern (later patterns win).
+    """
+    return ("**", *(p[1:] if p.startswith("!") else f"!{p}" for p in E2E_PATHS_IGNORE))
 
 
 # ----- path filter evaluation ------------------------------------------------
@@ -229,13 +240,16 @@ _GATE_SCRIPT_RE = re.compile(r"(?<!tests/)(?<![\w-])scripts/[\w.-]+(?:/[\w.-]+)*
 
 
 def e2e_gate_scripts(workflow_text: str) -> frozenset[str]:
-    """Every `scripts/...` file path e2e.yml names (steps and comments alike).
+    """Every `scripts/...` path e2e.yml names (steps and comments alike), extensionless helpers included.
 
     `tests/scripts/...` mentions are excluded by the lookbehind (`$GITHUB_WORKSPACE/scripts/...`
-    still matches); a bare directory mention (`scripts/`) carries no file name and is dropped.
+    still matches). A directory mention (`scripts/lib`) is kept too: text cannot tell it from an
+    extensionless file, and `e2e_tier` tests membership of a changed FILE path, which a directory
+    never equals, so keeping it only ever widens what is full tier.
     A path that ends a comment sentence keeps its name and loses the full stop.
     """
-    return frozenset(match for match in _GATE_SCRIPT_RE.findall(workflow_text) if "." in match.rsplit("/", 1)[-1])
+    # A path ending a sentence ("... scripts/x.py.") captures the full stop as part of the name.
+    return frozenset(match.rstrip(".") for match in _GATE_SCRIPT_RE.findall(workflow_text))
 
 
 def e2e_tier(in_scope_files: Sequence[str], gate_scripts: Collection[str]) -> str:

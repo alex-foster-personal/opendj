@@ -151,6 +151,28 @@ export const SCHEDULE_DECK_SERIAL_ANCHOR =
   "\treanchorGeneration?: number\n" +
   "): Promise<number> {";
 
+// Sliced from instrumentation at load time so LATENCY-03 guards never drift on
+// signature edits (issue #157's `onStateChange` parameter, and later args).
+export const ARM_AUDIO_CONTEXT_WATCHDOG_ANCHOR = (() => {
+  const text = readFileSync(
+    `${SRC}/lib/rb/audio-context-instrumentation.ts`,
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  const start = text.indexOf("export function armAudioContextWatchdog(");
+  assert.notEqual(
+    start,
+    -1,
+    "if armAudioContextWatchdog is missing from audio-context-instrumentation.ts then LATENCY-03 drift guards have nothing to pin",
+  );
+  const end = text.indexOf("): void {", start);
+  assert.notEqual(
+    end,
+    -1,
+    "if armAudioContextWatchdog has no opening brace then LATENCY-03 drift guards cannot slice its body",
+  );
+  return text.slice(start, end + "): void {".length);
+})();
+
 /**
  * The body of the block opened by `anchor`, brace-matched to its close.
  *

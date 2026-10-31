@@ -20,7 +20,7 @@ const UNLABELLED = [
 ];
 const LABELLED = [
 	{ kind: 'audiooutput', deviceId: 'speakers', label: 'MacBook Pro Speakers' },
-	{ kind: 'audiooutput', deviceId: 'over-ears', label: "Steve's over-ears" },
+	{ kind: 'audiooutput', deviceId: 'over-ears', label: "a friend's over-ears" },
 	{ kind: 'audioinput', deviceId: 'builtin-mic', label: 'MacBook Pro Microphone' }
 ];
 
@@ -48,7 +48,12 @@ function installFakeBrowser({ getUserMedia }) {
 }
 
 function monitorSource() {
-	return { context: { setSinkId: () => Promise.resolve() }, masterGain: {} };
+	// A real room context can be suspended and resumed: the MAIN the listing
+	// pins reopens the room through them (IOPIN-19).
+	const context = { state: 'running', setSinkId: () => Promise.resolve() };
+	context.suspend = async () => void (context.state = 'suspended');
+	context.resume = async () => void (context.state = 'running');
+	return { context, masterGain: {} };
 }
 
 before(async () => {
@@ -89,7 +94,7 @@ test('if the label unlock succeeds then the I/O menu lists the labelled devices'
 	assert.deepEqual(
 		hp.outputs.map((output) => output.label),
 		// IOPIN-14: the system default is always listed, first, when the browser names none.
-		['System default output', 'MacBook Pro Speakers', "Steve's over-ears"]
+		['System default output', 'MacBook Pro Speakers', "a friend's over-ears"]
 	);
 	assert.equal(hp.error, null);
 });

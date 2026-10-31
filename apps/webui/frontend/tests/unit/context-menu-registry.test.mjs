@@ -207,7 +207,7 @@ test('read-only trees and source tabs resolve to an explicit empty menu (rows 9-
 	assert.deepEqual(registry.menuFor({ kind: 'library-source' }, {}), []);
 });
 
-test('Library mode drops deck loads and worker starters (LIBWS-03, in the registry)', () => {
+test('Library mode keeps deck loads (LIBWS-06) and drops worker starters (LIBWS-03, in the registry)', () => {
 	const ids = (workspace) =>
 		registry
 			.menuFor(
@@ -217,13 +217,16 @@ test('Library mode drops deck loads and worker starters (LIBWS-03, in the regist
 			.map((i) => i.id);
 	const gig = ids('performance');
 	const library = ids('library');
-	for (const id of ['load-1', 'load-4', 'analyze', 'stems-generate', 'lyrics']) {
+	for (const id of ['analyze', 'stems-generate', 'lyrics']) {
 		assert.ok(gig.includes(id), `${id} is offered in performance`);
 		assert.ok(!library.includes(id), `${id} is hidden in Library mode`);
 	}
+	for (const id of ['load-1', 'load-2', 'load-3', 'load-4']) {
+		assert.ok(library.includes(id), `${id} hands the track to Gig from Library mode`);
+	}
 	assert.deepEqual(
 		library,
-		gig.filter((id) => !/^load-|^(analyze|stems-generate|lyrics)$/.test(id)),
+		gig.filter((id) => !/^(analyze|stems-generate|lyrics)$/.test(id)),
 		'Library mode hides only those items'
 	);
 });

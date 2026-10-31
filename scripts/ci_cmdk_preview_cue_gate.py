@@ -41,6 +41,15 @@ def run(argv: list[str], cwd: Path, env: dict[str, str]) -> None:
         raise SystemExit(f"[ERROR] {argv[0]} exited {result.returncode}")
 
 
+def bash_run(script: Path, *args: str) -> list[str]:
+    """A wrapper script launched through the bash found on PATH, not by its own mode or shebang.
+
+    The wrappers are bash, so bash is the one shell this gate names. A runner without it fails here,
+    with the reason, rather than with a bare "not executable" from the launch.
+    """
+    return [resolve("bash"), str(script), *args]
+
+
 def bindgen_include(gcc: str) -> str:
     """The compiler's own include directory, which bindgen needs for the engine's C headers."""
     result = subprocess.run([gcc, "-print-file-name=include"], capture_output=True, text=True, check=False)
@@ -55,7 +64,7 @@ def main() -> int:
     cargo = resolve("cargo")
     selfheal = REPOSITORY_ROOT / "scripts" / "ci_cargo_selfheal.sh"
     run(
-        [str(selfheal), AUDIO_ENGINE_MANIFEST, "release", cargo, "build", "--release", "--locked", "--manifest-path", AUDIO_ENGINE_MANIFEST],
+        bash_run(selfheal, AUDIO_ENGINE_MANIFEST, "release", cargo, "build", "--release", "--locked", "--manifest-path", AUDIO_ENGINE_MANIFEST),
         REPOSITORY_ROOT,
         env,
     )
@@ -63,11 +72,11 @@ def main() -> int:
     reaper = REPOSITORY_ROOT / "scripts" / "ci_reap_port_holders.sh"
     pnpm = resolve("pnpm")
     run(
-        [
-            str(lock), "cmdk-preview-cue",
+        bash_run(
+            lock, "cmdk-preview-cue",
             str(reaper), *CUE_PREVIEW_PORTS, "--",
             pnpm, "exec", "playwright", "test", "--config", CUE_PREVIEW_CONFIG, "--output", CUE_PREVIEW_OUTPUT,
-        ],
+        ),
         FRONTEND_ROOT,
         env,
     )

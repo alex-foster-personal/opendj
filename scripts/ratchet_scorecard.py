@@ -14,8 +14,10 @@ What it measures, from GitHub Actions only (no repository code is run):
     class         `ratchet` (a rule about the code: quality metrics, budgets, contract
                   drift, guard tests that read the tree) or `behavior` (a test of what the
                   product does). `RATCHET_TESTS` is the list; a module not on it is behavior.
-    sole red      a PR head whose ONLY named failures are ratchets. That PR was held back
-                  by rules alone, so a warn tier would have let it into the queue.
+    sole red      a PR head whose ONLY named failures are ratchets, and whose own aggregate
+                  did not fail for a gating job it skipped. That PR was held back by rules
+                  alone, so a warn tier would have let it into the queue; a head with a
+                  withheld family had a second blocker, so clearing its ratchets frees nothing.
     held hours    for a sole-red head, the time until the branch's next CI verdict, capped
                   at `HELD_CAP_H`, split evenly across the ratchets that were red together.
     fixes         for each red key, the next head on the same branch where it is no longer
@@ -33,13 +35,20 @@ Verdict per gate (`verdict`), all stated with their counts so a reader can disag
     WARN           a ratchet that held PRs on its own (sole red), with at least `MIN_FIXES`
                    readable fixes, not mostly code: demote to a non-blocking warning plus
                    a debt entry. Fewer readable fixes than that is KEEP (fail closed).
+    UNKNOWN        an unreadable PR log sits on a head whose branch was red on this gate, or
+                   in a failed job whose name puts this gate in its family, or a pytest/quality
+                   job ended without a verdict (timed_out, cancelled, stale), so the gate's
+                   counts are a lower bound: it is neither demoted nor held. The gates that
+                   head cannot have moved are scored as usual.
 
 "Caught a defect" is INFERRED from what the fix changed, never measured: a code change
 after a red is consistent with a real catch and also with a refactor done to satisfy a
 count. The scorecard says so in its output.
 
-Exit codes: 0 measured; 3 UNKNOWN (no completed run in the window, or every log of a
-failed gating job was unreadable). A gate is never scored from an unreadable log.
+Exit codes: 0 measured; 3 UNKNOWN (no completed run in the window, or an unreadable MAIN log,
+whose red count no PR head can stand in for). An unreadable PR log no longer fails the window:
+it narrows to the gates its own branch was red on or a lost log's job can name. A gate is
+never scored from an unreadable log.
 
 Usage:
     python -m scripts.ratchet_scorecard --days 7 --json out.json --markdown out.md
@@ -48,18 +57,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, TypeAlias
 
 from scripts.ci_failure_ids import failed_identities, failure_beyond_tests
 from scripts.gh_version_guard import MIN_GH_VERSION, GhVersionError, parse_gh_version
@@ -84,12 +96,55 @@ NON_GATE_JOBS = frozenset(
 )
 PYTEST_JOBS = frozenset({"pytest fast lane"})
 QUALITY_JOB = "quality ratchet"
+# The gating jobs each workflow declares, by the base of their display name. A sha with no
+# run of a workflow at all, or a run of it that collected no job, left every gate that
+# workflow carries unmeasured, and an absent log can name none of them. `ci gate`, the
+# quarantine list and the telemetry jobs are already excluded by NON_GATE_JOBS.
+WORKFLOW_GATE_JOBS = {
+    "ci.yml": frozenset(
+        {
+            "ci scope",
+            *PYTEST_JOBS,
+            "reqs-check + native wheel + contract drift",
+            "production frontend build",
+            "frontend unit + check + build",
+            QUALITY_JOB,
+        }
+    ),
+    "e2e.yml": frozenset({"e2e scope", "e2e gate", "e2e extended"}),
+}
 # The jobs that restate a workflow's verdict. One failing while no gating job did is a
 # verdict nothing measured (its own checkout, its evaluator), never a green head.
 AGGREGATE_JOBS = frozenset({"ci gate", "e2e verdict"})
-# The step whose run is what a log-read job's keys measure (ci.yml step names, by prefix).
-# The job whose docs-only decision is the one legitimate reason `quality` skips on main.
+# An aggregate's conclusion is three-valued, never a boolean. Only an explicit SUCCESS proves
+# a gating job its run skipped was out of scope; a skipped, cancelled or missing aggregate
+# proves nothing either way, so its run's skips stay withheld evidence.
+AGGREGATE_SUCCESS = "success"
+AGGREGATE_FAILURE = "failure"
+AGGREGATE_UNKNOWN = "unknown"
+# The step whose log mints a log-read job's keys, by ci.yml step-name prefix. These two jobs
+# and every other gating job are the ADR's taxonomy table: a log-read job mints its whole
+# family from that one step, so every other step of it is ancillary (checkout, setup, cache,
+# ledger, upload) and mints no key; any other gating job mints one `<job>: <step>` key per
+# failed step, so every step of it is a measuring step. A step this file cannot place is
+# measuring, because over-scoping reads a gate UNKNOWN while under-scoping invents a green.
 MEASURING_STEPS = {"pytest fast lane": "Run fast pytest lane shard", QUALITY_JOB: "Quality ratchet"}
+# The other half of that table: the steps of a gating job that judge nothing, because they
+# prepare the runner, move a cache/ledger/artifact, restate a verdict or clean up afterwards.
+# A step of any other gating job is measuring unless it matches here: the default has to be
+# measuring, because a step assumed ancillary that did judge a gate scopes nothing and the
+# gate is then scored from other branches as if this head had cleared it (the P1 at
+# `_skipped_gate_scope` :834), while the reverse only reads a gate UNKNOWN. A ratchet step is
+# never ancillary (see the ADR table; a test holds every `RATCHET_STEPS` name out of this).
+ANCILLARY_STEP = re.compile(
+    r"^(?:"
+    r"Reclaim |Remove untracked |Stale-install guard|actions/|Setup |Provision |Runner preflight"
+    r"|System deps|libclang for bindgen|Install |Enable |Keep the |Warm the |Purge and warm the "
+    r"|Cache |Restore |Download |Upload |Stage |Acquire |Resolve |Fetch |Report |Point sccache"
+    r"|Stamp |Post |Virtual audio sink|Derive the worktree-port lane"
+    r"|Wipe the quality gate scratch dir|Is a Trunk API token|Seam |PR test selection mode"
+    r")"
+)
 # Steps that are ratchets even though they live outside the quality job.
 RATCHET_STEPS = re.compile(r"Bundle budgets|Contract drift|reqs\.json|reqs-check")
 # Pytest modules that are rules about the tree rather than tests of the product. Prefix
@@ -154,21 +209,32 @@ Api = Callable[[str], str]
 def quality_keys(lines: Iterable[str]) -> list[str]:
     """`quality:<metric>` for every REGRESSION line in a quality job log, and
     `quality-unknown:<metric>` for every UNKNOWN one: a measurement that could not be
-    taken says nothing about the rule, so it is never scored as the ratchet."""
+    taken says nothing about the rule, so it is never scored as the ratchet.
+
+    Whitespace after the `[quality]` tag is `\\s+`, not one space: a zero-width sequence the
+    stripper correctly removes (an SGR whose parameter bytes carry an executed C0, say) leaves
+    the marker looking like `[quality]  REGRESSION` on the terminal, and a single-space anchor
+    would score that displayed regression as no regression at all.
+    """
     keys: set[str] = set()
     for line in lines:
-        match = re.search(r"\[quality\] (REGRESSION|UNKNOWN):?\s+([A-Za-z][A-Za-z0-9_.\-]*)", line)
+        match = re.search(r"\[quality\]\s+(REGRESSION|UNKNOWN):?\s+([A-Za-z][A-Za-z0-9_.\-]*)", line)
         if match:
             prefix = "quality:" if match.group(1) == "REGRESSION" else "quality-unknown:"
             keys.add(prefix + match.group(2).rstrip(":"))
     return sorted(keys)
 
 
+# A pytest identity is a repository path. Controls are not path bytes, so a name that only
+# matches because `\S` accepts an ESC is not a module: it is a log line to be ignored.
+_PATH_BYTES = r"[^\s\x00-\x1f\x7f-\x9f]"
+
+
 def pytest_keys(identities: Iterable[str]) -> list[str]:
     """`pytest:<module>` for every failing pytest identity; node ids collapse to modules."""
     keys = set()
     for identity in identities:
-        match = re.match(r"(?:FAILED|ERROR) (tests/\S+?\.py)", identity)
+        match = re.match(rf"(?:FAILED|ERROR) (tests/{_PATH_BYTES}+?\.py)", identity)
         if match:
             keys.add("pytest:" + match.group(1))
     return sorted(keys)
@@ -242,22 +308,53 @@ def job_keys(name: str, failed_steps: Sequence[str], log: str | None) -> list[st
     return [f"{base}: {step}" for step in failed_steps] or [f"{base}: <no failed step>"]
 
 
-def judge_jobs(jobs: Sequence[Mapping], logs: Mapping[int, str | None]) -> tuple[frozenset[str], bool, int]:
-    """One run's verdict from its jobs: (red gate keys, measured, unread logs). A gating
-    job that ended without a verdict (timed_out, cancelled, startup_failure), an unread
-    log, or a quality measurement that could not be taken leaves the run unmeasured, so it
-    can neither be sole red nor clear an earlier red."""
+def run_aggregate_verdict(jobs: Sequence[Mapping]) -> str:
+    """The run's aggregate verdict: `AGGREGATE_SUCCESS`, `AGGREGATE_FAILURE` or `AGGREGATE_UNKNOWN`.
+
+    `ci gate` concludes SUCCESS only when the scope job said out of scope and every gated job
+    was skipped, or said in scope and every gated job succeeded. A gating job this run skipped
+    is therefore exactly what a failed aggregate can name, whether it was skipped in scope or
+    behind a failed dependency. The aggregate is never a gate itself (NON_GATE_JOBS), so its
+    failure is only ever a statement about the jobs it aggregates.
+
+    Skipped, cancelled and absent are one verdict here: unknown. Reading any of them as "not
+    failed" would treat a skip as the out-of-scope decision on no evidence at all (`ci gate`
+    can itself be skipped, and a run can end before it concludes), which clears a family the
+    run never judged. Only the explicit SUCCESS proves the skip was deliberate.
+    """
+    conclusions = [j["conclusion"] for j in jobs if j["name"].split(" (")[0] in AGGREGATE_JOBS]
+    if AGGREGATE_FAILURE in conclusions:
+        return AGGREGATE_FAILURE
+    if conclusions and all(c == "success" for c in conclusions):
+        return AGGREGATE_SUCCESS
+    return AGGREGATE_UNKNOWN
+
+
+def judge_jobs(
+    jobs: Sequence[Mapping], logs: Mapping[int, str | None]
+) -> tuple[frozenset[str], bool, int, frozenset[str]]:
+    """One run's verdict from its jobs: (red gate keys, measured, unread logs, the names of
+    the failed jobs whose evidence is missing). A gating job that ended without a verdict
+    (timed_out, cancelled, startup_failure), an unread log, or a quality measurement that
+    could not be taken leaves the run unmeasured, so it can neither be sole red nor clear an
+    earlier red. A missing verdict still leaves its job's name, which is what tells the
+    scorecard which gates that missing evidence could have moved."""
     red: set[str] = set()
     measured = True
     missing = 0
-    aggregate_failed = False
+    unread: set[str] = set()
+    aggregate = run_aggregate_verdict(jobs)
     for job in jobs:
         base = job["name"].split(" (")[0]
-        aggregate_failed |= base in AGGREGATE_JOBS and job["conclusion"] == "failure"
         if job["conclusion"] in ("success", "skipped", "neutral") or base in NON_GATE_JOBS:
             continue
         if job["conclusion"] != "failure":
             measured = False
+            # A job killed before it could conclude printed no verdict at all: its evidence is
+            # as missing as a lost log, so keep its name for the same reason. The name scopes
+            # only the gates that job can name (see _job_covers): a whole family for pytest and
+            # the quality ratchet, its own `<job>: <step>` keys for any other gating job.
+            unread.add(base)
             continue
         failed_steps = [s["name"] for s in job.get("steps", []) if s["conclusion"] == "failure"]
         needs_log = base in PYTEST_JOBS or base == QUALITY_JOB
@@ -265,11 +362,116 @@ def judge_jobs(jobs: Sequence[Mapping], logs: Mapping[int, str | None]) -> tuple
         if needs_log and log is None:
             missing += 1
             measured = False
+            unread.add(base)
             continue
-        red.update(job_keys(job["name"], failed_steps, log))
-    if any(gate_class(k) == "unmeasured" for k in red) or (aggregate_failed and not red and measured):
+        keys = job_keys(job["name"], failed_steps, log)
+        red.update(keys)
+        if any(gate_class(k) == "unmeasured" for k in keys):
+            # The key names no rule, only that this job could not be measured (a quality log
+            # with no REGRESSION/UNKNOWN line, a shard killed before naming a test). Keep the
+            # job's name beside it, or the family it could have failed is scoped by nothing
+            # and its gate is scored from other branches as if this head had cleared it.
+            unread.add(base)
+    if any(gate_class(k) == "unmeasured" for k in red) or (aggregate == AGGREGATE_FAILURE and not red and measured):
         measured = False
-    return frozenset(red), measured, missing
+    return frozenset(red), measured, missing, frozenset(unread)
+
+
+def declared_step_guards(workflow_text: str) -> dict[str, dict[str, bool]] | None:
+    """Which steps of each job in a workflow file declare their own `if:`, by job base name.
+
+    `True` means the step carries a condition of its own, so its `skipped` conclusion can be
+    its own reason (`always()`, `failure()`, a matrix or event condition) rather than the
+    shadow of an earlier failure. `None` means the file could not be read or parsed: nothing
+    is proven, and every caller must fail closed on it.
+
+    A step this parse cannot name (a `uses:` step with no `name:`, a step missing from the
+    file a run actually executed) is simply absent, which reads as unproven, never as guarded.
+    """
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - PyYAML is a project dependency
+        return None
+    try:
+        doc = yaml.safe_load(workflow_text)
+    except yaml.YAMLError:
+        return None
+    jobs = doc.get("jobs") if isinstance(doc, dict) else None
+    if not isinstance(jobs, dict):
+        return None
+    out: dict[str, dict[str, bool]] = {}
+    for key, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        base = str(job.get("name") or key).split(" (")[0]
+        steps = out.setdefault(base, {})
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict) or not step.get("name"):
+                continue
+            name = str(step["name"])
+            steps[name] = steps.get(name, False) or "if" in step
+    return out
+
+
+def workflow_step_guards(api: Api, workflow: str, sha: str) -> dict[str, dict[str, bool]] | None:
+    """`declared_step_guards` for a workflow file as it stood at `sha`, or None unproven."""
+    try:
+        body = _api_json(api, f"repos/{REPO}/contents/.github/workflows/{workflow}?ref={sha}")
+        text = base64.b64decode(body["content"]).decode("utf-8", "replace")
+    except (RuntimeError, KeyError, TypeError, ValueError):
+        return None
+    return declared_step_guards(text)
+
+
+def _skips_after_a_failure(job: Mapping) -> bool:
+    """Does this job skip a step, after a step that failed, that could withhold a gate?
+
+    Only that shape needs the workflow declaration read for it: the read decides whether such a
+    skip was the failure's shadow, and order alone says nothing about the cause. A skip that
+    withholds nothing — an ancillary step (an upload, a ledger download) or any skip of a job
+    that gates nothing — is not read for: it cannot move `_sole_red()` or scope a gate, so a
+    failed read there must not cost the run its measured verdict.
+    """
+    base = job["name"].split(" (")[0]
+    if base in NON_GATE_JOBS:
+        return False
+    failed = False
+    for step in job.get("steps", []):
+        if step["conclusion"] == "failure":
+            failed = True
+        elif failed and step["conclusion"] == "skipped" and skipped_scope(f"{base}: {step['name']}"):
+            return True
+    return False
+
+
+def _gate_skips(
+    job: Mapping, guards: Mapping[str, Mapping[str, bool]] | None = None
+) -> tuple[set[str], set[str]]:
+    """(this job's `<job>: <step>` skips, those the workflow proves a failure caused).
+
+    GitHub runs a job's later steps only on `success()`, so after a failed step a step with no
+    condition of its own concludes `skipped`: that skip is the failure's shadow, not an
+    independent one. A skip before the job's first failure (its own `if:`, a cancelled
+    dependency) is independent — and so is any skip `guards` does not positively prove
+    unguarded. The step payload carries no `if:`, so the proof comes from the workflow
+    declarations the run's merge kept (`guard_proof`); a run whose file, job or step cannot be
+    placed in them keeps its skip as independent withheld evidence, because over-scoping
+    withholds a ratchet while under-scoping invents a green.
+    """
+    base = job["name"].split(" (")[0]
+    guarded = guards.get(base, {}) if guards is not None else {}
+    skipped: set[str] = set()
+    behind: set[str] = set()
+    failed = False
+    for st in job.get("steps", []):
+        if st["conclusion"] == "failure":
+            failed = True
+        elif st["conclusion"] == "skipped":
+            key = f"{base}: {st['name']}"
+            skipped.add(key)
+            if failed and guarded.get(st["name"]) is False:
+                behind.add(key)
+    return skipped, behind
 
 
 def skipped_jobs(jobs: Sequence[Mapping]) -> frozenset[str]:
@@ -291,7 +493,31 @@ def skipped_jobs(jobs: Sequence[Mapping]) -> frozenset[str]:
             measuring = [st for st in steps if st["name"].startswith(MEASURING_STEPS[base])]
             if not measuring or any(st["conclusion"] in ("skipped", "cancelled") for st in measuring):
                 out.add(base)
-        out.update(f"{base}: {st['name']}" for st in steps if st["conclusion"] == "skipped")
+        out |= _gate_skips(j)[0]
+    return frozenset(out)
+
+
+def skips_behind_a_failure(
+    jobs: Sequence[Mapping], guards: Mapping[str, Mapping[str, bool]] | None = None
+) -> frozenset[str]:
+    """The entries of `skipped_jobs` that the run's workflow proves a failure caused.
+
+    The same failure that named the job's red also skipped these steps, so clearing that red
+    re-runs them: they are not evidence withheld independently of the named failure, and
+    `_sole_red` must not read them as a second family holding the PR back. The skips
+    themselves still count everywhere else, because the gate behind such a step went
+    unjudged by this head either way.
+
+    `guards` is `declared_step_guards` for the workflow at the run's head sha. Without it
+    (an unreadable file, a step the file does not name) nothing is attributed to the failure:
+    order alone cannot tell a shadowed step from one whose own `if:` was false, and guessing
+    would let a head read as ratchet-only while a gate it never ran stayed unmeasured.
+    """
+    out: set[str] = set()
+    for j in jobs:
+        if j["name"].split(" (")[0] in NON_GATE_JOBS or j["conclusion"] == "skipped":
+            continue
+        out |= _gate_skips(j, guards)[1]
     return frozenset(out)
 
 
@@ -370,6 +596,26 @@ class Head:
     # The run's id, which GitHub assigns in creation order: it breaks a tie between two shas
     # pushed within one second, whose second-resolution `created_at` values compare equal.
     run_id: int = 0
+    # The failed pytest/quality jobs whose log this run needed and could not read: their names
+    # are all that survives to say which gate families the lost evidence could have moved.
+    unread_jobs: frozenset[str] = frozenset()
+    # True for a run that collected no job at all: nothing inside it can be named, so every
+    # gate family its workflow carries is unmeasured for the head.
+    zero_jobs: bool = False
+    # The run's aggregate verdict (AGGREGATE_SUCCESS / FAILURE / UNKNOWN). A failure says an
+    # in-scope gating job ended without success, so a job this run skipped withheld a verdict
+    # even when another job named a red. Only an explicit SUCCESS clears a skip: unknown
+    # (aggregate skipped, cancelled, or never concluded) withholds it too.
+    aggregate: str = AGGREGATE_UNKNOWN
+    # True when this run needed a workflow-definition read to tell a shadowed skip from an
+    # independent one and the file at the executed revision could not be read. Its skip
+    # evidence is unproven, so the run is unmeasured rather than silently read as independent.
+    guard_unread: bool = False
+    # The entries of `skipped` a failure earlier in the same job caused (GitHub runs a job's
+    # later steps only on `success()`). The gate behind such a step went unjudged, but the
+    # skip is the named red's shadow: clearing that red re-runs the step, so `_sole_red`
+    # does not read it as a second, independent family holding the PR back.
+    skipped_behind_failure: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -384,9 +630,13 @@ class GateScore:
     fixes: Counter[str] = field(default_factory=Counter)
     unresolved: int = 0
     red_on_main: int = 0
-    # PR heads in the window whose verdict was unmeasured: whatever reds they hid
-    # and fixes are missing from every count, so no gate may be demoted beside them.
+    # PR heads in the window whose verdict was unmeasured and whose branch could change
+    # this gate's verdict: whatever reds they hid and fixes are missing from its counts,
+    # so this gate reads UNKNOWN rather than a verdict built on partial evidence.
     partial_heads: int = 0
+    # Unread PR heads (not superseded) whose branch carries a red on this gate. Sibling to
+    # `partial_heads`: the same heads, counted only where their absence could move a gate.
+    blind_heads: int = 0
 
     def _settled(self) -> tuple[str, str] | None:
         """A verdict that needs no fix evidence: too quiet to judge, or never demotable."""
@@ -399,6 +649,14 @@ class GateScore:
         return None
 
     def verdict(self) -> tuple[str, str]:
+        if self.blind_heads and self.cls not in ("behavior", "unmeasured"):
+            # A red this head hid could have landed on this gate, and the branch and fix it
+            # would add are missing from the denominators, so neither demoting nor holding,
+            # nor calling it too quiet to judge, is measurable.
+            return "UNKNOWN", (
+                f"{self.blind_heads} unread PR head(s) in the window could have moved "
+                "this gate: its counts are incomplete"
+            )
         if settled := self._settled():
             return settled
         known = sum(self.fixes[k] for k in ("code", "paperwork", "tests"))
@@ -406,11 +664,6 @@ class GateScore:
         paper = self.fixes["paperwork"] / known if known else 0.0
         if known >= MIN_FIXES and code >= CODE_SHARE_KEEP:
             return "KEEP", f"{self.fixes['code']}/{known} fixes changed product code (inferred catch)"
-        if self.partial_heads:
-            return "KEEP", (
-                f"{self.partial_heads} PR head(s) in the window had no measured verdict: "
-                "no demotion on partial evidence"
-            )
         if self.fixes["unreadable"]:
             # Fail closed: an unreadable fix may have changed product code, so the readable
             # ones alone are never evidence for demoting the rule.
@@ -547,7 +800,13 @@ def _passed(head: Head | None, key: str, job: str) -> bool:
 
 def _sole_red(runs: Mapping[str, Head], red: frozenset[str]) -> bool:
     """Both workflows run on every PR; a sha missing one (cancelled when superseded) or
-    with an unmeasured run has no full verdict, so it is never sole red."""
+    with an unmeasured run has no full verdict, so it is never sole red. Neither is a head
+    whose aggregate failed for a gating job it skipped: clearing every ratchet it named would
+    not have freed the PR, because the aggregate was independently red for the job that never
+    judged it. A step that job's own earlier failure skipped is not that independent family —
+    the same red skipped it, so fixing the red re-runs it (`skipped_behind_failure`)."""
+    if any(_skipped_gate_scope(h, independent_only=True) for h in runs.values()):
+        return False
     return full_verdict(runs) and all(gate_class(k) == "ratchet" for k in red)
 
 
@@ -571,6 +830,11 @@ def head_summary(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] 
     return red_heads, ratchet_only
 
 
+def _new_gate(key: str, main_red: Mapping[str, int], blind_heads: int) -> GateScore:
+    """One gate's table row, scoped to the unread heads that could have moved it."""
+    return GateScore(key, gate_class(key), red_on_main=main_red.get(key, 0), blind_heads=blind_heads)
+
+
 def score(
     heads: Sequence[Head],
     main_red: Mapping[str, int],
@@ -589,12 +853,13 @@ def score(
     missing or unmeasured) is never scored: it adds no branch, hold, transition or fix.
     `horizon` bounds how long after a red's verdict a fix may land and still count, so a
     red early in the window gets no longer to be fixed than one late in it."""
-    scores: dict[str, GateScore] = {}
-    partial = unmeasured_heads(heads, window)
+    scope = unread_scopes(heads, window)
+    blind = unread_gate_scope(heads, window)
+    scores: dict[str, GateScore] = {key: _new_gate(key, main_red, blind(key)) for key in scope}
 
     def get(key: str) -> GateScore:
         if key not in scores:
-            scores[key] = GateScore(key, gate_class(key), red_on_main=main_red.get(key, 0), partial_heads=partial)
+            scores[key] = _new_gate(key, main_red, blind(key))
         return scores[key]
 
     # One fix per red-to-green transition: the last red head before the clearing head.
@@ -662,19 +927,172 @@ def _head_counts(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] 
     for shas in _by_branch_sha(heads).values():
         if _is_draft(shas):
             continue
-        newest = _push_order(shas)[-1]
-        for sha, runs in shas.items():
-            if full_verdict(runs) or not _owned(runs, window):
-                continue
-            incomplete += 1
-            unread = [h for h in runs.values() if not h.measured]
-            unmeasured += not (sha != newest and all(h.cancelled for h in unread))
+        incomplete += sum(1 for runs in shas.values() if not full_verdict(runs) and _owned(runs, window))
+        unmeasured += len(_unread_shas(shas, window))
     return incomplete, unmeasured
+
+
+def _unread_shas(shas: Mapping[str, Mapping[str, Head]], window: tuple[dt.datetime, dt.datetime] | None) -> list[str]:
+    """The shas on one branch whose verdict is missing and was not superseded, i.e. the
+    heads whose absent reds and fixes nothing else in this window can stand in for."""
+    if _is_draft(shas):
+        return []
+    newest = _push_order(shas)[-1]
+    unread: list[str] = []
+    for sha, runs in shas.items():
+        if full_verdict(runs) or not _owned(runs, window):
+            continue
+        missed = [h for h in runs.values() if not h.measured]
+        if sha != newest and all(h.cancelled for h in missed):
+            continue
+        unread.append(sha)
+    return unread
+
+
+def unread_scopes(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None) -> dict[str, int]:
+    """gate key -> the unread PR heads whose branch was red on that gate in the window.
+
+    A hidden red on head H can move any gate's counts on H in either direction, so H drops
+    out of every count. It can only be *proved* to move a gate that was red somewhere on its
+    branch: a gate no head on that branch ever failed has no denominator entry to lose, and a
+    gate the branch never touched cannot be one H made sole. Every other gate stays scoped to
+    the reds it actually carries."""
+    scope: dict[str, int] = {}
+    for shas in _by_branch_sha(heads).values():
+        unread = _unread_shas(shas, window)
+        if not unread:
+            continue
+        # A red the branch carried only outside the window is another day's evidence: scoping
+        # this gate here would read UNKNOWN on a red no head in this window can be scored on.
+        keys = {key for runs in shas.values() if _owned(runs, window) for h in runs.values() for key in h.red}
+        for key in keys:
+            scope[key] = scope.get(key, 0) + len(unread)
+    return scope
 
 
 def unmeasured_heads(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None) -> int:
     """PR shas in `window` with no measured verdict that no newer push superseded."""
     return _head_counts(heads, window)[1]
+
+
+def _job_covers(job: str, key: str) -> bool:
+    """Whether a failed job with this base name could be where `key` was red.
+
+    A gate key is minted from the log a job lost: the quality job names one metric at a time,
+    a pytest shard one module at a time. An unread log of either is therefore silent about
+    every key in its family, and naming the job is the most the log leaves behind.
+    """
+    if job == QUALITY_JOB:
+        return key.startswith(("quality:", "quality-unknown:"))
+    if job in PYTEST_JOBS:
+        return key.startswith("pytest:")
+    return key == job or key.startswith(job + ": ")
+
+
+def skipped_scope(name: str) -> frozenset[str]:
+    """The gates one entry of `Head.skipped` withheld evidence for.
+
+    A skip is recorded as a gating job's base name or as its `<job>: <step>` key, and which
+    keys it withholds follows from how that job mints them (the ADR's taxonomy table). A
+    log-read job's whole family comes from the log of its measuring step, so a skip of that
+    step withholds the family while an ancillary skip beside a measuring step that ran (a
+    durations ledger, an upload, a cache) withholds nothing. Any other gating job mints one
+    key per failed step, so a step skip withholds exactly that key, and a whole-job skip the
+    family: never one step's name standing in for every key the job could have named.
+    """
+    base, sep, step = name.partition(": ")
+    if not sep:
+        return frozenset({base})
+    if base in MEASURING_STEPS:
+        return frozenset({base}) if step.startswith(MEASURING_STEPS[base]) else frozenset()
+    return frozenset() if ANCILLARY_STEP.match(step) else frozenset({name})
+
+
+def _skipped_gate_scope(h: Head, *, independent_only: bool = False) -> frozenset[str]:
+    """The gate families this run's skipped gating jobs withheld evidence for.
+
+    A skipped gating job judged nothing, so what it could have named is scoped whenever the
+    run's own evidence says it should have run. An unmeasured run says so by definition. A
+    measured run's skip is normally the out-of-scope decision (a docs-only change skips the
+    quality job and `ci gate` still succeeds), which scopes nothing — but only that explicit
+    SUCCESS says so: a failed aggregate is the run saying an in-scope gating job did not pass
+    (`.github/workflows/ci.yml`: `ci gate` succeeds only when the change was out of scope or
+    every gated job succeeded), and an unknown one (aggregate skipped, cancelled or never
+    concluded) proves nothing at all, so the skip withheld a verdict even though another job
+    named a red. What each skip withheld is `skipped_scope`'s question, not this one's.
+
+    `independent_only` drops the skips a failure in the same job caused: the gate behind such
+    a step is still unjudged, but the skip is not independent of the red that failure named.
+    That is the question `_sole_red` asks; every other caller scopes both.
+    """
+    if h.measured and h.aggregate == AGGREGATE_SUCCESS:
+        return frozenset()
+    # Nothing measured says which of these skips could have carried a red, or (with a failed
+    # aggregate) an in-scope job was not passed: every skip is missing evidence, whole job or
+    # step, scoped by the keys its own job mints.
+    names = h.skipped - h.skipped_behind_failure if independent_only else h.skipped
+    return frozenset().union(*(skipped_scope(name) for name in names))
+
+
+def unread_gate_scope(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None) -> Callable[[str], int]:
+    """gate key -> the unread PR heads in `window` whose evidence could have moved it.
+
+    A hidden red on head H can move any gate's counts on H in either direction, so H drops
+    out of every count. It is scoped to the gates it can be *proved* to have touched: the keys
+    its branch was red on anywhere in the window, plus the family of every failed job whose
+    log was lost. The branch's named reds alone are not enough: when the loss swallowed the
+    only red on the branch, H named none and scoped nothing, so a gate it could have moved was
+    scored from other branches alone. A head whose lost log is attributed to no job scopes
+    both families, because nothing proves it carried neither.
+    """
+    observed: list[tuple[frozenset[str], frozenset[str]]] = []
+    for shas in _by_branch_sha(heads).values():
+        draft = _is_draft(shas)  # a draft history is not scored, so it blinds nothing
+        unread = _unread_shas(shas, window)
+        named = frozenset(key for runs in shas.values() if _owned(runs, window) for h in runs.values() for key in h.red)
+        for sha in unread:
+            jobs: set[str] = set()
+            present = shas[sha]
+            for h in present.values():
+                jobs |= h.unread_jobs
+                if h.unread_logs and not h.unread_jobs:
+                    jobs |= {QUALITY_JOB, *PYTEST_JOBS}
+                if h.zero_jobs or (h.cancelled and not h.measured):
+                    # A run whose evidence never existed — jobs read and empty, or cancelled
+                    # before anything concluded (whose jobs are never fetched) — names no key.
+                    # Every family its workflow carries is scoped; a cancellation a newer push
+                    # superseded never reaches here (see _unread_shas).
+                    jobs |= WORKFLOW_GATE_JOBS.get(h.workflow, frozenset())
+                # A gating job this run skipped measured nothing: `ci gate` fails by design
+                # when one is unexpectedly skipped, which leaves the run unmeasured with no
+                # named red at all. Scope what each skipped job could have named, whatever
+                # skipped it. A measured run with an explicit aggregate success scopes
+                # nothing, and one whose aggregate is unknown or failed still withholds it.
+                jobs |= _skipped_gate_scope(h)
+            # A workflow with no run at all for this sha (not dispatched yet, or never
+            # collected) is the same loss with no run to read: it could have failed any gate
+            # it declares, so its families are scoped rather than leaving the head silent.
+            for workflow in set(WORKFLOWS) - set(present):
+                jobs |= WORKFLOW_GATE_JOBS.get(workflow, frozenset())
+            observed.append((named, frozenset(jobs)))
+        # A head that measured can still have withheld a family: its own aggregate is not a
+        # success, so a gating job it skipped was never judged even though another job named a
+        # red. It keeps the reds it named and the fix they carry (unlike an unread sha, which
+        # leaves every count), so only the family the skip withheld is blind — never the
+        # branch's other reds. Only a sha with a full verdict reaches this: a partial sha whose
+        # missed runs were all cancellations is superseded, and its evidence contributes
+        # nothing here either (the same rule `_unread_shas` applies to the pass above).
+        for sha, present in shas.items():
+            if draft or sha in unread or not full_verdict(present) or not _owned(present, window):
+                continue
+            withheld = frozenset().union(*(_skipped_gate_scope(h) for h in present.values()))
+            if withheld:
+                observed.append((frozenset(), withheld))
+
+    def blind(key: str) -> int:
+        return sum(1 for named_keys, jobs in observed if key in named_keys or any(_job_covers(j, key) for j in jobs))
+
+    return blind
 
 
 def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object]) -> str:
@@ -688,7 +1106,7 @@ def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object])
         f"{meta['heads']} PR heads finished their verdict in it, across {', '.join(WORKFLOWS)}; {meta['red_heads']} PR heads red with a named gate, "
         f"{meta['ratchet_only_heads']} of them red on ratchets alone. Heads not scored for want of a full "
         f"verdict: {meta['incomplete_heads']}. Logs unreadable: "
-        f"{meta['unreadable_logs']}.",
+        f"{meta['unreadable_logs']}. Workflow reads unreadable: {meta['guard_reads_unread']}.",
         "",
         "Held hours: PR time between a ratchet-only red head and the branch's next verdict, "
         f"capped at {HELD_CAP_H:g} h. Fix kinds come from the branch's own commits; a `code` "
@@ -710,6 +1128,374 @@ def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object])
 
 
 # ----- GitHub collection ---------------------------------------------------------------
+
+
+def read_zero_jobs(run: Mapping, jobs: Mapping[int, list[dict]]) -> bool:
+    """True only for a run whose jobs were read and came back empty. A run nothing read
+    (a cancelled one, or a passing one on a branch with no red) is not evidence it had no
+    job, so it must not claim its workflow's whole gate set."""
+    return run["id"] in jobs and not jobs[run["id"]]
+
+
+# A log body is PR-controlled bytes that end up as gate keys in generated markdown, so the
+# strip has to cover every terminal control sequence, not only coloured text. Numeric CSI
+# (`ESC [ 31m`) is the common case; these are the rest of the family:
+#   * a control STRING introduced by `ESC ]` (OSC), `ESC P` (DCS), `ESC X` (SOS), `ESC ^`
+#     (PM) or `ESC _` (APC) -- a window title, a hyperlink, a clipboard write -- ending in ST
+#     (`ESC \`). BEL terminates ONLY OSC: a BEL inside a DCS/SOS/PM/APC payload is a control
+#     executed inside the running string, so a shared `BEL|ST` terminator ended the string
+#     early and its tail was parsed as log text, minting a gate key from PR bytes.
+#   * CSI with ANY parameter/intermediate bytes, which covers the private forms (`?25l`,
+#     `>0c`, `=1h`) and the colon sub-parameter form (`38:2::255:0:0m`).
+#   * two-byte ESC sequences and charset designators (`ESC ( B`). The final byte is the
+#     ECMA-48 range 0x30-0x7E, not just the `@`-`~` half: the digit and punctuation finals
+#     (`ESC 7` DECSC, `ESC 8` DECRC, `ESC =` DECKPAM, `ESC >` DECKPNM) are real two-byte
+#     sequences, and stopping the class at `@` left the final byte glued to the visible text,
+#     so `[quality] \x1b7REGRESSION: ruff.style` parsed as `7REGRESSION` and the regression
+#     vanished from `quality_keys`.
+#   * the 8-bit C1 forms of the same introducers (`0x9b` CSI, `0x9d` OSC, `0x90`/`0x98`/
+#     `0x9e`/`0x9f` DCS/SOS/PM/APC) and C1 ST (`0x9c`), all legal in a UTF-8 log.
+#
+# This is ONE scanner over the ECMA-48 state, not a pattern per byte class, because what the
+# patterns kept getting wrong is not a character class but a state transition:
+#   * CAN (`0x18`) and SUB (`0x1a`) CANCEL the sequence in progress and return the terminal to
+#     ground, so what follows is VISIBLE text. A pattern that only knew terminators ran an
+#     unterminated string to the newline and deleted the whole line, `[quality] REGRESSION`
+#     marker included -- a PR-controlled byte hiding a red from the scorecard it exists for.
+#   * a C0 control inside a CSI is EXECUTED and the sequence continues to its final byte:
+#     `ESC [ 31 BEL m` is still SGR-red, so its `31m` must not survive as visible text.
+#   * C0 inside a control-string payload is likewise executed, not a terminator; only BEL
+#     (OSC) and ST end the string.
+#   * an ESC inside a control-string payload ends the STRING, not just starts a two-byte
+#     sequence: `ESC \` is ST, and any other byte aborts the string and is reprocessed as an
+#     escape sequence (`ESC ] pay ESC [ 31 m` opens a CSI; `ESC ] pay ESC 7` is DECSC). While an
+#     ESC was merely payload, the string ran on to the newline and deleted the whole line --
+#     the same silent loss as an uncancelled CAN.
+#   * an unterminated sequence never swallows the next line: a newline aborts it, and the
+#     newline itself is kept because the parsers split on it. CR becomes `\n` (the cursor
+#     returns to column 0, so what follows is a new line, not a continuation). Tab and every
+#     byte that is not a control character are visible text.
+#   * a cursor move that stays on ONE line is APPLIED, because it decides what the line shows:
+#     BS and CUB (`ESC [ n D`) step back so the next character REPLACES the one it covered
+#     (`REGX` BS `RESSION` is `REGRESSION`, and `::t` BS x6 `PASSED` is not a `FAILED` line),
+#     CUF (`ESC [ n C`) and CHA (`ESC [ n G`) step forward over blanks, and EL (`ESC [ n K`)
+#     blanks cells. A newline is the cursor reset to column 0, so no screen model is needed.
+#     Dropping these bytes instead let a BS-covered character survive and hide a displayed
+#     `[quality] REGRESSION` line from `quality_keys` (P2/BLOCKING at 1d4ca14b77).
+#   * vertical and screen-level addressing stays OUT OF CONTRACT -- IND (`ESC D`), RI, NEL,
+#     CUU/CUD, CNL/CPL, CUP/HVP, ED -- because one active line cannot represent it. A vertical
+#     move is dropped, never applied as a horizontal step: IND read as a backstep would join
+#     two terminal lines into one marker that no terminal shows.
+#
+# Byte values are compared by ordinal, so a byte that cannot belong to the sequence in
+# progress aborts it and is re-scanned as text: the strip fails VISIBLE, never by eating a
+# line it could not parse. Tab survives because `\S` classifies it as space; newline survives
+# for the same reason the parsers need it.
+_GROUND = 0  # between sequences: control bytes are dropped, everything else is text
+_ESCAPE = 1  # after ESC: intermediates, an introducer, or one final byte
+_CSI = 2  # after `ESC [` / C1 CSI: parameters and intermediates, then a final byte
+_STRING = 3  # inside an OSC/DCS/SOS/PM/APC payload: consumed, never shown
+_STRING_ESC = 4  # an ESC inside a payload: `ESC \` is ST, anything else aborts to _ESCAPE
+
+_CANCEL = frozenset("\x18\x1a")  # CAN / SUB: cancel the sequence in progress
+_ESC_STRING_INTRODUCERS = frozenset("PX^_]")  # ESC + one of these opens a control string
+_C1_STRING_INTRODUCERS = frozenset("\x90\x98\x9d\x9e\x9f")  # the 8-bit DCS/SOS/OSC/PM/APC
+# A control byte is where each state's work happens; everything between two of them is pure
+# visible text in `_scan_ground`, so a multi-megabyte job log is copied in runs, not per char.
+_SPECIAL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+@dataclass(frozen=True, slots=True)
+class _CursorOp:
+    """One line-local cursor operation: what a scanner emits and the driver applies.
+
+    `count` is the sequence's own first numeric parameter and 0 means the log omitted one;
+    ECMA-48's default differs per sequence (0 for EL, 1 for CUB/CUF/CHA), so `_Cursor` applies
+    it rather than the scanner guessing it here.
+    """
+
+    kind: Literal["back", "forward", "column", "erase"]
+    count: int = 0
+
+
+_Emitted: TypeAlias = "str | tuple[str, _CursorOp]"
+
+
+class _Cursor:
+    """The text a terminal would leave on ONE line, and the cursor that writes it.
+
+    Deliberately not an emulator: only the active line is held. That is what the parsers need,
+    because each splits on `\n` and a line break IS the cursor reset to column 0 -- the same
+    reset the pinned rows already give a ground CR (`FAILED tests/a.py\\rcontinuation`) and the
+    byte CRLF (`a\\r\\nb`) is built from. What comes out is text the terminal would SHOW: a
+    backstep replaces the character it covered instead of letting both survive, and `erase`
+    blanks cells instead of deleting them, because the cell is still there on screen.
+    """
+
+    def __init__(self) -> None:
+        self.out: list[str] = []
+        self.line: dict[int, str] = {}
+        self.col = 0
+
+    def write(self, text: str) -> None:
+        for ch in text:
+            if ch == "\n":  # the line break IS the cursor reset to column 0
+                self.out.append(self._render_line() + "\n")
+                self.line, self.col = {}, 0
+                continue
+            self.line[self.col] = ch  # what the cursor stepped back over is REPLACED
+            self.col += 1
+
+    def apply(self, op: _CursorOp) -> None:
+        if op.kind == "back":
+            self.col = max(0, self.col - max(1, op.count))
+        elif op.kind == "forward":
+            self._seek(self.col + max(1, op.count))
+        elif op.kind == "column":
+            self._seek(max(1, op.count) - 1)
+        else:  # erase in line
+            self._erase(op.count)
+
+    def _seek(self, target: int) -> None:
+        """Keep the logical column without allocating cells for a forward gap.
+
+        Later backsteps and overwrites use this actual position. Compressing it at seek time
+        lets a backstep overwrite the preceding marker instead of blank cells. Only rendering
+        collapses an unwritten gap to one separator, so hostile counts cannot size the buffer.
+        """
+        self.col = target
+
+    def _erase(self, mode: int) -> None:
+        if mode == 1:  # start of line to the cursor, inclusive
+            for k in self.line:
+                if k <= self.col:
+                    self.line[k] = " "
+        elif mode == 2:  # the whole line; the cursor does not move on EL
+            self.line = dict.fromkeys(self.line, " ")
+        else:  # cursor to end of line
+            self.line = {k: ch for k, ch in self.line.items() if k < self.col}
+
+    def _render_line(self) -> str:
+        parts: list[str] = []
+        previous = -1
+        for column, ch in sorted(self.line.items()):
+            if column > previous + 1:
+                parts.append(" ")
+            parts.append(ch)
+            previous = column
+        return "".join(parts)
+
+    def finish(self) -> str:
+        return "".join(self.out) + self._render_line()
+
+
+def _csi_intro(text: str, final_at: int) -> str:
+    """The parameter bytes of the CSI whose final byte is at `final_at`.
+
+    Read back from the text instead of threaded through the `_CSI` state: the scan stops at the
+    `[` that introduced the sequence (0x5B is outside the parameter range), so it costs only
+    this sequence's own parameter bytes and the scanner signature every state shares stays put.
+    """
+    k = final_at
+    while k > 0 and 0x20 <= ord(text[k - 1]) <= 0x3F:
+        k -= 1
+    return text[k:final_at]
+
+
+def _csi_count(params: str) -> int:
+    """A CSI's first numeric parameter, or 0 when the log omitted it (`ESC[K`, `ESC[D`)."""
+    digits = "".join(c for c in params.split(";", maxsplit=1)[0] if c.isdigit()).lstrip("0")
+    if len(digits) > 64:
+        raise GhReadError("job log contains a CSI cursor count longer than 64 digits; cannot score this log")
+    return int(digits) if digits else 0
+
+
+def _after_cr(text: str, i: int) -> int:
+    """The index after the CR at `i`, taking an immediately following LF with it.
+
+    A CRLF pair is ONE line terminator, so the two bytes are consumed together: in ground text
+    that is a single newline, and inside a sequence both halves are the payload's own bytes.
+    Written once because every state needs the same pairing, and a CR left alone would hand its
+    LF to the driver, which owns line breaks.
+    """
+    return i + 2 if text.startswith("\n", i + 1) else i + 1
+
+
+def _scan_ground(text: str, i: int, osc: bool) -> tuple[int, bool, int, _Emitted]:
+    """Copy visible text up to one control byte, and start the sequence it introduces."""
+    match = _SPECIAL.search(text, i)
+    if match is None:
+        return _GROUND, osc, len(text), text[i:]
+    start = match.start()
+    visible = text[i:start]
+    ch = text[start]
+    nxt = start + 1
+    if ch == "\r":  # cursor to column 0: in a log, the text after it starts a new line
+        return _GROUND, False, _after_cr(text, start), visible + "\n"
+    if ch == "\n" or ch in _CANCEL:  # the driver owns line breaks and cancellation
+        return _GROUND, False, start, visible
+    if ch == "\x1b":
+        return _ESCAPE, osc, nxt, visible
+    if ch == "\x9b":
+        return _CSI, osc, nxt, visible
+    if ch in _C1_STRING_INTRODUCERS:
+        return _STRING, ch == "\x9d", nxt, visible
+    if ch == "\x08":  # BS: step back one column, so the next write REPLACES what is there
+        return _GROUND, osc, nxt, (visible, _CursorOp("back", 1))
+    # Every other control byte (and the other C1 codes) is dropped; tab is real whitespace.
+    return _GROUND, osc, nxt, visible + ("\t" if ch == "\t" else "")
+
+
+def _scan_escape(text: str, i: int, osc: bool) -> tuple[int, bool, int, _Emitted]:
+    """Consume one byte of a sequence introduced by ESC."""
+    ch = text[i]
+    code = ord(ch)
+    if ch == "\x1b":  # a new ESC restarts the sequence
+        return _ESCAPE, osc, i + 1, ""
+    if ch == "[":
+        return _CSI, osc, i + 1, ""
+    if ch in _ESC_STRING_INTRODUCERS:
+        return _STRING, ch == "]", i + 1, ""
+    if 0x20 <= code <= 0x2F:  # intermediate: `ESC ( B` still has a final byte to come
+        return _ESCAPE, osc, i + 1, ""
+    if 0x30 <= code <= 0x7E:  # final byte: the sequence is complete
+        return _GROUND, osc, i + 1, ""
+    if ch == "\r":  # a C0 executed inside the sequence, which then continues
+        return _ESCAPE, osc, _after_cr(text, i), ""
+    if code < 0x20 or code == 0x7F:  # C0/DEL is executed inside the sequence
+        return _ESCAPE, osc, i + 1, ""
+    return _GROUND, osc, i, ""  # not part of this sequence: rescan it as text
+
+
+# CSI finals this scanner APPLIES, because each one moves the cursor within the active line:
+# CUB, CUF, CHA and EL. Everything else -- including the vertical movers -- is dropped.
+_LINE_OPS: dict[str, Literal["back", "forward", "column", "erase"]] = {
+    "D": "back",
+    "C": "forward",
+    "G": "column",
+    "K": "erase",
+}
+
+
+def _scan_csi(text: str, i: int, osc: bool) -> tuple[int, bool, int, _Emitted]:
+    """Consume one byte of a CSI; a C0 control inside it is executed, not a terminator."""
+    ch = text[i]
+    code = ord(ch)
+    if ch == "\x1b":  # a new ESC abandons this CSI
+        return _ESCAPE, osc, i + 1, ""
+    if 0x20 <= code <= 0x3F:  # parameter and intermediate bytes
+        return _CSI, osc, i + 1, ""
+    if 0x40 <= code <= 0x7E:  # final byte
+        # Only the finals that move the cursor WITHIN the active line are applied. CUU/CUD
+        # (`A`/`B`), CNL/CPL (`E`/`F`), CUP/HVP (`H`/`f`) and ED (`J`) address other lines or
+        # the whole screen, which the one-line model cannot represent; they stay dropped, as
+        # they were, and are named out of contract in `strip_terminal_controls`.
+        if ch in _LINE_OPS:
+            count = _csi_count(_csi_intro(text, i))
+            return _GROUND, osc, i + 1, ("", _CursorOp(_LINE_OPS[ch], count))
+        return _GROUND, osc, i + 1, ""
+    if ch == "\r":  # a C0 executed inside the CSI, which then continues
+        return _CSI, osc, _after_cr(text, i), ""
+    if code < 0x20 or code == 0x7F:  # executed inside the CSI, which then continues
+        return _CSI, osc, i + 1, ""
+    return _GROUND, osc, i, ""  # ST, a C1 introducer or corruption: abort, rescan as text
+
+
+def _scan_string(text: str, i: int, osc: bool) -> tuple[int, bool, int, _Emitted]:
+    """Consume one byte of a control-string payload; only ST -- and BEL, for OSC -- ends it."""
+    ch = text[i]
+    if ch == "\x1b":
+        return _STRING_ESC, osc, i + 1, ""
+    if ch == "\x9c" or (osc and ch == "\x07"):  # C1 ST, or BEL in the OSC it terminates
+        return _GROUND, False, i + 1, ""
+    if ch == "\r":  # payload, like every other C0 here: the string keeps running
+        return _STRING, osc, _after_cr(text, i), ""
+    return _STRING, osc, i + 1, ""
+
+
+def _scan_string_esc(text: str, i: int, osc: bool) -> tuple[int, bool, int, _Emitted]:
+    """Resolve the byte after an ESC inside a payload.
+
+    `ESC \\` is ST and ends the string. ANY other byte -- a second ESC included -- aborts the
+    string, and the byte is reprocessed in the ESCAPE state rather than consumed as payload:
+    xterm's parser does `case OSC_STRING/SOS_PM_APC_STRING: if (c == ESC) state = ESCAPE`.
+    Treating it as more payload ran the string on to the newline, so a real terminal shows a
+    `[quality] REGRESSION` line that `quality_keys` never saw (Codex P2/BLOCKING at
+    0de9f05689). Leaving `i` unconsumed is what makes `ESC ] pay ESC [ 31 m` open a CSI and
+    `ESC ] pay ESC 7` the save-cursor sequence, without a special case per final byte.
+
+    `osc` is returned untouched: it is read only inside `_STRING`, and every entry to that state
+    re-derives it from the introducer that opened it, so it carries no meaning while in `_ESCAPE`.
+    """
+    ch = text[i]
+    if ch == "\\":
+        return _GROUND, False, i + 1, ""
+    return _ESCAPE, osc, i, ""  # aborted: _scan_escape reprocesses this byte
+
+
+_SCANNERS = {
+    _GROUND: _scan_ground,
+    _ESCAPE: _scan_escape,
+    _CSI: _scan_csi,
+    _STRING: _scan_string,
+    _STRING_ESC: _scan_string_esc,
+}
+
+
+def strip_terminal_controls(text: str) -> str:
+    """Remove every terminal control sequence and control byte from `text`.
+
+    Applied to log bytes before they are parsed: a gate key and the markdown row it renders
+    must not be able to carry a cursor move, an OSC 52 clipboard write or a bare CR. Text the
+    terminal would SHOW survives, including text that follows a CAN/SUB cancellation.
+
+    A cursor move that stays on the ACTIVE LINE is applied, because it changes what the line
+    shows: BS and CUB step back so the next character REPLACES the one it covered (`REGX` BS
+    `RESSION` shows `REGRESSION`; `::t` BS x6 `PASSED` shows no `::t`, so it mints no failure
+    identity), CUF/CHA step forward, and EL blanks cells. A line break is the cursor reset to
+    column 0, so this needs no screen model: a BS or CUB at column 0 stops there rather than
+    stepping onto the line before.
+
+    OUT OF CONTRACT, and deliberately left dropped: every move to another line or across the
+    whole screen -- IND (`ESC D`), RI (`ESC C`/`ESC M`), NEL (`ESC E`), CUU/CUD
+    (`ESC [ n A`/`ESC [ n B`), CNL/CPL (`ESC [ n E`/`ESC [ n F`), CUP/HVP (`ESC [ r ; c H`,
+    `ESC [ r ; c f`) and ED (`ESC [ n J`). One active line cannot represent them, and applying
+    a vertical move as if it were horizontal is itself a mint: reading IND as a one-column
+    backstep turns two terminal lines into the single `[quality] REGRESSION` marker no
+    terminal shows. Measured `ESC [ 1 ; 1 H` is byte-identical with and without the cursor, so
+    nothing regresses; a log that needs real vertical addressing needs a tokenizer, not this.
+    """
+    # CR is NOT rewritten here: only `_scan_ground` knows a CR is ground text. A CR inside an
+    # OSC/DCS/CSI is a C0 that executes and leaves the sequence running, so translating it to a
+    # newline up front handed the driver an LF it read as the sequence's end and exposed a
+    # payload no terminal shows -- one hidden `FAILED` line minted a gate key (P1/BLOCKING at
+    # a6784645d6, sol-review line 881). `_scan_ground` emits the ground CR as `\n`, because a
+    # cursor return means what follows starts a new line, and `_after_cr` takes a paired LF with
+    # it so CRLF stays ONE line break. An LF is still a line boundary in a log: the driver ends
+    # an unterminated sequence on it and keeps it, so one broken sequence cannot eat a log.
+    cursor = _Cursor()
+    state = _GROUND
+    osc = False  # the current string is an OSC, where a bare BEL is a legal terminator
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\n":  # an unterminated sequence stops here; the line break is kept
+            state, osc = _GROUND, False
+            cursor.write(ch)
+            i += 1
+            continue
+        if ch in _CANCEL:  # CAN/SUB cancel the sequence in progress; what follows is visible
+            state, osc = _GROUND, False
+            i += 1
+            continue
+        state, osc, i, emitted = _SCANNERS[state](text, i, osc)
+        if isinstance(emitted, tuple):
+            data, op = emitted
+            cursor.write(data)
+            cursor.apply(op)
+        else:
+            cursor.write(emitted)
+    return cursor.finish()
 
 
 # A job log is the one body that legitimately carries terminal escape sequences: the runner
@@ -795,12 +1581,18 @@ def _gh_api(path: str) -> str:
         # Strict: `errors="replace"` rewrote undecodable bytes into U+FFFD before
         # `failed_identities` parsed them, which can mint or mangle a gate key out of bytes no run
         # ever printed. A log that will not decode is a collection failure, not a log.
-        return proc.stdout.decode("utf-8")
+        body = proc.stdout.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise GhReadError(
             f"gh api {path} returned bytes that are not valid UTF-8 ({exc.reason} at byte "
             f"{exc.start}); refusing to rewrite them into a gate key this run never measured"
         ) from exc
+    if _JOB_LOG_PATH.match(path):
+        # With `--allow-escape-sequences` the log's control bytes reach us intact, and a parsed
+        # identity becomes a gate key rendered into generated markdown: neutralise them here, so
+        # no parser downstream can see a cursor move, an OSC 52 clipboard write or a bare CR.
+        body = strip_terminal_controls(body)
+    return body
 
 
 def _iso(at: str) -> dt.datetime:
@@ -838,6 +1630,10 @@ class Collected:
     # Unreadable logs of main pushes in the scored window: the main regressions they would
     # have counted are the evidence a demoted gate is monitored by, so they fail the window too.
     main_unread_logs: int = 0
+    # Runs whose workflow-definition read failed where a skip's cause had to be proved: their
+    # skip evidence is UNKNOWN, so they are counted here and in `incomplete_heads`, never
+    # quietly treated as a run whose skips were all independent.
+    guard_reads_unread: int = 0
 
 
 def _head_repo(run: Mapping) -> str | None:
@@ -893,21 +1689,148 @@ def _in_main_window(run: Mapping, main_window: tuple[dt.datetime, dt.datetime] |
     return main_window is None or main_window[0] <= _iso(run["updated_at"]) < main_window[1]
 
 
+LOG_RETRY_BACKOFF_S = (0.5, 1.5)
+
+
+def _log_failure_is_transient(err: RuntimeError) -> bool:
+    """Whether a failed log fetch can heal on its own and is worth another attempt.
+
+    Only a 5xx from the artifacts host or a dropped connection is retried. An expired log
+    answers 404/410 and a permission answer is 403: retrying those spends API calls on a
+    result that cannot change, and on a token this routine shares with every other thread
+    that waste is the failure mode that matters. Anything unrecognised stays permanent, so
+    an unknown error is never multiplied by three.
+    """
+    text = str(err).lower()
+    if any(seen in text for seen in ("http 404", "http 410", "http 403", "http 422", "not found", "gone")):
+        return False
+    return any(
+        seen in text
+        for seen in (
+            "http 500",
+            "http 502",
+            "http 503",
+            "http 504",
+            "timed out",
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "error connecting",
+            "temporary failure",
+        )
+    )
+
+
 def _job_log(api: Api, job: Mapping) -> tuple[int, str | None]:
     """One job's log, or None when it cannot be read (expired, or the API refused).
 
+    A transient failure is retried with backoff, because those logs do come back and the
+    window they belong to is void while they are missing. A permanent one returns on the
+    first attempt, so the retry cannot lengthen a run whose logs are simply gone.
+
     `GhReadError` is not one of those: it says this run's own read is impossible (a gh that
     cannot keep a log's escapes, or bytes that will not decode), so it propagates and the run
-    fails instead of scoring a window it could not read.
+    fails instead of scoring a window it could not read. It is not a `RuntimeError`, so the
+    retry below cannot swallow it.
     """
-    try:
-        return job["id"], api(f"repos/{REPO}/actions/jobs/{job['id']}/logs") or None
-    except RuntimeError:
-        return job["id"], None
+    for wait in (0.0, *LOG_RETRY_BACKOFF_S):
+        if wait:
+            time.sleep(wait)
+        try:
+            return job["id"], api(f"repos/{REPO}/actions/jobs/{job['id']}/logs") or None
+        except RuntimeError as err:
+            if not _log_failure_is_transient(err):
+                return job["id"], None
+    return job["id"], None
+
+
+def _api_json(api: Api, path: str) -> dict:
+    """One JSON object read, retried only while the failure can heal on its own.
+
+    `jobs_of` runs inside `ThreadPoolExecutor.map`, so a single raise there escapes the pool
+    before `unmeasured_window` is consulted: the run ends on a traceback with no exit code
+    and no cause counts, which reads as "produced nothing". A 502 from the API is the
+    ordinary transient case, so the listing carries the same bounded backoff as `_job_log`;
+    an answer that cannot change (404/403/422) still returns on the first attempt, so a gone
+    run costs no extra calls on the token every other thread shares.
+    """
+    last: RuntimeError | None = None
+    for wait in (0.0, *LOG_RETRY_BACKOFF_S):
+        if wait:
+            time.sleep(wait)
+        try:
+            return json.loads(api(path))
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"gh api {path} returned invalid JSON: {err}") from err
+        except RuntimeError as err:
+            last = err
+            if not _log_failure_is_transient(err):
+                raise
+    if last is None:  # pragma: no cover - the loop always sets it before falling through
+        raise RuntimeError(f"gh api {path} failed with no error recorded")
+    raise last
+
+
+def _agreed_guards(*maps: Mapping[str, Mapping[str, bool]]) -> dict[str, dict[str, bool]]:
+    """The step declarations every revision in `maps` agrees on.
+
+    A pull_request run executes a merge of its head into its base, and GitHub publishes
+    neither that merge commit on the run nor a ref bound to it (`refs/pull/<n>/merge` is the
+    latest simulated merge, `pulls/<n>.merge_commit_sha` the eventual integration), so a read
+    of either can see a different `if:` than the run used. A clean three-way merge can only
+    keep a step unguarded when both parents declare it with no condition of its own — had one
+    parent added an `if:`, its own file would say so — and a conflicted file stops the merge
+    from existing, so the run would not have started. Agreement across the parents is
+    therefore the proof. A step they disagree on, or a job one of them does not declare,
+    proves nothing and is left out, which keeps its skip independent withheld evidence.
+    """
+    out: dict[str, dict[str, bool]] = {}
+    for base, steps in maps[0].items():
+        others = [m.get(base) for m in maps[1:]]
+        if any(other is None for other in others):
+            continue
+        agreed = {
+            step: False
+            for step, guarded in steps.items()
+            if guarded is False and all(other.get(step) is False for other in others if other is not None)
+        }
+        if agreed:
+            out[base] = agreed
+    return out
+
+
+def guard_proof(api: Api, workflow: str, run: Mapping) -> dict[str, dict[str, bool]] | None:
+    """The step-guard declarations that governed `run`, or None when they cannot be proven.
+
+    A `pull_request` run executes the merge of its head into its base, so its steps ran under
+    the merge's `if:` declarations, not the branch head's. GitHub does not publish that merge
+    commit for the run, nor — once the PR closes — the base revision this run carried, and both
+    `refs/pull/<n>/merge` and `pulls/<n>.merge_commit_sha` track the base as it moved. So no
+    stand-in revision is read: the head and the base the run itself carried are read and only
+    what they agree on is proven (`_agreed_guards`). A closed run's own `pull_requests` field is
+    empty, and the recovered PR would only carry today's base, so nothing is proven for it —
+    an empty map, which keeps its skips independent withheld evidence without voiding the facts
+    the run did measure. A payload naming several PRs, a missing base, or a revision that
+    cannot be read is None: the caller reports an unproven read rather than guessing one.
+    """
+    if run["event"] != "pull_request":
+        return workflow_step_guards(api, workflow, str(run["head_sha"]))
+    pulls = run.get("pull_requests") or []
+    if not pulls:
+        return {}
+    if len(pulls) != 1:
+        return None
+    base = (pulls[0].get("base") or {}).get("sha")
+    if not base:
+        return None
+    maps = [workflow_step_guards(api, workflow, str(sha)) for sha in (run["head_sha"], base)]
+    if any(one is None for one in maps):
+        return None
+    return _agreed_guards(*[one for one in maps if one is not None])
 
 
 def _selection_branches(
-    wanted: Sequence[tuple[str, dict]], verdicts: Mapping[int, tuple[frozenset[str], bool, int]]
+    wanted: Sequence[tuple[str, dict]], verdicts: Mapping[int, tuple[frozenset[str], bool, int, frozenset[str]]]
 ) -> set[str]:
     """The PR branches where some run was red on a pytest key: only there can a shard's
     selection clear a red, so only there is its selection report consulted."""
@@ -922,7 +1845,7 @@ def _selection_logs(
     api: Api,
     wanted: Sequence[tuple[str, dict]],
     jobs: Mapping[int, list[dict]],
-    verdicts: Mapping[int, tuple[frozenset[str], bool, int]],
+    verdicts: Mapping[int, tuple[frozenset[str], bool, int, frozenset[str]]],
     logs: Mapping[int, str | None],
     workers: int,
 ) -> dict[int, str | None]:
@@ -982,11 +1905,28 @@ def collect(
 
     def jobs_of(item: tuple[str, dict]) -> tuple[int, list[dict]]:
         run = item[1]
-        body = json.loads(api(f"repos/{REPO}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=100"))
+        body = _api_json(api, f"repos/{REPO}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=100")
         return run["id"], body["jobs"]
 
     with ThreadPoolExecutor(workers) as pool:
         jobs = dict(pool.map(jobs_of, failed))
+
+    # A skip after an in-job failure is only the failure's shadow if the workflow that ran
+    # proves the step has no condition of its own. GitHub does not publish the merge commit a
+    # pull_request run executed, so the proof is what its head and base revisions agree on
+    # (`guard_proof`); a push run reads its own head. Read once per such run, and only where a
+    # shadow is even possible. A refused or unparseable file leaves the entry at None, and that
+    # run is then reported as unproven skip evidence (`guard_unread`), never a silent skip.
+    shadow_runs = {
+        r["id"]: (w, r) for w, r in failed if any(_skips_after_a_failure(j) for j in jobs.get(r["id"], []))
+    }
+
+    def guards_of(item: tuple[str, dict]) -> tuple[int, dict[str, dict[str, bool]] | None]:
+        workflow, run = item
+        return run["id"], guard_proof(api, workflow, run)
+
+    with ThreadPoolExecutor(workers) as pool:
+        step_guards = dict(pool.map(guards_of, shadow_runs.values()))
 
     main_reports = {r["id"] for w, r in wanted if _is_main_report(w, r)}
     log_jobs = [
@@ -1013,10 +1953,11 @@ def collect(
     main_red: Counter[str] = Counter()
     unreadable = 0
     main_unread = 0
+    guard_unreads = 0
     log_ids = {j["id"] for j in log_jobs}
     reported: list[dt.datetime] = []
     for workflow, run in wanted:
-        red, measured, missing = verdicts[run["id"]]
+        red, measured, missing, unread_jobs = verdicts[run["id"]]
         measured = measured and run_gave_verdict(run["conclusion"], jobs.get(run["id"], []))
         unreadable += missing
         if run["event"] == "push":
@@ -1034,12 +1975,26 @@ def collect(
                 main_unread += missing + report_unread + gaps
             continue
         skipped = skipped_jobs(jobs.get(run["id"], []))
+        # The workflow that ran could not be read, so a skip behind a failure in the same job
+        # cannot be told from one whose own `if:` was false. The run's skip evidence is
+        # unproven: count it and leave the run unmeasured rather than reading it as independent.
+        guard_unread = run["id"] in step_guards and step_guards[run["id"]] is None
+        if guard_unread:
+            measured = False
+            guard_unreads += 1
         # A shard's unread or missing selection report would read as "ran no modules", so it
         # is an unread log like any other: it fails the window rather than dropping a clear.
         failed_logs = logs if _branch_key(run) in consulted else {}
         sel_missing = unread_selections(jobs.get(run["id"], []), selection, failed_logs)
         unreadable += sel_missing
         missing += sel_missing
+        # A selection report is read from the pytest job's own log, so losing it loses a
+        # pytest shard's evidence exactly as an unread failure log does: the run gave no
+        # verdict, so the head leaves every count instead of scoring the reds it did name.
+        lost_jobs = set(unread_jobs)
+        if sel_missing:
+            measured = False
+            lost_jobs |= PYTEST_JOBS
         needed = sum(j["id"] in log_ids or j["id"] in selection for j in jobs.get(run["id"], []))
         heads.append(
             Head(
@@ -1057,6 +2012,11 @@ def collect(
                 run["conclusion"] == "cancelled",
                 _iso(run["created_at"]),
                 run["id"],
+                frozenset(lost_jobs),
+                zero_jobs=read_zero_jobs(run, jobs),
+                aggregate=run_aggregate_verdict(jobs.get(run["id"], [])),
+                guard_unread=guard_unread,
+                skipped_behind_failure=skips_behind_a_failure(jobs.get(run["id"], []), step_guards.get(run["id"])),
             )
         )
     uncovered = sum(
@@ -1064,7 +2024,7 @@ def collect(
     )
     unreadable += uncovered
     main_unread += uncovered
-    return Collected(heads, main_red, len(wanted), unreadable, len(log_jobs), main_unread)
+    return Collected(heads, main_red, len(wanted), unreadable, len(log_jobs), main_unread, guard_unreads)
 
 
 def _main_report_gaps(jobs: Sequence[Mapping], red: frozenset[str]) -> int:
@@ -1258,18 +2218,29 @@ def owned_unread_logs(heads: Sequence[Head], window: tuple[dt.datetime, dt.datet
     return sum(h.unread_logs for h in owned), sum(h.log_jobs for h in owned)
 
 
+def owned_guard_unreads(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None) -> int:
+    """Runs on the PR heads whose verdict completed in `window` whose workflow-definition read
+    failed, so their skip evidence is UNKNOWN rather than a measured independent skip."""
+    return sum(
+        h.guard_unread
+        for shas in _by_branch_sha(heads).values()
+        for runs in shas.values()
+        if _owned(runs, window)
+        for h in runs.values()
+    )
+
+
 def unmeasured_window(data: Collected, window: tuple[dt.datetime, dt.datetime] | None = None) -> str | None:
-    """Why a window cannot be scored, or None. A window with no sha holding a measured
+    """Why a window cannot be scored at all, or None. A window with no sha holding a measured
     verdict from every workflow (startup failures, timed-out gating jobs, every e2e run
     cancelled) scores nothing, so it is an outage, never an empty scorecard. So is a window
-    with any unreadable failed-job log."""
+    with an unreadable main log: main's red count is a window-wide denominator that no PR head
+    can stand in for.
+
+    An unreadable *PR* log is no longer a window-wide outage: it is scoped per gate by
+    `unread_scopes`, and the gates it cannot touch are scored as usual."""
     if not owned_shas(data.heads, window):
         return "no PR head in the window has a measured verdict from every workflow"
-    # Any unreadable log fails the window: the reds it hides, and their fixes, would leave
-    # every denominator, so a tier could rest on whichever evidence happened to be readable.
-    unread, needed = owned_unread_logs(data.heads, window)
-    if unread:
-        return f"{unread} of {needed} failed pytest/quality job logs in the window were unreadable"
     if data.main_unread_logs:
         return f"{data.main_unread_logs} main pytest/quality job log(s) in the window were unreadable"
     return None
@@ -1308,6 +2279,7 @@ def main(argv: Sequence[str] | None = None, api: Api = _gh_api) -> int:
         "red_heads": red_heads,
         "ratchet_only_heads": ratchet_only_heads,
         "unreadable_logs": owned_unread_logs(data.heads, window)[0] + data.main_unread_logs,
+        "guard_reads_unread": owned_guard_unreads(data.heads, window),
         "incomplete_heads": incomplete_heads(data.heads, window),
     }
     markdown = render_markdown(scores, meta)

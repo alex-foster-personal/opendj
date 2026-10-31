@@ -265,7 +265,9 @@ def _stage_one_upload(
     """Stage one uploaded file, or skip it as a duplicate. Raises on refusal."""
     name = up.filename or ""
     final = _safe_relative_path(dest_dir, name)
-    rel_name = str(final.relative_to(dest_dir.resolve()))
+    # POSIX separators on every OS, like materialize: the client named the file
+    # with /, and a Windows backslash here would not round-trip to it.
+    rel_name = final.relative_to(dest_dir.resolve()).as_posix()
     hold = _hold_path(final)
     if final.exists():
         raise HTTPException(
@@ -365,7 +367,7 @@ def decide_upload(body: DecideIn) -> UploadFileResult:
     if not dest_dir.is_dir():
         raise HTTPException(404, f"batch {body.batch!r} not found")
     final = _safe_relative_path(dest_dir, body.filename)
-    rel_name = str(final.relative_to(dest_dir.resolve()))
+    rel_name = final.relative_to(dest_dir.resolve()).as_posix()
     hold = _hold_path(final)
     if body.action == "accept":
         if not hold.exists():

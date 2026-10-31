@@ -102,6 +102,7 @@ def test_sink_without_job_host_directory_uses_the_os_log_directory(tmp_path: Pat
     else:
         expected = tmp_path / ".local" / "share" / "opendj" / "error-sink.jsonl"
     assert sink_path({}, home=tmp_path) == expected
+    # A home copied or synced from a Mac carries Library/Logs; that is not a licence to
+    # pick the macOS sink off-Darwin, which OPS-62 pins to the per-OS directory.
     (tmp_path / "Library" / "Logs").mkdir(parents=True)
-    mac_logs = tmp_path / "Library" / "Logs" / "opendj" / "error-sink.jsonl"
-    assert sink_path({}, home=tmp_path) == mac_logs
+    assert sink_path({}, home=tmp_path) == expected

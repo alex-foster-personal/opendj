@@ -17,7 +17,7 @@ on:
       - apps/webui/server/rb_vendor_pkg/**
       - scripts/check_waveform_native_wheel.py
       - scripts/check_waveform_installed_consumer.py
-      - tests/fixtures/_resolver.py
+      - apps/sync/usb/pioneer/fixture_resolver.py
       - tests/fixtures/rb-usb-export.manifest.json
       - (private path)
       - Makefile
@@ -37,7 +37,7 @@ on:
       - apps/webui/server/rb_vendor_pkg/**
       - scripts/check_waveform_native_wheel.py
       - scripts/check_waveform_installed_consumer.py
-      - tests/fixtures/_resolver.py
+      - apps/sync/usb/pioneer/fixture_resolver.py
       - tests/fixtures/rb-usb-export.manifest.json
       - (private path)
       - Makefile
@@ -117,7 +117,7 @@ jobs:
           toolchain: "1.96.0"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         # No uv cache in a release-triggered workflow: a cache written by a PR run
         # must not feed a tag/release build (zizmor cache-poisoning).
         with:

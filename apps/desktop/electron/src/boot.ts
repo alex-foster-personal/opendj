@@ -4,10 +4,10 @@
 // Runs before the window exists, on purpose: the failure path must raise a
 // native dialog rather than open a blank window.
 
-import { BOOT_TIMEOUT_MS, type Engine, EngineError, freeLoopbackPort, healthOk, spawnEngine } from './engine';
+import { BOOT_TIMEOUT_MS, type Engine, EngineError, enginePort, healthOk, spawnEngine } from './engine';
 import { type LaunchPlan, type LockProbe, inspectLock, lockPath, stopHolderPid } from './launch';
 import { logTail } from './shell-log';
-import { type Supervised, writeParentFile } from './supervisor';
+import { type Supervised, releaseParentWatchOwnership, writeParentFile } from './supervisor';
 
 export interface BootDeps {
 	health: (port: number) => Promise<boolean>;
@@ -28,7 +28,7 @@ export function defaultBootDeps(
 		health: (port) => healthOk(port),
 		lockProbe,
 		spawn: spawnEngine,
-		freePort: freeLoopbackPort,
+		freePort: enginePort,
 		stopHolder: stopHolderPid,
 		askStopOrQuit,
 		bootTimeoutMs: BOOT_TIMEOUT_MS
@@ -46,6 +46,7 @@ function parentFile(dataDir: string): void {
 async function adopt(plan: Extract<LaunchPlan, { kind: 'adopt' }>, dataDir: string, deps: BootDeps, why: string): Promise<Supervised> {
 	parentFile(dataDir);
 	if (!(await deps.health(plan.port))) {
+		releaseParentWatchOwnership(dataDir);
 		throw new EngineError(
 			'Open DJ could not adopt the running engine.',
 			`pid ${plan.pid} ${why} at port ${plan.port}`
@@ -70,6 +71,15 @@ export async function startEngine(payload: string, dataDir: string, logPath: str
 
 export async function spawnFreshEngine(payload: string, dataDir: string, logPath: string, deps: BootDeps): Promise<Supervised> {
 	parentFile(dataDir);
+	try {
+		return await spawnFreshEngineInner(payload, dataDir, logPath, deps);
+	} catch (error) {
+		releaseParentWatchOwnership(dataDir);
+		throw error;
+	}
+}
+
+async function spawnFreshEngineInner(payload: string, dataDir: string, logPath: string, deps: BootDeps): Promise<Supervised> {
 	const port = await deps.freePort();
 	const running = deps.spawn(payload, dataDir, logPath, port);
 	try {

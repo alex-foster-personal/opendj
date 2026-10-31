@@ -160,6 +160,7 @@ test('control: every OTHER quantized seek still snaps to the grid (cue, hot cue,
 	assert.match(engine, /await this\.quantizedSeek\(deck, st\.cue_ms, undefined, pressT0Ms\);/);
 	const ipc = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	assert.match(ipc, /jump: \(deck, positionMs, pressT0Ms\) => engine\.quantizedSeek\(deck, positionMs, undefined, pressT0Ms\)/);
+	// The IPC seek snaps unless the command asks for exact (an aligned Cmd K pair, CMDK-19).
 	assert.match(ipc, /await engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true\);/);
 	const rust = readFrontendSource('src/lib/audio-engine/rust-sync.ts');
 	assert.match(rust, /quantizedSeekDecisionMs\(beats, ms, beats === null \? 1 : _gridBeats\(st\), false, st\.loop\)/);

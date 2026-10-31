@@ -197,6 +197,45 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-04-01",
         sandbox_gated=False,
     ),
+    FlagDef(
+        flag_id="cmdk.v2.actions",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Cmd K v2 settings and commands as results (CMDK-11..14, issue #6091): "
+            "one typed character searches only settings, commands and recent loads, "
+            "tracks join from two, and holding Cmd (Ctrl off macOS) numbers the "
+            "first nine rows for a quick pick. Needs cmdk.v2."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="cmdk.v2.pairs",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Cmd K v2 pairs on open (CMDK-17..19, issue #6092): with nothing typed "
+            "the bar opens on the master deck's pairs, each drawn with the Comet "
+            "lightning edge and an aligned or loose chip; an aligned pair loads at "
+            "its captured sync offset with the fader at 0. Needs cmdk.v2.actions."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="cmdk.v2.ai",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Cmd K v2 AI search (CMDK-20..22, issue #6093): Tab switches the bar to AI "
+            "search, which shortlists tracks that mix into the master and ranks them by "
+            "one JEV call on OpenRouter; with no OPENROUTER_API_KEY it shows an add-key "
+            "row instead. Needs cmdk.v2."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (

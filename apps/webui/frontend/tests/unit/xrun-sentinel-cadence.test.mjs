@@ -363,3 +363,23 @@ test('SABOTAGE: the worklet measures the cadence the same way the pure module do
 			'policy number nobody can see or test'
 	);
 });
+
+//-----------------------------------------------------------------------------
+// the warmup handshake (NATIVE-5886)
+//-----------------------------------------------------------------------------
+
+test('a report posted during cadence warmup says it is not judging, so the page cannot arm on it', () => {
+	const warmup = xrun.XRUN_CADENCE_WARMUP_CALLBACKS;
+	const gaps = healthyCadenceGapsMs(DEVICES[0], 1).slice(0, 1);
+	const short = Array.from({ length: warmup - 2 }, () => gaps[0]);
+	const observed = runSentinel(short, shippedThresholdMs(DEVICES[0]));
+	assert.ok(observed.reports.length > 0, 'control: the forced tail window was posted');
+	for (const report of observed.reports) {
+		assert.equal(report.judging, false, 'if a warmup window reports judging then the page arms during the blind window');
+	}
+});
+
+test('CONTROL: once warmup is over the worklet reports that it is judging', () => {
+	const observed = runSentinel(healthyCadenceGapsMs(DEVICES[0], 800), shippedThresholdMs(DEVICES[0]));
+	assert.equal(observed.reports.at(-1).judging, true, 'if no report ever says judging then the detector never arms');
+});

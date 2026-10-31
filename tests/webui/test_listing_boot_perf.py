@@ -248,7 +248,11 @@ def test_fixture_rows_carry_real_previews_vocals_and_artwork(probe) -> None:
 def test_warm_page_opens_no_file_per_row(probe) -> None:
     """[if] a warm 500-row page opens files per row [then] fail, [else stop]."""
     cold, warm = probe["cold_first"], probe["warm_first"]
-    assert cold["request_opens"] > PAGE, (
+    # Control: the cold page must open more than the warm budget on the request
+    # thread, so the counter is attached there AND the budget below can fail.
+    # Not "> PAGE": the opens per cold row depend on the platform's containment
+    # walk (Windows has no dir-fd anchored walk and opened 405 for 500 rows).
+    assert cold["request_opens"] > WARM_OPEN_BUDGET, (
         f"the cold page opened {cold['request_opens']} files: the open counter is not "
         f"attached to the request thread ({cold['opens_by_thread']})"
     )

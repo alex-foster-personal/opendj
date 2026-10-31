@@ -13,7 +13,7 @@ import {
 	BOOT_TIMEOUT_MS,
 	type Engine,
 	type ExitInfo,
-	freeLoopbackPort,
+	enginePort,
 	healthOk,
 	spawnEngine
 } from './engine';
@@ -33,6 +33,7 @@ import { appendShellLog, utcTimestampIso } from './shell-log';
 export const POLL_INTERVAL_MS = 5_000;
 export const RECOVERY_TIMEOUT_MS = 30_000;
 export const PARENT_FILE = '.engine.parent';
+export const PARENT_PREV_FILE = '.engine.parent.prev';
 
 export type SupervisorPhase =
 	| 'running'
@@ -59,7 +60,78 @@ export function supervisedPid(s: Supervised): number {
 	return s.kind === 'spawned' ? s.engine.pid : s.pid;
 }
 
-export async function shutdownSupervised(s: Supervised): Promise<void> {
+export function readParentFilePid(dataDir: string): number | null {
+	const file = path.join(dataDir, PARENT_FILE);
+	try {
+		const raw = fs.readFileSync(file, 'utf8').trim();
+		const pid = Number.parseInt(raw, 10);
+		return Number.isFinite(pid) && pid > 0 ? pid : null;
+	} catch {
+		return null;
+	}
+}
+
+function readParentPrevPid(dataDir: string): number | null {
+	const file = path.join(dataDir, PARENT_PREV_FILE);
+	try {
+		const raw = fs.readFileSync(file, 'utf8').trim();
+		const pid = Number.parseInt(raw, 10);
+		return Number.isFinite(pid) && pid > 0 ? pid : null;
+	} catch {
+		return null;
+	}
+}
+
+function writeParentPrevPid(dataDir: string, pid: number): void {
+	const file = path.join(dataDir, PARENT_PREV_FILE);
+	fs.writeFileSync(file, `${pid}\n`, { mode: 0o600 });
+	fs.chmodSync(file, 0o600);
+}
+
+function clearParentPrevPid(dataDir: string): void {
+	try {
+		fs.unlinkSync(path.join(dataDir, PARENT_PREV_FILE));
+	} catch {
+		// absent is fine
+	}
+}
+
+/** Relinquish our PID in `.engine.parent`, restoring a live earlier adopter when one exists. */
+export function releaseParentWatchOwnership(dataDir: string, shellPid = process.pid): void {
+	const recorded = readParentFilePid(dataDir);
+	if (recorded !== shellPid) return;
+	const parentPath = path.join(dataDir, PARENT_FILE);
+	const fallback = readParentPrevPid(dataDir);
+	try {
+		if (fallback !== null && pidCanAct(fallback)) {
+			fs.writeFileSync(parentPath, `${fallback}\n`, { mode: 0o600 });
+			fs.chmodSync(parentPath, 0o600);
+			clearParentPrevPid(dataDir);
+			appendShellLog('INFO', `restored ${PARENT_FILE} to live adopter pid ${fallback} on adopt quit`);
+			return;
+		}
+		clearParentPrevPid(dataDir);
+		fs.unlinkSync(parentPath);
+		appendShellLog(
+			'INFO',
+			'cleared .engine.parent on adopt quit so parent_watch falls back to OPENDJ_PARENT_PID'
+		);
+	} catch (error) {
+		appendShellLog('WARN', `could not update ${PARENT_FILE} on adopt quit: ${String(error)}`);
+	}
+}
+
+export async function shutdownSupervised(s: Supervised, dataDir?: string): Promise<void> {
+	if (s.kind === 'spawned') {
+		await s.engine.shutdown();
+		return;
+	}
+	// An adopted engine belongs to another shell; quitting this one must not stop it.
+	if (dataDir !== undefined) releaseParentWatchOwnership(dataDir);
+}
+
+/** Drop a supervised engine so restart can inspect the lock. Not used on shell quit. */
+export async function releaseSupervisedForRestart(s: Supervised): Promise<void> {
 	if (s.kind === 'spawned') await s.engine.shutdown();
 	else await stopHolderPid(s.pid);
 }
@@ -97,7 +169,7 @@ export function defaultDeps(lockProbe: (lock: string) => LockProbe | null): Supe
 		health: (port) => healthOk(port),
 		lockProbe,
 		spawn: spawnEngine,
-		freePort: freeLoopbackPort,
+		freePort: enginePort,
 		diskFree: diskFreeBytes,
 		pidCanAct,
 		bootTimeoutMs: BOOT_TIMEOUT_MS
@@ -120,9 +192,34 @@ export function exitReason(death: Pick<DeathInfo, 'exitCode' | 'signal'>): strin
 }
 
 export function writeParentFile(dataDir: string): void {
+	const predecessor = readParentFilePid(dataDir);
 	const file = path.join(dataDir, PARENT_FILE);
 	fs.writeFileSync(file, `${process.pid}\n`, { mode: 0o600 });
 	fs.chmodSync(file, 0o600);
+	if (predecessor !== null && predecessor !== process.pid && pidCanAct(predecessor)) {
+		writeParentPrevPid(dataDir, predecessor);
+	}
+}
+
+class RestartParentWatchClaim {
+	private held = true;
+
+	constructor(private readonly dataDir: string) {}
+
+	static write(dataDir: string): RestartParentWatchClaim {
+		writeParentFile(dataDir);
+		return new RestartParentWatchClaim(dataDir);
+	}
+
+	keep(): void {
+		this.held = false;
+	}
+
+	release(): void {
+		if (!this.held) return;
+		releaseParentWatchOwnership(this.dataDir);
+		this.held = false;
+	}
 }
 
 export class EngineSupervisor {
@@ -175,7 +272,7 @@ export class EngineSupervisor {
 		await this.busy;
 		const running = this.supervised;
 		this.supervised = null;
-		if (running !== null) await shutdownSupervised(running);
+		if (running !== null) await shutdownSupervised(running, this.paths.dataDir);
 	}
 
 	requestRelaunch(): Promise<void> {
@@ -289,20 +386,34 @@ export class EngineSupervisor {
 	private async attemptRestart(): Promise<boolean> {
 		const exitCode = this.exitCode ?? -1;
 		const { payload, dataDir, logPath } = this.paths;
+		if (this.stopped) return false;
 		const old = this.supervised;
 		this.supervised = null;
-		if (old !== null) await shutdownSupervised(old);
+		if (old !== null) await releaseSupervisedForRestart(old);
+		// Quit can begin while stopping the old holder; do not respawn into it.
+		if (this.stopped) {
+			appendShellLog('INFO', 'quit began during restart; not respawning');
+			return false;
+		}
+		let parentWatchClaim: RestartParentWatchClaim;
 		try {
-			writeParentFile(dataDir);
+			parentWatchClaim = RestartParentWatchClaim.write(dataDir);
 		} catch (error) {
 			return this.restartFailed(`restart failed: ${(error as Error).message}`);
 		}
 		const plan: LaunchPlan = await inspectLock(lockPath(dataDir), this.deps.health, this.deps.lockProbe);
 		if (plan.kind === 'adopt') {
+			if (this.stopped) {
+				appendShellLog('INFO', 'quit began during restart; not adopting');
+				parentWatchClaim.release();
+				return false;
+			}
+			parentWatchClaim.keep();
 			this.supervised = { kind: 'adopted', pid: plan.pid, host: plan.host, port: plan.port };
 			return this.restarted(exitCode);
 		}
 		if (plan.kind === 'stop-or-quit') {
+			parentWatchClaim.release();
 			return this.restartFailed(`engine fatal: lock held by pid ${plan.pid}: ${plan.detail}`);
 		}
 		let engine: Engine;
@@ -310,14 +421,23 @@ export class EngineSupervisor {
 			const port = await this.deps.freePort();
 			engine = this.deps.spawn(payload, dataDir, logPath, port);
 		} catch (error) {
+			parentWatchClaim.release();
 			return this.restartFailed(`restart failed: ${(error as Error).message}`);
+		}
+		if (this.stopped) {
+			appendShellLog('INFO', 'quit began during restart; stopping the new engine');
+			await engine.shutdown();
+			parentWatchClaim.release();
+			return false;
 		}
 		try {
 			await engine.waitUntilHealthy(this.deps.bootTimeoutMs);
 		} catch (error) {
 			await engine.shutdown();
+			parentWatchClaim.release();
 			return this.restartFailed(`restart failed: ${(error as Error).message}`);
 		}
+		parentWatchClaim.keep();
 		this.supervised = { kind: 'spawned', engine };
 		return this.restarted(exitCode);
 	}

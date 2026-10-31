@@ -256,8 +256,16 @@ def order_poll_liveness(request: Request) -> OrderPollLiveness:
 
 def page_is_open(request: Request) -> bool:
     """True only while PUT /state/ui-mirror has a document on record."""
-    mirror = getattr(request.app.state, "ui_mirror", None)
-    return mirror is not None
+    return page_is_open_on_app(request.app)
+
+
+def page_is_open_on_app(app: Any) -> bool:
+    """:func:`page_is_open` for a caller holding the app, not a request.
+
+    The remote speaker's LAN listener (I18) is a separate app that hands an
+    offer to the MAIN app's page, so it has no request of the main app.
+    """
+    return getattr(app.state, "ui_mirror", None) is not None
 
 
 def _page_is_open(request: Request) -> bool:
@@ -270,8 +278,13 @@ async def submit_single_command(request: Request, command: dict[str, Any]) -> di
     Caller must have already checked page_is_open. Returns the page's
     ``{steps, mirror_delta}`` document. Does not change POST /commands (still 409).
     """
+    return await submit_single_command_to_app(request.app, command)
+
+
+async def submit_single_command_to_app(app: Any, command: dict[str, Any]) -> dict[str, Any]:
+    """:func:`submit_single_command` for a caller holding the app, not a request."""
     order = {"kind": "single", "payload": command}
-    broker = _broker(request)
+    broker = _app_broker(app)
     order_id, result = broker.submit(order)
     try:
         return await result

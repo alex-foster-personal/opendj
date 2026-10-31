@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from apps.shared.hashing import sha256_file
-from tests.fixtures._resolver import fixture_path
+from apps.sync.usb.pioneer.fixture_resolver import fixture_path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_ROOT = REPO_ROOT / "tests" / "fixtures"

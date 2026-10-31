@@ -300,7 +300,9 @@ def test_dry_runner_holds_without_subprocess(
     _seed(db, ["need"])
     conn = _conn(db)
     _enqueue(conn, "stems", ["need"], tmp_path)
-    t0 = time.monotonic()
+    # perf_counter, not monotonic: on Windows monotonic ticks every ~15.6 ms,
+    # so a 10 ms hold read as 0.0 elapsed on bifrost1 (PR #6800).
+    t0 = time.perf_counter()
     outcome = queue_user_runner.tick_lane(
         conn,
         "stems",
@@ -308,7 +310,7 @@ def test_dry_runner_holds_without_subprocess(
         stems_root=tmp_path / "stems",
         data_dir=tmp_path,
     )
-    elapsed = time.monotonic() - t0
+    elapsed = time.perf_counter() - t0
     assert outcome == "ran"
     assert build_argv_called == []
     assert subprocess_called == []
@@ -345,7 +347,7 @@ def _tick_dry_stems(
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", str(hold_s))
     conn = _conn(tmp_path / "state.db")
-    t0 = time.monotonic()
+    t0 = time.perf_counter()
     outcome = queue_user_runner.tick_lane(
         conn,
         "stems",
@@ -353,7 +355,7 @@ def _tick_dry_stems(
         stems_root=tmp_path / "stems",
         data_dir=tmp_path,
     )
-    elapsed = time.monotonic() - t0
+    elapsed = time.perf_counter() - t0
     state = user.list_lane(conn, "stems", include_settled=True)[0].state
     conn.close()
     return outcome, elapsed, state

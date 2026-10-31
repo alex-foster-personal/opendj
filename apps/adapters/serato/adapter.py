@@ -39,6 +39,7 @@ from apps.adapters.serato.geob import (
     Markers2Cue,
     Markers2Loop,
     is_mp3_like_path,
+    overlay_markers_legacy,
     read_geob_frames,
     write_geob_frames,
 )
@@ -569,7 +570,7 @@ class SeratoAdapter:
             bundle = read_geob_frames(audio_path)
         except Exception:  # noqa: BLE001 -- silent on read, symmetric with write warning
             return (), ()
-        cues = _markers2_to_opendj_cues(bundle.markers2)
+        cues = _markers2_to_opendj_cues(overlay_markers_legacy(bundle.markers2, bundle.markers_legacy))
         beats = _beatgrid_to_opendj_beats(bundle.beatgrid)
         if cues or beats:
             report.bump("geob_frames_read")

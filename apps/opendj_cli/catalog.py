@@ -29,6 +29,8 @@ from apps.opendj_cli.kinds import (
     bool_value,
     deck_value,
     enum_value,
+    false_only_value,
+    grid_edit_value,
     head_delay_ms_value,
     int_enum_value,
     int_value,
@@ -37,6 +39,7 @@ from apps.opendj_cli.kinds import (
     number_value,
     positive_int_value,
     positive_number_value,
+    quantize_grid_value,
     rescue_decks_value,
     text_value,
     unit_value,
@@ -175,15 +178,22 @@ _VERBS: tuple[Verb, ...] = (
          observes=(Observe(("decks", "{deck}", "quantized_launch_armed"), PRESENT),)),
     Verb("pause", "play", (_DECK,), fixed=(("playing", False),), observes=_deck_playing()),
     Verb("cue", "cue", (_DECK,), quick_draws=("cue",)),
-    Verb("seek", "seek", (_DECK, arg("position_ms", "number", number_value)),
-         quick_draws=("seek",)),
+    Verb("seek", "seek", (
+        _DECK,
+        arg("position_ms", "number", number_value),
+        arg("exact", "bool", bool_value, "true|false", optional=True),
+    ), quick_draws=("seek",)),
     Verb("waveform_seek", "waveform_seek", (
         _DECK,
         arg("position_ms", "number", number_value),
         arg("snap", "enum", enum_value(WAVEFORM_SEEK_SNAP_VALUES), "downbeat|beat|exact"),
     )),
-    Verb("loop", "loop", (_DECK, arg("loop", "loop", loop_value, "in_ms out_ms", arity=2)),
-         note="Nested pair: opendj loop 1 1000 4000."),
+    Verb("loop", "loop", (
+        _DECK,
+        arg("loop", "loop", loop_value, "in_ms out_ms", arity=2),
+        arg("quantize", "bool", false_only_value, "false", optional=True),
+    ), note="Nested pair: opendj loop 1 1000 4000. DECKCTL-6235d: a trailing false engages the range "
+            "exactly as given (a stored loop), even with Quantize on; omit it for the default."),
     Verb("loop_exit", "loop", (_DECK,), fixed=(("loop", None),), quick_draws=("loop.exit",)),
     Verb("beat_loop", "beat_loop", (
         _DECK,
@@ -206,8 +216,8 @@ _VERBS: tuple[Verb, ...] = (
          note="DECKUX-39: an off is refused (422) unless by_user is true (a person asked); "
               "a user off holds until the deck's next load."),
     Verb("quantize_grid", "quantize_grid", (
-        _DECK, arg("beats", "int", int_enum_value(QUANTIZE_GRID_VALUES), "1|4|8"),
-    ), note="'phase' is on the wire type but not implemented, so it is not offered."),
+        _DECK, arg("beats", "quantize_grid", quantize_grid_value(QUANTIZE_GRID_VALUES), "1|4|8|phase"),
+    ), note="DECKCTL-6235c: phase snaps to phrase starts (the bar, 4 beats, on a track with no phrases)."),
     Verb("beat_sync", "beat_sync", (_DECK, _ENABLED), quick_draws=("beat_sync.toggle",),
          observes=(Observe(("decks", "{deck}", "sync", "enabled"), "enabled"),)),
     Verb("sync_mode", "sync_mode", (
@@ -333,6 +343,9 @@ _VERBS: tuple[Verb, ...] = (
         arg("panel", "enum", enum_value(PANEL_VALUES), "next|recommended"),
         arg("collapsed", "bool", bool_value, "true|false"),
     )),
+    Verb("deck_autocue", "deck_autocue", (_ENABLED,),
+         observes=(Observe(("deck_autocue",), "enabled"),),
+         note="DECKCTL-6235: the AU switch; a fresh load parks at its first memory cue, else its first beat."),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
     Verb("autoplay", "autoplay", (
@@ -350,6 +363,10 @@ _VERBS: tuple[Verb, ...] = (
         arg("wave_split_master", "enum", enum_value(WAVE_SPLIT_MASTER_VALUES), "auto|on|off"),
     ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call. "
             "wave_split_master is opt-in: auto = off on every skin (mirrored rows), on = split."),
+    Verb("grid_edit", "grid_edit", (
+        _DECK, arg("edit", "grid_edit", grid_edit_value, "adjust|shift|<offset_ms>[:<beats>]"),
+    ), note="GRIDEDIT-6235d: nudge the loaded track's stored grid (ms, plus whole beats) or reset "
+            "the adjust or shift part; the same queue the deck's grid buttons use."),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):
@@ -401,6 +418,30 @@ _VERBS: tuple[Verb, ...] = (
         arg("from_deck", "deck", deck_value, "1-4"),
         arg("to_deck", "deck", deck_value, "1-4"),
     )),
+    Verb("cmdk_open", "cmdk_open", (arg("query", "text", text_value, optional=True),),
+         note="Requires the Cmd K v2 bar (flag cmdk.v2) on /performance."),
+    Verb("cmdk_close", "cmdk_close", (),
+         note="Requires the Cmd K v2 bar (flag cmdk.v2) on /performance."),
+    Verb("cmdk_pick", "cmdk_pick", (
+        arg("index", "int", int_value, "row (0 = first)"),
+        arg("id", "text", text_value,
+            "row id exactly as query().cmdk reports it "
+            "(a pair row is pair:<stable_id>:loose or pair:<stable_id>:aligned:<basis>)",
+            optional=True),
+        arg("deck", "deck", deck_value, "1-4", optional=True),
+        arg("target", "deck", deck_value, "the target query().cmdk reported; refused if it moved", optional=True),
+        arg("confirm", "bool", bool_value, "true|false", optional=True),
+        arg("vocals_only", "bool", bool_value,
+            "true|false: Shift+Enter, the track loads and its vocals are soloed once the stems are ready",
+            optional=True),
+    ), note="CMDK-19: pick row `index` of the open Cmd K bar as Enter does (a track loads to `deck`, "
+            "an aligned pair at its captured offset with the fader at 0); `confirm` is Cmd+Enter "
+            "over a playing deck; `vocals_only` is Shift+Enter. Name optional fields to skip earlier ones, "
+            "as in `deck=2 confirm=true`. Requires the Cmd K v2 bar on /performance, open."),
+    Verb("cmdk_mode", "cmdk_mode", (
+        arg("mode", "enum", enum_value(("plain", "ai")), "plain|ai"),
+    ), note="CMDK-20: switch the open Cmd K bar between plain and AI search, as Tab does. "
+            "Requires the Cmd K v2 bar on /performance, open, with flag cmdk.v2.ai on."),
     Verb("playlist_undo", "playlist_undo", (),
          note="Requires a mounted playlist history panel."),
     Verb("playlist_redo", "playlist_redo", (),

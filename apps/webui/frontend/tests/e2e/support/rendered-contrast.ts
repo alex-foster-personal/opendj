@@ -319,16 +319,18 @@ export function renderedContrastAudit(): RenderedContrastReport {
 		const bold = Number(style.fontWeight) >= 700;
 		const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5;
 		const ratio = ratioOf(fg, bg);
+		// Findings table prints this 2-decimal ratio; displayed 4.5 must not fail a 4.5 floor.
+		const displayed = Math.round(ratio * 100) / 100;
 		const row: ContrastFinding = {
 			el: name,
 			text: text.slice(0, 24),
 			fg: hex(fg),
 			bg: hex(bg),
-			ratio: Math.round(ratio * 100) / 100,
+			ratio: displayed,
 			need,
 		};
 		if (el.closest('[data-contrast-probe]')) probes.push(row);
-		if (ratio + 1e-9 < need) findings.push(row);
+		if (displayed < need) findings.push(row);
 	};
 
 	const centerOf = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });

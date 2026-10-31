@@ -10,7 +10,7 @@ Why this exists
 ---------------
 
 Before this test the writer-vs-real-export comparison lived in a
-bespoke script (``scripts/scratch/diff_usb_exports.py``) that was run by
+bespoke script (``(private path)``) that was run by
 hand for one fixture (``rb-usb-export-big``). With CAT-06 expanding
 and new real-Rekordbox dumps arriving, we need adding a new fixture
 to be a one-step operation: drop a ``<name>.extern`` marker (or an
@@ -43,8 +43,8 @@ from apps.sync.usb.pioneer.differ import (
     round_trip_via_writer,
     snapshot_onelibrary,
 )
+from apps.sync.usb.pioneer.fixture_resolver import FixtureNotAvailable, fixture_path
 from apps.sync.usb.pioneer.writer_onelibrary import WRITER_AVAILABLE, WRITER_IMPORT_ERROR
-from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
 from tests.fixtures.conftest import resolve_required_fixture
 
 pytestmark = [

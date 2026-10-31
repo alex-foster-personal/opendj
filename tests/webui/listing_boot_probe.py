@@ -11,8 +11,9 @@ probe counts that, on the real functions:
 * sqlite statements and connections, from ``tests.webui.sql_trace``.
 
 Nothing is replaced. The engine runs in a child interpreter whose environment
-carries ``MDT_DATA_DIR`` (state.db, master.plain.db) and ``HOME`` (the
-rekordbox share root hangs off it), which is how the packaged engine finds
+carries ``MDT_DATA_DIR`` (state.db, master.plain.db) and the home
+(``child_home_env``: ``HOME``, plus ``USERPROFILE`` and ``APPDATA`` on win32;
+the rekordbox share root hangs off it), which is how the packaged engine finds
 them. The child refuses to run unless both resolved to the fixture.
 
 The spec is a list of steps run in order against one engine, so a test can
@@ -61,8 +62,31 @@ REQUEST_THREAD_PREFIX = "AnyIO worker thread"
 # Parent side.
 
 
+#: The child's roaming profile under the fake home on win32, laid out like a real one.
+_WIN32_APPDATA_UNDER_HOME = Path("AppData") / "Roaming"
+
+
+def child_home_env(home: Path) -> dict[str, str]:
+    """The environment that points a child's home, and so its rekordbox share, at ``home``.
+
+    POSIX resolves the home from ``HOME``. Windows does not: ``Path.home()``
+    reads ``USERPROFILE`` and the rekordbox app dir follows ``%APPDATA%``
+    (``platform_paths.rekordbox_app_dir``), so seeding ``HOME`` alone left a
+    win32 child on the runner's real profile.
+    """
+    env = {"HOME": str(home)}
+    if sys.platform == "win32":
+        env["USERPROFILE"] = str(home)
+        env["APPDATA"] = str(home / _WIN32_APPDATA_UNDER_HOME)
+    return env
+
+
 def share_root_under(home: Path) -> Path:
-    """Where a child started with ``HOME=home`` looks for the rekordbox share."""
+    """Where a child started with ``child_home_env(home)`` looks for the rekordbox share."""
+    if sys.platform == "win32":
+        # rekordbox_app_dir() is %APPDATA%/<app>; keep <app> from the product, swap the base.
+        app = platform_paths.rekordbox_app_dir().relative_to(os.environ["APPDATA"])
+        return Path(child_home_env(home)["APPDATA"]) / app / "share"
     return home / platform_paths.rekordbox_app_dir().relative_to(platform_paths.HOME) / "share"
 
 
@@ -74,7 +98,12 @@ def run_boot_probe(data_dir: Path, home: Path, steps: list[dict[str, Any]], scra
     proc = subprocess.run(
         [sys.executable, "-m", "tests.webui.listing_boot_probe", str(spec_path)],
         cwd=REPO_ROOT,
-        env={**os.environ, "MDT_DATA_DIR": str(data_dir), "HOME": str(home), "MDT_LIBRARY_MODE": "local"},
+        env={
+            **os.environ,
+            "MDT_DATA_DIR": str(data_dir),
+            **child_home_env(home),
+            "MDT_LIBRARY_MODE": "local",
+        },
         capture_output=True,
         text=True,
         timeout=600,

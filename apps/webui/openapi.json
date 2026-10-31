@@ -6090,6 +6090,179 @@
         "title": "ClustersOut",
         "type": "object"
       },
+      "CmdkAiSearchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/CmdkAiTrackIn"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "title": "Tracks",
+            "type": "array"
+          },
+          "words": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "words",
+          "tracks"
+        ],
+        "title": "CmdkAiSearchIn",
+        "type": "object"
+      },
+      "CmdkAiSearchOut": {
+        "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          }
+        },
+        "required": [
+          "scores",
+          "model",
+          "cost"
+        ],
+        "title": "CmdkAiSearchOut",
+        "type": "object"
+      },
+      "CmdkAiStatusOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "model"
+        ],
+        "title": "CmdkAiStatusOut",
+        "type": "object"
+      },
+      "CmdkAiTrackIn": {
+        "additionalProperties": false,
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "maximum": 400.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "stable_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id"
+        ],
+        "title": "CmdkAiTrackIn",
+        "type": "object"
+      },
       "CollectIn": {
         "properties": {
           "batch_dir": {
@@ -8758,6 +8931,17 @@
               }
             ]
           },
+          "ui_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Url"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -8772,6 +8956,7 @@
           "waveform_materialization",
           "bind_host",
           "version",
+          "ui_url",
           "google_oauth_configured",
           "process_env_forbidden_keys",
           "process_env_home_present",
@@ -10624,6 +10809,122 @@
           "expires_at"
         ],
         "title": "GrantOut",
+        "type": "object"
+      },
+      "GridEditNudgeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "beats": {
+            "default": 0,
+            "maximum": 64.0,
+            "minimum": -64.0,
+            "title": "Beats",
+            "type": "integer"
+          },
+          "offset_ms": {
+            "default": 0.0,
+            "maximum": 500.0,
+            "minimum": -500.0,
+            "title": "Offset Ms",
+            "type": "number"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rekordbox",
+                  "own"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "GridEditNudgeIn",
+        "type": "object"
+      },
+      "GridEditOut": {
+        "properties": {
+          "beat_shift": {
+            "title": "Beat Shift",
+            "type": "integer"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "offset_ms": {
+            "title": "Offset Ms",
+            "type": "number"
+          },
+          "source": {
+            "enum": [
+              "rekordbox",
+              "own"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "offset_ms",
+          "beat_shift",
+          "modified_at"
+        ],
+        "title": "GridEditOut",
+        "type": "object"
+      },
+      "GridEditSetIn": {
+        "additionalProperties": false,
+        "properties": {
+          "beat_shift": {
+            "maximum": 64.0,
+            "minimum": -64.0,
+            "title": "Beat Shift",
+            "type": "integer"
+          },
+          "offset_ms": {
+            "title": "Offset Ms",
+            "type": "number"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rekordbox",
+                  "own"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "offset_ms",
+          "beat_shift"
+        ],
+        "title": "GridEditSetIn",
         "type": "object"
       },
       "GridProvenanceOut": {
@@ -13360,6 +13661,80 @@
         "title": "LifecycleQuitOut",
         "type": "object"
       },
+      "LinkAnswerOut": {
+        "properties": {
+          "sdp": {
+            "title": "Sdp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sdp"
+        ],
+        "title": "LinkAnswerOut",
+        "type": "object"
+      },
+      "LinkStateOut": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "delay_note": {
+            "title": "Delay Note",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "linking",
+              "linked",
+              "failed",
+              "disconnected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "address",
+          "linked_at",
+          "error",
+          "delay_note"
+        ],
+        "title": "LinkStateOut",
+        "type": "object"
+      },
       "LinksPatchIn": {
         "additionalProperties": false,
         "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
@@ -15553,6 +15928,25 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "NextUpIn": {
+        "additionalProperties": false,
+        "description": "AutoPlay's next tracks, in play order; [] clears them (NATIVE-5886).",
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "NextUpIn",
         "type": "object"
       },
       "NoSourceClearOut": {
@@ -23125,6 +23519,125 @@
         "title": "SoundcloudTracklistRowModel",
         "type": "object"
       },
+      "SpeakerStateOut": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "address_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Error"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "delay_note": {
+            "title": "Delay Note",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "max_wrong_codes": {
+            "title": "Max Wrong Codes",
+            "type": "integer"
+          },
+          "peer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "status": {
+            "enum": [
+              "off",
+              "listening",
+              "answering",
+              "linked",
+              "locked_out"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "wrong_codes": {
+            "title": "Wrong Codes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "address",
+          "address_error",
+          "port",
+          "peer",
+          "linked_at",
+          "wrong_codes",
+          "max_wrong_codes",
+          "last_error",
+          "delay_note"
+        ],
+        "title": "SpeakerStateOut",
+        "type": "object"
+      },
       "SpokeBillingBody": {
         "additionalProperties": false,
         "properties": {},
@@ -28990,6 +29503,11 @@
             "title": "Confirm",
             "type": "object"
           },
+          "deck_autocue": {
+            "default": false,
+            "title": "Deck Autocue",
+            "type": "boolean"
+          },
           "deck_default_quantize": {
             "default": true,
             "title": "Deck Default Quantize",
@@ -29343,6 +29861,10 @@
               }
             ],
             "title": "Confirm"
+          },
+          "deck_autocue": {
+            "title": "Deck Autocue",
+            "type": "boolean"
           },
           "deck_default_quantize": {
             "anyOf": [
@@ -29757,6 +30279,43 @@
           }
         },
         "title": "UiPrefsPatch",
+        "type": "object"
+      },
+      "UiUrlOut": {
+        "properties": {
+          "loopback_url": {
+            "title": "Loopback Url",
+            "type": "string"
+          },
+          "named_host": {
+            "title": "Named Host",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "served_by": {
+            "enum": [
+              "engine",
+              "dev-frontend"
+            ],
+            "title": "Served By",
+            "type": "string"
+          },
+          "ui_url": {
+            "title": "Ui Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ui_url",
+          "loopback_url",
+          "port",
+          "served_by",
+          "named_host"
+        ],
+        "title": "UiUrlOut",
         "type": "object"
       },
       "UndoIn": {
@@ -32997,6 +33556,66 @@
           }
         },
         "summary": "Get Coverage",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/next-up": {
+      "put": {
+        "description": "Name the tracks analyzed WHILE a deck plays; the drain keeps the first few.\n\nA page names itself with the ui-mirror lease header, and a PUT from a page\nthat does not hold the live lease, including one whose lease lapsed with\nnobody else holding it, is refused (409), so a former leader's late request\ncannot overwrite the current leader's chain. The leader renews its lease\nwith every mirror publish, and the page retries a refused PUT. ``async`` on\npurpose: the check and the write run on the event loop with no await\nbetween them, as the mirror PUT that moves the lease does. A PUT without the\nheader (the CLI, agents) is applied as before.",
+        "operationId": "put_next_up_api_v1_ahead_analysis_next_up_put",
+        "parameters": [
+          {
+            "description": "AGENT-18: the writing page's client id; refused while another page holds the mirror lease.",
+            "in": "header",
+            "name": "x-opendj-lease",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "AGENT-18: the writing page's client id; refused while another page holds the mirror lease.",
+              "title": "X-Opendj-Lease"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NextUpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Next Up",
         "tags": [
           "ahead-analysis"
         ]
@@ -36543,6 +37162,77 @@
         "summary": "Run Sync Round",
         "tags": [
           "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cmdk/ai-search": {
+      "post": {
+        "operationId": "ai_search_api_v1_cmdk_ai_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CmdkAiSearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CmdkAiSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "cmdk.v2 or cmdk.v2.ai is off."
+          },
+          "409": {
+            "description": "No OPENROUTER_API_KEY is configured."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "JEV failed or answered without every track."
+          }
+        },
+        "summary": "Ai Search",
+        "tags": [
+          "cmdk"
+        ]
+      }
+    },
+    "/api/v1/cmdk/ai-status": {
+      "get": {
+        "operationId": "ai_status_api_v1_cmdk_ai_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CmdkAiStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ai Status",
+        "tags": [
+          "cmdk"
         ]
       }
     },
@@ -42812,6 +43502,392 @@
         "summary": "Post Preview Stop",
         "tags": [
           "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/link": {
+      "get": {
+        "description": "The sending link: idle, linking, linked, failed or disconnected.",
+        "operationId": "get_link_api_v1_performance_remote_speaker_link_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Link",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      },
+      "post": {
+        "description": "Send MAIN to a speaker at ``address`` (host:port) with its 6-digit ``code``.",
+        "operationId": "post_link_api_v1_performance_remote_speaker_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "RemoteSpeakerLinkBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "bad address or code, or the page or speaker refused (detail says which)"
+          },
+          "409": {
+            "description": "a link is already being made"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Link",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/link/offer": {
+      "post": {
+        "description": "Page-internal: relay this page's offer to the speaker and return its answer.",
+        "operationId": "post_link_offer_api_v1_performance_remote_speaker_link_offer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "RemoteSpeakerOfferBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkAnswerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "the speaker refused the code"
+          },
+          "409": {
+            "description": "no link is being made"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "the speaker could not be reached or sent no answer"
+          }
+        },
+        "summary": "Post Link Offer",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/link/report": {
+      "post": {
+        "description": "Page-internal: the sending link's WebRTC state after it was made.\n\n``link_id`` names the link the report is about; one about an older link is ignored.",
+        "operationId": "post_link_report_api_v1_performance_remote_speaker_link_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "RemoteSpeakerLinkReportBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Link Report",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/speaker": {
+      "get": {
+        "description": "The speaker session: status, code, LAN address and port, linked peer.",
+        "operationId": "get_speaker_api_v1_performance_remote_speaker_speaker_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Speaker",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/speaker/report": {
+      "post": {
+        "description": "Page-internal: the receiving link's WebRTC state. A gone peer frees the session.\n\n``link_id`` names the link the report is about; one about an older link is ignored.\n``error``, when given, is why the page dropped the link (for example the\nbrowser refused to start playback), so a silent speaker never reads linked.",
+        "operationId": "post_speaker_report_api_v1_performance_remote_speaker_speaker_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "RemoteSpeakerReportBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Speaker Report",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/speaker/start": {
+      "post": {
+        "description": "Be a speaker: the page agrees to receive, then the LAN listener opens.\n\nOptional ``port`` (default 47800; 0 picks a free one). The listener binds\n0.0.0.0 and serves only ``POST /remote-speaker/offer``; the engine API is\nnot widened. The page answers first, so a build with the feature off\nrefuses here and no port is opened.",
+        "operationId": "post_speaker_start_api_v1_performance_remote_speaker_speaker_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "RemoteSpeakerStartBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "a speaker session is already running, or the port is in use"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Speaker Start",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/speaker/stop": {
+      "post": {
+        "description": "Stop being a speaker: the listener closes and the page drops its link.\n\nIdempotent. With no page attached the listener still closes. A stop waits\nfor a start still in flight, so a start that began earlier can never\nreopen the listener after the stop has answered.\n\nOptional ``epoch``: stop only the session with that epoch. The page sends\nit as it leaves /performance; it has already dropped its own link, so the\npage is not ordered again, and a newer session (another page) is left on.",
+        "operationId": "post_speaker_stop_api_v1_performance_remote_speaker_speaker_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "RemoteSpeakerStopBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Speaker Stop",
+        "tags": [
+          "performance-remote-speaker"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-speaker/unlink": {
+      "post": {
+        "description": "Stop sending to the speaker. Idempotent; a link attempt still in flight is superseded.",
+        "operationId": "post_unlink_api_v1_performance_remote_speaker_unlink_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "RemoteSpeakerUnlinkBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Unlink",
+        "tags": [
+          "performance-remote-speaker"
         ]
       }
     },
@@ -50343,6 +51419,252 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/grid-edit": {
+      "delete": {
+        "description": "Back to the measured grid. A write of the identity, so history keeps the old edit.\n\n``part`` resets one half and keeps the other, read and written in the same\ntransaction, so an agent's concurrent edit of the kept half is never lost.",
+        "operationId": "reset_grid_edit_api_v1_tracks__stable_id__grid_edit_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rekordbox",
+                    "own"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "part",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "adjust",
+                    "shift"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Part"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Grid Edit",
+        "tags": [
+          "grid-edit"
+        ]
+      },
+      "get": {
+        "operationId": "get_grid_edit_api_v1_tracks__stable_id__grid_edit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rekordbox",
+                    "own"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Grid Edit",
+        "tags": [
+          "grid-edit"
+        ]
+      },
+      "put": {
+        "operationId": "set_grid_edit_api_v1_tracks__stable_id__grid_edit_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GridEditSetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Grid Edit",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/grid-edit/nudge": {
+      "post": {
+        "description": "Move the grid by a step: ``offset_ms`` is grid adjust, ``beats`` grid shift.",
+        "operationId": "nudge_grid_edit_api_v1_tracks__stable_id__grid_edit_nudge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GridEditNudgeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Nudge Grid Edit",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/grid-provenance": {
       "get": {
         "operationId": "get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get",
@@ -51906,6 +53228,27 @@
         "summary": "Validate Watcher Folders",
         "tags": [
           "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/ui-url": {
+      "get": {
+        "operationId": "ui_url_api_v1_ui_url_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiUrlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ui Url",
+        "tags": [
+          "health"
         ]
       }
     },

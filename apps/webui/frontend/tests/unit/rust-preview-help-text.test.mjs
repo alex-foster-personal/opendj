@@ -29,6 +29,7 @@ const CLAIMABLE = {
 	'safety loops': ['safety_loop_save', 'safety_loop_arm', 'safety_loop_clear'],
 	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel', 'auto_play_decide_now'],
 	'the headphone cue bus': ['channel_cue', 'headphone_mix', 'headphone_level', 'head_delay_ms'],
+	'grid edits': ['grid_edit'],
 	'headphone devices': [
 		'headphone_outputs_refresh',
 		'headphone_output_acquire',
@@ -45,7 +46,6 @@ const CLAIMABLE = {
 /** Refused commands the help text deliberately does not name: internal, or not a control a DJ
  * reaches from the deck (each still refuses by name on press). */
 const UNNAMED = new Set([
-	'load_play_intent',
 	'loop_interval_mode',
 	'loop_interval_base',
 	'master_delay_ms',

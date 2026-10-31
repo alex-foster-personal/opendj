@@ -8,6 +8,14 @@ authoring harness. Until this module `just review-triage` passed such a PR on
 Putting the rule in review-triage makes every path that reads that verdict
 enforce it, instead of one more copy in one more caller.
 
+THE AUTHOR SHELLS (Wed 21 Oct 2026, #7421): an author trailer names the harness
+that WROTE the commit. Hermes is a builder shell, not one of the five reviewer
+lanes, so a -Hermes commit is a measured author that excludes no reviewer: it can
+never be UNKNOWN for want of a known name, and it can never exempt a reviewer the
+way -Claude exempts Claude. Before this, one -Hermes commit in a PR that also
+touched the control plane read "no author trailer" and left REVIEW-13
+unmeasurable for that head.
+
 REVIEW-18 (Thu 1 Oct 2026): Grok and Cursor subscription lanes post submitted
 reviews under maintainer with lane markers; they count here when login
 and marker both match, like Sol's SOL_LOGINS rule in review_sol.py. Codex has no
@@ -157,7 +165,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "scripts/provenance_*.py",
     "(private path)",
     "(private path)",
-    "tests/fixtures/_resolver.py",
+    "apps/sync/usb/pioneer/fixture_resolver.py",
     "tests/testclient_host_allowlist.py",
     "tests/standalone/__init__.py",
     "tests/standalone/guard.py",
@@ -201,13 +209,21 @@ COMMITS_API_CAP = 250
 COMPARE_PAGE_SIZE = 100  # GET /compare/{base}...{head} pages its commits, 100 at most per page
 #: Authoring harness (commit trailer) -> reviewer harnesses it may not stand in for.
 #: Sol is GPT driven through the Codex CLI, so a -Codex author excludes Sol too.
+#: Hermes is a builder shell, not a reviewer lane: it posts no review marker, so it stands in
+#: for no reviewer and excludes none. A -Hermes commit is measurable rather than UNKNOWN;
+#: without this, one Hermes-authored commit in a PR that also touches the control plane made
+#: REVIEW-13 read "no author trailer" and blocked a measurement it could have made (#7421 at
+#: 820daec9c, Wed 21 Oct 2026).
 AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
     "Claude": frozenset({"Claude"}),
     "Codex": frozenset({"Codex", "Sol"}),
     "Cursor": frozenset({"Cursor"}),
     "Grok": frozenset({"Grok"}),
+    #: Hermes on bifrost-1 runs DeepSeek ((private path)), which backs no
+    #: reviewer lane, so it excludes none; it still needs two independent reviews like any author.
+    "Hermes": frozenset(),
 }
-AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
+AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok|Hermes)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
 #: The note `git cherry-pick -x` writes between a message and its trailers. A paragraph of only
 #: these is passed over when looking for markers; it attributes nothing itself (#5731, 13a22177a).

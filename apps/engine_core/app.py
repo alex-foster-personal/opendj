@@ -432,6 +432,7 @@ def _mount_spa(app: FastAPI) -> None:
             _SpaStaticFiles(directory=str(build_dir), html=True),
             name="spa",
         )
+        app.state.spa_mounted = True
         return
 
     @app.get("/", include_in_schema=False)

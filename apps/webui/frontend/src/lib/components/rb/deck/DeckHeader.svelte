@@ -4,7 +4,7 @@
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
 	// key badge + semitone nudge arrows, KEY SYNC,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
-	import { deckArtworkUrl } from '$lib/rb/api-rb';
+	import { deckArtworkUrl } from '$lib/rb/artwork-url';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { formatTempoPct } from '$lib/rb/tempo-format';
 	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
@@ -28,7 +28,6 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
-	import TempoEditModal from './TempoEditModal.svelte';
 	import RatingStars from '../browser/RatingStars.svelte';
 
 	let {
@@ -581,12 +580,17 @@
 </div>
 
 {#if tempoEditAt !== null}
-	<TempoEditModal
-		deckId={deckId}
-		x={tempoEditAt.x}
-		y={tempoEditAt.y}
-		onclose={() => (tempoEditAt = null)}
-	/>
+	<!-- Loaded on first open, off the /performance first paint (bundle budget, PR #6235). -->
+	{#await import('./TempoEditModal.svelte') then { default: TempoEditModal }}
+		<TempoEditModal
+			deckId={deckId}
+			x={tempoEditAt.x}
+			y={tempoEditAt.y}
+			onclose={() => (tempoEditAt = null)}
+		/>
+	{:catch error}
+		<span class="tempo-edit-load-error" role="alert">The tempo editor did not load: {error instanceof Error ? error.message : String(error)}</span>
+	{/await}
 {/if}
 
 <style>

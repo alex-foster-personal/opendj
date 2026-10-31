@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Jog readout dial (SCREENSHOT-SPEC 3): circular SVG dial with live BPM
 	// large, pitch percent, pitch range, and a red position tick rotating
-	// with playback position. Right column: real Q, SLIP, and MT state; AU /
-	// MA remain explicitly inert.
+	// with playback position. Right column: real Q (1/4/8 or phrase), SLIP,
+	// MT, AU (auto cue, DECKCTL-6235) and MA (tap or type a tempo, DECKCTL-6235b).
 	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
@@ -18,8 +18,11 @@
 	import type { PhaseBeatMark } from '$lib/components/rb/wave/wave-math';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
-	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { refreshAutoCueFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { phraseQuantizeTip } from '$lib/player/transport/loops';
+	import type { QuantizeGrid } from '$lib/rb/deck-state-types';
+	import { rustMode } from '$lib/audio-engine/rust-mode.svelte';
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
@@ -42,17 +45,19 @@
 		onQuantize,
 		onQuantizeGrid,
 		onMasterTempo,
+		onAutoCue,
 		onSlip
 	}: {
 		deck: DeckState;
 		pitchRange: PitchRange;
 		pending: boolean;
 		onQuantize: () => Promise<void>;
-		/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats). 'phase'
-		 * (match to detected phase length) is NOT implemented - its option is
-		 * greyed rb-inert and never calls this. */
-		onQuantizeGrid: (beats: 1 | 4 | 8) => Promise<void>;
+		/** Pin a67bafbfc4b0: change the quantize GRID (1/4/8 beats, or
+		 * DECKCTL-6235c 'phase': snap to the nearest phrase boundary). */
+		onQuantizeGrid: (beats: QuantizeGrid) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
+		/** DECKCTL-6235: the AU press, sent through the performance dispatcher. */
+		onAutoCue: (enabled: boolean) => void;
 		onSlip: () => Promise<void>;
 	} = $props();
 
@@ -127,6 +132,18 @@
 	// progress trail): the shared per-deck playhead clock (ANIM-CLOCK-01), so the
 	// marks turn smoothly and in phase with the strip; reported to the probe.
 	const jogPositionMs: number = $derived(playheadMs(deck.deck_id, deck));
+	// DECKCTL-6235: an agent's PUT of deck_autocue lights AU without a reload.
+	// A resync (first connect, reconnect, seq gap) replays no events, so it
+	// re-reads too: a change made while the socket was down is not lost.
+	$effect(() => {
+		const offKind = subscribeKind('ui_prefs', () => void refreshAutoCueFromDisk());
+		const offResync = subscribeResync(() => void refreshAutoCueFromDisk());
+		return () => {
+			offKind();
+			offResync();
+		};
+	});
+
 	$effect(() => {
 		if (deck.audible) tracePlayhead('jog', deck.deck_id, jogPositionMs);
 	});
@@ -214,8 +231,32 @@
 	);
 	const qGridBullets: readonly string[] = [
 		'Choose the beat grid that seeks, cue points, and loop ends snap to.',
-		'"match to phase length" is not implemented - it will match quantize to the detected phase length.'
+		'"phase" snaps seeks, cue and pause to the nearest phrase boundary from analysis; loops keep whole beats.'
 	];
+	const phraseTitle: string = $derived(
+		rustMode.enabled
+			? 'Phrase snap - not implemented in the Rust engine mode yet - see PARITY-TODO'
+			: `${phraseQuantizeTip(deck.anlz?.phrases)}${deck.quantize_grid_beats === 'phase' ? ' (selected)' : ''}`
+	);
+
+	// DECKCTL-6235: AU is one persisted preference for every deck, as in rekordbox.
+	// The Rust engine's load and restart paths do not park at the cue yet, so AU
+	// is inert there like the phrase snap (Codex P2, PR #6235).
+	const autoCueTitle: string = $derived(
+		rustMode.enabled
+			? 'Auto cue - not implemented in the Rust engine mode yet - see PARITY-TODO'
+			: uiPrefs.deck_autocue
+			? 'Auto cue ON (all decks) - a loaded track parks at its first memory cue, else its first beat, and a finished track restarts there. Click to turn off.'
+			: 'Auto cue OFF (all decks) - a loaded track starts at 0:00. Click to park each load at its first memory cue, else its first beat.'
+	);
+	// DECKCTL-6235b: MA opens the tempo editor (type a BPM or TAP it) for this deck.
+	let tempoEditAt: { x: number; y: number } | null = $state(null);
+	let tempoEditClosedAt = -Infinity;
+	const manualTitle: string = $derived(
+		deck.stable_id === null
+			? 'Manual tempo - load a track to type or tap the BPM this deck runs at'
+			: 'Manual tempo - type or TAP the BPM this deck should run at; the tempo fader moves to match (the pitch range widens if it must)'
+	);
 	const mtTitle: string = $derived(
 		deck.master_tempo_enabled
 			? 'Master Tempo ON - hold musical key while changing tempo'
@@ -399,11 +440,15 @@
 						</button>
 					{/each}
 					<button
-						class="q-grid-opt rb-inert"
-						disabled
+						class="q-grid-opt"
+						class:rb-inert={rustMode.enabled}
+						disabled={rustMode.enabled}
+						class:selected={deck.quantize_grid_beats === 'phase'}
 						data-testid={`quantize-grid-phase-deck-${deck.deck_id}`}
-						title={plannedTitle('quantize-grid-phase')}
-						aria-label={`match to phase length deck ${deck.deck_id} - ${plannedTitle('quantize-grid-phase')}`}
+						aria-pressed={deck.quantize_grid_beats === 'phase'}
+						title={phraseTitle}
+						aria-label={`phrase snap grid deck ${deck.deck_id}`}
+						onclick={async () => await onQuantizeGrid('phase')}
 					>
 						phase
 					</button>
@@ -462,10 +507,56 @@
 		>
 			MT
 		</button>
-		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('auto-cue')} aria-label={`auto cue deck ${deck.deck_id}`} data-testid={`auto-cue-deck-${deck.deck_id}`}>AU</button>
-		<button class="rb-lit-button rb-inert" disabled title={plannedTitle('manual-source')} aria-label={`manual deck ${deck.deck_id}`} data-testid={`manual-deck-${deck.deck_id}`}>MA</button>
+		<button
+			class="rb-lit-button"
+			class:lit={uiPrefs.deck_autocue && !rustMode.enabled}
+			class:rb-inert={rustMode.enabled}
+			disabled={rustMode.enabled}
+			aria-pressed={uiPrefs.deck_autocue}
+			title={autoCueTitle}
+			aria-label={`auto cue deck ${deck.deck_id}`}
+			data-testid={`auto-cue-deck-${deck.deck_id}`}
+			data-state={uiPrefs.deck_autocue ? 'on' : 'off'}
+			onclick={() => onAutoCue(!uiPrefs.deck_autocue)}
+		>
+			AU
+		</button>
+		<button
+			class="rb-lit-button"
+			class:lit={tempoEditAt !== null}
+			disabled={deck.stable_id === null}
+			aria-expanded={tempoEditAt !== null}
+			title={manualTitle}
+			aria-label={`manual tempo deck ${deck.deck_id}`}
+			data-testid={`manual-deck-${deck.deck_id}`}
+			onclick={(event) => {
+				// The editor closes itself on any outside pointerdown, this button
+				// included, so a click that just closed it must not reopen it.
+				if (event.timeStamp - tempoEditClosedAt < 400) return;
+				tempoEditAt = tempoEditAt === null ? { x: event.clientX, y: event.clientY } : null;
+			}}
+		>
+			MA
+		</button>
 	</div>
 </div>
+
+{#if tempoEditAt !== null}
+	<!-- Loaded on first open, off the /performance first paint (bundle budget, PR #6235). -->
+	{#await import('./TempoEditModal.svelte') then { default: TempoEditModal }}
+		<TempoEditModal
+			deckId={deck.deck_id}
+			x={tempoEditAt.x}
+			y={tempoEditAt.y}
+			onclose={() => {
+				tempoEditAt = null;
+				tempoEditClosedAt = performance.now();
+			}}
+		/>
+	{:catch error}
+		<span class="tempo-edit-load-error" role="alert">The tempo editor did not load: {error instanceof Error ? error.message : String(error)}</span>
+	{/await}
+{/if}
 
 <style>
 	.jog {

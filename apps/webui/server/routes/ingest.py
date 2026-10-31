@@ -186,7 +186,9 @@ def _persist_enabled(enabled: dict[str, bool]) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps({"enabled": enabled}, indent=1))
-    tmp.rename(CONFIG_PATH)
+    # replace, not rename: Path.rename refuses an existing target on Windows
+    # (WinError 183), and this file always exists after the first write.
+    tmp.replace(CONFIG_PATH)
 
 
 @router.get("/config", response_model=ConfigOut)

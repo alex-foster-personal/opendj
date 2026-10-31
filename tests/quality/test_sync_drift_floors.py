@@ -342,7 +342,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # DDL-bearing file folded into its neighbour's line would be
         # classified by nobody.
         "apps/analysis/queue_store.py": "analysis_queue_item",
-        "apps/analysis/queue_stale.py": "analysis_stale",
+        "apps/shared/state/analysis_stale.py": "analysis_stale",
         # The genre findings store (GENRE-03), additive on the same state.db.
         "apps/genre_infer/findings.py": "genre_findings",
         "apps/shared/pairings/schema_sql.py": "pairings",

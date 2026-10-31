@@ -3,7 +3,21 @@
 # Append-only planning ledgers: union removes local rebase merge work only.
 # GitHub does not honor .gitattributes merge strategies for PR mergeability.
 .planning/REQUIREMENTS.md merge=union
-.planning/TECH-DEBT.md merge=union
-.planning/agentic-testing/LEDGER.md merge=union
+(private path) merge=union
+(private path) merge=union
 # reqs.json is generated structured JSON. Leave it unassigned so divergent edits
 # conflict instead of silently producing invalid JSON.
+
+# Byte-pinned text fixtures: each file's sha256 and size are recorded in its
+# directory's manifest.json and checked before use, so a checkout must hand
+# back the committed bytes unchanged. Without this, core.autocrlf=true on
+# Windows rewrites LF to CRLF and every pin fails (v5.sql hashed to exactly
+# the CRLF digest on the Windows parity runner, Wed 14 Oct 2026).
+tests/fixtures/schema/v5.sql -text
+tests/fixtures/jev/*.json -text
+(private path)/*.json -text
+tests/fixtures/playlist-legacy-order-keys/*.sql -text
+(private path)/*.jsonl -text
+(private path)/*.tsv -text
+# Frontend captured fixtures pin their own sha256 in a sibling manifest.
+apps/webui/frontend/tests/unit/fixtures/*.json -text

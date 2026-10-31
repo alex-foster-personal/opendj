@@ -152,7 +152,7 @@ binds to the wrong commit. `_pr_head_repo`/`_resolve_head_repo` read
 `isCrossRepository`/`headRepositoryOwner`/`headRepository` and only fall
 back to `repo` when the PR is genuinely same-repository.
 
-Fixtures under `tests/scripts/fixtures/ci_wait/` are checksum-verified
+Fixtures under `(private path)/` are checksum-verified
 against a `MANIFEST.json` before every test run (found in review, PR #1685
 thread r3976549606, pattern follows `tests/fixtures/review_threads/
 MANIFEST.json`), so an accidental edit or baseline rewrite to a captured
@@ -168,29 +168,31 @@ module crossed the 600-line file-size ratchet; this module is the `gh`/
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import subprocess
 import sys
 import time
-from collections.abc import Callable
-from pathlib import Path
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 from scripts.ci_wait_core import (
     LifecycleOutcome,
     WaitResult,
     WaitStatus,
-    _first_baseline,
+    _first_baseline_at,
     _merge_check_run_pages,
     _previous_shas,
     _pull_request_triggered_runs,
     _resolve_head_repo,
+    _run_id,
     lifecycle_wait_status,
     poll_until_terminal,
 )
 from scripts.ci_wait_workflows import (
     WorkflowCatalog,
-    default_workflows_dir,
     derive_expected_for_changed_paths,
+    renamed_alternatives,
 )
 from scripts.review_gh import TriageError, _gh
 
@@ -320,8 +322,14 @@ def _memoized_run_event(repo: str = REPO) -> Callable[[str], str]:
 
 def _pr_lifecycle(pr: str, repo: str = REPO) -> tuple[str, bool]:
     """The PR object's `state` and `merged` flags from the pulls REST API."""
-    raw = _gh(["api", f"repos/{repo}/pulls/{pr}"])
-    payload = json.loads(raw)
+    return _lifecycle_of(_pr_payload(pr, repo), pr, repo)
+
+
+def _pr_payload(pr: str, repo: str = REPO) -> dict:
+    return json.loads(_gh(["api", f"repos/{repo}/pulls/{pr}"]))
+
+
+def _lifecycle_of(payload: dict, pr: str, repo: str) -> tuple[str, bool]:
     state = payload.get("state")
     merged = payload.get("merged")
     if state is None or merged is None:
@@ -351,37 +359,234 @@ def _pr_changed_files(pr: str, repo: str = REPO) -> list[str]:
     return paths
 
 
-def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
-    """Expected check-run names for `head_sha`, read from the nearest earlier
-    commit on this PR that actually has a `pull_request`-triggered baseline.
-    `None` means no baseline could be established (no earlier commit at all,
-    or none of them ever got a `pull_request`-triggered check-run) -- the
-    caller must report that explicitly, never treat it as "zero checks
-    expected".
+def _baseline_at(pr: str, head_sha: str, repo: str = REPO) -> tuple[str, frozenset[str]] | None:
+    """The nearest earlier commit on this PR that actually has a `pull_request`-triggered
+    baseline, and its check-run names. `None` means no baseline could be established (no
+    earlier commit at all, or none of them ever got a `pull_request`-triggered check-run)
+    -- the caller must report that explicitly, never treat it as "zero checks expected".
     """
-    candidates = _previous_shas(_pr_commits(pr, repo), head_sha)
-    return _first_baseline(
-        candidates,
+    return _first_baseline_at(
+        _previous_shas(_pr_commits(pr, repo), head_sha),
         lambda sha: _check_runs_at_sha(sha, repo),
         lambda run_id: _run_event(run_id, repo),
     )
 
 
-def expected_for_head(
+def expected_from_previous_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
+    found = _baseline_at(pr, head_sha, repo)
+    return None if found is None else found[1]
+
+
+def _workflow_texts_at(sha: str, repo: str) -> dict[str, str]:
+    """Every `.github/workflows/*.yml` text at `sha`, read from the API so the catalog
+    describes that pinned commit, not whatever this checkout happens to hold."""
+    listing = json.loads(_gh(["api", f"repos/{repo}/contents/.github/workflows?ref={sha}"]))
+    texts = {
+        entry["name"]: _gh(
+            [
+                "api",
+                "-H",
+                "Accept: application/vnd.github.raw",
+                f"repos/{repo}/contents/{entry['path']}?ref={sha}",
+            ]
+        )
+        for entry in listing
+        if entry["name"].endswith(".yml")
+    }
+    if not texts:
+        raise TriageError(f"no .github/workflows/*.yml at {sha} in {repo}")
+    return texts
+
+
+@functools.cache
+def catalog_at(sha: str, repo: str = REPO) -> WorkflowCatalog:
+    return WorkflowCatalog.from_workflow_texts(_workflow_texts_at(sha, repo))
+
+
+MERGE_REF_ATTEMPTS = 6
+MERGE_REF_RETRY_S = 5.0
+#: How many times one wait may re-derive after the merge ref moved under it.
+MERGE_MOVES_ALLOWED = 3
+
+
+def _base_tip(pull: dict, repo: str) -> str | None:
+    """The live tip of the PR's base branch (not the PR object's cached `base.sha`)."""
+    ref = (pull.get("base") or {}).get("ref")
+    if not ref:
+        return None
+    return (json.loads(_gh(["api", f"repos/{repo}/git/ref/heads/{ref}"])).get("object") or {}).get("sha")
+
+
+def _pinned_merge_sha(pull: dict, head_sha: str, repo: str) -> str | None:
+    """The PR's merge commit IF it was built for `head_sha` on the LIVE base tip.
+
+    After a base move the old merge commit still names this head, but its base parent is
+    obsolete and so may be its matrix (Codex, PR #5997 r4265878909), so both parents must be
+    current. `None` means "no merge ref pinned to this head yet" -- absent right after a push,
+    while GitHub rebuilds it, or when the PR is not mergeable at all.
+    """
+    merge_sha = pull.get("merge_commit_sha")
+    if not merge_sha:
+        return None
+    commit = json.loads(_gh(["api", f"repos/{repo}/commits/{merge_sha}"]))
+    parents = {parent.get("sha") for parent in commit.get("parents") or []}
+    return merge_sha if parents == {head_sha, _base_tip(pull, repo)} else None
+
+
+def workflow_sha_for_head(
     pr: str,
     head_sha: str,
     repo: str = REPO,
     *,
-    workflows_dir: Path | None = None,
-) -> frozenset[str] | None:
-    """Expected check-run names at `head_sha`, filtered to workflows that would
-    actually run for this PR's cumulative changed-files list at the head."""
-    baseline = expected_from_previous_head(pr, head_sha, repo)
-    if baseline is None:
+    attempts: int = MERGE_REF_ATTEMPTS,
+    retry_s: float = MERGE_REF_RETRY_S,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    """The commit whose workflows the CURRENT `pull_request` run at `head_sha` executes.
+
+    `pull_request` runs read their workflow files from the PR's synthetic merge commit
+    (`refs/pull/<n>/merge`), not from the raw head, so a workflow main changed reaches
+    the run even when the branch never merged main (Codex, PR #5997 r4237192200). The
+    PR's `merge_commit_sha` is used only once its parents ARE `head_sha` and the live
+    base tip, i.e. it was built for this head on the current base (see
+    `_pinned_merge_sha`). Right after a push it can be absent or still name the
+    previous head, so this re-reads it up to `attempts` times; if it never pins the
+    head (or GitHub reports the PR unmergeable, when no `pull_request` run executes at
+    all) this raises TriageError instead of silently using the raw head's workflows
+    (Codex r-ci_wait.py:414, Sol r-ci_wait.py:407). The merge ref lives in the BASE
+    repo, so `repo` is read, not the head fork.
+    """
+    for attempt in range(attempts):
+        pull = _pr_payload(pr, repo)
+        if pull.get("mergeable") is False:
+            raise TriageError(
+                f"PR {pr} is not mergeable at {head_sha}; GitHub builds no merge ref, so no "
+                "pull_request run can execute and there is no workflow catalog to wait on"
+            )
+        merge_sha = _pinned_merge_sha(pull, head_sha, repo)
+        if merge_sha:
+            return merge_sha
+        if attempt + 1 < attempts:
+            sleep(retry_s)
+    raise TriageError(
+        f"PR {pr}'s merge ref never pinned head {head_sha} after {attempts} reads; the "
+        "workflows its pull_request run executes are unknown, so ci-wait will not guess"
+    )
+
+
+def head_catalog(pr: str, head_sha: str, repo: str = REPO) -> WorkflowCatalog:
+    """The workflows the current run at `head_sha` executes (see `workflow_sha_for_head`)."""
+    return catalog_at(workflow_sha_for_head(pr, head_sha, repo), repo)
+
+
+def _run_workflow_sha(run_id: str, repo: str = REPO) -> str:
+    """The commit whose workflows Actions run `run_id` executed.
+
+    For a `pull_request` run that is the PR's synthetic merge commit, which is exactly why
+    `workflow_sha_for_head` reads the head's catalog from it. The same is true of the
+    BASELINE run, so a baseline's observed names must be traced through this commit rather
+    than through its branch SHA (Sol, PR #5997 r4328137499).
+    """
+    raw = _gh(["api", f"repos/{repo}/actions/runs/{run_id}", "-q", ".head_sha"]).strip()
+    if not raw:
+        raise TriageError(f"gh returned no head_sha for Actions run {run_id} in {repo}")
+    return raw
+
+
+@dataclass(frozen=True)
+class ExpectationPlan:
+    """Everything the wait needs, bound to ONE merge-ref catalog.
+
+    `expected` and `alternatives` must describe the SAME matrix. Resolving the merge ref twice
+    (once inside the derivation, once for `alternatives`) lets a base move between the two
+    reads hand SUCCESS to the old matrix's terminal checks before the new matrix's leg appears
+    (Sol, PR #5997 r4328137492), so both are built here from one `catalog_at(merge_sha)`.
+
+    `merge_sha` is carried so the poll can notice the merge ref moving under it and re-derive
+    instead of measuring against a catalog that no longer describes the running checks.
+    """
+
+    merge_sha: str
+    expected: frozenset[str]
+    alternatives: Mapping[str, frozenset[str]]
+
+
+def plan_for_head(pr: str, head_sha: str, repo: str = REPO) -> ExpectationPlan | None:
+    """The expected names AND the matrix alternatives at `head_sha`, from one merge ref.
+
+    `None` means no baseline could be established -- a measurement gap, never "nothing owed".
+
+    The baseline's names are traced through the commit ITS baseline run executed (its merge
+    commit), because that is where the observed matrix and job titles came from; reading the
+    raw branch SHA instead loses the job identity whenever the base supplied either, leaving
+    the old names owed fail-closed until timeout (Sol, PR #5997 r4328137499). If that commit
+    cannot be read (a merge ref GitHub has since collected) the branch SHA is used, which is
+    the previous behaviour rather than a new failure.
+    """
+    found = _baseline_at(pr, head_sha, repo)
+    if found is None:
         return None
-    changed_files = _pr_changed_files(pr, repo)
-    catalog = WorkflowCatalog.from_workflows_dir(workflows_dir or default_workflows_dir())
-    return derive_expected_for_changed_paths(baseline, changed_files, catalog)
+    baseline_sha, baseline = found
+    merge_sha = workflow_sha_for_head(pr, head_sha, repo)
+    catalog = catalog_at(merge_sha, repo)
+    baseline_catalog = _baseline_catalog(repo, baseline_sha)
+    alternatives = dict(catalog.matrix_alternatives)
+    for name, renamed in renamed_alternatives(baseline, catalog, baseline_catalog).items():
+        alternatives[name] = alternatives.get(name, frozenset()) | renamed
+    return ExpectationPlan(
+        merge_sha,
+        derive_expected_for_changed_paths(
+            baseline,
+            _pr_changed_files(pr, repo),
+            catalog,
+            baseline_catalog,
+        ),
+        alternatives,
+    )
+
+
+def _baseline_catalog(repo: str, baseline_sha: str) -> WorkflowCatalog:
+    """The workflow catalog the BASELINE's observed names came from.
+
+    A `pull_request` run reads its workflow files from the PR's synthetic merge commit, so the
+    matrix and job titles the baseline OBSERVED came from that commit, not from the branch SHA
+    the run is filed under. Tracing through the raw branch commit finds no job for a name
+    whenever the base supplied the matrix or the title, and the old names then stay owed
+    fail-closed until timeout (Sol, PR #5997 r4328137499).
+
+    When that commit cannot be read, substituting the branch commit would describe DIFFERENT
+    jobs (that is the defect) and silently map the baseline's names onto the wrong replacements,
+    so this reports a measurement failure instead (Sol, PR #5997 r4328308905). COULD NOT MEASURE
+    is the honest answer; a made-up catalog is not.
+    """
+    workflow_sha = _baseline_workflow_sha(repo, baseline_sha)
+    if workflow_sha is None:
+        raise TriageError(
+            f"no pull_request-triggered run found for baseline {baseline_sha}, so the workflows "
+            "its observed names came from are unknown; ci-wait will not guess at the baseline matrix"
+        )
+    try:
+        return catalog_at(workflow_sha, repo)
+    except TriageError as exc:
+        raise TriageError(
+            f"cannot read the workflow commit {workflow_sha} that produced the baseline checks at "
+            f"{baseline_sha} ({exc}); the baseline matrix is unknown, and the branch commit is not "
+            "a substitute for the merge commit a pull_request run executes"
+        ) from exc
+
+
+def _baseline_workflow_sha(repo: str, baseline_sha: str) -> str | None:
+    """The commit the baseline's `pull_request` runs executed their workflows from."""
+    runs = _pull_request_triggered_runs(
+        _check_runs_at_sha(baseline_sha, repo), _memoized_run_event(repo)
+    )
+    return None if not runs else _run_workflow_sha(_run_id(runs[0]), repo)
+
+
+def expected_for_head(pr: str, head_sha: str, repo: str = REPO) -> frozenset[str] | None:
+    """Expected check-run names at `head_sha` (see `plan_for_head` for the binding)."""
+    plan = plan_for_head(pr, head_sha, repo)
+    return None if plan is None else plan.expected
 
 
 def wait_for_checks(
@@ -394,39 +599,82 @@ def wait_for_checks(
     """Resolve PR#`pr`'s CURRENT head once (from the live branch ref, not the
     PR object's lagging `headRefOid`), bind everything below to it, and
     refuse SUCCESS until every expected Actions check-run at that exact SHA
-    exists, is completed, and passed."""
-    head_sha = _head_sha(pr, repo)
-    expected = expected_for_head(pr, head_sha, repo)
-    if expected is None:
-        return WaitResult(
-            WaitStatus.NO_BASELINE,
-            head_sha,
-            frozenset(),
-            {},
-            0.0,
-            "no earlier commit on this PR has a non-empty check-run baseline; "
-            "cannot tell what should run at this head -- this is a measurement "
-            "gap, not evidence of success",
-        )
+    exists, is completed, and passed.
 
+    Expected names AND matrix alternatives come from ONE merge-ref catalog (`plan_for_head`); if
+    that merge ref moves under the poll -- the base tip advanced, so the workflow files the
+    running checks execute changed -- the derivation is redone against the new catalog instead
+    of returning a verdict measured against a matrix that no longer describes the run
+    (Sol, PR #5997 r4328137492). `MERGE_MOVES_ALLOWED` bounds that, so a base under constant
+    motion ends as COULD NOT MEASURE, never as a verdict.
+    """
+    head_sha = _head_sha(pr, repo)
+    for _ in range(MERGE_MOVES_ALLOWED):
+        plan = plan_for_head(pr, head_sha, repo)
+        if plan is None:
+            return WaitResult(
+                WaitStatus.NO_BASELINE,
+                head_sha,
+                frozenset(),
+                {},
+                0.0,
+                "no earlier commit on this PR has a non-empty check-run baseline; "
+                "cannot tell what should run at this head -- this is a measurement "
+                "gap, not evidence of success",
+            )
+        result = _poll_plan(pr, repo, head_sha, plan, timeout_s, poll_interval_s)
+        if result is not None:
+            return result
+    raise TriageError(
+        f"PR {pr}'s merge ref never stabilised at head {head_sha} after "
+        f"{MERGE_MOVES_ALLOWED} derivations; the matrix its checks execute is unknown, "
+        "so ci-wait will not measure against a catalog that may be stale"
+    )
+
+
+def _poll_plan(
+    pr: str,
+    repo: str,
+    head_sha: str,
+    plan: ExpectationPlan,
+    timeout_s: float,
+    poll_interval_s: float,
+) -> WaitResult | None:
+    """One poll against ONE bound plan. `None` means the merge ref moved: re-derive."""
     run_event = _memoized_run_event(repo)
 
     def lifecycle_check() -> LifecycleOutcome | None:
-        state, merged = _pr_lifecycle(pr, repo)
+        pull = _pr_payload(pr, repo)
+        state, merged = _lifecycle_of(pull, pr, repo)
         terminal = lifecycle_wait_status(state, merged)
-        if terminal is None:
-            return None
-        return LifecycleOutcome(terminal, _pr_lifecycle_message(pr, head_sha, terminal))
+        if terminal is not None:
+            return LifecycleOutcome(terminal, _pr_lifecycle_message(pr, head_sha, terminal))
+        if _pinned_merge_sha(pull, head_sha, repo) != plan.merge_sha:
+            # ONLY the planned merge commit is a stable measurement. `None` here is GitHub
+            # rebuilding the merge ref after a base move (or the PR briefly unmergeable) -- the
+            # checks still registered belong to the OLD matrix, so letting them stabilise would
+            # hand SUCCESS to a matrix that is being replaced (Sol, PR #5997 r4328308888).
+            return LifecycleOutcome(
+                WaitStatus.HEAD_MOVED,
+                f"merge ref is no longer {plan.merge_sha} (unpinned or rebuilt); the matrix "
+                "the running checks execute changed, so expected names are re-derived",
+            )
+        return None
 
     start = time.monotonic()
     status, present, message = poll_until_terminal(
-        expected,
+        plan.expected,
         lambda: _pull_request_triggered_runs(_check_runs_at_sha(head_sha, repo), run_event),
         timeout_s=timeout_s,
         poll_interval_s=poll_interval_s,
         lifecycle_check=lifecycle_check,
+        alternatives=plan.alternatives,
     )
-    return WaitResult(status, head_sha, expected, present, time.monotonic() - start, message)
+    if status is WaitStatus.HEAD_MOVED:
+        return None
+    return WaitResult(
+        status, head_sha, plan.expected, present, time.monotonic() - start, message
+    )
 
 
 # ----- CLI -------------------------------------------------------------------

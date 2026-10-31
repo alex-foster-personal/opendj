@@ -12,14 +12,19 @@ import { ShellHealthServer } from '../src/shell-health';
 import { installShellLogging } from '../src/shell-log';
 import {
 	EngineSupervisor,
+	PARENT_FILE,
 	RECOVERY_TIMEOUT_MS,
 	type SupervisorDeps,
 	type SupervisorSurface,
 	defaultDeps,
 	exitReason,
-	supervisedOrigin
+	readParentFilePid,
+	releaseParentWatchOwnership,
+	shutdownSupervised,
+	supervisedOrigin,
+	writeParentFile
 } from '../src/supervisor';
-import { fakePayload, pidGone, scratchDir, waitFor } from './helpers';
+import { REPO_ROOT, fakePayload, pidGone, resolveRepoPython, scratchDir, waitFor } from './helpers';
 
 // Supervisor decisions go to the shell log, as in the Tauri shell.
 const shellLog = path.join(scratchDir('supervisor-shell-log'), 'shell.log');
@@ -221,4 +226,155 @@ test('shutdown stops the supervised engine and its group', async () => {
 	await health.close();
 	assert.ok(await waitFor(() => pidGone(engine.pid)));
 	assert.equal(supervisor.current(), null);
+});
+
+test('shutdown leaves an adopted engine running', async () => {
+	const pid = process.pid;
+	await shutdownSupervised({ kind: 'adopted', pid, host: '127.0.0.1', port: 9 });
+	assert.ok(!pidGone(pid), 'adopted shutdown must not stop the holder pid');
+});
+
+test('adopt quit clears .engine.parent when it names this shell so parent_watch survives', async () => {
+	const { spawn } = await import('node:child_process');
+	const python = resolveRepoPython();
+	const spawner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120_000)'], {
+		detached: true,
+		stdio: 'ignore'
+	});
+	const dir = scratchDir('parent-watch-rebind');
+	const dataDir = path.join(dir, 'data');
+	fs.mkdirSync(dataDir, { recursive: true });
+	const spawnerPid = spawner.pid;
+	assert.ok(spawnerPid !== undefined);
+	spawner.unref();
+	const child = spawn(
+		python,
+		[
+			'-c',
+			`import sys, time
+from pathlib import Path
+from apps.engine_core import parent_watch
+parent_watch.start(Path(sys.argv[1]))
+time.sleep(600)`,
+			dataDir
+		],
+		{
+			cwd: REPO_ROOT,
+			env: { ...process.env, OPENDJ_PARENT_PID: String(spawnerPid) },
+			stdio: 'ignore',
+			detached: true
+		}
+	);
+	const childPid = child.pid;
+	assert.ok(childPid !== undefined);
+	child.unref();
+	try {
+		fs.writeFileSync(path.join(dataDir, PARENT_FILE), `${process.pid}\n`);
+		await shutdownSupervised({ kind: 'adopted', pid: 1, host: '127.0.0.1', port: 9 }, dataDir);
+		assert.equal(fs.existsSync(path.join(dataDir, PARENT_FILE)), false);
+		assert.ok(!pidGone(childPid), 'engine child survives after adopt shell rebinds parent watch');
+		spawner.kill('SIGKILL');
+		assert.ok(await waitFor(() => pidGone(childPid), 3_000), 'engine child exits when spawner parent dies');
+	} finally {
+		if (!pidGone(childPid)) process.kill(childPid, 'SIGKILL');
+		if (!pidGone(spawnerPid)) spawner.kill('SIGKILL');
+	}
+});
+
+test('quit during restart adopt abort clears .engine.parent after writeParentFile', () => {
+	const dir = scratchDir('parent-watch-restart-adopt-abort');
+	const dataDir = path.join(dir, 'data');
+	fs.mkdirSync(dataDir, { recursive: true });
+	writeParentFile(dataDir);
+	releaseParentWatchOwnership(dataDir);
+	assert.equal(fs.existsSync(path.join(dataDir, PARENT_FILE)), false);
+});
+
+test('releaseParentWatchOwnership is a no-op when the file names another shell', () => {
+	const dir = scratchDir('parent-watch-noop');
+	const dataDir = path.join(dir, 'data');
+	fs.mkdirSync(dataDir, { recursive: true });
+	const file = path.join(dataDir, PARENT_FILE);
+	fs.writeFileSync(file, '424242\n');
+	releaseParentWatchOwnership(dataDir);
+	assert.equal(fs.readFileSync(file, 'utf8'), '424242\n');
+});
+
+test('adopt quit restores an earlier live adopter instead of falling back to a dead spawner', async () => {
+	const { spawn } = await import('node:child_process');
+	const python = resolveRepoPython();
+	const spawner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120_000)'], {
+		detached: true,
+		stdio: 'ignore'
+	});
+	const dir = scratchDir('parent-watch-chain');
+	const dataDir = path.join(dir, 'data');
+	fs.mkdirSync(dataDir, { recursive: true });
+	const spawnerPid = spawner.pid;
+	assert.ok(spawnerPid !== undefined);
+	spawner.unref();
+	const earlierAdopter = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120_000)'], {
+		detached: true,
+		stdio: 'ignore'
+	});
+	const earlierPid = earlierAdopter.pid;
+	assert.ok(earlierPid !== undefined);
+	earlierAdopter.unref();
+	const child = spawn(
+		python,
+		[
+			'-c',
+			`import sys, time
+from pathlib import Path
+from apps.engine_core import parent_watch
+parent_watch.start(Path(sys.argv[1]))
+time.sleep(600)`,
+			dataDir
+		],
+		{
+			cwd: REPO_ROOT,
+			env: { ...process.env, OPENDJ_PARENT_PID: String(spawnerPid) },
+			stdio: 'ignore',
+			detached: true
+		}
+	);
+	const childPid = child.pid;
+	assert.ok(childPid !== undefined);
+	child.unref();
+	try {
+		fs.writeFileSync(path.join(dataDir, PARENT_FILE), `${earlierPid}\n`);
+		writeParentFile(dataDir);
+		assert.equal(readParentFilePid(dataDir), process.pid);
+		await shutdownSupervised({ kind: 'adopted', pid: 1, host: '127.0.0.1', port: 9 }, dataDir);
+		assert.equal(readParentFilePid(dataDir), earlierPid);
+		assert.ok(!pidGone(childPid), 'engine child survives when parent_watch rebinds to earlier adopter');
+		spawner.kill('SIGKILL');
+		earlierAdopter.kill('SIGKILL');
+		assert.ok(await waitFor(() => pidGone(childPid), 3_000), 'engine child exits when last adopter dies');
+	} finally {
+		if (!pidGone(childPid)) process.kill(childPid, 'SIGKILL');
+		if (!pidGone(earlierPid)) earlierAdopter.kill('SIGKILL');
+		if (!pidGone(spawnerPid)) spawner.kill('SIGKILL');
+	}
+});
+
+test('restart release stops a hung adopted holder but quit shutdown does not', async () => {
+	const { spawn } = await import('node:child_process');
+	const { releaseSupervisedForRestart, shutdownSupervised } = await import('../src/supervisor');
+	const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120_000)'], {
+		detached: true,
+		stdio: 'ignore'
+	});
+	const pid = child.pid;
+	assert.ok(pid !== undefined && pid > 0);
+	child.unref();
+	try {
+		const adopted = { kind: 'adopted' as const, pid, host: '127.0.0.1', port: 9 };
+		await shutdownSupervised(adopted);
+		assert.ok(!pidGone(pid), 'quit path must not stop adopted holder');
+		await releaseSupervisedForRestart(adopted);
+		assert.ok(await waitFor(() => pidGone(pid)), 'restart path must clear a hung adopted holder');
+	} finally {
+		if (!pidGone(pid)) process.kill(pid, 'SIGKILL');
+	}
 });

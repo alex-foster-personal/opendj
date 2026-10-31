@@ -94,6 +94,16 @@ def test_unmapped_key_raises_and_names_the_value():
     assert "H#dim7" in str(caught.value)
 
 
+def test_raw_notation_form_labels_cluster_families():
+    from apps.equivalence.normalisers import pair_notation_form, raw_notation_form
+
+    assert raw_notation_form(" 8A ", "key") == "camelot"
+    assert raw_notation_form("Fm", "key") == "musical"
+    assert raw_notation_form("All", "key") == "other"
+    assert raw_notation_form(124.0, "bpm") == "numeric"
+    assert pair_notation_form("Fm", "4A", "key") == "rb=musical|mik=camelot"
+
+
 def test_open_key_is_case_sensitive():
     # 'd' is major, 'm' is minor. Upper-casing the column would silently swap
     # the two, so an upper-case spelling must not quietly pass.

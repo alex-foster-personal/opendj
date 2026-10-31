@@ -28,6 +28,17 @@ live in a directory this module first makes safe:
 A lock that cannot be made trustworthy makes the warm-up refuse, never run
 unlocked. Callers treat ``False`` from ``_ensure_lock_dir`` and ``None`` from
 ``_open_lock_safe`` as fail-closed.
+
+Windows has no POSIX uid: ``os.getuid`` does not exist and ``st_uid`` is
+always 0. Calling it unconditionally made every ``apps.analysis.run`` there
+die before its first track and exit 5 (EXIT_INTERNAL_ERROR) in place of the
+verdict it owed, which also hid a vanished target (exit 3) and an
+unavailable backend (exit 4) from the drain. Where there is no ``getuid``,
+ownership cannot be proven, so this module fails closed rather than assume
+it: no private directory is created, ``ensure_owned_numba_cache_dir``
+returns ``None`` (no purge), ``_ensure_lock_dir`` returns ``False`` (the
+warm-up is refused), and the run goes on to analyze without a warm-up. A
+real Windows lock and ownership check is issue #7227.
 """
 from __future__ import annotations
 
@@ -97,18 +108,32 @@ def warmup_dir() -> Path:
     return Path(tempfile.gettempdir()) / f"mdt-numba-warmup-{_env_key()}"
 
 
+def _current_uid() -> int | None:
+    """This process's POSIX uid, or ``None`` where there is none (Windows).
+
+    ``None`` means ownership cannot be proven, and every caller fails closed
+    on it; see the module docstring.
+    """
+    getuid = getattr(os, "getuid", None)
+    return getuid() if getuid is not None else None
+
+
 def _is_owned_dir(path: Path) -> bool:
     """True when ``path`` is a real directory (no symlink hop) owned by us.
 
     ``lstat``, not ``stat``: a symlink must fail this check on its own link
     rather than resolving to whatever it points at, or a planted symlink into
-    someone else's directory would read as ours.
+    someone else's directory would read as ours. Where there is no
+    ``getuid`` (Windows) ownership cannot be read, so the answer is False.
     """
+    uid = _current_uid()
+    if uid is None:
+        return False
     try:
         st = os.lstat(path)
     except OSError:
         return False
-    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+    return stat.S_ISDIR(st.st_mode) and st.st_uid == uid
 
 
 def _ensure_lock_dir(path: Path, *, shared: bool) -> bool:
@@ -126,6 +151,9 @@ def _ensure_lock_dir(path: Path, *, shared: bool) -> bool:
         except OSError:
             return False
         return stat.S_ISDIR(st.st_mode)
+    if _current_uid() is None:
+        # No uid to own a private directory by: create nothing, refuse.
+        return False
     with suppress(FileExistsError):
         os.mkdir(path, 0o700)
     return _is_owned_dir(path)
@@ -196,11 +224,20 @@ def ensure_owned_numba_cache_dir() -> Path | None:
     Returns ``None`` (fail closed, caller must not purge) when either check
     fails.
     """
+    uid = _current_uid()
+    if uid is None:
+        log.error(
+            "jit-warmup: no POSIX uid on %s, so ownership of a numba cache "
+            "directory cannot be proven; none is provisioned and purge_stale "
+            "stays off (#7227)",
+            sys.platform,
+        )
+        return None
     configured = os.environ.get("NUMBA_CACHE_DIR")
     if configured:
         path = Path(configured)
     else:
-        path = Path(tempfile.gettempdir()) / f"mdt-numba-cache-{os.getuid()}-{_env_key()}"
+        path = Path(tempfile.gettempdir()) / f"mdt-numba-cache-{uid}-{_env_key()}"
         with suppress(FileExistsError):
             os.mkdir(path, 0o700)
     if not _is_owned_dir(path) or not _is_dedicated_cache_dir(path):
@@ -260,7 +297,7 @@ def _open_lock_safe(path: Path, *, require_self_owned: bool) -> int | None:
         os.close(fd)
         return None
     if not stat.S_ISREG(st.st_mode) or (
-        require_self_owned and st.st_uid != os.getuid()
+        require_self_owned and st.st_uid != _current_uid()
     ):
         os.close(fd)
         return None

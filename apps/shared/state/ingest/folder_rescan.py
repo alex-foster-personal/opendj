@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,13 @@ from apps.shared import audio_files, fs_access
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots, path_is_under_root
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
-from apps.shared.state.ingest.folder import FolderIngestReport, _write_tracks, collect_audio
+from apps.shared.state.ingest.folder import (
+    MAX_ANALYSIS_DROPS_PER_CYCLE,
+    AnalysisDropBudget,
+    FolderIngestReport,
+    _write_tracks,
+    collect_audio,
+)
 from apps.shared.state.ingest.path_collisions import PathCollisionError, assert_no_path_collisions, path_collision_key
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_tracks import DELETED_FILE_MISSING
@@ -53,6 +60,8 @@ from apps.shared.state.writer_tracks import DELETED_FILE_MISSING
 #: and the signature stays unstable (so cheap-skip does not kick in) until
 #: the backlog fully drains.
 MAX_TOMBSTONES_PER_CYCLE = 250
+
+_log = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -71,6 +80,9 @@ class FolderRescanReport:
     #: and the writer disagree about what is stored -- surfaced, not folded
     #: silently into ``tracks_added``.
     tracks_unexpected_noop: int = 0
+    #: Rewritten rows whose analysis drop was over ``MAX_ANALYSIS_DROPS_PER_CYCLE``.
+    #: They were not refreshed and keep their hash and analysis this cycle.
+    analysis_drops_withheld: int = 0
     #: Files already in the library as a non-folder row (rekordbox, djay, a
     #: stick import) at the same path. A watched folder that overlaps another
     #: source must not mint a second, folder-tier copy of the same file
@@ -245,12 +257,31 @@ def _skipped_refresh_note(refresh_report: FolderIngestReport) -> str | None:
     )
 
 
+def _report_withheld_drops(report: FolderRescanReport, budget: AnalysisDropBudget) -> None:
+    """Put rows the analysis drop bound left unrefreshed on the warning and the log.
+
+    The signature is cleared so the next cycle refreshes them, like a capped tombstone.
+    """
+    report.analysis_drops_withheld = budget.withheld
+    if not budget.withheld:
+        return
+    report.signature = ""
+    note = (
+        f"{budget.withheld} rewritten row(s) over the analysis drop bound of "
+        f"{budget.limit} per cycle were not refreshed; their analysis is kept "
+        "but no longer served until a later cycle"
+    )
+    _log.warning("folder rescan: %s", note)
+    report.warning = f"{report.warning}; {note}" if report.warning else note
+
+
 def _apply_tombstones_and_writes(
     writer: StateWriter,
     report: FolderRescanReport,
     tombstones: list[str],
     write_candidates: list[audio_files.AudioFile],
     refreshes: list[audio_files.AudioFile],
+    drop_budget: AnalysisDropBudget,
 ) -> None:
     """The one transactional step: tombstone, then write, in one write unit.
 
@@ -272,9 +303,10 @@ def _apply_tombstones_and_writes(
         report.tracks_removed = len(tombstones)
 
         sub_report = FolderIngestReport(roots=report.roots)
-        _write_tracks(writer, write_candidates, sub_report, None)
+        _write_tracks(writer, write_candidates, sub_report, None, drop_budget=drop_budget)
         refresh_report = FolderIngestReport(roots=report.roots)
-        _write_tracks(writer, refreshes, refresh_report, None)
+        _write_tracks(writer, refreshes, refresh_report, None, drop_budget=drop_budget)
+        _report_withheld_drops(report, drop_budget)
         report.tracks_added = sub_report.tracks_inserted
         report.tracks_unexpected_noop = sub_report.tracks_unchanged
         if sub_report.tracks_unchanged:
@@ -295,6 +327,7 @@ def reconcile_folders(
     *,
     previous_signature: str,
     allow_mass_missing: bool = False,
+    max_analysis_drops: int = MAX_ANALYSIS_DROPS_PER_CYCLE,
 ) -> FolderRescanReport:
     """One cheap-if-nothing-changed reconcile cycle over ``roots``.
 
@@ -365,13 +398,17 @@ def reconcile_folders(
     report.files_owned_by_other_source = len(write_candidates) - len(owned)
     write_candidates = owned
 
-    _apply_tombstones_and_writes(writer, report, tombstones, write_candidates, refreshes)
+    _apply_tombstones_and_writes(
+        writer, report, tombstones, write_candidates, refreshes,
+        AnalysisDropBudget(limit=max_analysis_drops),
+    )
 
     report.duration_s = round(time.perf_counter() - start, 3)
     return report
 
 
 __all__ = [
+    "MAX_ANALYSIS_DROPS_PER_CYCLE",
     "MAX_TOMBSTONES_PER_CYCLE",
     "FolderRescanReport",
     "compute_signature",

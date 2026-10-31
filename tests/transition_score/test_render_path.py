@@ -542,7 +542,7 @@ def broadband(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
 # control, value, band (Hz) whose energy must fall, by at least (dB)
 CONTROL_EFFECTS = [
     ("fader", 0.25, (20.0, 20000.0), 6.0),
-    ("trim", 0.15, (20.0, 20000.0), 6.0),
+    ("trim", 0.075, (20.0, 20000.0), 6.0),  # half the 0.15 this was: decks now start at -6 dB (0.25)
     ("filter", 0.15, (2000.0, 20000.0), 12.0),  # below center: lowpass (mixer.rs filter_params)
     ("filter", 0.85, (20.0, 200.0), 12.0),  # above center: highpass
     ("eq_low", 0.0, (20.0, 120.0), 12.0),
@@ -1270,12 +1270,10 @@ def test_only_pair_level_refusals_are_pair_not_tryable(
 
 
 @pytest.mark.requirement("AGENT-47")
-def test_the_outgoing_deck_loads_at_unity_unless_the_headroom_is_opted_into() -> None:
-    """[if] any plan is compiled for render [then] no outgoing TRIM is sent, [else stop].
-
-    ADR-0135, superseded in part by round 22: the pre-gain is opt-in."""
+def test_the_outgoing_deck_loads_at_the_shared_headroom_default() -> None:
+    """[if] any plan is compiled for render [then] outgoing TRIM uses the shared -6 dB default, [else stop]."""
     out_profile, in_profile = _profiles()
     doc = compile_render_plan(_plans()[0], out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
     events = doc["events"]
     trims = [e for e in events if e.get("cmd", {}).get("type") == "trim" and e["cmd"]["deck"] == 1]
-    assert trims == [], "if the render sets an outgoing trim by default then the headroom opt-in leaked back"
+    assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 1, "value": 0.250594}}]

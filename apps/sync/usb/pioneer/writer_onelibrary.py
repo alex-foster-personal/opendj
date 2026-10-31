@@ -12,7 +12,7 @@ verification after a rekordbox export is
 The database handle is our own (:mod:`apps.sync.usb.pioneer.onelibrary`,
 SQLCipher via ``sqlcipher3``). It replaced the ``rbox`` wheel on Thu 1 Oct
 2026 because rbox 0.1.6+ is GPL-3.0-only; see
-``research/licensing/2026-10-01-rbox-replacement.md``.
+``(private path)``.
 
 We never build a OneLibrary from scratch: users always have a
 Rekordbox-produced ``exportLibrary.db`` that we copy as a scaffold and then
@@ -40,6 +40,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .fixture_resolver import (
+    DEFAULT_EXTERNAL_HOST as _DEFAULT_EXTERNAL_FIXTURE_HOST,
+)
+from .fixture_resolver import (
+    FIXTURES_ROOT as _TESTS_FIXTURES_DIR,
+)
 from .onelibrary import BACKEND, SQLCIPHER_AVAILABLE, SQLCIPHER_IMPORT_ERROR, OneLibrary
 
 WRITER_AVAILABLE = SQLCIPHER_AVAILABLE
@@ -117,15 +123,6 @@ class OneLibraryWriteResult:
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-
-
-# Mirrors tests/fixtures/_resolver.py's external-host default and env var
-# override rather than importing it: apps/ may not import tests/
-# (.importlinter's production-code-never-imports-tests contract is a hard
-# zero-tolerance gate, and its one existing exception is scoped to
-# differ.py only).
-_DEFAULT_EXTERNAL_FIXTURE_HOST = Path("/Volumes/LaCie/music-dj-tools-fixtures")
-_TESTS_FIXTURES_DIR = Path(__file__).resolve().parents[4] / "tests" / "fixtures"
 
 
 def _is_under_fixture_root(path: Path) -> bool:
@@ -252,7 +249,7 @@ def write_onelibrary(
     shutil.copyfile(template, output)
     # Carry an un-checkpointed -wal along with the main file: copying the
     # main file alone silently drops the pending pages (76 rows on the big
-    # fixture; docs/solutions/database-issues/
+    # fixture; (private path)/
     # wal-checkpoint-missing-rows-pioneer-usb-writer-20260417.md). The
     # checkpoint after the overlays folds them into the output.
     for suffix in ("-wal", "-shm"):

@@ -4,7 +4,7 @@
  * `audio-engine.svelte.ts` is the largest hand-written frontend module and sits
  * near the quality ratchet's `file_size.max_frontend` cap, so instrumentation
  * lives beside it rather than in it - the same convention (D5,
- * docs/perf/performance-register.md) that produced
+ * (private path)) that produced
  * `audio-context-instrumentation.ts` and `press-stamp.ts`.
  *
  * What it owns is the EDGE: `observePresentedTransportTimeline` returns a
@@ -30,6 +30,16 @@ type DeckId = 1 | 2 | 3 | 4;
 
 /** Per-deck: was the output clock stalled on the previous observation. */
 const _stalled: Record<DeckId, boolean> = { 1: false, 2: false, 3: false, 4: false };
+let _tickFailure: string | null = null;
+
+/** Durable failure state for the latest presentation tick. */
+export function presentationTickFailure(): string | null {
+	return _tickFailure;
+}
+
+export function clearPresentationTickFailure(): void {
+	_tickFailure = null;
+}
 
 /** Live view for the UI, so a deck can show the operator that it is coasting. */
 export function isPresentationClockStalled(deck: DeckId): boolean {
@@ -47,6 +57,7 @@ export function isPresentationClockStalled(deck: DeckId): boolean {
  */
 export function resetPresentationClockStall(): void {
 	for (const deck of [1, 2, 3, 4] as const satisfies readonly DeckId[]) _stalled[deck] = false;
+	clearPresentationTickFailure();
 }
 
 /**
@@ -67,9 +78,9 @@ export function notePresentationClock(deck: DeckId, clockStalled: boolean | null
 				'the waveform is running on the render clock and now LEADS what you can hear ' +
 				'by roughly the output latency',
 			deck,
-			'error'
+			'warn'
 		);
-		pushToast(`Deck ${deck}: audio device clock stalled - waveform is estimated`, 'error');
+		pushToast(`Deck ${deck}: audio device clock stalled - waveform is estimated`, 'warn');
 		// A stalled device position is also the only signal Chromium gives when the
 		// output device changed under a running context; ask for a re-bind.
 		noteOutputStall(deck);
@@ -92,13 +103,17 @@ export function notePresentationClock(deck: DeckId, clockStalled: boolean | null
  * the catch block is a call rather than a paragraph.
  */
 export function notePresentationTickFailure(error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	const changed = _tickFailure !== message;
+	_tickFailure = message;
 	recordPerfEvent(
 		'presentation-tick-failed',
 		'the presentation frame threw, so the waveform would have frozen over live audio ' +
-			`while the decks kept playing: ${String(error)}`,
+			`while the decks kept playing: ${message}`,
 		null,
 		'error'
 	);
+	if (changed) pushToast(`Audio presentation clock failed: ${message}`, 'error');
 }
 
 /**
@@ -122,5 +137,6 @@ export function readOutputTimestamp(context: AudioContext): {
 	if (contextTime === undefined || performanceTime === undefined) {
 		throw new Error('AudioContext.getOutputTimestamp returned an incomplete timestamp');
 	}
+	clearPresentationTickFailure();
 	return { contextTime, performanceTime };
 }

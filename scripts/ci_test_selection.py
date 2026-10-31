@@ -84,12 +84,20 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from scripts.affected_tests import REPO
-from scripts.ci_test_budget import BudgetConfig, BudgetError, fit, load_config, summary_line
+from scripts.ci_test_budget import (
+    DECLARED_DISTANCE,
+    BudgetConfig,
+    BudgetError,
+    fit,
+    load_config,
+    summary_line,
+)
 from scripts.ci_test_selection_rules import (
     DURATIONS_NAME,
     FullSuite,
     Policy,
     Selection,
+    capped_full_selection,
     lane_universe,
     select_tests,
 )
@@ -310,7 +318,7 @@ def run_declarations(event: Event, bundle_json: str | None) -> tuple[list[str], 
 def add_declared(selection: Selection, declared: list[str]) -> None:
     """Add the declared modules, already validated by `undeclarable`, to the selection."""
     for path in declared:
-        selection.add(path, "declared in the PR body (`CI-Tests:`)")
+        selection.add(path, "declared in the PR body (`CI-Tests:`)", DECLARED_DISTANCE)
     selection.modules = sorted(selection.reasons)
 
 
@@ -412,6 +420,56 @@ class Record:
     demoted: dict[str, list[str]] = dataclass_field(default_factory=dict)
 
 
+class HardCapError(Exception):
+    """A hard cap cannot be honored: the selector refuses to guess, and the run must fail, not widen.
+
+    Without it the FULL fallback would run the uncapped lane (68 runner-minutes against a 10 cap)
+    and hide the failure behind a green run.
+    """
+
+
+#: The `select` exit code for HardCapError; the shard step fails on it instead of running FULL.
+HARD_CAP_REFUSED_RC = 3
+
+
+def _full_or_refuse(hard: bool, problem: str, cause: BaseException | None = None) -> None:
+    """Under a hard cap raise HardCapError; otherwise return, and the caller records FULL."""
+    if hard:
+        raise HardCapError(problem) from cause
+
+
+def _precondition_problem(
+    budget: BudgetConfig | None, shards: int, declarations_unknown: str | None, declaration_error: str | None
+) -> str | None:
+    """Why the selection cannot be computed honestly before it starts, or None."""
+    if budget is not None and shards != budget.shards:
+        return (
+            f"the runtime shard count ({shards}) differs from the budget model's ({budget.shards}): "
+            "the plan would be priced for a different number of shards than the run launches"
+        )
+    if declarations_unknown or declaration_error:
+        return declarations_unknown or f"invalid declaration: {declaration_error}"
+    return None
+
+
+def _select_or_cap(
+    changed: list[str], ignores: list[str], root: Path, budget: BudgetConfig | None, policy: Policy | None
+) -> tuple[Selection, str | None]:
+    """The narrowed selection, or under a hard cap the ranked whole lane with the reason it could not narrow.
+
+    A hard cap has no full suite to fall back to (TEST-BUDGET round 5): the lane is ranked and
+    cut instead, and the trunk checkpoint runs everything. Without a hard cap, or on an empty
+    diff (indistinguishable from a failed one), the FullSuite propagates, and `decide` turns it into
+    HardCapError under a hard cap.
+    """
+    try:
+        return select_tests(changed, ignores, root, policy), None
+    except FullSuite as unnarrowable:
+        if budget is None or not budget.hard or not changed:
+            raise
+        return capped_full_selection(changed, ignores, root), str(unnarrowable)
+
+
 def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one per cut
     switch: str | None,
     event: Event,
@@ -425,7 +483,10 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     by_name: str | None = None,
     demote: str | None = None,
 ) -> Record:
-    """The whole decision for this run. Never raises: any failure is a FULL record.
+    """The whole decision for this run. Any failure is a FULL record, except under a hard cap.
+
+    Under a hard budget a failure is HardCapError instead: FULL is the uncapped lane, so it is
+    not an answer the cap can give. The switches (`full_suite_reason`) still keep a run FULL.
 
     `bundle_json` is CI_BUNDLE_DECLARATIONS; it is read only for a `trunk-merge/` head.
     `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml).
@@ -483,14 +544,16 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     reason = full_suite_reason(switch, event, queue_switch)
     if reason:
         return record("full", reason)
-    if declarations_unknown:
-        return record("full", f"fell back to the full suite: {declarations_unknown}")
-    if declaration_error:
-        return record("full", f"fell back to the full suite: invalid declaration: {declaration_error}")
+    hard = budget is not None and budget.hard
+    problem = _precondition_problem(budget, shards, declarations_unknown, declaration_error)
+    if problem:
+        _full_or_refuse(hard, f"cannot honor the hard cap: {problem}")
+        return record("full", f"fell back to the full suite: {problem}")
+    capped_over: str | None = None
     try:
         policy = policy_from(by_name, demote, root)
         changed = pr_changed_paths(root, event.head_sha)
-        selection = select_tests(changed, ignores, root, policy)
+        selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy)
         universe = lane_universe(selection.graph_paths, ignores, root)
         add_declared(selection, declared)
         ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))
@@ -499,17 +562,36 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
         if budget is not None:
             fitted = fit(
                 selection.modules, selection.reasons, durations,
-                budget.for_context(event.queue_draft), budget,
+                budget.for_context(event.queue_draft), budget, selection.distance,
             )  # fmt: skip
             selection.modules = fitted.kept
             budget_block = fitted.as_record()
         assignment = assign_shards(selection.modules, durations, shards)
     except FullSuite as fallback:
+        _full_or_refuse(hard, f"cannot narrow or rank the change under the hard cap: {fallback}", fallback)
         return record("full", f"fell back to the full suite: {fallback}")
     except Exception as error:  # reported loudly below, and the fallback runs MORE tests
         traceback.print_exc(file=sys.stderr)
+        _full_or_refuse(hard, f"selection could not be computed under the hard cap: {error!r}", error)
         return record("full", f"fell back to the full suite: selection could not be computed: {error!r}")
     demoted = f"; {len(selection.demoted)} weak-link module(s) not run at this head" if selection.demoted else ""
+    if capped_over:
+        return record(
+            "affected",
+            f"hard cap over a full-suite fallback ({capped_over}): {len(selection.modules)} of "
+            f"{len(universe)} lane module(s) ranked into the budget{demoted}",
+            selection,
+            assignment,
+            budget_block,
+        )
+    if not selection.modules and budget_block and budget_block["dropped"]:
+        return record(
+            "affected",
+            f"hard cap dropped all {len(budget_block['dropped'])} affected module(s): none fits the budget{demoted}",
+            selection,
+            assignment,
+            budget_block,
+        )
     if not selection.modules:
         return record(
             "affected", f"no test module is affected by this change{demoted}", selection, assignment, budget_block
@@ -574,7 +656,6 @@ def summary_markdown(record: Record, shard: int, shards: int) -> str:
         f"| declared in the PR body (`CI-Tests:`) | {len(record.declared_modules)} |",
         f"| this shard's modules | {len(record.shards.get(str(shard), []))} |",
         f"| weak-link modules not run at this head | {len(record.demoted)} |",
-        "",
     ]
     if record.budget:
         rows.append(f"| test budget | {summary_line(_fit_of(record))} |")
@@ -639,29 +720,36 @@ def _select(arguments: argparse.Namespace) -> int:
     queue_switch = os.environ.get(QUEUE_SWITCH_VARIABLE)
     bundle_json = os.environ.get(BUNDLE_VARIABLE)
     budget: BudgetConfig | None = None
-    if arguments.budget:
+    # A run a switch, the repair label or its event keeps FULL never selects, so it never reads the
+    # budget: a missing or broken budget file must not take the off-switch down with it.
+    selects = full_suite_reason(switch, event, queue_switch) is None
+    if arguments.budget and selects:
         budget_path = Path(arguments.budget)
         if not budget_path.is_absolute():
             budget_path = REPO / budget_path  # relative to the repo, like every other input
         try:
             budget = load_config(budget_path)
         except BudgetError as error:
-            # A typo in the budget must make the run BIGGER, never silently smaller: a non-zero
-            # exit is FULL, loudly, in the shard step.
+            # An unreadable or infeasible budget fails the shard (ci.yml, runner-canary.yml): FULL is
+            # the uncapped lane, so the cap does not fall back to it.
             print(f"TEST BUDGET UNREADABLE: {error}", file=sys.stderr)
             return 2
-    record = decide(
-        switch,
-        event,
-        REPO,
-        arguments.ignore,
-        arguments.shards,
-        queue_switch,
-        bundle_json,
-        budget,
-        by_name=os.environ.get(BY_NAME_VARIABLE),
-        demote=os.environ.get(DEMOTE_VARIABLE),
-    )
+    try:
+        record = decide(
+            switch,
+            event,
+            REPO,
+            arguments.ignore,
+            arguments.shards,
+            queue_switch,
+            bundle_json,
+            budget,
+            by_name=os.environ.get(BY_NAME_VARIABLE),
+            demote=os.environ.get(DEMOTE_VARIABLE),
+        )
+    except HardCapError as refused:
+        print(f"[ERROR] HARD CAP REFUSED: {refused}", file=sys.stderr)
+        return HARD_CAP_REFUSED_RC
 
     out_dir = Path(arguments.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

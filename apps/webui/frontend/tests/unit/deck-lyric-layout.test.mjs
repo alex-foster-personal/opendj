@@ -62,13 +62,21 @@ test('UNDO floats at the cue column corner and narrows the lyric strip instead o
 test('the HOT CUE pad-mode menu sits stacked under the grid buttons, not in the bank', async () => {
 	const deck = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const bank = await readFile('src/lib/components/rb/deck/HotCueBank.svelte', 'utf8');
-	const gridOpen = deck.indexOf('<div class="grid-adjust">');
+	// GRIDEDIT-6235: the grid adjust/shift pair is its own component now, so the
+	// column holds that component and then the menu.
+	const gridOpen = deck.indexOf('<div class="left-edge">');
+	assert.ok(gridOpen >= 0, 'the left-edge grid column exists');
 	const gridClose = deck.indexOf('</div>', gridOpen);
 	const gridBlock = deck.slice(gridOpen, gridClose);
-	const shift = gridBlock.indexOf('grid-shift-deck-');
+	const shift = gridBlock.indexOf('<GridEditButtons');
 	const menu = gridBlock.indexOf('<PadModeMenu {deckId} stacked />');
 	assert.ok(shift >= 0, 'grid shift button is in the grid column');
 	assert.ok(menu > shift, 'the HOT CUE menu comes after (below) the grid shift button');
+	const buttons = await readFile('src/lib/components/rb/deck/GridEditButtons.svelte', 'utf8');
+	assert.ok(
+		buttons.indexOf('grid-adjust-deck-') < buttons.indexOf('grid-shift-deck-'),
+		'grid adjust sits above grid shift'
+	);
 	assert.equal(deck.split('<PadModeMenu').length - 1, 1, 'Deck mounts exactly one pad-mode menu');
 	assert.doesNotMatch(bank, /<PadModeMenu/, 'HotCueBank no longer mounts the menu');
 });

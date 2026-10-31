@@ -126,6 +126,39 @@ describe('DeckHeader dblclick wiring', () => {
 	});
 });
 
+// Codex P2 on PR #6235: a refused tempo write resolves ok: false instead of
+// throwing, so a TAP that changed nothing must not read as applied.
+describe('runTempoWrites', () => {
+	const writes = [
+		{ type: 'pitch_range', deck: 1, range: 16 },
+		{ type: 'tempo', deck: 1, ratio: 1.1 }
+	];
+	test('a refused write reports false and stops the rest', async () => {
+		const sent = [];
+		const taken = await tempoEdit.runTempoWrites(writes, async (write) => {
+			sent.push(write.type);
+			return { ok: false };
+		});
+		assert.equal(taken, false);
+		assert.deepEqual(sent, ['pitch_range'], 'no tempo against a refused range');
+	});
+	test('control: every write taken reports true', async () => {
+		const sent = [];
+		const taken = await tempoEdit.runTempoWrites(writes, async (write) => {
+			sent.push(write.type);
+			return { ok: true };
+		});
+		assert.equal(taken, true);
+		assert.deepEqual(sent, ['pitch_range', 'tempo']);
+	});
+	test('the modal reports what the writes returned', () => {
+		const modal = readSrc('src/lib/components/rb/deck/TempoEditModal.svelte');
+		assert.match(modal, /const taken = await runTempoWrites\(writes, \(write\) => runPerformanceCommandFromUi\(write, pressT0Ms\)\);/);
+		assert.match(modal, /return taken;/);
+		assert.match(modal, /tapApplied = await _dispatchWrites\(id, bpm, event\.timeStamp\);/);
+	});
+});
+
 describe('TempoEditModal commit path', () => {
 	const modal = readSrc('src/lib/components/rb/deck/TempoEditModal.svelte');
 

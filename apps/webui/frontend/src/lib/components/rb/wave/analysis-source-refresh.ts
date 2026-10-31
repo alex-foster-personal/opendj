@@ -18,6 +18,7 @@ import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isUnmappedDefault } from '$lib/rb/beatgrid-source-basis';
 import type { Track } from '$lib/api';
 import {
+	anlzTrackRevision,
 	bumpAnlzFetchGeneration,
 	currentAnlzFetchGeneration
 } from '$lib/rb/anlz-fetch-generation';
@@ -87,6 +88,29 @@ export interface AnalysisSourceRefreshDeck {
 	 * - which makes them as source-dependent as the beatgrid itself. */
 	bpm: number | null;
 	key: string | null;
+}
+
+/** Fetches every wanted track's /anlz and track row, with each track's /anlz
+ * revision as it was before the fetches. A grid edit's refresh
+ * (`refetchAnlzCacheEntry`) bumps it, and a staged pre-edit answer would
+ * otherwise be published over the edited grid on the cache and the deck
+ * (Codex P1 BLOCKING, PR #6235), so the caller re-stages while any moved. */
+async function _stage(wanted: Map<string, DeckId[]>, ports: AnalysisSourceRefreshPorts) {
+	const revisions = new Map([...wanted.keys()].map((stableId) => [stableId, anlzTrackRevision(stableId)]));
+	const staged = await Promise.all(
+		[...wanted].map(async ([stableId, holders]) => {
+			const [fresh, track] = await Promise.all([
+				ports.fetchAnlzBypassingHttpCache(stableId),
+				ports.fetchTrackBypassingHttpCache(stableId)
+			]);
+			return { stableId, holders, fresh, track };
+		})
+	);
+	return { staged, revisions };
+}
+
+function _tracksCurrent(revisions: Map<string, number>): boolean {
+	return [...revisions].every(([stableId, revision]) => revision === anlzTrackRevision(stableId));
 }
 
 /** Replaces loaded decks without allowing an in-flight stale response to win.
@@ -188,15 +212,12 @@ export async function refreshAnalysisSourceDecks(
 		else holders.push(deck);
 	}
 	if (sectionsOnly) return _publishSectionsOnly(wanted, decks, ports, generationAtBatch);
-	const staged = await Promise.all(
-		[...wanted].map(async ([stableId, holders]) => {
-			const [fresh, track] = await Promise.all([
-				ports.fetchAnlzBypassingHttpCache(stableId),
-				ports.fetchTrackBypassingHttpCache(stableId)
-			]);
-			return { stableId, holders, fresh, track };
-		})
-	);
+	// Checked here, after the await resumes, not inside `_stage`: from this
+	// check to the publish below runs in one synchronous step, so an edit's
+	// refresh cannot land in between (Sol P1 BLOCKING, PR #6235).
+	let stage = await _stage(wanted, ports);
+	while (!_tracksCurrent(stage.revisions)) stage = await _stage(wanted, ports);
+	const { staged } = stage;
 	// Superseded while the fetches were in flight: the answer is discarded
 	// below whatever it holds, so it must not be JUDGED first. On a loaded
 	// runner the sibling /tracks/{id} fetch is served after a faster, later

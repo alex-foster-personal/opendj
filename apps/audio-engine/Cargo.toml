@@ -2,6 +2,9 @@
 name = "odj-audio"
 version = "0.1.0"
 edition = "2021"
+# The highest rust-version in Cargo.lock's graph (symphonia 0.6, tungstenite
+# 0.30); (private path) fails when a lock bump raises it.
+rust-version = "1.85"
 license = "Apache-2.0"
 description = "Open DJ audio engine: one playback actor driven by a device, wall or fake clock"
 publish = false

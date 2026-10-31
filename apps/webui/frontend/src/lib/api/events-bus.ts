@@ -37,6 +37,7 @@ export const SLOW_CONSUMER_CODE = 1013;
 
 export const TOPIC_HELLO = 'hello';
 export const TOPIC_LIBRARY_CHANGED = 'library.changed';
+export const TOPIC_ANALYSIS_CHANGED = 'analysis.changed';
 export const TOPIC_JOBS_UPDATED = 'jobs.updated';
 export const TOPIC_HEALTH_CHANGED = 'health.changed';
 export const TOPIC_SHELL_QUIT = 'shell.quit';
@@ -49,6 +50,7 @@ export const LIBRARY_KINDS = [
 	'playlists',
 	'mytags',
 	'hot_cues',
+	'beatgrid_edit',
 	'smartlists',
 	'dedup',
 	'reconcile',

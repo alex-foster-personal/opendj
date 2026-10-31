@@ -101,12 +101,21 @@ test('the Library page lazily mounts the Crate Desk built on the shared browser'
 	// first paint of "/", which every cold open downloads before Gig.
 	assert.match(page, /import\('\$lib\/components\/library\/CrateDesk\.svelte'\)/);
 	assert.doesNotMatch(page, /^\s*import\s+\w+\s+from\s+'[^']*(CrateDesk|BrowserPanel)/m);
-	// The desk tells the browser it is in Library mode (LIBWS-01/03) through a
-	// prop, so the browser itself never imports the workspace module.
+	// The desk tells the browser it is in Library mode (LIBWS-01/04/06) through
+	// a prop, so the browser itself never imports the workspace module.
 	assert.match(desk, /<BrowserPanel \{library\} \/>/);
-	assert.match(desk, /const library = \{ refusal: LIBRARY_DECK_LOAD_REFUSAL, publish: publishLibrarySelection \}/);
+	assert.match(desk, /publish: publishLibrarySelection,\s*preview: previewLibraryRow,/);
+	// LIBWS-06: a load leaves for Gig with the track in the deck's URL slot.
+	// Codex P1 on PR #6189: Gig's teardown must settle before Gig remounts.
+	assert.match(
+		desk,
+		/markLibraryModeExit\(\);[^]*?await gigRuntimeReleaseSettled\(\);\s*setAppMode\('performance'\);\s*await goto\(gigDeckLoadHref\(row\.stable_id, deck \?\? 1\)\);/
+	);
+	assert.match(desk, /onDestroy\(stopLibraryPreview\);/);
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(panel, /if \(library !== null\) \{\s*pushToast\(library\.refusal, 'info'\);\s*return;/);
+	// The Library branch sits AFTER the audio refusals and before any dispatch.
+	const load = panel.slice(panel.indexOf('async function _loadOntoDeck'), panel.indexOf('dispatchPerformanceCommand(', panel.indexOf('async function _loadOntoDeck')));
+	assert.match(load, /libraryAudioLoadRefusal\(row\)[\s\S]*if \(library !== null\) \{\s*library\.loadToDeck\(row, deck\);\s*return;/);
 	assert.match(panel, /libraryMode=\{library !== null\}/);
 	assert.doesNotMatch(panel, /library-workspace/);
 	assert.match(desk, /<TrackInspector \/>/);
@@ -240,14 +249,16 @@ test('the inspector stars stay inert until the track and its etag have loaded', 
 	assert.match(stars, /title=\{disabledReason \?\? `Set rating \$\{n\}`\}\s*disabled=\{disabledReason !== null\}/);
 });
 
-test('Library mode starts no grid scan, no row preview audio and no recorder polling', () => {
+test('Library mode starts no grid scan or recorder polling, and previews rows without the Gig engine', () => {
 	const table = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
 	// The grid and audio-quality scans start together (QLTSCAN-03), gated once.
 	assert.match(table, /if \(!libraryMode\) ensureLibraryScans\(\);/);
 	assert.equal(table.split('ensureLibraryScans()').length, 2, 'another scan call is ungated');
 	assert.equal(table.includes('ensureGridQualityScan'), false, 'a grid scan call bypasses the gate');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(panel, /onpreviewseek=\{library === null \? previewSeek : undefined\}/);
+	// LIBWS-04: row strip clicks play through the Library's own preview player.
+	assert.match(panel, /onpreviewseek=\{library === null \? previewSeek : library\.preview\}/);
+	assert.match(table, /if \(libraryMode\) \{\s*onpreviewseek\?\.\(row, 0\);\s*return;/);
 	const rail = readFileSync(`${SRC}/lib/components/rb/browser/PerformanceRecorderRail.svelte`, 'utf8');
 	assert.match(rail, /if \(after === null \|\| !recordable\) return;\s*const timer = setTimeout\(\(\) => void refreshRecorderStatus\(\), after\);/);
 	assert.equal(rail.split('void refreshRecorderStatus()').length, 3, 'a third recorder status read is ungated');

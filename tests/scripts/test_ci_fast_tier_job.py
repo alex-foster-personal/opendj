@@ -139,6 +139,9 @@ def test_fast_job_may_cancel_the_run() -> None:
     assert cancel[0]["env"]["GH_TOKEN"] == "${{ github.token }}"
     assert "CI_FAST_CANCEL" in cancel[0]["run"], "disarmed unless the var is 1"
     assert "--dry-run" in cancel[0]["run"], "disarmed unless the var is 1"
+    assert "scripts.ci_fast_cancel" in cancel[0]["run"], (
+        "live cancels must route through the fleet audit helper"
+    )
 
 
 def test_artifact_upload_precedes_the_cancel_step() -> None:
@@ -179,7 +182,9 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
     fast = _pytest_step(_jobs()["fast"])
     ignores = lambda run: sorted(tok for tok in run.split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(fast) == ignores(shard)
-    assert len(ignores(fast)) == 10  # playlist-switch bench (e2e.yml extended), nextest quarantine (contracts) and NATIVE-25 live-engine (fail-closed when loudness is unavailable; must not collect on the fast lane)
+    # playlist-switch bench (e2e.yml extended), nextest quarantine (contracts),
+    # NATIVE-25 live-engine (fail-closed when loudness unavailable; not on fast lane)
+    assert len(ignores(fast)) == 10
 
 
 def test_shard_job_gains_only_the_ledger_guard() -> None:

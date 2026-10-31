@@ -32,10 +32,24 @@ export default defineConfig(({ command, mode }) => {
 	// packaged shell, a production bundle) must not prompt unasked and shows a
 	// grant button instead. Read by `ioDeviceAccessOnOpen`.
 	const ioDeviceAccessOnOpen: 'request' | 'button' = devConfig === null ? 'button' : 'request';
+	// I18 remote speaker: on for the dev server, off for every built app, so a
+	// shipped app opens no LAN listener and shows the panel entry inert.
+	// MUSIC_DJ_REMOTE_SPEAKER=on|off overrides either. Read by `remoteSpeakerFlag`.
+	const remoteSpeakerOverride = rootEnv.MUSIC_DJ_REMOTE_SPEAKER;
+	if (remoteSpeakerOverride !== undefined && remoteSpeakerOverride !== 'on' && remoteSpeakerOverride !== 'off') {
+		throw new Error(`MUSIC_DJ_REMOTE_SPEAKER must be on or off, got ${remoteSpeakerOverride}`);
+	}
+	const remoteSpeaker: 'on' | 'off' =
+		remoteSpeakerOverride === 'on' || remoteSpeakerOverride === 'off'
+			? remoteSpeakerOverride
+			: devConfig === null
+				? 'off'
+				: 'on';
 	return {
 		envDir: REPOSITORY_ROOT,
 		define: {
 			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen),
+			'import.meta.env.VITE_REMOTE_SPEAKER': JSON.stringify(remoteSpeaker),
 			'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersionFromTauriConf(REPOSITORY_ROOT))
 		},
 		// e2eFootprintsPlugin is empty unless E2E_FOOTPRINTS_DIR is set (the e2e

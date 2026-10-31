@@ -1,4 +1,5 @@
 // requirement: PERFMODE-14
+// requirement: LIBWS-06
 // [if] Gig loads decks then Library then Gig [then] decks return empty unless rescue applies
 // [if] Gig -> Library -> Gig happens in-app (no reload) [then] a deck loads and plays again, past the
 //   silence watchdog's window, at the master volume it had before [⛔️ if the teardown's hard mute
@@ -272,4 +273,55 @@ test('an in-app Library round trip re-arms the engine: a deck loads and plays ag
 	expect(context?.audio_context_count).toBe(1);
 	expect(context?.deck_nodes_present).toBe(true);
 	expect(context?.deck_pcm_bytes, 'the reloaded deck holds its decoded buffer again').toBeGreaterThan(0);
+});
+
+test('Load to deck straight after leaving a loaded Gig lands the track on that deck (LIBWS-06)', async ({ page }) => {
+	// Codex P1 on PR #6189: Library's Load to deck used to navigate back while
+	// Gig's fire-and-forget unmount teardown was still disposing the engine.
+	// The remount superseded it, the old deck 1 survived, and session restore
+	// skipped the requested track. So this clicks as soon as the Crate Desk
+	// lists a row, without waiting for the idle marker, then checks the decks.
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await page.getByText('All Tracks', { exact: true }).first().click();
+	const gigRow = page.locator('[data-testid="track-row"]').first();
+	await expect(gigRow).toBeVisible({ timeout: 30_000 });
+	const gigStableId = await gigRow.getAttribute('data-stable-id');
+	if (!gigStableId) throw new Error('first Gig row is missing data-stable-id');
+	await page.evaluate(async (stableId) => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC missing');
+		await ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId });
+	}, gigStableId);
+	await page.waitForFunction(
+		(stableId) => window.musicDjToolsPerformance?.query().decks[1].stable_id === stableId,
+		gigStableId,
+		{ timeout: 20_000 }
+	);
+
+	await _selectLibraryMode(page);
+	const row = page.locator('[data-testid="track-row"]').first();
+	await expect(row).toBeVisible({ timeout: 30_000 });
+	const stableId = await row.getAttribute('data-stable-id');
+	if (!stableId) throw new Error('first row is missing data-stable-id');
+	await row.locator('td.c-title').click({ button: 'right' });
+	const load2 = page.getByTestId('context-menu-load-deck-2');
+	await expect(load2, 'the first fixture row must have local audio').toBeEnabled();
+	await load2.click();
+	await page.waitForURL((url) => url.pathname === '/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await expect
+		.poll(
+			() =>
+				page.evaluate(() =>
+					[1, 2, 3, 4].map(
+						(deckId) => window.musicDjToolsPerformance?.query().decks[deckId as 1 | 2 | 3 | 4]?.stable_id ?? null
+					)
+				),
+			{
+				message: 'if deck 1 still holds the old track then Gig remounted before its teardown finished',
+				timeout: 30_000
+			}
+		)
+		.toEqual([null, stableId, null, null]);
 });

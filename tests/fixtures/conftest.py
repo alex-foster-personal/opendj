@@ -27,7 +27,7 @@ from typing import NoReturn, TypeVar
 
 import pytest
 
-from tests.fixtures._resolver import (
+from apps.sync.usb.pioneer.fixture_resolver import (
     FixtureContractMismatch,
     FixtureNotAvailable,
     fixture_path,
@@ -53,7 +53,7 @@ def requires_fixture(name: str) -> Callable[[F], F]:
     Implementation note: we resolve eagerly at import time (not at test
     call time) so that pytest's collection phase picks up the skip
     reason and the test is visibly greyed out in the report. This
-    matches the stylistic choice in ``tests/sync/usb/test_pioneer_reader.py``
+    matches the stylistic choice in ``(private path)``
     where the module-level ``FIXTURE`` check raises at collection.
     """
     def decorator(fn: F) -> F:
@@ -106,7 +106,7 @@ def resolve_required_fixture(name: str) -> Path:
 
     Once resolved, the fixture's complete content is verified against
     ``tests/fixtures/<name>.contract.json`` (see
-    :func:`tests.fixtures._resolver.verify_fixture_contract`) before the
+    :func:`apps.sync.usb.pioneer.fixture_resolver.verify_fixture_contract`) before the
     path is handed back, so a stale or partially copied external host is
     rejected rather than silently used. Never gated by
     ``MDT_ALLOW_MISSING_FIXTURES`` -- that variable is about an unavailable

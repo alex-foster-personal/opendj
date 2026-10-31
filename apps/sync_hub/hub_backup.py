@@ -3,7 +3,7 @@
 The hub's ``state.db`` is the only MERGED copy of the fleet, but it is not the
 only copy of the data: every spoke holds a full library of its own and can
 re-offer it. So the hub DB is treated as a restorable cache, and this module
-is what makes "restorable" true (docs/cloudsync/hub-runbook.md).
+is what makes "restorable" true ((private path)).
 
 ``backup`` takes an ONLINE copy through the sqlite3 backup API while the hub
 keeps serving. Row counts are read inside the same read transaction the copy
@@ -33,10 +33,8 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 import os
 import socket
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -45,6 +43,7 @@ from pathlib import Path
 from apps.cloud.asset_store import AssetS3Client, boto3_asset_client
 from apps.cloud.config import CloudConfig
 from apps.shared import sqlite_verified_copy as svc
+from apps.shared.cli_json_emit import emit_json_payload as _emit
 
 
 class CFG:
@@ -188,7 +187,7 @@ def restore_hub_db(backup: Path, data_dir: Path) -> Path:
         if existing:
             raise HubBackupError(
                 f"refusing to overwrite existing DB files {[str(p) for p in existing]}; "
-                "move them aside first (docs/cloudsync/hub-runbook.md, restore drill)"
+                "move them aside first ((private path), restore drill)"
             )
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f"{CFG.PARTIAL_PREFIX}{target.name}")
@@ -257,10 +256,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload, default=str, sort_keys=True))
-
-
 def _cmd_backup(args: argparse.Namespace) -> None:
     result = backup_hub_db(args.data_dir, args.dest, keep=args.keep)
     payload: dict[str, object] = asdict(result)
@@ -300,13 +295,14 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    try:
-        COMMANDS[args.command](args)
-    except HubBackupError as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        return 1
-    return 0
+    from apps.shared.cli_subcommand_main import run_subcommand_cli
+
+    return run_subcommand_cli(
+        _build_parser(),
+        COMMANDS,
+        argv=argv,
+        error_type=HubBackupError,
+    )
 
 
 if __name__ == "__main__":

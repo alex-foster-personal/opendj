@@ -3,7 +3,7 @@
 Parses a unified diff (``git diff`` / ``gh pr diff``) and decides, per file,
 whether every added or removed line is on the narrow non-behavioral
 allowlist described in ``scripts/perf/perfbatch_gate.py`` and
-``docs/perf/perfbatch-gates.md``. Python lines are judged against exact
+``(private path)``. Python lines are judged against exact
 ``tokenize``/``ast`` facts for the whole file on each side
 (``perfbatch_python.py``), never against the hunk window alone. Anything
 not provably non-behavioral, including anything unreadable, is a pipeline
@@ -20,6 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from scripts.perf.perfbatch_python import PythonFacts, analyze
+from scripts.perf.perfbatch_rename import (
+    RenameLedger,
+    RenameSide,
+    ledger_refusal,
+    rename_line_pair,
+)
 
 #: path -> (bytes at the merge base or None if absent, bytes at the head or None).
 #: Bytes, never text: the Python analyzer detects the source encoding itself.
@@ -376,7 +382,22 @@ def _metadata_refusal(diff: FileDiff, lang: str | None) -> str | None:
     return None
 
 
-def _python_facts(diff: FileDiff, sources: SourceReader | None) -> dict[str, PythonFacts] | str:
+@dataclass
+class _PythonSides:
+    facts: dict[str, PythonFacts]
+    old_source: bytes
+    new_source: bytes
+    _rename: tuple[RenameSide, RenameSide] | None = None
+
+    def rename_sides(self) -> tuple[RenameSide, RenameSide] | None:
+        """Both sides read for the CLI value rename rule, or None when either fails to read."""
+        if self._rename is None:
+            self._rename = (RenameSide.read(self.old_source), RenameSide.read(self.new_source))
+        base, head = self._rename
+        return None if base.error or head.error else self._rename
+
+
+def _python_facts(diff: FileDiff, sources: SourceReader | None) -> _PythonSides | str:
     """Facts for both sides, or the refusal string when either side cannot be read."""
     if sources is None:
         return "no file sources for a Python pipeline file"
@@ -388,7 +409,7 @@ def _python_facts(diff: FileDiff, sources: SourceReader | None) -> dict[str, Pyt
         if side.error is not None:
             name = "merge-base" if tag == "-" else "head"
             return f"cannot tokenize the {name} version: {side.error}"
-    return facts
+    return _PythonSides(facts, old_source, new_source)
 
 
 def classify_file(diff: FileDiff, sources: SourceReader | None = None) -> FileVerdict:
@@ -401,20 +422,48 @@ def classify_file(diff: FileDiff, sources: SourceReader | None = None) -> FileVe
     if lang == _PROSE:
         reasons["prose"] = sum(1 for hunk in diff.hunks for tag, _ in hunk.lines if tag != " ")
         return FileVerdict(diff.path, True, tuple(sorted(reasons.items())), None)
-    facts = _python_facts(diff, sources)
-    if isinstance(facts, str):
-        return _mutation(diff.path, facts)
+    sides = _python_facts(diff, sources)
+    if isinstance(sides, str):
+        return _mutation(diff.path, sides)
+    ledger = RenameLedger()
+    verdict = _classify_python_file(diff, sides, ledger)
+    rename = sides.rename_sides()
+    if not verdict.benign or rename is None or not dict(verdict.reasons).get("cli value rename"):
+        return verdict
+    why = ledger_refusal(ledger, rename)
+    if why is None:
+        return verdict
+    if not ledger.renames:
+        # No choices value was renamed at all, so the rename reading never
+        # applied: the verdict is exactly the one without the rule.
+        return _classify_python_file(diff, sides, None)
+    if why.line is not None:
+        text = rename[1].lines[why.line - 1].strip()
+        return _mutation(diff.path, f"+{why.line}: {text!a}; {why.reason}")
+    # Not one consistent rename and no single line at fault: judge the file
+    # again without the rename rule, so the refusal still names a line, then
+    # says why the rename reading failed.
+    plain = _classify_python_file(diff, sides, None)
+    offending = plain.offending if not plain.benign else None
+    return _mutation(diff.path, f"{offending}; {why.reason}" if offending else why.reason)
+
+
+def _classify_python_file(
+    diff: FileDiff, sides: _PythonSides, ledger: RenameLedger | None
+) -> FileVerdict:
+    reasons: Counter[str] = Counter()
     for hunk in diff.hunks:
-        offending = _classify_python_hunk(hunk, facts, reasons)
+        offending = _classify_python_hunk(hunk, sides, reasons, ledger)
         if offending is not None:
             return _mutation(diff.path, offending)
     return FileVerdict(diff.path, True, tuple(sorted(reasons.items())), None)
 
 
 def _classify_python_hunk(
-    hunk: Hunk, facts: dict[str, PythonFacts], reasons: Counter[str]
+    hunk: Hunk, sides: _PythonSides, reasons: Counter[str], ledger: RenameLedger | None
 ) -> str | None:
     """Count the allowlisted kinds in one hunk, or return the first offending line."""
+    facts = sides.facts
     numbers = hunk.file_lines()
     code_lines = {
         index
@@ -424,6 +473,8 @@ def _classify_python_hunk(
     consumed: set[int] = set()
     for block_removed, block_added in _replacement_blocks(hunk):
         _pair_python_blocks(hunk, block_removed, block_added, consumed, reasons, code_lines)
+        if ledger is not None:
+            _pair_rename_lines(hunk, (block_removed, block_added), sides, consumed, reasons, ledger)
     for index, (tag, text) in enumerate(hunk.lines):
         if tag == " " or index in consumed:
             continue
@@ -492,6 +543,61 @@ def _pair_python_blocks(
             consumed.add(r_index)
             consumed.update(candidates[:count])
             reasons["import guard"] += 1
+
+
+def _pair_rename_lines(
+    hunk: Hunk,
+    block: tuple[list[int], list[int]],
+    sides: _PythonSides,
+    consumed: set[int],
+    reasons: Counter[str],
+    ledger: RenameLedger,
+) -> None:
+    """Consume line pairs that only rename an argparse choices value (issue #5639).
+
+    The removed and added lines that no other rule explains are paired in
+    order, and only when there are as many of each. A pair that is not a
+    rename stays unconsumed, so the per-line loop refuses it. Whether the
+    renames add up to one consistent CLI value rename is decided once per
+    file, in classify_file(), by ledger_refusal().
+    """
+    numbers = hunk.file_lines()
+
+    def open_lines(indices: list[int]) -> list[int]:
+        return [
+            i
+            for i in indices
+            if i not in consumed and not _allowlisted_line(hunk.lines[i], numbers[i], sides.facts)
+        ]
+
+    removed, added = open_lines(block[0]), open_lines(block[1])
+    if not removed or len(removed) != len(added):
+        return
+    rename = sides.rename_sides()
+    if rename is None:
+        return
+    for r_index, a_index in zip(removed, added, strict=True):
+        if rename_line_pair(
+            numbers[r_index],
+            numbers[a_index],
+            hunk.lines[r_index][1],
+            hunk.lines[a_index][1],
+            rename,
+            ledger,
+        ):
+            consumed.update((r_index, a_index))
+            reasons["cli value rename"] += 1
+
+
+def _allowlisted_line(line: tuple[str, str], number: int, facts: dict[str, PythonFacts]) -> bool:
+    """A docstring, comment or blank line, which the per-line rules already allow."""
+    tag, text = line
+    side = facts[tag]
+    return (
+        number in side.docstring_lines
+        or (number in side.comment_lines and _is_hash_comment(text, python=True))
+        or number in side.blank_lines
+    )
 
 
 def classify_pipeline_paths(

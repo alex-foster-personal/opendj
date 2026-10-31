@@ -38,9 +38,9 @@ from tests.opendj_cli import ts_contract
 # Derived by asking the verb's own parser rather than by restating the domain,
 # so a narrowed domain cannot leave this list quietly wrong.
 _SAMPLE_TOKENS = (
-    "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
+    "1", "8", "true", "false", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
-    "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto",
+    "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
     "phase-meter", "smooth",
 )
 
@@ -195,6 +195,20 @@ def test_a_loop_needs_both_of_its_numbers() -> None:
         parse_invocation(["loop", "1", "1000"])
 
 
+# Codex P2 on PR #6235: the loop-source menu engages a stored loop exactly
+# (quantize false); an agent must be able to send the same command.
+def test_a_loop_can_be_engaged_exactly_as_the_stored_loop_menu_does() -> None:
+    assert parse_invocation(["loop", "1", "1000", "4000", "false"]).command == {
+        "type": "loop", "deck": 1, "loop": {"in_ms": 1000.0, "out_ms": 4000.0}, "quantize": False,
+    }
+    # Control: omitted, the command is unchanged and the dispatcher's default applies.
+    assert "quantize" not in parse_invocation(["loop", "1", "1000", "4000"]).command
+    # The dispatcher accepts only false (omission is the default), so true is
+    # refused here rather than sent and rejected remotely.
+    with pytest.raises(InvocationError, match="may only be false"):
+        parse_invocation(["loop", "1", "1000", "4000", "true"])
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -313,6 +327,29 @@ def test_the_mirror_publishes_the_clock_the_cli_sizes_a_ramp_from() -> None:
     assert "decks" in published
 
 
+def test_the_mirror_publishes_every_top_level_key_a_verb_observes() -> None:
+    """A one-segment observation reads the mirror's top level, so it must be there.
+
+    `deck_autocue` shipped with no observation at all, because neither the
+    performance snapshot nor the mirror carried AU, so an agent could switch it
+    but never read it back. Read live, so the fixture cannot be what keeps the
+    two in agreement; the control below proves the reader can say absent.
+    """
+    published = ts_contract.mirror_top_level_keys()
+    observed = {
+        observe.path[0]
+        for verb in VERBS.values()
+        for observe in verb.observes
+        if len(observe.path) == 1
+    }
+    assert {"autoplay_enabled", "deck_autocue"} <= observed, "the verbs this guards no longer observe"
+    missing = sorted(observed - published)
+    assert not missing, (
+        f"verbs observe top-level keys buildUiMirror does not publish: {missing}. "
+        "Publish them in ui-mirror.ts or stop observing them."
+    )
+
+
 def test_a_top_level_field_the_mirror_withholds_is_reported_absent() -> None:
     """The negative control: a reader that returns everything proves nothing.
 
@@ -366,3 +403,34 @@ def test_an_unbalanced_quote_in_a_do_command_is_refused_not_guessed() -> None:
     """The control: a quoting-aware reader must still refuse bad quoting."""
     with pytest.raises(InvocationError):
         parse_script(['hot_cue_save 1 A 100 rev "unterminated'])
+
+
+def test_grid_edit_builds_the_nested_edit_the_dispatcher_validates() -> None:
+    """GRIDEDIT-6235d: a word resets that part, a number nudges (ms, then whole beats)."""
+
+    assert parse_invocation(["grid_edit", "1", "-2.5:1"]).command == {
+        "type": "grid_edit", "deck": 1, "edit": {"kind": "nudge", "offset_ms": -2.5, "beats": 1},
+    }
+    assert parse_invocation(["grid_edit", "2", "4"]).command["edit"] == {
+        "kind": "nudge", "offset_ms": 4.0, "beats": 0,
+    }
+    assert parse_invocation(["grid_edit", "2", "shift"]).command["edit"] == {
+        "kind": "reset", "part": "shift",
+    }
+    # The same bounds parseGridEditIntent enforces, refused before dispatch.
+    for token in ("501", "2:4", "2:1.5", "nan"):
+        with pytest.raises(InvocationError):
+            parse_invocation(["grid_edit", "1", token])
+
+
+def test_quantize_grid_accepts_phase_as_the_page_does() -> None:
+    """DECKCTL-6235c: an agent selects phrase quantize from the CLI too (Codex P2, PR #6235)."""
+
+    assert parse_invocation(["quantize_grid", "1", "phase"]).command == {
+        "type": "quantize_grid", "deck": 1, "beats": "phase",
+    }
+    # Control: whole-beat grids still parse as ints, and other values are refused.
+    assert parse_invocation(["quantize_grid", "1", "4"]).command["beats"] == 4
+    for token in ("2", "bar", "Phase"):
+        with pytest.raises(InvocationError):
+            parse_invocation(["quantize_grid", "1", token])

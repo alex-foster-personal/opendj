@@ -24,6 +24,8 @@ from pathlib import Path
 
 from pyrekordbox.db6 import tables as rekordbox_tables
 
+from tests.webui.listing_boot_probe import child_home_env
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_MODULE = "apps.webui.frontend.tests.e2e.support.library_wheel_fixture"
 
@@ -64,8 +66,8 @@ def _free_port() -> int:
 def _engine_environment(data_dir: Path, home: Path) -> dict[str, str]:
     """The e2e engine's env (playwright.library-wheel.config.ts) plus a port."""
     (home / "tmp").mkdir(parents=True, exist_ok=True)
-    return {
-        "HOME": str(home),
+    env = {
+        **child_home_env(home),
         "PATH": os.environ["PATH"],
         "TMPDIR": str(home / "tmp"),
         "MDT_DATA_DIR": str(data_dir),
@@ -73,6 +75,14 @@ def _engine_environment(data_dir: Path, home: Path) -> dict[str, str]:
         "PYTHONPATH": str(REPO_ROOT),
         "MUSIC_DJ_BACKEND_PORT": str(_free_port()),
     }
+    if sys.platform == "win32":
+        # A scrubbed Windows env needs SYSTEMROOT or winsock cannot load
+        # (asyncio's _overlapped import fails with WinError 10106). Temp
+        # follows TEMP/TMP there, not TMPDIR. The home and %APPDATA% come from
+        # child_home_env above, so the rekordbox share stays under the fake home.
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+        env["TEMP"] = env["TMP"] = env["TMPDIR"]
+    return env
 
 
 def _build_fixture(data_dir: Path) -> None:

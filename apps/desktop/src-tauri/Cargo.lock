@@ -2857,6 +2857,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-wdio-webdriver",
+ "tempfile",
  "tungstenite",
  "url",
 ]

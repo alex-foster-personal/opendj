@@ -175,15 +175,15 @@
 				</label>
 			{/each}
 		</fieldset>
-		<label>
-			Closer
-			<select bind:value={closerPin}>
+		<div class="field">
+			<label for="play-it-closer">Closer</label>
+			<select id="play-it-closer" bind:value={closerPin}>
 				<option value="">none</option>
 				{#each playlistTracks as track (track.stable_id)}
 					<option value={track.stable_id}>{trackLabel(track)}</option>
 				{/each}
 			</select>
-		</label>
+		</div>
 		<button type="submit" disabled={solving}>{solving ? 'Solving...' : 'Solve order'}</button>
 	</form>
 
@@ -237,7 +237,8 @@
 		align-items: flex-end;
 		flex-wrap: wrap;
 	}
-	label {
+	label,
+	.field {
 		display: flex;
 		flex-direction: column;
 		font-size: 0.85rem;

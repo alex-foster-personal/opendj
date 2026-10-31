@@ -83,6 +83,7 @@
 import { test, expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 
 import { spendBootLanding } from './support/boot-landing';
+import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
 
 /** The chord, spelled once. Playwright maps Meta to Command on macOS and to
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
@@ -175,18 +176,13 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 }
 
 test.describe('setup entry points', () => {
-	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }, testInfo) => {
-		// NAMED QUARANTINE, not a silent skip (issue #6244). In the root suite's
-		// chromium project this test shares one engine with every other spec, and
-		// on run 37854759121 the page requested online artwork for a generated
-		// track during it; the two 404s landed in the console-error assertion at
-		// the end. Which earlier spec left that state is not known. The webkit
-		// project runs this same test on its own engine and stays blocking.
-		// Delete this skip when #6244 closes.
-		test.skip(
-			testInfo.project.name === 'chromium',
-			'QUARANTINED (#6244): artwork 404 console errors from engine state shared across the root suite'
-		);
+	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
+		// The root suite shares one engine across specs, and every /performance
+		// load auto-restores the engine's newest rescue snapshot. An earlier
+		// spec's loaded decks were restored into this page, which then asked
+		// for their online artwork and logged the 404s the console assertion
+		// below caught (#6244). Pin restore's input to empty decks.
+		await appendEmptyRescueSnapshot(page.request);
 		// No rb-meta allowlist here on purpose. This suite's library is entirely
 		// locally imported, so every listing row reports has_rb_mapping false and
 		// the browser issues no rb-meta request at all. The 404 that used to be

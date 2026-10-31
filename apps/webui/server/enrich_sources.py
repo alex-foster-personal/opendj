@@ -80,6 +80,9 @@ def _lane_state(state: str, counts: Mapping[str, Any], ahead: str | None) -> dic
         return {"state": "done", "waiting_on": None, "reason": None}
     if state == "paused_playing":
         return {"state": "paused_playing", "waiting_on": None, "reason": None}
+    if state in ("paused_xrun", "paused_no_xrun_counter") or state.startswith("priority:"):
+        # NATIVE-5886: a deck plays; only the set's next tracks run (or an xrun, or no xrun counter, holds even those).
+        return {"state": "paused_playing", "waiting_on": None, "reason": state}
     if state == "blocked" or state.startswith(("timeout:", "waiting:")):
         return {"state": "stalled", "waiting_on": None, "reason": state}
     if state in ("idle", "paused_startup"):

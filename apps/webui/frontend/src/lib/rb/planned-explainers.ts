@@ -41,11 +41,6 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'grid-view': 'Grid view - lays all four decks out in a 2x2 grid with equal space, rather than stacking their waveforms.',
 	link: 'LINK - joins other machines on the network - Ableton Link tempo sync, and sharing this library with a second laptop.',
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
-	'grid-adjust': 'Grid adjust - nudges the beatgrid later or earlier on this deck so downbeats line up with the kick, without changing tempo.',
-	'grid-shift': 'Grid shift - slides the whole beatgrid by whole beats so bar 1 lands on the phrase start you hear.',
-	'auto-cue': 'Auto cue - jumps back to the loaded cue when the track ends, so the next play starts from that cue instead of 0:00.',
-	'manual-source': 'Manual tempo source - ignores the analyzed BPM tag and lets you tap or type the tempo this deck should run at.',
-	'loop-source': 'Loop source - picks whether loop lengths come from the beatgrid (INT), a stored hot-cue loop, or the active memory cue.',
 	'hot-cue-menu': 'Hot cue bank menu - switches this pad bank between hot cues, beat loops, beat jump, and sampler, the way a performance-pad mode selector does.',
 	'collection-bookmarks': 'Collection bookmarks - filters the library to tracks you have starred or tagged as favorites, without opening a playlist.',
 	'explorer-grid': 'Explorer - browses the collection as folders on disk instead of playlists, so you can load from the file tree.',
@@ -70,7 +65,6 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
 	'pad-mode-unbuilt': 'Pad mode - this performance-pad mode (for example slicer, sampler or keyboard) will turn the eight pads into its own controls. It is listed so the menu matches the hardware, but it is not built yet, so picking it changes nothing.',
 	'grid-flag-dismiss': 'Dismiss beatgrid flag - hides the uneven-beatgrid warning for this track without changing its grid, and can restore it here. This view has no dismiss handler connected yet, so the button does nothing.',
-	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.'
 };
 
 /**

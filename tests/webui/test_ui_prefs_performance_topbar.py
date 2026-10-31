@@ -26,6 +26,8 @@ TOPBAR_DEFAULTS: dict[str, Any] = {
     "auto_play_enforce_order": False,
     "auto_play_maximize_reach": True,
     "master_muted": False,
+    # DECKCTL-6235: the deck AU button, off so a load still lands at 0:00.
+    "deck_autocue": False,
 }
 TOPBAR_WRITES: dict[str, Any] = {
     "beat_sync_max": False,
@@ -33,6 +35,7 @@ TOPBAR_WRITES: dict[str, Any] = {
     "auto_play_enforce_order": True,
     "auto_play_maximize_reach": False,
     "master_muted": True,
+    "deck_autocue": True,
 }
 
 
@@ -88,6 +91,14 @@ def test_ui_prefs_rejects_non_boolean_topbar_toggle(prefs_client: TestClient, ke
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("bad", [1, 0, "yes", "true", None])
+def test_ui_prefs_rejects_a_coercible_deck_autocue(prefs_client: TestClient, bad: object) -> None:
+    # Sol P1 on PR #6235: AU is deck-wide, so a lax bool would arm it from 1 or "yes".
+    r = prefs_client.put("/api/v1/ui-prefs", json={"deck_autocue": bad})
+    assert r.status_code == 422, r.text
+    assert prefs_client.get("/api/v1/ui-prefs").json()["deck_autocue"] is False, "a refused value writes nothing"
+
+
 def test_ui_prefs_reads_a_blob_written_before_the_topbar_keys_existed(
     prefs_client: TestClient, tmp_path: Path
 ) -> None:
@@ -107,3 +118,11 @@ def test_ui_prefs_refuses_a_wrong_typed_topbar_key_on_disk(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"theme": "dark", key: "yes"}) + "\n", encoding="utf-8")
     assert prefs_client.get("/api/v1/ui-prefs").status_code == 422
+
+
+def test_ui_prefs_patch_without_deck_autocue_leaves_au_unchanged(prefs_client: TestClient) -> None:
+    # Control for the explicit-null refusal (Sol P1, PR #6235): omitting the key stays a no-op.
+    assert prefs_client.put("/api/v1/ui-prefs", json={"deck_autocue": True}).status_code == 200
+    r = prefs_client.put("/api/v1/ui-prefs", json={"beat_sync_max": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["deck_autocue"] is True

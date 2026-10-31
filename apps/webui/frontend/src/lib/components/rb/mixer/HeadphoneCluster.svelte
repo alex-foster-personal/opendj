@@ -10,10 +10,14 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, type IoTestBus } from '$lib/player/io-device-test';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
+	import { recordPerfEvent } from '$lib/rb/perf-event-log';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { remoteSpeakerBuildFlag } from '$lib/player/remote-speaker-flag';
 	import { pickThenMirror, type DevicePick } from './device-select-mirror';
+	import { outputOptionLabel, wirelessMainNote } from '$lib/player/wireless-output';
 	import { levelBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
@@ -47,10 +51,19 @@
 		/** CUEOUT-14: open the mic calibration modal. */
 		oncalibrate: () => void;
 		onAlignmentMode: (mode: HeadphoneAlignmentMode) => void;
+		/** Runs a Test under the dispatcher's ownership (`runAudioIoTest`): it
+		 * rejects with no route session or while a preset owns the lifecycle. */
+		testrun: <T>(work: (stillCurrent: () => boolean, signal: AbortSignal) => Promise<T>) => Promise<T>;
 	}
 
-	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode }: Props =
+	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode, testrun }: Props =
 		$props();
+
+	/** I18: the remote speaker build flag (on in dev, off in built apps). */
+	const remoteSpeakerOn = remoteSpeakerBuildFlag() === 'on';
+	// Started when the cluster mounts, not when the panel opens, so the section is
+	// usually loaded before the panel shows and does not grow it under the pointer.
+	const remoteSpeakerSection = remoteSpeakerOn ? import('./RemoteSpeakerSection.svelte') : null;
 
 	let mixStepDirection: HeadphoneMixDirection = 1;
 	let lastMixStep: HeadphoneMixStepResult | null = null;
@@ -64,6 +77,9 @@
 	}
 
 	/** CUEOUT-14: live only in two outputs with a selected cue sink; the label is not consulted. */
+	const wirelessMain = $derived(
+		wirelessMainNote(headphoneState.outputs, headphoneState.selected_master_output_device_id)
+	);
 	const calibrateEnabled = $derived(
 		calibrateButtonEnabled({
 			output_mode: headphoneState.output_mode,
@@ -146,10 +162,12 @@
 		openIo();
 	}
 	const masterPickBullets = [
-		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
+		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.',
+		'Test plays a few beeps on this output. The thin meter is the level on this bus.'
 	];
 	const cuePickBullets = [
-		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.'
+		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.',
+		'Test plays a few beeps on this output. The thin meter is the level on this bus.'
 	];
 
 	function stepHeadDelay(delta: number): void {
@@ -298,6 +316,218 @@
 		if (!midiUi.panelOpen) toggleMidiPanel();
 		closeIoView();
 	}
+
+	// Pin 17590d2ccb4f: each device row gets a beep and a thin vertical meter.
+	// The input cannot play, so its beeps go out the master path and its meter
+	// follows the microphone.
+	let testBus = $state<IoTestBus | null>(null);
+	let testStartedAt = $state(0);
+	let nowMs = $state(0);
+	let testNote = $state<string | null>(null);
+	let inputLiveRms = $state(0);
+	/** Why the passive live input meter could not open, shown under the pickers
+	 * and in the meter's title rather than leaving it looking merely idle. */
+	let inputMeterError = $state<string | null>(null);
+	// Bumped after an AUDIO IN Test opened the microphone, so the passive live
+	// meter re-checks access (now granted) and stays live once the Test ends.
+	let inputRecheck = $state(0);
+	let testToken = 0;
+	// Aborts the running Test's microphone open (a permission prompt left up)
+	// when the panel closes, unmounts or another Test starts.
+	let testAbort: AbortController | null = null;
+	function abortTest(): void {
+		testAbort?.abort(new Error('The Test was cancelled.'));
+		testAbort = null;
+	}
+	// The beep and microphone half loads on first use, off the initial page load.
+	let ioAudio: typeof import('$lib/player/io-device-test-audio') | null = null;
+	async function loadIoAudio(): Promise<typeof import('$lib/player/io-device-test-audio')> {
+		ioAudio ??= await import('$lib/player/io-device-test-audio');
+		return ioAudio;
+	}
+
+	// Closing the panel ends any test: the beep stops and AUDIO IN goes back
+	// to opening only when access is already granted.
+	$effect(() => {
+		if (ioSurface.open) return;
+		testBus = null;
+		// Only the panel's own Test: its abort cuts its beep, never an agent's.
+		abortTest();
+	});
+	// Unmount also invalidates a Test still loading the beep module.
+	$effect(() => () => {
+		testToken += 1;
+		abortTest();
+	});
+
+	// The clock only drives the beep envelope, so it runs while a MASTER or
+	// CUE test sounds, not for as long as the panel is open.
+	$effect(() => {
+		if (!ioSurface.open || testBus === null || testBus === 'input') return;
+		let raf = 0;
+		const loop = (): void => {
+			nowMs = performance.now();
+			raf = requestAnimationFrame(loop);
+		};
+		raf = requestAnimationFrame(loop);
+		return () => cancelAnimationFrame(raf);
+	});
+
+	$effect(() => {
+		// An AUDIO IN Test owns the microphone while it runs; the passive meter
+		// steps aside and reopens once the Test lets go.
+		if (!ioSurface.open || cueAlignModal.open || testBus === 'input') return;
+		const deviceId = headphoneState.selected_input_device_id;
+		const label = headphoneState.inputs.find((input) => input.id === deviceId)?.label ?? '';
+		void inputRecheck;
+		let cancelled = false;
+		let stop = (): void => {};
+		// Cleanup aborts an open still settling, so the mic never opens after
+		// the panel that asked for it has gone.
+		const opening = new AbortController();
+		void (async () => {
+			try {
+				const io = await loadIoAudio();
+				// Only where access is already granted: opening a microphone that
+				// asks permission is an AUDIO IN Test's job, inside its owned run.
+				const allowed = await io.microphonePermissionGranted();
+				if (cancelled || !allowed) return;
+				if (inputLooksLikeHandsfree(label)) return;
+				const localStop = await io.startInputLevelWatch(
+					deviceId,
+					(rms) => {
+						if (!cancelled) inputLiveRms = rms;
+					},
+					opening.signal,
+					(reason) => {
+						if (!cancelled) inputMeterError = reason;
+					}
+				);
+				if (cancelled) localStop();
+				else stop = localStop;
+			} catch (error) {
+				// A close or a newer open aborted it: nothing failed.
+				if (cancelled || opening.signal.aborted) return;
+				const reason = error instanceof Error ? error.message : String(error);
+				inputMeterError = reason;
+				recordPerfEvent('io-input-meter-failed', reason, null, 'warn');
+			}
+		})();
+		return () => {
+			cancelled = true;
+			opening.abort(new Error('The input meter closed.'));
+			stop();
+			inputLiveRms = 0;
+			inputMeterError = null;
+		};
+	});
+
+	function testDeviceId(bus: IoTestBus): string | null {
+		return ioTestDeviceId(bus, headphoneState);
+	}
+
+	async function playDeviceTest(bus: IoTestBus): Promise<void> {
+		const mine = ++testToken;
+		abortTest();
+		const local = new AbortController();
+		testAbort = local;
+		// Refused before anything opens (AUDIO IN with no input picked); the
+		// token bump above already retired any Test still finishing. A missing
+		// route session or a preset owning the audio rejects in testrun below.
+		testNote = ioTestRefusal(bus, headphoneState);
+		if (testNote !== null) {
+			testBus = null;
+			return;
+		}
+		testBus = bus;
+		// The envelope shows only once the tone is scheduled, never for a
+		// test that is still opening its device or has failed.
+		testStartedAt = Number.POSITIVE_INFINITY;
+		try {
+			const io = await loadIoAudio();
+			// The panel closed (or another test started) while the module loaded.
+			if (mine !== testToken || testBus !== bus) return;
+			await testrun(async (_stillCurrent, routeSignal) => {
+				// A Test queued behind another closes with the panel: re-checked
+				// once the scope is granted, before anything opens.
+				if (mine !== testToken || testBus !== bus || !ioSurface.open) return;
+				// The route ending aborts the open too, not only this panel.
+				if (routeSignal.aborted) local.abort(routeSignal.reason);
+				else routeSignal.addEventListener('abort', () => local.abort(routeSignal.reason), { once: true });
+				// AUDIO IN opens the picked microphone inside the owned run, and
+				// shows its level for as long as the beeps play.
+				// Set when the microphone stops sending audio mid-Test.
+				let inputEnded = null as string | null;
+				const stopInput =
+					bus === 'input'
+						? await io.startInputLevelWatch(
+								headphoneState.selected_input_device_id,
+								(rms) => {
+									if (mine === testToken) inputLiveRms = rms;
+								},
+								local.signal,
+								(reason) => {
+									inputEnded = reason;
+								}
+							)
+						: null;
+				try {
+					if (mine !== testToken || testBus !== bus || !ioSurface.open) return;
+					// A new Test, a close or the route ending cuts this beep, so
+					// the replacement never queues behind a tone still sounding.
+					const played = await io.playIoTestBeeps(
+						bus,
+						testDeviceId(bus),
+						(startsAtMs) => {
+							if (mine === testToken) testStartedAt = startsAtMs;
+						},
+						local.signal
+					);
+					// Not played and not cancelled here: the output stalled or was
+					// rebuilt mid-pattern (or an agent's Test cut it), so say so.
+					if (!played && !local.signal.aborted && mine === testToken) {
+						testNote = 'The Test did not finish playing on this output. Check the device, then test again.';
+					}
+				} finally {
+					if (stopInput !== null) {
+						stopInput();
+						inputRecheck += 1;
+					}
+				}
+				// Read after the stop, which reports a capture that ended unseen.
+				if (inputEnded !== null && mine === testToken) testNote = inputEnded;
+			});
+		} catch (error) {
+			if (mine === testToken) testNote = error instanceof Error ? error.message : String(error);
+		} finally {
+			if (mine === testToken) testBus = null;
+			if (testAbort === local) testAbort = null;
+		}
+	}
+
+	function meterFill(bus: IoTestBus): number {
+		const reading = headphoneState.signals[bus];
+		const rms = bus === 'input' ? Math.max(reading?.rms ?? 0, inputLiveRms) : reading?.rms;
+		const envelope = testBus === bus && bus !== 'input' ? ioTestEnvelope((nowMs - testStartedAt) / 1000) : 0;
+		return ioMeterFill(rms, envelope);
+	}
+
+	/** What the meter is showing, with the number, for its hover title. */
+	function meterText(bus: IoTestBus, fill: number): string {
+		const reading = headphoneState.signals[bus];
+		const testing = testBus === bus && bus !== 'input' && ioTestEnvelope((nowMs - testStartedAt) / 1000) > 0;
+		const source = testing
+			? 'test tone level'
+			: bus === 'input'
+				? 'microphone input level'
+				: 'application bus level';
+		const rms = bus === 'input' ? Math.max(reading?.rms ?? 0, inputLiveRms) : reading?.rms;
+		const measured = !testing && rms !== null && rms !== undefined && rms > 0 ? `, RMS ${rms.toFixed(3)}` : '';
+		if (bus === 'input' && inputMeterError !== null && !(rms !== null && rms !== undefined && rms > 0)) {
+			return `input meter unavailable: ${inputMeterError}`;
+		}
+		return `${bus} meter ${Math.round(fill * 100)}%: ${source}${measured}. Physical output not proven.`;
+	}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} onpointerdowncapture={onIoOutsidePointerDown} />
@@ -393,7 +623,12 @@
 			<section class="hp-section" aria-label="Future routing options">
 				<div class="hp-future"><button type="button" disabled>BOOTH / MONITOR</button><span>Coming soon</span></div>
 				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
-				<div class="hp-future"><button type="button" disabled title={plannedTitle('remote-control')}>Remote control</button><span>Coming soon</span></div>
+				{#if remoteSpeakerSection}
+					<!-- I18: loaded on demand, so a build with the flag off ships none of it. -->
+					{#await remoteSpeakerSection then { default: RemoteSpeakerSection }}<RemoteSpeakerSection />{/await}
+				{:else}
+					<div class="hp-future"><button type="button" disabled title={plannedTitle('remote-control')}>Remote control</button><span>Coming soon</span></div>
+				{/if}
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
 				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
@@ -414,7 +649,7 @@
 					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}.{/if}</p>
 				{/if}
 					{@render outputMenu()}
-					<p class="hp-context">Signal lights measure app bus or mic input. They do not prove a physical speaker emitted sound.</p>
+					<p class="hp-context">Meters show app-bus or mic level. Test plays a few beeps. Neither proves a speaker you have not heard.</p>
 				{#if showError}
 					<p class="hp-error" role="alert">{headphoneState.error}</p>
 					<button type="button" class="hp-retry" onclick={onacquire}>Retry device access</button>
@@ -446,54 +681,66 @@
 {#snippet outputMenu()}
 	<div class="hp-menu">
 		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40} placement="right">
-			<label class="hp-pick">
-				<span>MASTER / MAIN {@render signalIndicator('master')}</span>
-				<select
-					aria-label="master output device"
-					value={headphoneState.selected_master_output_device_id ?? ''}
-					disabled={!headphoneState.supported || !access.output_pinning}
-					onchange={(event) => pickThenMirror(event.currentTarget, onmaster, () => headphoneState.selected_master_output_device_id)}
-				>
-					<option value="" disabled>choose MAIN</option>
-					{#each headphoneState.outputs as output (output.id)}
-						<option value={output.id}>{output.label || output.id}</option>
-					{/each}
-				</select>
-			</label>
+			<span class="hp-pick">
+				<span class="hp-pick-name">MASTER / MAIN</span>
+				<span class="hp-pick-row">
+					<select
+						aria-label="master output device"
+						value={headphoneState.selected_master_output_device_id ?? ''}
+						disabled={!headphoneState.supported || !access.output_pinning}
+						onchange={(event) => pickThenMirror(event.currentTarget, onmaster, () => headphoneState.selected_master_output_device_id)}
+					>
+						<option value="" disabled>choose MAIN</option>
+						{#each headphoneState.outputs as output (output.id)}
+							<option value={output.id}>{outputOptionLabel(output)}</option>
+						{/each}
+					</select>
+					{@render testAndMeter('master', 'master output')}
+				</span>
+			</span>
 		</ControlExplainer>
 		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
-			<label class="hp-pick">
-				<span>HEADPHONE CUE {@render signalIndicator('cue')}</span>
-				<select
-					aria-label="headphone output device"
-					value={headphoneState.selected_output_device_id ?? ''}
-					disabled={!headphoneState.supported || !access.output_pinning}
-					onchange={(event) => pickThenMirror(event.currentTarget, onselect, () => headphoneState.selected_output_device_id)}
-				>
-					<option value="" disabled>{cuePlaceholder}</option>
-					{#each headphoneState.outputs as output (output.id)}
-						<option value={output.id}>{output.label || output.id}</option>
-					{/each}
-				</select>
-			</label>
+			<span class="hp-pick">
+				<span class="hp-pick-name">HEADPHONE CUE</span>
+				<span class="hp-pick-row">
+					<select
+						aria-label="headphone output device"
+						value={headphoneState.selected_output_device_id ?? ''}
+						disabled={!headphoneState.supported || !access.output_pinning}
+						onchange={(event) => pickThenMirror(event.currentTarget, onselect, () => headphoneState.selected_output_device_id)}
+					>
+						<option value="" disabled>{cuePlaceholder}</option>
+						{#each headphoneState.outputs as output (output.id)}
+							<option value={output.id}>{outputOptionLabel(output)}</option>
+						{/each}
+					</select>
+					{@render testAndMeter('cue', 'headphone output')}
+				</span>
+			</span>
 		</ControlExplainer>
+		{#if wirelessMain !== null}<p class="hp-context" data-wireless-main-note>{wirelessMain}</p>{/if}
 		{#if selectedLabel !== null && monitorLabelIsBluetooth(selectedLabel)}<p class="hp-context">Bluetooth CUE can drift against MASTER. Use CALIBRATE for a measured starting offset.</p>{/if}
 		{#if livenessAlert !== null}<p class="hp-liveness-alert" role="alert" data-headphone-liveness-alert>{livenessAlert}</p>{/if}
 		<ControlExplainer title="AUDIO IN" bullets={inputPickBullets} showDelayMs={40} placement="right">
-			<label class="hp-pick">
-				<span>AUDIO IN {@render signalIndicator('input')}</span>
-				<select
-					aria-label="audio input device"
-					value={headphoneState.selected_input_device_id ?? ''}
-					onchange={(event) => pickThenMirror(event.currentTarget, oninput, () => headphoneState.selected_input_device_id)}
-				>
-					<option value="" disabled>choose input</option>
-					{#each headphoneState.inputs as input (input.id)}
-						<option value={input.id}>{input.label || input.id}</option>
-					{/each}
-				</select>
-			</label>
+			<span class="hp-pick">
+				<span class="hp-pick-name">AUDIO IN</span>
+				<span class="hp-pick-row">
+					<select
+						aria-label="audio input device"
+						value={headphoneState.selected_input_device_id ?? ''}
+						onchange={(event) => pickThenMirror(event.currentTarget, oninput, () => headphoneState.selected_input_device_id)}
+					>
+						<option value="" disabled>choose input</option>
+						{#each headphoneState.inputs as input (input.id)}
+							<option value={input.id}>{input.label || input.id}</option>
+						{/each}
+					</select>
+					{@render testAndMeter('input', 'audio input')}
+				</span>
+			</span>
 		</ControlExplainer>
+		{#if testNote !== null}<p class="hp-context" role="status">{testNote}</p>{/if}
+		{#if inputMeterError !== null}<p class="hp-context" role="status" data-input-meter-error>Live input meter unavailable: {inputMeterError}</p>{/if}
 		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
 		<ControlExplainer title="MIDI" showDelayMs={40} placement="right"
 			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}>
@@ -508,16 +755,36 @@
 	</div>
 {/snippet}
 
-{#snippet signalIndicator(bus: 'master' | 'cue' | 'input')}
+{#snippet testAndMeter(bus: IoTestBus, label: string)}
+	<button
+		type="button"
+		class="hp-io-test"
+		aria-label={`Test ${label}`}
+		aria-busy={testBus === bus}
+		onclick={(event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			void playDeviceTest(bus);
+		}}>Test</button
+	>
+	{@render volumeMeter(bus)}
+{/snippet}
+
+{#snippet volumeMeter(bus: IoTestBus)}
 	{@const reading = headphoneState.signals[bus]}
+	{@const fill = meterFill(bus)}
 	<span
-		class="hp-signal"
-		class:lit={reading?.state === 'measured' && reading.rms !== null && reading.rms > 0.002}
+		class="hp-vmeter"
+		class:hot={fill >= 0.9}
+		role="meter"
 		data-signal-bus={bus}
 		data-signal-state={reading?.state ?? 'unavailable'}
-		aria-label={`${bus} ${reading?.state === 'measured' && reading.rms !== null ? `${reading.source === 'captured_input' ? 'captured input' : 'application bus'} signal ${reading.rms.toFixed(2)}` : reading?.state ?? 'unavailable'}; physical output not proven`}
-		title={reading?.state === 'measured' && reading.rms !== null ? `Measured ${reading.source === 'captured_input' ? 'mic input' : 'application bus'} RMS ${reading.rms.toFixed(3)}. Physical output not proven.` : `Signal ${reading?.state ?? 'unavailable'}. No measured output proof.`}
-	></span>
+		aria-valuemin={0}
+		aria-valuemax={100}
+		aria-valuenow={Math.round(fill * 100)}
+		aria-label={meterText(bus, fill)}
+		title={meterText(bus, fill)}
+	><span class="hp-vmeter-fill" style:height={`${Math.round(fill * 100)}%`}></span></span>
 {/snippet}
 
 <style>
@@ -665,8 +932,57 @@
 		max-width: 100%;
 		font-size: 11px;
 	}
-	.hp-signal { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 3px; background: var(--rb-text-dim, #838990); vertical-align: middle; opacity: .45; }
-	.hp-signal.lit { background: var(--rb-green, #35c04f); opacity: 1; box-shadow: 0 0 4px var(--rb-green, #35c04f); }
+	/* Same leftover width on every row: the Test button and the meter are fixed. */
+	.hp-pick-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		gap: 6px;
+		align-items: stretch;
+		width: 100%;
+	}
+	.hp-pick-row select {
+		width: 100%;
+		min-width: 0;
+		max-width: none;
+		box-sizing: border-box;
+	}
+	.hp-section .hp-io-test {
+		font: inherit;
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		padding: 0 6px;
+		white-space: nowrap;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 3px;
+		color: var(--rb-text, #c8cdd2);
+		cursor: pointer;
+	}
+	.hp-section .hp-io-test[aria-busy='true'] {
+		border-color: var(--rb-accent, #4fb3ff);
+		color: var(--rb-accent, #4fb3ff);
+	}
+	.hp-vmeter {
+		flex: 0 0 auto;
+		width: 4px;
+		min-height: 18px;
+		align-self: stretch;
+		position: relative;
+		overflow: hidden;
+		background: #12151a;
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 1px;
+	}
+	.hp-vmeter-fill {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: var(--rb-green, #35c04f);
+	}
+	.hp-vmeter.hot .hp-vmeter-fill {
+		background: var(--rb-red, #e5484d);
+	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);
 		font-size: 10px;

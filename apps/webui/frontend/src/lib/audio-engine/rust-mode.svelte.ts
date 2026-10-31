@@ -2,8 +2,9 @@
  * Rust engine mode: the performance page plays through `odj-audio` instead of
  * the in-page Web Audio engine (GSD phase 20, toward switch-over 20-07).
  *
- * Opt-in and off by default. Turn it on with `?engine=rust` (remembered in
- * this browser) and off with `?engine=webaudio`. `?engine_clock=wall` runs the
+ * On by default inside the Electron shell (Fri 9 Oct 2026, toward switch-over
+ * 20-07) and opt-in everywhere else. Turn it on with `?engine=rust` (remembered
+ * in this browser) and off with `?engine=webaudio`. `?engine_clock=wall` runs the
  * engine without an output device, for CI and headless boxes; the default is
  * `device`.
  *
@@ -41,6 +42,12 @@
  */
 
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import {
+	electronSaveAudioEngineChoice,
+	electronSavedAudioEngineChoice,
+	nativeShellKind
+} from '$lib/shell/native-shell';
+import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 
 export const ENGINE_PREF_KEY = 'odj.audioEngine';
 
@@ -101,7 +108,6 @@ export const ENGINE_COMMANDS: ReadonlySet<string> = new Set(['load', ...FORWARDE
 /** Page features whose implementation reaches into the Web Audio engine's
  * own clock, buffers or devices. Refused by name in this mode. */
 export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
-	'load_play_intent',
 	'loop_interval_mode',
 	'loop_interval_base',
 	'safety_loop_save',
@@ -123,7 +129,10 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'auto_play_decide_now',
 	'rescue_resume',
 	'rescue_stop_all',
-	'pairing_snapshot_save'
+	'pairing_snapshot_save',
+	// GRIDEDIT-6235: the native engine keeps the grid it was given at load, so a
+	// live edit would move the waveform but not beat jump or beat loops.
+	'grid_edit'
 ]);
 
 export type EngineChoice = 'webaudio' | 'rust';
@@ -197,16 +206,34 @@ export function restartToLoadEngine(): void {
 // The agent bridge over engineRestartNeeded() and restartToLoadEngine() lives
 // in engine-bridge.ts, which the root layout loads eagerly on every route.
 
-/** Read the choice from `?engine=` (remembered) or the remembered value. */
-export function readEngineChoice(search: string, stored: string | null): EngineChoice {
+/**
+ * The engine a page uses when nothing has chosen one: Rust inside the Electron
+ * shell, Web Audio in a browser tab or the Tauri shell.
+ */
+export function defaultEngineChoice(scope: { readonly [key: string]: unknown } = globalThis): EngineChoice {
+	return nativeShellKind(scope) === 'electron' ? 'rust' : 'webaudio';
+}
+
+/** Read the choice from `?engine=` (remembered), the remembered value, or the
+ * shell's default when neither is set. */
+export function readEngineChoice(
+	search: string,
+	stored: string | null,
+	fallback: EngineChoice = 'webaudio'
+): EngineChoice {
 	const q = new URLSearchParams(search).get('engine');
 	const v = q ?? stored;
-	if (v === null || v === 'webaudio') return 'webaudio';
+	if (v === null) return fallback;
+	if (v === 'webaudio') return 'webaudio';
 	if (v === 'rust') return 'rust';
 	throw new Error(`engine=${v} is not one of webaudio, rust`);
 }
 
 function _stored(): string | null {
+	// The Electron engine binds a new port, so a new origin with empty storage,
+	// each launch: the shell's saved choice is the one that survives a relaunch.
+	const shell = electronSavedAudioEngineChoice();
+	if (shell !== null) return shell;
 	try {
 		return window.localStorage?.getItem(ENGINE_PREF_KEY) ?? null;
 	} catch {
@@ -215,10 +242,38 @@ function _stored(): string | null {
 	}
 }
 
+/**
+ * Remember the choice where the next load reads it: this origin's localStorage,
+ * and in Electron the shell's disk, which outranks it. `onSaved` runs once the
+ * choice is where the next load reads it: at once in a browser, after the
+ * shell's acknowledgement in Electron. A shell save that fails is reported as a
+ * settings save error and leaves the previous choice in force, so the page
+ * never claims a choice the next launch would not use.
+ */
+function _remember(choice: EngineChoice, onSaved: () => void = () => {}): void {
+	const saving = electronSaveAudioEngineChoice(choice);
+	window.localStorage?.setItem(ENGINE_PREF_KEY, choice);
+	if (saving === null) {
+		onSaved();
+		return;
+	}
+	saving.then(
+		() => {
+			// The preload's global is this document's snapshot; keep it current
+			// so a read before the next load sees the saved choice.
+			(globalThis as Record<string, unknown>).OPENDJ_AUDIO_ENGINE_CHOICE = choice;
+			onSaved();
+		},
+		(error: unknown) => {
+			reportSettingSaveError(`Audio engine choice not saved; the next launch keeps the previous engine: ${String(error)}`, error);
+		}
+	);
+}
+
 /** The engine the performance page uses on its next load (the setting). */
 export function storedEngineChoice(): EngineChoice {
 	if (typeof window === 'undefined') return 'webaudio';
-	return readEngineChoice('', _stored());
+	return readEngineChoice('', _stored(), defaultEngineChoice());
 }
 
 /** Choose the engine for the performance page's next load. A page already
@@ -227,8 +282,9 @@ export function setStoredEngineChoice(choice: EngineChoice): void {
 	if (choice !== 'webaudio' && choice !== 'rust') {
 		throw new Error(`audio_engine must be webaudio|rust, got ${String(choice)}`);
 	}
-	window.localStorage.setItem(ENGINE_PREF_KEY, choice);
-	rustMode.saved = choice;
+	_remember(choice, () => {
+		rustMode.saved = choice;
+	});
 }
 
 let initialized = false;
@@ -241,10 +297,10 @@ export function initRustMode(): void {
 	// Test stand-ins for window often carry no location.
 	const search = window.location?.search ?? '';
 	const params = new URLSearchParams(search);
-	const choice = readEngineChoice(search, stored);
+	const choice = readEngineChoice(search, stored, defaultEngineChoice());
 	if (params.has('engine')) {
 		try {
-			window.localStorage?.setItem(ENGINE_PREF_KEY, choice);
+			_remember(choice);
 		} catch {
 			// Not remembered; this page still uses the choice.
 		}

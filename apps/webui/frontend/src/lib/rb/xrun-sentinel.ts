@@ -55,9 +55,27 @@ const XRUN_SENTINEL_NODE_OPTIONS: Readonly<AudioWorkletNodeOptions> = Object.fre
 	outputChannelCount: [1]
 });
 
+/**
+ * Whether the count below can still rise (NATIVE-5886). The engine reads the
+ * published count as a live xrun counter only while this is 'armed'
+ * (ahead_analysis.py XRUN_DETECTOR_ARMED): a detector that never installed or
+ * that threw keeps its last count, zero included, and guards nothing. An
+ * installed node stays 'unarmed' until its worklet reports that cadence warmup
+ * is over: before that it ignores every gap, so its count cannot rise either.
+ */
+export type XrunDetectorState = 'unarmed' | 'armed' | 'failed';
+
 let _session: XrunSessionCounter = { ...EMPTY_XRUN_SESSION };
 let _node: AudioWorkletNode | null = null;
+let _detector: XrunDetectorState = 'unarmed';
 let _flushSequence = 0;
+/**
+ * Counts installs. Each takes the next number BEFORE it awaits addModule, and
+ * only the latest may arm or fail the detector: a remount can start a second
+ * install while the first context's module is still loading, and that late
+ * first one must not replace the node on the context playing now.
+ */
+let _installGeneration = 0;
 const _flushWaiters = new Map<
 	string,
 	{ resolve: (counter: XrunSessionCounter) => void; reject: (error: Error) => void; timeout: number }
@@ -66,6 +84,11 @@ const _flushWaiters = new Map<
 /** Cumulative xruns for this app session. Agent-readable, no UI required. */
 export function readXrunSessionCounter(): XrunSessionCounter {
 	return { ..._session };
+}
+
+/** What the ui-mirror publishes: the session count and the detector's own state. */
+export function readXrunSentinelMirror(): XrunSessionCounter & { detector: XrunDetectorState } {
+	return { ..._session, detector: _detector };
 }
 
 /** Flush the audio-thread xrun window and resolve only after its port acknowledgement. */
@@ -106,6 +129,7 @@ export function detachXrunSentinel(): void {
 	_node.port.onmessage = null;
 	_node.disconnect();
 	_node = null;
+	_detector = 'unarmed';
 }
 
 function _onReport(data: unknown): void {
@@ -157,10 +181,33 @@ function _onMessage(data: unknown): void {
  * one catch and the failure is recorded in exactly one place.
  */
 export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
+	const generation = ++_installGeneration;
+	try {
+		await _install(ctx, generation);
+	} catch (error: unknown) {
+		// A context torn down mid-install can reject after a remount armed a
+		// healthy sentinel, or while a newer install is still loading. Only the
+		// latest install speaks for the detector; a superseded one just rejects.
+		if (generation === _installGeneration && _node === null) _detector = 'failed';
+		throw error;
+	}
+}
+
+async function _install(ctx: AudioContext, generation: number): Promise<void> {
 	if (ctx.audioWorklet === undefined) {
 		throw new Error('AudioWorklet is unavailable; the xrun sentinel cannot start');
 	}
 	await ctx.audioWorklet.addModule(xrunSentinelModuleUrl);
+	if (generation !== _installGeneration) {
+		// A newer install started while this module loaded. Building a node here
+		// would replace the one on the current context with one on a context
+		// that is going away, so this install builds nothing.
+		recordPerfEvent(
+			'xrun-sentinel-superseded',
+			'an xrun sentinel install finished after a newer one started; its context gets no detector'
+		);
+		return;
+	}
 	// The best cadence estimate available on THIS side of the port: one period,
 	// from baseLatency, floored at the render quantum because baseLatency reads 0
 	// before a device is attached. Derived through the same function the worklet's
@@ -190,8 +237,16 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 			gapFloorMs: XRUN_GAP_FLOOR_MS
 		}
 	});
-	node.port.onmessage = (event: MessageEvent) => _onMessage(event.data);
+	node.port.onmessage = (event: MessageEvent) => {
+		// Armed only on the worklet's own word that it is judging gaps (a window
+		// report or a flush acknowledgement), and only for the node installed
+		// now: a replaced node, or one that already threw, arms nothing.
+		if (event.data?.judging === true && _node === node && _detector !== 'failed') _detector = 'armed';
+		_onMessage(event.data);
+	};
 	node.addEventListener('processorerror', () => {
+		// Only the node that is armed now: one already replaced measures nothing.
+		if (_node === node) _detector = 'failed';
 		recordPerfEvent(
 			'xrun-sentinel-failed',
 			'the xrun sentinel processor threw during rendering; glitch counting is now blind ' +
@@ -205,12 +260,15 @@ export async function installXrunSentinel(ctx: AudioContext): Promise<void> {
 	node.connect(mute);
 	mute.connect(ctx.destination);
 	_node = node;
+	// Not 'armed' yet: the worklet ignores every gap until cadence warmup is
+	// over, so a count published now could not rise. The port handler arms it
+	// once a message says the worklet is judging.
+	_detector = 'unarmed';
 	recordPerfEvent(
 		'xrun-sentinel-armed',
-		`glitch detection armed: measuring the device's own callback cadence over ` +
-			`${XRUN_CADENCE_WARMUP_CALLBACKS} callbacks before judging any of them (seed ` +
-			`threshold ${Math.round(thresholdMs * 1000) / 1000}ms from baseLatency, never ` +
-			`judged against), reported at most every ${XRUN_REPORT_INTERVAL_MS}ms`
+		`glitch detection installed: unarmed until ${XRUN_CADENCE_WARMUP_CALLBACKS} callbacks ` +
+			`measure the device cadence (seed ${Math.round(thresholdMs * 1000) / 1000}ms from ` +
+			`baseLatency, never judged against), reported at most every ${XRUN_REPORT_INTERVAL_MS}ms`
 	);
 }
 

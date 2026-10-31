@@ -9,7 +9,7 @@
 # `tests/scripts/test_ci_plan_config.py` fails when a tracked test module is claimed by
 # no scope and matched by no `always` entry, which is how a new test directory is stopped
 # from becoming a silently unrun one.
-version: 2
+version: 3
 
 # A change here means the selection itself cannot be trusted to narrow.
 full_triggers:
@@ -22,7 +22,9 @@ full_triggers:
   - "justfile"
   - "conftest.py"
   - "**/conftest.py"
-  - ".github/workflows/**"
+  # Only the workflow that runs this plan. Round 19 moved the other workflows to the
+  # `workflows` scope below (ADR-NEW-workflows-scope).
+  - ".github/workflows/ci.yml"
   - "ci/test-scopes.yml"
   - "scripts/ci_plan*.py"
   - "tests/fixtures/**"
@@ -46,6 +48,150 @@ full_triggers:
 # longest-prefix (`apps/webui/frontend/` is its own scope inside `apps/webui/`), and a
 # prefix trigger on the parent would swallow the child. Round 9.
 helper_carried: ["adapters", "analysis", "analysis_beatgrid", "analysis_key", "analysis_waveform", "audit", "cloud", "database", "entitlements", "genre_infer", "loudness", "lyrics", "open_dj", "shared", "smartlists", "stems", "sync", "sync_hub", "vocals"]
+
+# Round 22: inside those scopes, the `.py` files the global helpers' import closure reaches.
+# A `.py` change in a carried scope runs everything only when it matches an entry here; a
+# non-Python change in one always does (a helper may read it as data). A scope prefix stands
+# for a carried scope a helper or a closure module mentions, or whose closure module loads code by name.
+# `helper_carried_paths` in scripts/ci_plan_carry.py recomputes it and a test holds this list to it.
+helper_carried_paths:
+  - "apps/analysis/"
+  - "apps/analysis_beatgrid/__init__.py"
+  - "apps/analysis_beatgrid/activations.py"
+  - "apps/analysis_beatgrid/bar_phase.py"
+  - "apps/analysis_beatgrid/bpm.py"
+  - "apps/analysis_beatgrid/const_regions.py"
+  - "apps/analysis_beatgrid/flags.py"
+  - "apps/analysis_beatgrid/grid_design.py"
+  - "apps/analysis_beatgrid/grid_fit.py"
+  - "apps/analysis_beatgrid/lane_payload.py"
+  - "apps/analysis_beatgrid/tempo_change.py"
+  - "apps/analysis_beatgrid/tempo_family.py"
+  - "apps/analysis_beatgrid/tempo_map.py"
+  - "apps/analysis_beatgrid/version.py"
+  - "apps/analysis_beatgrid/weights.py"
+  - "apps/analysis_key/__init__.py"
+  - "apps/analysis_key/beatgrid_digest.py"
+  - "apps/analysis_key/canon.py"
+  - "apps/analysis_key/flags.py"
+  - "apps/analysis_key/lane_payload.py"
+  - "apps/analysis_key/profiles.py"
+  - "apps/analysis_key/segments.py"
+  - "apps/analysis_key/version.py"
+  - "apps/analysis_waveform/__init__.py"
+  - "apps/analysis_waveform/bands.py"
+  - "apps/analysis_waveform/decode.py"
+  - "apps/analysis_waveform/lane_payload.py"
+  - "apps/analysis_waveform/native.py"
+  - "apps/analysis_waveform/version.py"
+  - "apps/cloud/__init__.py"
+  - "apps/cloud/stem_bundles.py"
+  - "apps/cloud/stem_cache_budget.py"
+  - "apps/cloud/stem_cache_settings.py"
+  - "apps/cloud/stem_upload_queue.py"
+  - "apps/database/__init__.py"
+  - "apps/database/column_docs.py"
+  - "apps/database/column_docs_analysis_retention.py"
+  - "apps/database/column_docs_feedback.py"
+  - "apps/database/column_docs_genre.py"
+  - "apps/database/column_docs_lyrics.py"
+  - "apps/database/column_docs_native_analysis.py"
+  - "apps/database/column_docs_pair_transitions.py"
+  - "apps/database/column_docs_pairing_capture.py"
+  - "apps/database/column_docs_sibling_apps.py"
+  - "apps/database/column_docs_sync_gate.py"
+  - "apps/database/enrollment_table_docs.py"
+  - "apps/database/generate_agents_md.py"
+  - "apps/database/sqlite_introspection.py"
+  - "apps/database/table_docs.py"
+  - "apps/loudness/__init__.py"
+  - "apps/loudness/scan.py"
+  - "apps/shared/__init__.py"
+  - "apps/shared/_tagreader.py"
+  - "apps/shared/audio_quality.py"
+  - "apps/shared/engine_decode.py"
+  - "apps/shared/events.py"
+  - "apps/shared/fd_anchored_walk.py"
+  - "apps/shared/ffmpeg.py"
+  - "apps/shared/fingerprints.py"
+  - "apps/shared/fs_residency.py"
+  - "apps/shared/harmonic.py"
+  - "apps/shared/library_mode.py"
+  - "apps/shared/odj_audio_binary.py"
+  - "apps/shared/pairings/__init__.py"
+  - "apps/shared/pairings/capture_repo.py"
+  - "apps/shared/pairings/models.py"
+  - "apps/shared/pairings/repo.py"
+  - "apps/shared/pairings/schema_sql.py"
+  - "apps/shared/paths.py"
+  - "apps/shared/platform_paths.py"
+  - "apps/shared/process_groups.py"
+  - "apps/shared/process_liveness.py"
+  - "apps/shared/shared_read_open.py"
+  - "apps/shared/smartlists/__init__.py"
+  - "apps/shared/smartlists/ast.py"
+  - "apps/shared/smartlists/models.py"
+  - "apps/shared/smartlists/schema.py"
+  - "apps/shared/stable_id.py"
+  - "apps/shared/state/__init__.py"
+  - "apps/shared/state/agents_md_cache.py"
+  - "apps/shared/state/analysis_stale.py"
+  - "apps/shared/state/db.py"
+  - "apps/shared/state/events.py"
+  - "apps/shared/state/ids.py"
+  - "apps/shared/state/ingest/__init__.py"
+  - "apps/shared/state/ingest/path_collisions.py"
+  - "apps/shared/state/locations.py"
+  - "apps/shared/state/machine_identity.py"
+  - "apps/shared/state/migrations.py"
+  - "apps/shared/state/migrations_v10.py"
+  - "apps/shared/state/migrations_v11.py"
+  - "apps/shared/state/migrations_v12.py"
+  - "apps/shared/state/migrations_v13.py"
+  - "apps/shared/state/migrations_v14.py"
+  - "apps/shared/state/migrations_v15.py"
+  - "apps/shared/state/migrations_v16.py"
+  - "apps/shared/state/migrations_v17.py"
+  - "apps/shared/state/migrations_v18.py"
+  - "apps/shared/state/migrations_v19.py"
+  - "apps/shared/state/migrations_v20.py"
+  - "apps/shared/state/migrations_v21.py"
+  - "apps/shared/state/migrations_v22.py"
+  - "apps/shared/state/migrations_v23.py"
+  - "apps/shared/state/migrations_v24.py"
+  - "apps/shared/state/migrations_v25.py"
+  - "apps/shared/state/migrations_v6_v8.py"
+  - "apps/shared/state/migrations_v9.py"
+  - "apps/shared/state/paths.py"
+  - "apps/shared/state/schema.py"
+  - "apps/shared/state/schema_markers.py"
+  - "apps/shared/state/sync_stamp.py"
+  - "apps/shared/state/types.py"
+  - "apps/smartlists/__init__.py"
+  - "apps/smartlists/evaluator.py"
+  - "apps/smartlists/order_by.py"
+  - "apps/smartlists/repo.py"
+  - "apps/stems/__init__.py"
+  - "apps/stems/artifacts.py"
+  - "apps/stems/bundle_lock.py"
+  - "apps/stems/recompress.py"
+  - "apps/stems/recompress_cli.py"
+  - "apps/stems/stem_encode.py"
+  - "apps/stems/stem_size_policy.py"
+  - "apps/stems/tiers.py"
+  - "apps/sync_hub/__init__.py"
+  - "apps/sync_hub/digest_gate.py"
+  - "apps/sync_hub/engine_common.py"
+  - "apps/sync_hub/engine_identity.py"
+  - "apps/sync_hub/engine_identity_map.py"
+  - "apps/sync_hub/engine_identity_queries.py"
+  - "apps/sync_hub/identity_verdicts.py"
+  - "apps/sync_hub/machine_wire_limits.py"
+  - "apps/sync_hub/protocol.py"
+  - "apps/sync_hub/protocol_common.py"
+  - "apps/sync_hub/quarantine_log.py"
+  - "apps/sync_hub/sync_set.py"
+  - "tests/analysis/"
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
 always:
@@ -250,6 +396,16 @@ scopes:
     tests: []
     mentions: ["REQUIREMENTS.md", "reqs.json"]
     dependents: ["analysis_key", "perf", "quality", "scripts"]
+  - name: workflows
+    # Round 19. The workflows other than `ci.yml`, which stays a full trigger above because it
+    # runs this plan. On the 60 merges up to 0ba0fa2703, `.github/workflows/**` was the most
+    # common full trigger. Consumers are found by mention, and the one root helper that reads
+    # workflows (`tests/ci_cost_guard_workflow_reader.py`) is imported only by placed tests,
+    # so it gives an edge to each owner rather than carrying this scope to everything.
+    sources: [".github/workflows/"]
+    tests: []
+    mentions: ["workflows"]
+    dependents: ["mik", "perf", "quality", "scripts", "webui"]
   - name: prose
     # Documentation trees. Round 5 measured that prose is NOT harmless here (24 files named
     # by literal path inside tests, six modules that glob for it), so an unclaimed prose path

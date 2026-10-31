@@ -14,7 +14,7 @@ on:
       - "pylock.docs.toml"
       - ".github/workflows/docs.yml"
   pull_request:
-    branches: [main, codex--v2-integration]
+    branches: [main, codex--v2-integration, "main-v*"]
     # ci.yml already skips docs-only changes; without the mirror-image filter
     # here, every code-only PR still paid for a full mkdocs build. That was
     # 396 jobs in Aug 2026 for a site that had not changed.
@@ -169,7 +169,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Setup uv for isolated docs dependencies
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff  # v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
 
       # Stale-install guard (PR #4251): fail if this job's interpreter can import
       # music-dj-tools from outside the checkout, e.g. a wheel left in the shared

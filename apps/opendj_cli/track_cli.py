@@ -41,6 +41,10 @@ KEY_SEGMENTS_VERB = "key-segments"
 GRID_FLAGS_VERB = "grid-flags"
 GRID_SCAN_VERB = "grid-scan"
 GRID_FLAG_VERB = "grid-flag"
+#: GRIDEDIT-6235d: the CLI twin of the deck's grid adjust / grid shift buttons,
+#: over `/api/v1/tracks/{id}/grid-edit` on the running engine.
+GRID_EDIT_VERB = "grid-edit"
+_GRID_EDIT_SOURCES = ("rekordbox", "own")
 _GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
 #: GRIDFIT-03: the CLI twin of the grid-vs-audio routes under the same prefix.
 GRID_FIT_VERB = "grid-fit"
@@ -68,6 +72,8 @@ _USAGE = (
     "                               [include-dismissed] [all-tracks] [limit N]\n"
     "       opendj track grid-scan [all-tracks] [no-wait]\n"
     "       opendj track grid-flag <stable_id> dismiss|restore\n"
+    "       opendj track grid-edit <stable_id> [show | nudge MS | shift BEATS |\n"
+    "                              set MS BEATS | reset] [rekordbox|own]\n"
     "       opendj track grid-fit [findings|wrong_bpm|off_beat|shifted|no_verdict|fit|unknown|all] [limit N]\n"
     "       opendj track grid-fit <stable_id> [force]\n"
     "       opendj track grid-fit-scan [no-wait]\n"
@@ -152,6 +158,50 @@ def _grid_flag(args: Sequence[str]) -> int:
     )
 
 
+def _number(token: str, *, integer: bool) -> float | None:
+    try:
+        return int(token) if integer else float(token)
+    except ValueError:
+        return None
+
+
+def _grid_edit_write(action: str, values: Sequence[str]) -> tuple[str, str, dict[str, object]] | None:
+    """(method, path suffix, body fields) for a grid-edit write, or None when malformed."""
+    if action in ("nudge", "shift") and len(values) == 1:
+        step = _number(values[0], integer=action == "shift")
+        return None if step is None else ("POST", "/nudge", {"offset_ms" if action == "nudge" else "beats": step})
+    if action == "set" and len(values) == 2:
+        offset_ms = _number(values[0], integer=False)
+        beat_shift = _number(values[1], integer=True)
+        if offset_ms is None or beat_shift is None:
+            return None
+        return ("PUT", "", {"offset_ms": offset_ms, "beat_shift": beat_shift})
+    return None
+
+
+def _grid_edit(args: Sequence[str]) -> int:
+    """`/api/v1/tracks/{id}/grid-edit`: what the deck's two grid buttons do.
+
+    `nudge MS` is grid adjust (ms, later when positive), `shift BEATS` is grid
+    shift (whole beats, later when positive), `set MS BEATS` writes absolute
+    values, `reset` returns to the measured grid. A trailing `rekordbox` or
+    `own` picks the grid; omitted, it is the one the deck is drawing.
+    """
+    if not args:
+        return _usage_error()
+    stable_id, *rest = args
+    source = rest.pop() if rest and rest[-1] in _GRID_EDIT_SOURCES else None
+    action, *values = rest or ["show"]
+    path = f"/api/v1/tracks/{stable_id}/grid-edit"
+    if action in ("show", "reset") and not values:
+        query = "" if source is None else f"?source={source}"
+        return api_cli.run(["GET" if action == "show" else "DELETE", f"{path}{query}"], as_json=True)
+    write = _grid_edit_write(action, values)
+    if write is None:
+        return _usage_error()
+    method, suffix, fields = write
+    body = fields if source is None else {"source": source, **fields}
+    return api_cli.run([method, f"{path}{suffix}", "--json", json.dumps(body)], as_json=True)
 def _is_stable_id(token: str) -> bool:
     return len(token) == 40 and all(c in "0123456789abcdef" for c in token)
 
@@ -402,6 +452,7 @@ def _key_segments(
 
 
 __all__ = [
+    "GRID_EDIT_VERB",
     "AUTO_GAIN_VERB",
     "GRID_FIT_SCAN_VERB",
     "GRID_FIT_VERB",
@@ -426,5 +477,6 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     QUALITY_SCAN_VERB: _quality_scan,
     QUALITY_OF_VERB: _quality_of,
     AUTO_GAIN_VERB: _auto_gain,
+    GRID_EDIT_VERB: _grid_edit,
     TRANSITION_IN_VERB: _transition_in,
 }

@@ -51,6 +51,7 @@ from apps.analysis.canonical import canonical_pointer
 from apps.analysis.lanes import LaneResult
 from apps.analysis.record import AnalysisRecord
 from apps.shared.paths import STATE_DB
+from apps.shared.state.analysis_stale import WHOLE_RECORD
 
 from .. import rb_vendor
 from ..backend import NotFoundError, StateBackend
@@ -184,6 +185,16 @@ def _load_latest_record(
             params.append(backend)
         else:
             sql += " AND backend NOT LIKE 'own\\_%' ESCAPE '\\'"
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analysis_stale'"
+        ).fetchone():
+            # A record of bytes the file no longer holds is not served (NATIVE-30).
+            sql += (
+                " AND NOT EXISTS (SELECT 1 FROM analysis_stale AS s WHERE"
+                " s.stable_id = analysis.stable_id AND s.lane = ? AND s.backend = analysis.backend"
+                " AND s.backend_version = analysis.backend_version)"
+            )
+            params.append(WHOLE_RECORD)
         sql += " ORDER BY analyzed_at DESC, backend ASC, backend_version DESC LIMIT 1"
         try:
             row = conn.execute(sql, params).fetchone()

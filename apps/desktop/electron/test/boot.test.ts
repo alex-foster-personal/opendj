@@ -7,7 +7,7 @@ import { after, test } from 'node:test';
 
 import { type BootDeps, defaultBootDeps, startEngine } from '../src/boot';
 import { makeLockProbe } from '../src/launch';
-import { shutdownSupervised } from '../src/supervisor';
+import { PARENT_FILE, shutdownSupervised } from '../src/supervisor';
 import { fakePayload, scratchDir } from './helpers';
 
 const held: ChildProcess[] = [];
@@ -55,6 +55,28 @@ test('a held lock the user declines to stop fails with the reason, spawning noth
 	assert.equal(asked.length, 1);
 	assert.match(asked[0] as string, /not answering health/);
 	assert.equal(fs.existsSync(path.join(data, 'logs/engine.log')), false, 'no engine was launched');
+});
+
+test('adopt health failure clears .engine.parent before surfacing the error', async () => {
+	const dir = scratchDir('boot-adopt-health-fail');
+	const data = path.join(dir, 'data');
+	fs.mkdirSync(data, { recursive: true });
+	const lock = path.join(data, '.engine.lock');
+	fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, port: 9, host: '127.0.0.1' }));
+	let healthChecks = 0;
+	const lockContents = fs.readFileSync(lock, 'utf8');
+	await assert.rejects(
+		startEngine(fakePayload(dir), data, path.join(data, 'logs/engine.log'), {
+			...deps(false),
+			lockProbe: () => ({ held: true, contents: lockContents, method: 'pid-liveness' }),
+			health: async () => {
+				healthChecks += 1;
+				return healthChecks === 1;
+			}
+		}),
+		/could not adopt/
+	);
+	assert.equal(fs.existsSync(path.join(data, PARENT_FILE)), false);
 });
 
 test('a boot failure carries the engine log tail into the dialog', async () => {

@@ -21,7 +21,10 @@ def iter_match_pairs(
     *,
     min_confidence: float = DEFAULT_MIN_MATCH_CONFIDENCE,
 ) -> Iterator[tuple[str, str]]:
-    """Yield ``(rb_content_id, djay_uuid)`` for rows above ``min_confidence``."""
+    """Yield ``(rb_content_id, djay_uuid)`` for rows above ``min_confidence``.
+
+    Accepts ``rb_content_id`` or legacy ``rb_id`` column names in matches.csv.
+    """
     with matches_csv.open("r", newline="", encoding="utf-8") as fp:
         reader = csv.DictReader(fp)
         for rec in reader:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from .schema_sql import apply_pairing_capture_migrations
+from .schema_sql import apply_pairing_capture_migrations, prepare_repo_connection
 
 MasterSide = Literal["a", "b"]
 SyncMode = Literal["bar", "beat"]
@@ -96,9 +96,11 @@ class PairingCaptureRepo:
     """Repository over the migration-owned pairing capture tables."""
 
     def __init__(self, conn: sqlite3.Connection, *, ensure_schema: bool = True) -> None:
-        self.conn = conn
-        if ensure_schema:
-            apply_pairing_capture_migrations(conn)
+        self.conn = prepare_repo_connection(
+            conn,
+            apply_pairing_capture_migrations,
+            ensure_schema=ensure_schema,
+        )
 
     def add_snapshot(  # noqa: PLR0913 - mirrors the persisted snapshot columns.
         self,

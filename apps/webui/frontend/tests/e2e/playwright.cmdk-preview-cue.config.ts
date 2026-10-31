@@ -45,7 +45,7 @@ const NO_POSIX_LAUNCHER = process.platform === 'win32';
 const FIXTURE_BUILDER_MODULE = 'apps.webui.frontend.tests.e2e.support.cmdk_preview_cue_fixture';
 /** uv, resolved once: the gate launches this path in every step, not a bare name the PATH finds later (Codex P1, #6689). */
 const UV = NO_POSIX_LAUNCHER ? 'uv' : resolveProgram('uv');
-/** pnpm, resolved once for the Vite server step (Codex P1, #6689; same pattern here). */
+/** pnpm, resolved once for the Vite server step (Codex P1, #6689). */
 const PNPM = NO_POSIX_LAUNCHER ? 'pnpm' : resolveProgram('pnpm');
 /**
  * The engine runs under a sandbox HOME, and so does the builder before it. Two

@@ -7,6 +7,8 @@
 import { createAlignment, createPairing, createSyncSnapshot, listSyncSnapshots, type SyncSnapshot } from '$lib/api';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 
+export { listPairingsFor } from '$lib/api';
+
 const HOT_CUE_SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export interface ResolvedSyncSnapshot {

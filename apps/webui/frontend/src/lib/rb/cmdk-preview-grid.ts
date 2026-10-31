@@ -12,6 +12,8 @@
  * Pure: no runes, no DOM, no audio. The bar reads beat grids and analysis the
  * shared caches already hold.
  */
+// The bar's one route to these types: anlz-types is at the importer limit.
+export type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 
 /** Bars per jump, and per Shift jump. */
 export const PREVIEW_STEP_BARS = 4;

@@ -13,6 +13,7 @@ Acceptance:
   [if] uv.lock is missing or stale against pyproject.toml [then STOP] the script fails before any test runs.
   [if] any child command exits nonzero [then STOP] this script exits nonzero immediately.
   [if] Node is older than 22.14.0 [then STOP] this script fails before dependency installation.
+  [if] uv, node, pnpm or ffmpeg is not on PATH [then STOP] this script fails before dependency installation.
   [if] pytest runs on Windows [then PASS] temp files stay inside the workspace and the tracked coverage matrix is not rewritten.
   [if] the Windows parity gate selects Python tests [then PASS] the real interprocess progress-lock suite runs while unrelated progress-route, Spotify, and USB suites remain in general CI only.
   [if] -Final is supplied [then PASS] the production frontend build completes after all faster gates.
@@ -53,29 +54,46 @@ function Invoke-Checked {
     Write-Output "[OK] $Label"
 }
 
-foreach ($Tool in @("uv", "node", "pnpm")) {
-    if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
+# ffmpeg is a decoder the suite needs, not an optional extra: without it (and
+# with no odj-audio build) every waveform and duration probe refuses, and the
+# stem waveform route answers 404 STEM_PART_NOT_FOUND for a bundle that is on
+# disk (job 115807584571). The Linux lanes preflight it the same way
+# (scripts/ci_runner_preflight.sh ... ffmpeg); fail here, before any test runs.
+# Each tool is resolved ONCE, to the application file it names, and every
+# later call launches that path: a bare name would be re-resolved per call, so
+# on a reused self-hosted runner with PATH shims the gate could run a different
+# uv or pnpm from the one it checked. -CommandType Application skips aliases,
+# functions and .ps1 shims, so the path is always a real executable.
+$ToolPath = @{}
+foreach ($Tool in @("uv", "node", "pnpm", "ffmpeg")) {
+    $Resolved = Get-Command $Tool -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $Resolved) {
         throw "Required tool is unavailable on PATH: $Tool"
     }
+    $ToolPath[$Tool] = $Resolved.Source
+    Write-Output "[TOOL] $Tool -> $($Resolved.Source)"
 }
 
 $MinimumNodeVersion = [version]"22.14.0"
-$NodeVersionText = (& node --version).Trim().TrimStart("v")
+$NodeVersionText = (& $ToolPath["node"] --version).Trim().TrimStart("v")
 $NodeVersion = [version]$NodeVersionText
 if ($NodeVersion -lt $MinimumNodeVersion) {
     throw "Node $MinimumNodeVersion or newer is required by pnpm 11.9; found $NodeVersion."
 }
 
 # Exact install from the committed uv.lock, never a fresh resolve. The gate used
-# `uv pip install -e .[dev]`, which ignores the lock: since Thu 15 Oct 2026 (run
-# 38719125594) it tested pyrekordbox 0.5.0, which has no pyrekordbox.db6, while
-# every lock pins 0.4.4. analysis and observability match the Linux lane's
-# pylock.ci.toml. --locked fails on a stale lock, and sync trims a reused .venv.
+# `uv pip install -e .[dev]`, which ignores the lock: job 115807584571 (Wed 14 Oct
+# 2026) tested fastapi 0.143.0 against a lock pinning 0.136.3 (33 EngineBootError
+# failures), and run 38719125594 (Thu 15 Oct 2026) pyrekordbox 0.5.0, which has no
+# pyrekordbox.db6, against 0.4.4. analysis and observability match the Linux lane:
+# without librosa the analyze-on-import drain tests meet an unavailable backend.
+# --locked fails on a stale lock, and sync trims a reused .venv.
 $LockFile = Join-Path $RepoRoot "uv.lock"
 if (-not (Test-Path -LiteralPath $LockFile -PathType Leaf)) {
     throw "Committed lock is missing: $LockFile (regenerate with: uv lock)"
 }
-Invoke-Checked -Label "sync Python dependencies exactly from uv.lock" -Executable "uv" `
+Invoke-Checked -Label "sync Python dependencies exactly from uv.lock" -Executable $ToolPath["uv"] `
     -CommandArgs @(
         "sync", "--locked", "--python", "3.11",
         "--extra", "dev", "--extra", "analysis", "--extra", "observability"
@@ -99,21 +117,25 @@ $XdistWorkers = [Math]::Max(2, [int][Math]::Floor([Environment]::ProcessorCount 
 Write-Output "[INFO] pytest-xdist workers: $XdistWorkers of $([Environment]::ProcessorCount) logical CPUs"
 $PytestArgs = @(
     "-m", "pytest", "-q", "-m", "rb_parity", "--no-coverage-matrix",
+    # Parallel: serial, the full webui suite took 24m42s on windows-latest
+    # (job 116371324861, Thu 15 Oct 2026) and the job's 30 minute cap then
+    # cancelled the frontend steps after it. xdist's per-worker temp dirs
+    # live under --basetemp, so everything stays inside the workspace .tmp.
     "-n", "$XdistWorkers", "--dist", "loadgroup",
     "--basetemp", $PytestBaseTemp
 )
 
 Invoke-Checked -Label "focused Python parity tests" -Executable $PythonExe `
     -CommandArgs $PytestArgs -WorkingDirectory $RepoRoot
-Invoke-Checked -Label "frozen frontend install" -Executable "pnpm" `
+Invoke-Checked -Label "frozen frontend install" -Executable $ToolPath["pnpm"] `
     -CommandArgs @("install", "--frozen-lockfile") -WorkingDirectory $FrontendRoot
-Invoke-Checked -Label "frontend unit tests" -Executable "pnpm" `
+Invoke-Checked -Label "frontend unit tests" -Executable $ToolPath["pnpm"] `
     -CommandArgs @("test:unit") -WorkingDirectory $FrontendRoot
-Invoke-Checked -Label "Svelte type and accessibility check" -Executable "pnpm" `
+Invoke-Checked -Label "Svelte type and accessibility check" -Executable $ToolPath["pnpm"] `
     -CommandArgs @("check") -WorkingDirectory $FrontendRoot
 
 if ($Final) {
-    Invoke-Checked -Label "production frontend build" -Executable "pnpm" `
+    Invoke-Checked -Label "production frontend build" -Executable $ToolPath["pnpm"] `
         -CommandArgs @("build") -WorkingDirectory $FrontendRoot
 }
 

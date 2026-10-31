@@ -43,12 +43,18 @@ export interface FilterResult {
 	all: SettingDef[];
 }
 
-function _tokens(query: string): string[] {
+/** The settings search's query words: lowercased, split on anything but letters, digits and `_.-`. */
+export function settingsQueryTokens(query: string): string[] {
 	return query
 		.toLowerCase()
 		.split(/[^a-z0-9_.-]+/g)
 		.map((t) => t.trim())
 		.filter((t) => t.length > 0);
+}
+
+/** True when `query` has a word the settings search can match on; punctuation alone matches nothing. */
+export function hasSettingsQuery(query: string): boolean {
+	return settingsQueryTokens(query).length > 0;
 }
 
 function _haystack(s: SettingDef): string {
@@ -84,7 +90,7 @@ function _basePool(opts: FilterOptions): SettingDef[] {
 /** Pure keyword/synonym filter. Empty query returns the full (filtered) pool. */
 export function filterSettings(query: string, opts: FilterOptions): FilterResult {
 	const pool = _basePool(opts);
-	const tokens = _tokens(query);
+	const tokens = settingsQueryTokens(query);
 	const expanded = _expandedTokens(tokens);
 	const keyword =
 		tokens.length === 0 ? pool.slice() : pool.filter((s) => _matches(s, expanded));

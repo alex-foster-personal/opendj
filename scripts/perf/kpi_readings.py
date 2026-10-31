@@ -7,7 +7,7 @@ into a scenario verdict (`score_scenarios`, still in kpi_scorecard.py).
 
 `_classify_required_reading` is the center of this file: it turns one raw
 ledger row into either a value worth scoring, a name to report missing, or a
-reason to reject it outright, per .claude/rules/verification.md - refuse
+reason to reject it outright, per (private path) - refuse
 rather than assume when a reading cannot be trusted.
 """
 
@@ -76,7 +76,14 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
             note=newest.get("note"),
             capture_id=newest.get("capture_id"),
         )
-    if live:
+    # A failed or withheld attempt (`measured: false`, `status: error` or
+    # `withheld`) stays in the ledger as diagnostic evidence but does not
+    # replace the newest real measurement (Codex, PR #6388, P2/BLOCKING): it
+    # only wins when no measured row exists, so the KPI reads UNMEASURED.
+    measured = [e for e in live if not _attempt_without_value(e)]
+    if measured:
+        newest = measured[-1]
+    elif live:
         newest = live[-1]
     return Reading(
         kpi,
@@ -91,10 +98,16 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
     )
 
 
+def _attempt_without_value(entry: dict) -> bool:
+    """A row that records an attempt, not a measurement: capture_kpi_ledger's
+    error and withheld rows say so with `measured: false` and a status."""
+    return entry.get("measured") is False or entry.get("status") in ("error", "withheld")
+
+
 def _as_float(value: object) -> float | None:
     """A probed value, or None when it is not a trustworthy measurement.
 
-    Per docs/perf/learnings/_INDEX.md L-line convention, a probe returns -1
+    Per (private path) L-line convention, a probe returns -1
     (never 0) when its subject never appeared, so a legitimate zero-valued
     measurement (e.g. zero dropped keystrokes) must stay distinct from an
     absent one. Rejecting any negative number therefore catches the sentinel
@@ -131,7 +144,7 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
 
 def _needs_provenance(name: str, unit: str) -> bool:
     """Is `name` a percentile, percentage, or rate KPI, which the spec's own
-    denominator-honesty note (specs/perf-latency-program.md, 'Denominator
+    denominator-honesty note ((private path), 'Denominator
     honesty') requires to name its window and machine tier?
 
     Scoped to percentile/percentage/rate KPIs specifically, matching the
@@ -225,7 +238,7 @@ def _classify_required_reading(
                 f"{name} is a p95/percentage KPI recorded without a machine tier "
                 f"and measurement window/denominator (machine={reading.machine!r}, "
                 f"note={reading.note!r}), required by the denominator-honesty note "
-                "in specs/perf-latency-program.md"
+                "in (private path)"
             )
         )
     if not reading.source:

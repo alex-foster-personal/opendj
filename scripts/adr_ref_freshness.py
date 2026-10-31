@@ -51,21 +51,43 @@ def _git_lines(args: list[str], repo_root: Path) -> list[str]:
     return [line for line in proc.stdout.splitlines() if line.strip()]
 
 
-def _is_unnumbered_addition(path: str, added: set[str], head_names: set[str]) -> bool:
-    """True for an ``ADR-NEW-<slug>.md`` that base ADDED and the head does not carry.
+def _is_unnumbered_placeholder(
+    path: str, added: set[str], modified: set[str], head_names: set[str]
+) -> bool:
+    """True for an ``ADR-NEW-<slug>.md`` base touched without allocating a number.
 
     Such a file has no number, so no renumber on main can have touched it, and
     the duplicate-id scan this guard protects has nothing stale to report about
-    it. A head carrying the same file name is a possible slug collision, so that
-    case still counts as moved.
+    it: the numeric scan skips ``ADR-NEW-`` names outright, the renumber scan
+    never matches one against ``ADR-\\d{4}-``, and the slug scan reads the NAME
+    only. A content edit to a placeholder therefore cannot change any verdict
+    this gate can produce -- measured 2026-10-17 on PR #7278 (head 98ab7eee,
+    base e1e89b06): the only ``(private path)/`` movement was an ``M`` to
+    ``ADR-NEW-cloudsync-identified-brick-recovery.md``, prose only, while the
+    head tree still carried the same file, so the stale-ref guard failed a PR
+    whose own evaluation returned ``OK -- no gated paths``.
+
+    Two shapes are let through, both keeping the head's own copy intact:
+
+    * base ADDED it and the head does not carry the name -- a fresh placeholder;
+    * base EDITED the copy the fork point already had and the head still
+      carries that same name -- a prose edit to a shared placeholder.
+
+    Two shapes stay "moved", because the head changed what the directory means:
+
+    * base ADDED the name and the head carries it too -- a possible slug
+      collision;
+    * base EDITED it and the head renamed it away -- the head allocated a
+      number, which is renumber territory.
     """
     name = Path(path).name
-    return (
-        path in added
-        and name.startswith("ADR-NEW-")
-        and name.endswith(".md")
-        and name not in head_names
-    )
+    if not (name.startswith("ADR-NEW-") and name.endswith(".md")):
+        return False
+    if path in added:
+        return name not in head_names
+    if path in modified:
+        return name in head_names
+    return False
 
 
 def check_ref_freshness(
@@ -130,6 +152,12 @@ def check_ref_freshness(
                     repo_root,
                 )
             )
+            modified = set(
+                _git_lines(
+                    ["diff", "--name-only", "--diff-filter=M", fork[0], base_sha, "--", gated_dir],
+                    repo_root,
+                )
+            )
             head_names = {
                 Path(p).name
                 for p in _git_lines(["ls-tree", "--name-only", head_sha, f"{gated_dir}/"], repo_root)
@@ -138,11 +166,13 @@ def check_ref_freshness(
             return RefVerdict(
                 2, f"[adr-check] UNKNOWN: could not measure what moved on {base_ref} ({exc})"
             )
-        unnumbered = [p for p in moved if _is_unnumbered_addition(p, added, head_names)]
+        unnumbered = [
+            p for p in moved if _is_unnumbered_placeholder(p, added, modified, head_names)
+        ]
         moved = [p for p in moved if p not in unnumbered]
         if not moved:
             only_new = (
-                f" (only unnumbered ADR-NEW additions: {', '.join(unnumbered[:5])})"
+                f" (only unnumbered ADR-NEW placeholders: {', '.join(unnumbered[:5])})"
                 if unnumbered
                 else ""
             )

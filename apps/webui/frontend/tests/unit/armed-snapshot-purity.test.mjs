@@ -174,6 +174,36 @@ test('an expired quantized launch reads as null from inside a $derived without w
 	}
 });
 
+test('quantized launch armed reads null when the engine has no audio graph yet', async () => {
+	assert.equal(
+		ipc.engine.contextTimeNowSec(),
+		Number.POSITIVE_INFINITY,
+		'pre-graph engine clock must read as infinitely far ahead'
+	);
+	const restoreLaunch = ipc.installPerformanceQuantizedLaunchDriverForTest({
+		arm: async () => 100,
+		clear: () => {},
+		// Production default driver delegates here; do not fabricate +Infinity in the seam.
+		contextTimeNowSec: () => ipc.engine.contextTimeNowSec()
+	});
+	try {
+		await withArmedSession(
+			() => window.musicDjToolsPerformance.dispatch({ type: 'play', deck: 1, playing: true, quantize: true }),
+			async () => {
+				const state = asDerived(() => ipc.queryPerformanceState());
+				assert.equal(
+					state.decks[1].quantized_launch_armed,
+					null,
+					'pre-graph engine clock must expire any finite launch target'
+				);
+			}
+		);
+	} finally {
+		restoreLaunch();
+		ipc.resetQuantizedLaunchArmedForTest();
+	}
+});
+
 test('a play press after a quantized launch has landed is not swallowed as a disarm', async () => {
 	const launchClock = { sec: 10 };
 	const clearCalls = [];

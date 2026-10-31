@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -280,8 +281,13 @@ def test_status_of_a_mapped_track_does_not_fall_back_on_a_dangling_copy(
 # ----- a copy the engine is not permitted to look at is NOT "no rekordbox" -----
 
 _needs_real_permissions = pytest.mark.skipif(
-    hasattr(os, "geteuid") and os.geteuid() == 0,
-    reason="root ignores directory permissions, so chmod 000 cannot make a path unreadable",
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason=(
+        "chmod 000 cannot make a directory unreadable for root, nor on Windows "
+        "(where it only sets the read-only attribute and access is decided by "
+        "ACLs); the routes under test handle the resulting PermissionError by "
+        "errno, which is platform-neutral"
+    ),
 )
 
 
