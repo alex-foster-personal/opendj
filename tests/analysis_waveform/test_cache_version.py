@@ -25,6 +25,7 @@ import pytest
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis_waveform import decode, local_waveform
+from apps.analysis_waveform.lane_payload import build_waveform_payload
 
 pytestmark = pytest.mark.requirement("NATIVE-06")
 
@@ -222,7 +223,7 @@ def test_the_strip_is_the_360_byte_contract_and_is_never_padded() -> None:
 
 def test_the_payload_declares_tri_and_carries_three_distinct_bands() -> None:
     peaks = _tri_peaks(columns=1800)
-    payload = local_waveform._waveform_payload(peaks, points=600)
+    payload = build_waveform_payload(peaks, points=600)
     assert payload["kind"] == "tri"
     for section in ("preview", "detail"):
         bands = payload[section]

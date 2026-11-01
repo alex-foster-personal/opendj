@@ -13,7 +13,7 @@ import argparse
 from apps.shared.pairings import PairingsError
 from apps.shared.pairings.models import DIRECTIONS, SOURCES
 
-from ._common import add_db_argument
+from ._common import add_db_argument, add_from_to_arguments
 from ._session import pairing_repo, pairings_error_exit
 
 
@@ -22,10 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m apps.pairings.add",
         description="Add a pairing edge between two tracks (by stable_id).",
     )
-    p.add_argument("--from", dest="from_id", required=True,
-                   help="stable_id of the source track")
-    p.add_argument("--to", dest="to_id", required=True,
-                   help="stable_id of the destination track")
+    add_from_to_arguments(
+        p,
+        from_help="stable_id of the source track",
+        to_help="stable_id of the destination track",
+    )
     p.add_argument("--direction", default="either", choices=list(DIRECTIONS),
                    help="edge direction (default: either)")
     p.add_argument("--source", default="manual", choices=list(SOURCES),

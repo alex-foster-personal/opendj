@@ -19,8 +19,15 @@ from pathlib import Path
 
 from apps.analysis.lanes import LaneResult
 
-from .adapter import analyze_file
+from .adapter import LoudnessAnalysis, analyze_file
 from .contract import PRODUCER_BACKEND, PRODUCER_VERSION
+
+
+def _lane_result_from_measurement(measured: LoudnessAnalysis) -> LaneResult:
+    payload = asdict(measured)
+    if not all(math.isfinite(value) for value in payload.values()):
+        return LaneResult(status="failed", reason="non_finite_measurement")
+    return LaneResult(status="ok", payload=payload)
 
 
 def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
@@ -39,11 +46,7 @@ def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
     requires every value finite), so it is reported as ``status: failed``
     rather than an ``ok`` payload no consumer could validate.
     """
-    measured = analyze_file(path, binary=binary)
-    payload = asdict(measured)
-    if not all(math.isfinite(value) for value in payload.values()):
-        return LaneResult(status="failed", reason="non_finite_measurement")
-    return LaneResult(status="ok", payload=payload)
+    return _lane_result_from_measurement(analyze_file(path, binary=binary))
 
 
 __all__ = ["PRODUCER_BACKEND", "PRODUCER_VERSION", "produce_lane_result"]

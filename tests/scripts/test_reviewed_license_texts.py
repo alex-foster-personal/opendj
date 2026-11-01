@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -148,3 +149,15 @@ def test_attach_reviewed_does_not_cover_a_mutated_captured_version() -> None:
     assert component.license_texts == []
     with pytest.raises(LicenseInventoryError, match=re.escape("rbox 0.1.8")):
         require_license_texts([component])
+
+
+def test_setuptools_reviewed_texts_track_the_locked_version() -> None:
+    """[if] a setuptools bump leaves these keys behind [then] PR CI goes red, not the payload build."""
+    reviewed = {e.version for e in REVIEWED_LICENSE_TEXTS if e.name.startswith("setuptools vendored ")}
+    locked = {
+        package["version"]
+        for lock in ("uv.lock", "apps/analysis_beatgrid/beat_this_runner.py.lock")
+        for package in tomllib.loads((REPO_ROOT / lock).read_text(encoding="utf-8"))["package"]
+        if package["name"] == "setuptools"
+    }
+    assert reviewed and reviewed == locked, f"re-review the vendored NOTICE: {reviewed} != locked {locked}"

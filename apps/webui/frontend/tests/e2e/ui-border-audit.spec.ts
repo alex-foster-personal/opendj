@@ -163,6 +163,48 @@ async function stagePendingBatch(page: Page, batch: string): Promise<void> {
   );
 }
 
+/** Pairs the first two tracks, so deck 2's PAIRED row is always audited. On
+ * CI it otherwise shows only because pairing-capture-records.spec.ts left the
+ * same pairing behind. The fixture is rebuilt per run, so it is not removed. */
+async function stagePairedRow(page: Page): Promise<void> {
+  const tracks = await page.request.get("/api/v1/tracks?limit=2");
+  expect(tracks.ok()).toBe(true);
+  const [from, to] = (
+    (await tracks.json()) as { items: { stable_id: string }[] }
+  ).items.map((t) => t.stable_id);
+  const existing = await page.request.get(
+    `/api/v1/pairings?from_stable_id=${from}`,
+  );
+  expect(existing.ok()).toBe(true);
+  if (((await existing.json()) as unknown[]).length > 0) return;
+  const created = await page.request.post("/api/v1/pairings", {
+    data: {
+      from_stable_id: from,
+      to_stable_id: to,
+      direction: "->",
+      source: "manual",
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+}
+
+/** The PAIRED row must be fully reachable: scrolled to the end of the strips,
+ * nothing of it may sit past the list panel's clip (LIBUX-8186). */
+async function expectPairedRowReachable(page: Page): Promise<void> {
+  await expect(page.locator(".rec-paired-row").first()).toBeVisible();
+  const strips = page.locator(".library-panels-strips");
+  const overrunPx = await strips.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    const row = el.querySelector(".rec-paired-row")!.getBoundingClientRect();
+    const panel = el.closest(".list-panel")!.getBoundingClientRect();
+    return row.bottom - panel.bottom;
+  });
+  expect(overrunPx, "PAIRED row bottom past .list-panel").toBeLessThanOrEqual(
+    0,
+  );
+  await strips.evaluate((el) => (el.scrollTop = 0));
+}
+
 /** Marks the staged batch imported through the real confirm endpoint. Runs
  * after every test, pass or fail; a cleanup failure is reported on its own
  * and does not replace the test's own result. */
@@ -201,6 +243,7 @@ for (const skin of ["default", "mono-dev"] as const) {
     // One batch per run and skin: confirming writes a marker that hides it.
     const batch = `border-audit-${skin}-${Date.now()}`;
     await stagePendingBatch(page, batch);
+    await stagePairedRow(page);
     await page.goto("/performance?muted=1", { waitUntil: "domcontentloaded" });
     await waitForPerformanceIpc(page);
     await page.getByText("All Tracks", { exact: true }).first().click();
@@ -230,6 +273,7 @@ for (const skin of ["default", "mono-dev"] as const) {
       timeout: 15_000,
     });
     await page.mouse.move(2, 500);
+    await expectPairedRowReachable(page);
     findings.push(...(await audit(page, "performance", "body", 500)));
 
     await page.keyboard.press("ControlOrMeta+Comma");

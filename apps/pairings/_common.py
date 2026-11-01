@@ -53,4 +53,27 @@ def add_db_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-__all__ = ["add_db_argument", "open_state_db", "build_repo"]
+def add_from_to_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    required: bool = True,
+    from_help: str | None = None,
+    to_help: str | None = None,
+) -> None:
+    """Register ``--from`` / ``--to`` stable_id flags shared by add and remove."""
+    from_kwargs: dict[str, object] = {"dest": "from_id", "required": required}
+    to_kwargs: dict[str, object] = {"dest": "to_id", "required": required}
+    if from_help is not None:
+        from_kwargs["help"] = from_help
+    if to_help is not None:
+        to_kwargs["help"] = to_help
+    parser.add_argument("--from", **from_kwargs)
+    parser.add_argument("--to", **to_kwargs)
+
+
+__all__ = [
+    "add_db_argument",
+    "add_from_to_arguments",
+    "open_state_db",
+    "build_repo",
+]

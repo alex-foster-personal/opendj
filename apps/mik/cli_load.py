@@ -10,7 +10,6 @@ folder's ``.sources.txt`` by :mod:`apps.mik.sources_match`).
 from __future__ import annotations
 
 import argparse
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ from . import match as matcher
 from . import mikdb
 from . import sources_match as sources
 from .cli_common import UNVERIFIED_FLAG, _emit, _gate, _state_db_path
+from .plan_rebind import plan_rebind
 
 
 def _read_and_match(args: argparse.Namespace):
@@ -100,27 +100,6 @@ def _load_plan_detail_lines(plan: loader.LoadPlan, applied: dict[str, Any] | Non
     return lines
 
 
-def _rebind(
-    args: argparse.Namespace, sources_args: tuple[Path, Path] | None, songs: list[mikdb.MikSong]
-) -> dups.Rebind:
-    """Re-run ``cmd_load``'s own matching against a (locked) connection."""
-
-    def rebind(locked: sqlite3.Connection) -> tuple[list[mikdb.MikSong], matcher.MatchReport, Callable[[mikdb.MikSong], list[str]]]:
-        if sources_args is not None:
-            batch = sources.match_songs_by_sources(
-                songs, locked, batch_dir=sources_args[0], library_root=sources_args[1], platform=sources.HOST_PLATFORM
-            )
-            return batch.songs, batch.report, batch.candidates_of
-        index = matcher.TrackIndex.from_conn(locked)
-        return (
-            songs,
-            matcher.match_songs(songs, index, allow_fuzzy=args.allow_fuzzy),
-            dups.tier_candidates(index, allow_fuzzy=args.allow_fuzzy),
-        )
-
-    return rebind
-
-
 def cmd_load(args: argparse.Namespace) -> int:
     sources_args = _sources_args(args)
     songs, _stats, conn, _index, report, store, path = _read_and_match(args)
@@ -153,7 +132,12 @@ def cmd_load(args: argparse.Namespace) -> int:
             shared=share.shared,
         )
         plan.still_valid = dups.binding_unchanged(
-            _rebind(args, sources_args, store_songs),
+            plan_rebind(
+                store_songs,
+                sources_batch=sources_args[0] if sources_args else None,
+                library_root=sources_args[1] if sources_args else None,
+                allow_fuzzy=args.allow_fuzzy,
+            ),
             report,
             share.shared,
             by_metadata=args.share_across_duplicates,

@@ -3866,6 +3866,7 @@
 					<SpinnerIcon size={14} />
 				</div>
 			{/if}
+			<div class="library-panels-strips-body">
 			<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 			<SuggestNextStrip
 				stableId={decks[1].stable_id}
@@ -3887,6 +3888,7 @@
 				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 				onhover={(sid) => (suggestHoverId = sid)}
 			/>
+			</div>
 			</div>
 		{/if}
 	</div>
@@ -4289,10 +4291,18 @@
 	.library-panels-collapse-bar.collapsed {
 		justify-content: flex-end;
 	}
+	/* LIBUX-8186: when the track table sits on its floor these strips give way,
+	 * down to the Next strip's own 26px, and scroll, so a PAIRED row below
+	 * the fold is reachable instead of cut off by `.list-panel`'s clip. The
+	 * 52px reservation lives on the body so it is not also the shrink floor. */
 	.library-panels-strips {
 		position: relative;
-		flex: none;
+		flex: 0 1 auto;
 		width: 100%;
+		min-height: 26px;
+		overflow: hidden auto;
+	}
+	.library-panels-strips-body {
 		min-height: 52px;
 	}
 	.library-panels-strips.busy > :not(.library-panels-load-overlay) {

@@ -7,7 +7,7 @@ import sys
 from apps.shared.pairings import PairingsError
 from apps.shared.pairings.models import DIRECTIONS
 
-from ._common import add_db_argument
+from ._common import add_db_argument, add_from_to_arguments
 from ._session import pairing_repo, pairings_error_exit
 
 
@@ -16,8 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m apps.pairings.remove",
         description="Remove a pairing edge.",
     )
-    p.add_argument("--from", dest="from_id", required=True)
-    p.add_argument("--to", dest="to_id", required=True)
+    add_from_to_arguments(p)
     p.add_argument("--direction", required=True, choices=list(DIRECTIONS))
     add_db_argument(p)
     return p

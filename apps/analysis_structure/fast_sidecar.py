@@ -47,6 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeGuard
 
+from ._beatgrid import downbeats_from_beats
 from ._io import atomic_write_json, utc_now_iso_seconds
 from .fast_segment import PRODUCER, PRODUCER_VERSION, segment
 from .pipeline import cache_dir
@@ -87,7 +88,7 @@ def fast_path(data_dir: Path, stable_id: str) -> Path:
 def downbeats_of(payload: dict[str, Any]) -> list[float]:
     """Downbeat times (``n == 1``) of the beatgrid block the payload will draw."""
     grid = payload.get("beatgrid") or {}
-    return [float(b["t"]) for b in grid.get("beats") or () if int(b.get("n", 0)) == 1]
+    return downbeats_from_beats(grid.get("beats") or ())
 
 
 def grid_digest(downbeats: list[float]) -> str:

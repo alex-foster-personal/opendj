@@ -70,20 +70,17 @@ from apps.analysis_waveform import decode
 from apps.analysis_waveform.bands import (
     PWV6_SCALE_VERSION,
     STRIP_COLUMNS,
-    _bands_payload,
     _downsample_max,
-    measured_peak_bands,
     pwv6_scale,
-    pwv6_scaled_bands,
 )
 from apps.analysis_waveform.decode import (
     BAND_COUNT,
-    OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
     decode_peaks_used,
     decoder_mode,
     select_decoder,
 )
+from apps.analysis_waveform.lane_payload import build_waveform_payload
 
 # STRIP_COLUMNS is imported, not restated: the browser strip is ONE contract
 # (120 columns x 3 bands, SPIKE-A1) whichever source filled it, and two copies
@@ -398,15 +395,6 @@ def _strip_from_peaks(peaks: np.ndarray) -> tuple[str | None, int | None]:
     return base64.b64encode(strip.tobytes()).decode("ascii"), int(strip.max())
 
 
-def _waveform_payload(peaks: np.ndarray, points: int) -> dict[str, Any]:
-    overview = _downsample_max(peaks, OVERVIEW_COLUMNS)
-    return {
-        "kind": "tri",
-        "preview": _bands_payload(pwv6_scaled_bands(overview), points),
-        "detail": _bands_payload(measured_peak_bands(peaks), points),
-    }
-
-
 # ----- public surface ---------------------------------------------------------
 
 
@@ -502,7 +490,7 @@ def local_anlz_payload(stable_id: str, points: int, *, share: bool = False) -> d
         }
         return payload
     preview_b64, preview_max = _strip_from_peaks(peaks)
-    payload["waveform"] = _waveform_payload(peaks, points)
+    payload["waveform"] = build_waveform_payload(peaks, points=points)
     payload["local_waveform"] = {
         "status": "decoded",
         "reason": None,

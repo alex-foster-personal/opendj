@@ -52,8 +52,8 @@ from .backfill_picture import (
     plan_entries,
     read_store,
 )
-from .match import MatchReport
 from .mikdb import MikSong
+from .plan_rebind import plan_rebind
 
 
 @dataclass(frozen=True)
@@ -773,18 +773,6 @@ def _delete_copies(copies: list[Path]) -> int:
     return len(copies)
 
 
-def _sources_rebind(songs: list[MikSong], batch_dir: Path, root: Path | None) -> dups.Rebind:
-    """``collect``'s own sources-map matching, re-run against a (locked) connection."""
-
-    def rebind(locked: sqlite3.Connection) -> tuple[list[MikSong], MatchReport, Callable[[MikSong], list[str]]]:
-        again = sources.match_songs_by_sources(
-            songs, locked, batch_dir=batch_dir, library_root=root, platform=sources.HOST_PLATFORM
-        )
-        return again.songs, again.report, again.candidates_of
-
-    return rebind
-
-
 def _settle_delivery(
     batch: sources.SourcesMatch,
     share: dups.ShareResult,
@@ -835,7 +823,7 @@ def collect(library: Library, request: CollectRequest) -> dict[str, Any]:
             batch.songs, batch.report, gate, conn, fields=CFG.collect_fields, shared=share.shared
         )
         load_plan.still_valid = dups.binding_unchanged(
-            _sources_rebind(songs, batch_dir, root),
+            plan_rebind(songs, sources_batch=batch_dir, library_root=root),
             batch.report,
             share.shared,
             by_metadata=request.share_across_duplicates,

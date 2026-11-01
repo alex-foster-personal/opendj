@@ -38,6 +38,7 @@ from typing import Any
 from apps.analysis.canonical import canonical_pointer
 from apps.analysis.record import AnalysisRecord
 
+from ._beatgrid import downbeats_from_beats
 from ._io import atomic_write_json, utc_now_iso_seconds
 from .dj_labels import label_sections
 from .drop_events import mark_drops
@@ -81,7 +82,7 @@ def own_downbeats(
     lane = AnalysisRecord.from_json(row[0]).lanes.get("beatgrid")
     if lane is None or lane.status != "ok":
         return None
-    downbeats = [float(b["t"]) for b in lane.payload.get("beats", ()) if int(b.get("n", 0)) == 1]
+    downbeats = downbeats_from_beats(lane.payload.get("beats", ()))
     return downbeats, {"backend": pointer[0], "backend_version": pointer[1]}
 
 

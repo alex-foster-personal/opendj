@@ -106,7 +106,7 @@ madmom @ git+https://github.com/CPJKU/madmom@27f032e8947204902c675e5e341a3faf5dc
 # upstream #540 (Sun 25 Aug 2024), and the SHA above builds and tracks beats
 # under setuptools 84 with pkg_resources absent. Do not re-add the cap. See
 # (private path)::test_setuptools_floor_includes_the_cve_2026_59890_fix.
-setuptools>=83
+setuptools>=84.1.0
 PyYAML>=6.0
 
 # Phase 15 -- open-dj spec validation + canonicalisation.

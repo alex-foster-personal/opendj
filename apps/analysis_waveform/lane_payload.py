@@ -23,19 +23,27 @@ from apps.analysis_waveform.decode import OVERVIEW_COLUMNS
 REASON_NOT_DECODED = "not_decoded"
 
 
-def build_waveform_payload(peaks: np.ndarray) -> dict[str, Any]:
-    """Turn ``(n, 3)`` uint8 peak columns into the ok lane payload."""
+def build_waveform_payload(peaks: np.ndarray, *, points: int | None = None) -> dict[str, Any]:
+    """Turn ``(n, 3)`` uint8 peak columns into the ok lane payload.
+
+    When ``points`` is set, both ``preview`` and ``detail`` downsample to that
+    width (``local_anlz_payload`` passes the client's ``/anlz`` budget). When
+    omitted, each section keeps its natural band length (store backfill path).
+    """
     overview = _downsample_max(peaks, OVERVIEW_COLUMNS)
     # The overview is drawn like a rekordbox PWV6 preview; the detail keeps
     # the measured peaks, which the scrolling lane normalizes per band anyway.
     preview_bands = pwv6_scaled_bands(overview)
     detail_bands = measured_peak_bands(peaks)
-    preview_len = int(preview_bands["low"].shape[0])
-    detail_len = int(detail_bands["low"].shape[0])
+    if points is not None:
+        preview_points = detail_points = points
+    else:
+        preview_points = int(preview_bands["low"].shape[0])
+        detail_points = int(detail_bands["low"].shape[0])
     return {
         "kind": "tri",
-        "preview": _bands_payload(preview_bands, points=preview_len),
-        "detail": _bands_payload(detail_bands, points=detail_len),
+        "preview": _bands_payload(preview_bands, points=preview_points),
+        "detail": _bands_payload(detail_bands, points=detail_points),
     }
 
 

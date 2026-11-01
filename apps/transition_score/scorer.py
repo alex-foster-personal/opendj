@@ -528,11 +528,9 @@ def _dropout(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
         t.unknown["dropout"] = "render shorter than one 400 ms loudness window"
         return
     hop = signals.LOUDNESS_HOP_S
-    longest = run = 0
-    for quiet in lufs < DROPOUT_LUFS:
-        run = run + 1 if quiet else 0
-        longest = max(longest, run)
-    seconds = longest * hop + (signals.MOMENTARY_S - hop if longest else 0.0)
+    seconds = longest_run_s(lufs < DROPOUT_LUFS, hop)
+    if seconds > 0:
+        seconds += signals.MOMENTARY_S - hop
     t.metrics["dropout_s"] = round(seconds, 2)
     t.veto_if("dropout", seconds, DROPOUT_VETO_S, seconds > DROPOUT_VETO_S)
 
