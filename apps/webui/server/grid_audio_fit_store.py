@@ -31,6 +31,7 @@ from typing import Any
 from apps.adapters.rekordbox import config
 from apps.analysis_beatgrid.grid_audio_fit import DECK_WARNING_VERDICTS
 from apps.webui.server.grid_quality_store import STORE_FILENAME
+from apps.webui.server.sqlite_sidecar_store import upsert_many_sidecar
 
 NOT_SCANNED = "not_scanned"
 _SQL_CHUNK = 500
@@ -140,18 +141,13 @@ def upsert_many(rows: Sequence[StoredGridAudioFit]) -> None:
     """Replace the stored verdict for each row's track, in one transaction."""
     if not rows:
         return
-    path = store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    try:
-        with conn:
-            conn.execute(_SCHEMA)
-            conn.executemany(
-                f"INSERT OR REPLACE INTO grid_audio_fit ({', '.join(_COLUMNS)}) VALUES ({', '.join('?' * len(_COLUMNS))})",
-                [astuple(row) for row in rows],
-            )
-    finally:
-        conn.close()
+    upsert_many_sidecar(
+        store_path(),
+        _SCHEMA,
+        "grid_audio_fit",
+        _COLUMNS,
+        [astuple(row) for row in rows],
+    )
 
 
 def message(stored: StoredGridAudioFit) -> str | None:

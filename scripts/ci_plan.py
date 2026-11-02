@@ -29,7 +29,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -471,7 +471,43 @@ def observed_dependents(config: Config, test_files: Iterable[Path], root: Path =
             for upstream in reaches[scope.name]:
                 if upstream != owner:
                     found[upstream].add(owner)
+        for upstream, foreign in _foreign_importer_edges(relative, file, owner, importers, owner_of, reaches, config):
+            found[upstream] |= foreign
     return {name: tuple(sorted(names)) for name, names in found.items() if names}
+
+
+def _foreign_importer_edges(
+    relative: str,
+    file: Path,
+    owner: str,
+    importers: dict[str, set[str]],
+    owner_of: Callable[[str], str | None],
+    reaches: dict[str, frozenset[str]],
+    config: Config,
+) -> Iterator[tuple[str, set[str]]]:
+    """Round 27's miss: `tests/sync/conftest.py` re-exports fixtures from `tests/sets/conftest.py`,
+    which imports `apps.sets`, and nothing under `tests/sync/` names that package. A scope-owned
+    test file's imports are also a dependency of every OTHER scope whose files import it, directly
+    or through other helpers, so each upstream of what it consumes gets those scopes as dependents.
+    A session-wide load has no owner and adds none."""
+    foreign = {
+        o for consumer in _transitive_importers(importers, relative) if (o := owner_of(consumer)) not in (None, owner)
+    }
+    if not foreign:
+        return
+    for scope in _consumed_scopes(_read_source(file, relative), relative, config):
+        for upstream in reaches[scope.name]:
+            yield upstream, {name for name in foreign if name != upstream}
+
+
+def _transitive_importers(importers: dict[str, set[str]], target: str) -> set[str]:
+    found: set[str] = set()
+    todo = list(importers[target])
+    while todo:
+        if (consumer := todo.pop()) not in found:
+            found.add(consumer)
+            todo.extend(importers.get(consumer, ()))
+    return found
 
 
 SESSION_LOAD = "<pytest_plugins>"  # a consumer no scope owns: a session-wide or unresolved load

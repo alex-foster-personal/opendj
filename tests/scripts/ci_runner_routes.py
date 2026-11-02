@@ -114,6 +114,44 @@ E2E_GATE_RUNS_ON = (
 )
 
 
+#: The main-push reserve (Mon 2 Nov 2026): a push to main prefers the opt-in
+#: `CI_RUNS_ON_MAIN` pool on the five jobs main's verdict waits on (scope,
+#: trunk-quarantine-list, trunk-quarantine, test, ci-gate), so main's verdict stops
+#: queueing behind PR load. It sits FIRST, ahead of every other route. Unset, it is
+#: falsy and each route resolves exactly as before. ci-insights joined them the same
+#: day: it starts after `ci gate`, and the main-push concurrency group holds the next
+#: main run pending until it completes (11 min seat wait on run 41530505387).
+MAIN_RESERVE_DISJUNCT = f"{_MAIN_PUSH} && vars.CI_RUNS_ON_MAIN"
+_ROUTE_HEAD = "${{ fromJSON("
+
+
+def with_main_reserve(runs_on: str) -> str:
+    """`runs_on` with the main-push reserve in front of its whole chain."""
+    assert runs_on.startswith(_ROUTE_HEAD), runs_on
+    return f"{_ROUTE_HEAD}{MAIN_RESERVE_DISJUNCT} || {runs_on[len(_ROUTE_HEAD) :]}"
+
+
+def without_main_reserve(runs_on: str) -> str:
+    """`runs_on` with the one main-push reserve removed: the route before it."""
+    return runs_on.replace(f"{MAIN_RESERVE_DISJUNCT} || ", "", 1)
+
+
+MAIN_LIGHT_RUNS_ON = with_main_reserve(LIGHT_RUNS_ON)
+MAIN_TOKEN_RUNS_ON = with_main_reserve(TOKEN_RUNS_ON)
+MAIN_SHARD_RUNS_ON = with_main_reserve(SHARD_RUNS_ON)
+#: The ci.yml jobs that carry the main-push reserve, and the exact route each carries.
+MAIN_RESERVED_JOBS = {
+    "scope": MAIN_LIGHT_RUNS_ON,
+    "trunk-quarantine-list": MAIN_TOKEN_RUNS_ON,
+    "trunk-quarantine": MAIN_LIGHT_RUNS_ON,
+    "test": MAIN_SHARD_RUNS_ON,
+    "ci-gate": MAIN_LIGHT_RUNS_ON,
+    "ci-insights": MAIN_TOKEN_RUNS_ON,
+}
+
+
+
+
 def without_merge_queue_route(runs_on: str) -> str:
     """`runs_on` with the one merge-queue disjunct removed: the pre-route expression."""
     return runs_on.replace(f"{MERGE_QUEUE_DISJUNCT} || ", "", 1)

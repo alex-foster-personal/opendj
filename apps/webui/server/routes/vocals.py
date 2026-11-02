@@ -50,6 +50,7 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 import stat
 from collections.abc import Callable
@@ -69,6 +70,7 @@ from apps.vocals import attempts as vattempts
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 from apps.vocals.cli import (
+    CATEGORY_BROKEN_CACHE,
     CATEGORY_CACHED,
     CATEGORY_MISSING,
     CATEGORY_TODO,
@@ -99,6 +101,8 @@ router = APIRouter(prefix="/vocals", tags=["vocals"])
 CATEGORY_UNKNOWN_TRACK: str = "unknown_track"
 CATEGORY_MISSING_STEMS: str = "missing_stems"
 CATEGORY_IN_PROGRESS: str = "in_progress"
+
+log = logging.getLogger(__name__)
 
 
 class VocalsAnalyzeIn(BaseModel):
@@ -267,16 +271,22 @@ def _classify_own(ctx: Ctx, tracks: list[VocalTrack]) -> None:
     for tr in tracks:
         if not tr.audio_on_disk:
             tr.category = CATEGORY_MISSING
-        elif (
-            _vocal_cache_entry_present(ctx.data_dir, tr.stable_id)
-            and vcache.load_valid_entry(
-                vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
-            )
-            is not None
-        ):
-            tr.category = CATEGORY_CACHED
-        else:
-            tr.category = CATEGORY_TODO
+            continue
+        try:
+            cache_present = _vocal_cache_entry_present(ctx.data_dir, tr.stable_id)
+            if (
+                cache_present
+                and vcache.load_valid_entry(
+                    vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
+                )
+                is not None
+            ):
+                tr.category = CATEGORY_CACHED
+            else:
+                tr.category = CATEGORY_TODO
+        except ValueError as exc:
+            log.warning("broken vocal-cache for %s during classify: %s", tr.stable_id, exc)
+            tr.category = CATEGORY_BROKEN_CACHE
 
 
 def _own_vocals(stable_id: str) -> dict[str, Any]:
@@ -300,6 +310,15 @@ def _own_vocals(stable_id: str) -> dict[str, Any]:
     if entry is None:
         return {"status": "not_analyzed"}
     return vcache.anlz_vocals_of(entry)
+
+
+def _own_vocals_for_serve(stable_id: str) -> dict[str, Any]:
+    """Like :func:`_own_vocals`, but a broken cache entry never escapes as a 500."""
+    try:
+        return _own_vocals(stable_id)
+    except ValueError as exc:
+        log.warning("broken vocal-cache for %s: %s", stable_id, exc)
+        return {"status": "not_analyzed"}
 
 
 def _process_claimed_track(ctx: Ctx, track: VocalTrack, claim: TrackClaim) -> None:
@@ -412,7 +431,7 @@ def get_vocal_status(
         # rekordbox on this machine): no PVDI is possible, so the vocal-cache
         # keyed by the app's own stable id is the only source. /anlz serves
         # this same read for such a track (VOCALS-04).
-        vocals = _own_vocals(stable_id)
+        vocals = _own_vocals_for_serve(stable_id)
     else:
         vocals = rb_vendor.vocals_for_content(content)
     failed = (

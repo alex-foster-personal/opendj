@@ -30,6 +30,7 @@
 	import { goto } from '$app/navigation';
 	import AssistantSidebar from '$lib/components/assistant/AssistantSidebar.svelte';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
+	import MusicFolderRows from '$lib/components/setup/MusicFolderRows.svelte';
 	import { capabilities } from '$lib/api/capabilities.svelte';
 	import { jobsStore, errorTail } from '$lib/rb/jobs-store.svelte';
 	import {
@@ -632,11 +633,25 @@
 								and none are guessed -- the library you get is unanalysed, and the
 								last screen will say so.
 							</p>
-							{#if setupWizard.folderCandidatesState === 'loading'}
+						{#if setupWizard.folderCandidatesState === 'loading'}
 								<p class="status-line muted" role="status">
 									Looking for your music folders...
 								</p>
-							{/if}
+						{/if}
+						<MusicFolderRows
+							rows={folderRows}
+							busy={setupWizard.busy}
+							refusal={refusal}
+							nativeFolderPicker={nativeFolderPicker}
+							candidates={setupWizard.folderCandidates ?? []}
+							onPick={(id) => void chooseFolder(id)}
+							onCheck={(id) => void setupWizard.checkFolderRow(id)}
+							onRemove={(id) => setupWizard.removeFolderRow(id)}
+							onAdd={() => setupWizard.addFolderRow()}
+							onSuggestion={(path) => setupWizard.applyFolderSuggestion(path)}
+						/>
+						<!-- Legacy inline rows retained only as history while the shared component is verified. -->
+						<!--
 							{#if (setupWizard.folderCandidates ?? []).length > 0}
 								<div class="folder-suggestions">
 									{#each setupWizard.folderCandidates ?? [] as candidate (candidate.path)}
@@ -762,7 +777,7 @@
 									</div>
 								{/each}
 							</div>
-							{#if showAddFolderRow}
+						{#if showAddFolderRow}
 								<button
 									type="button"
 									class="secondary folder-add"
@@ -773,7 +788,7 @@
 								>
 									+
 								</button>
-							{/if}
+						-->
 
 							<div class="actions">
 								{@render backButton()}

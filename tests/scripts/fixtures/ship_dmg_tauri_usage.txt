@@ -1,6 +1,7 @@
 usage: ship_dmg.sh [--dry-run] [--sha REF] [--machine NAME]... [--lane LABEL]
                    [--no-close] [--requested-at ISO8601-UTC]
                    [--build-on NAME]
+                   [--local-fast]
 
 Ships the Open DJ desktop dmg to every DEFAULT machine (air, silver,
 demon-llama), built on demon-llama. With no arguments this is the whole
@@ -31,8 +32,9 @@ the run refuses, naming the reason, if that machine's TESTMAC persona loop
                   MDT_BUILD_ON). If it is not this machine, this exact
                   invocation is handed to it over ssh and it does the
                   whole rollout, still installing to every selected
-                  machine. Silver is not allowed to build. Only a mac can
-                  build: a macOS app bundle needs macOS. That machine's
+                  machine. Any of the three Macs may build (silver since
+                  Mon 2 Nov 2026). Only a mac can build: a macOS app
+                  bundle needs macOS. That machine's
                   checkout must already BE on the target revision, since
                   the dispatch runs its script and its sources; a
                   mismatch is refused in seconds rather than after the
@@ -50,3 +52,13 @@ the run refuses, naming the reason, if that machine's TESTMAC persona loop
                   demon-llama after every install there.
   --acceptance-on NAME  also run the acceptance on NAME after its install
                   (repeatable; air is the opt-in; silver is refused).
+  --local-fast    the quick dev rebuild loop: build a Developer ID signed,
+                  hardened app on THIS Mac and install it on THIS Mac only,
+                  skipping app notarization, the dmg and dmg notarization.
+                  Needs --build-on and --machine both naming this machine
+                  (e.g. --build-on silver --machine silver), and a checkout
+                  already at --sha (pass --sha HEAD to build what is checked
+                  out); anything else exits 2 before anything runs. The
+                  installed app is stamped release_channel=local-unnotarized,
+                  is never accepted or shipped, and is replaced by the next
+                  normal rollout. Takes --dry-run, --sha and --no-close.

@@ -18,9 +18,10 @@
  * stop transport - which it never does.
  */
 
-import { validateBeatGrid } from '$lib/rb/beat-sync-math';
+import { describeUnsyncedStart, describeUnsyncedStartOther, validateBeatGrid } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
+import { planGridJump } from '$lib/player/transport/grid-jump';
 
 /**
  * The one sentence every inert sync / quantize control shows on hover when the
@@ -219,6 +220,21 @@ export interface UnlockedFollower {
 	deck: number;
 	message: string;
 	notice: string;
+	/** DECKGAP-7691c: the planner refused with `TempoOutOfSyncRangeError` (tempo outside the pitch range). */
+	outOfRange?: boolean;
+}
+
+/**
+ * DECKGAP-7691c: the `sync_error` a follower carries once it has started
+ * unsynced, so its Play button glows and says why. A tempo out of range
+ * leads with the plain wording; any other refusal keeps its own words
+ * behind "Beat Sync is not locked:". Both prefixes keep it off the deck's
+ * error strip (main's PLAY-27 ruling: an unsynced start is no deck error).
+ */
+export function unsyncedStartSyncError(error: BeatSyncPhaseLockError, deck: number): string {
+	const own = error.failed.find((f) => f.deck === deck);
+	if (own === undefined) return describeUnsyncedStartOther(error.message);
+	return own.outOfRange === true ? describeUnsyncedStart(own) : describeUnsyncedStartOther(own.message);
 }
 
 /**
@@ -260,7 +276,8 @@ export async function joinPhaseOrStartUnsynced(
 	join: () => Promise<void>,
 	startUnsynced: () => Promise<void>,
 	log: (line: string) => void = console.info,
-	onRefusal: (error: BeatSyncPhaseLockError) => void = () => {}
+	onRefusal: (error: BeatSyncPhaseLockError) => void = () => {},
+	markUnsynced: (deck: number, syncError: string) => void = () => {}
 ): Promise<'synced' | 'unsynced'> {
 	try {
 		await join();
@@ -270,6 +287,8 @@ export async function joinPhaseOrStartUnsynced(
 		log(`[beat-sync] deck ${deck} starts unsynced: ${error.message}`);
 		onRefusal(error);
 		await startUnsynced();
+		// DECKGAP-7691c: after the start, which clears sync_error, so the reason stays on the deck.
+		markUnsynced(deck, unsyncedStartSyncError(error, deck));
 		return 'unsynced';
 	}
 }
@@ -367,6 +386,30 @@ export function mixWithoutBeatSync(
 	console.info(`[beat-sync] ${notice} (decks ${followers.join(',')} play unsynced)`);
 	pushToast(notice, 'warn');
 	recordPerfEvent(GRIDLESS_MASTER_PERF_KIND, `${notice}; decks [${followers.join(',')}] play unsynced`, master, 'warn');
+}
+
+/**
+ * DECKUX-6794: plan a snapped `grid_jump` of `bars` for a loaded deck from
+ * `anchorMs`: the sign is the direction, the size the block length, and the
+ * deck's phrase starts are the section stops. Pure; the engine runs a `jump`
+ * plan as a whole-beat beat jump from the same anchor.
+ */
+export function planDeckGridJump(
+	st: Pick<DeckState, 'anlz'>,
+	beats: readonly AnlzBeat[],
+	anchorMs: number,
+	bars: number,
+	playing: boolean
+) {
+	if (!Number.isInteger(bars) || bars === 0) throw new RangeError(`gridJump: bars must be a non-zero integer, got ${bars}`);
+	return planGridJump({
+		beats,
+		sectionStartsSec: (st.anlz?.phrases ?? []).map((p) => p.start_s),
+		anchorMs,
+		direction: bars > 0 ? 1 : -1,
+		stepBars: Math.abs(bars),
+		playing
+	});
 }
 
 /**

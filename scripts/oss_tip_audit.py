@@ -1,11 +1,11 @@
 """Audit the tracked tree for identity and infrastructure strings that must not ship public.
 
-Companion to docs/oss-going-public-checklist.md. The checklist's REVIEW table was a
+Companion to (private path). The checklist's REVIEW table was a
 one-off grep whose literal search strings were themselves scrubbed by #910 and #1326, so
 the numbers there cannot be re-derived. This module pins the INVARIANT instead: the
 tracked tree carries no real home directory, no consumer mailbox, no tailnet name and no
 CGNAT address, and no login the tree reveals in a home path written as a bare word
-anywhere else (scripts/oss_tip_logins.py). It is run by tests/scripts/test_oss_tip_audit.py on every CI pass, so a
+anywhere else (scripts/oss_tip_logins.py). It is run by (private path) on every CI pass, so a
 regression fails a PR rather than surfacing in a public fork.
 
     python -m scripts.oss_tip_audit            # scan the tracked tree, exit 1 on findings
@@ -71,11 +71,11 @@ __all__ = [
     "BINARY_SNIFF_BYTES",
     "GENERATED_TEST_ID_PATHS",
     "MAILBOX_EXEMPT_PATHS",
-    "UPSTREAM_LICENSE_MAILBOX_BLOBS",
     "PATTERNS",
     "PLACEHOLDER_USERS",
     "RECORD_PATHS",
     "RULE_PREFILTERS",
+    "UPSTREAM_LICENSE_MAILBOX_BLOBS",
     "AuditResult",
     "Finding",
     "KnownLogins",
@@ -86,6 +86,7 @@ __all__ = [
     "is_exempt",
     "is_record_path",
     "published_blobs",
+    "read_blobs",
 ]
 
 
@@ -114,6 +115,11 @@ class AuditResult:
     # (RECORD_PATHS). Counted, never silent: a run that reads nothing must not be
     # mistakable for a run that found nothing.
     records: int = 0
+    # Which scanner produced this (scripts/oss_tip_native.py), and how many blobs
+    # the native kernel handed back to Python because it could not mirror them.
+    # Not part of summary(): the verdict line is identical for both backends.
+    backend: str = "python"
+    python_fallback: int = 0
 
     def summary(self) -> str:
         return (
@@ -137,7 +143,10 @@ class KnownLogins:
 
     @classmethod
     def from_texts(cls, texts: Iterable[str]) -> KnownLogins:
-        logins = revealed_logins(texts)
+        return cls.from_logins(revealed_logins(texts))
+
+    @classmethod
+    def from_logins(cls, logins: frozenset[str]) -> KnownLogins:
         return cls(logins, known_login_pattern(logins))
 
 
@@ -367,24 +376,29 @@ def published_blobs(root: Path) -> Iterator[tuple[str, str, bytes]]:
     entries = _blob_entries(root)
     if not entries:
         return
-    blobs = [e for e in entries if e[1] != "160000"]
+    contents = read_blobs(root, [sha for _, mode, sha in entries if mode != "160000"])
+    for rel, mode, sha in entries:
+        yield rel, mode, contents.get(sha, b"")
+
+
+def read_blobs(root: Path, shas: list[str]) -> dict[str, bytes]:
+    """The bytes of each blob id, from one `git cat-file --batch`."""
     contents: dict[str, bytes] = {}
-    if blobs:
+    if shas:
         proc = subprocess.run(
             ["git", "-C", str(root), "cat-file", "--batch"],
-            input="\n".join(sha for _, _, sha in blobs).encode(),
+            input="\n".join(shas).encode(),
             capture_output=True,
             check=True,
         ).stdout
         offset = 0
-        for _rel, _mode, sha in blobs:
+        for sha in shas:
             header_end = proc.index(b"\n", offset)
             size = int(proc[offset:header_end].split()[2])
             body_start = header_end + 1
             contents[sha] = proc[body_start : body_start + size]
             offset = body_start + size + 1  # git writes a newline after each object
-    for rel, mode, sha in entries:
-        yield rel, mode, contents.get(sha, b"")
+    return contents
 
 
 # Byte-order marks, longest first: UTF-32's BOMs START with UTF-16's, so
@@ -476,7 +490,18 @@ def _is_content_scanned(rel: str, *, include_records: bool) -> bool:
 
 
 def audit_index(root: Path, *, include_records: bool = False) -> AuditResult:
-    """The publication gate: what git would ship, read from git."""
+    """The publication gate: what git would ship, read from git.
+
+    `ODJ_OSS_AUDIT_BACKEND` (python by default) may route the scan through the
+    native kernel; see scripts/oss_tip_native.py. Same findings either way.
+    """
+    from scripts.oss_tip_native import audit_index_native
+
+    native = audit_index_native(root, include_records=include_records)
+    return native if native is not None else _audit_index_python(root, include_records=include_records)
+
+
+def _audit_index_python(root: Path, *, include_records: bool = False) -> AuditResult:
     findings: list[Finding] = []
     exempt: list[Finding] = []
     scanned = skipped_binary = records = 0
@@ -546,7 +571,15 @@ def main(argv: list[str] | None = None) -> int:
         help="also scan the content of write-once record directories",
     )
     args = parser.parse_args(argv)
-    result = audit_tracked_tree(args.root.resolve(), include_records=args.include_records)
+    from scripts.oss_tip_native import NativeAuditError, note
+
+    try:
+        result = audit_tracked_tree(args.root.resolve(), include_records=args.include_records)
+    except NativeAuditError as exc:
+        # A failed measurement is never a verdict ((private path)).
+        print(f"[UNKNOWN] oss-tip-audit could not measure: {exc}")
+        return 2
+    note(f"oss-tip-audit backend={result.backend} python_fallback={result.python_fallback}")
     for finding in result.exempt:
         print(f"exempt {finding.render()}")
     for finding in result.findings:

@@ -31,6 +31,8 @@ import type { ShellHealthServer } from './shell-health';
 import { appendShellLog, utcTimestampIso } from './shell-log';
 
 export const POLL_INTERVAL_MS = 5_000;
+/** Consecutive failed health probes before a live engine counts as dead. Matches the Tauri shell. */
+export const UNRESPONSIVE_AFTER_MISSES = 6;
 export const RECOVERY_TIMEOUT_MS = 30_000;
 export const PARENT_FILE = '.engine.parent';
 export const PARENT_PREV_FILE = '.engine.parent.prev';
@@ -230,8 +232,11 @@ export class EngineSupervisor {
 	private lockPid: number | null = null;
 	private lockPort: number | null = null;
 	private autoRestartAttempted = false;
+	private missedProbes = 0;
 	private stopped = false;
 	private busy: Promise<void> = Promise.resolve();
+	/** Cancels the health wait of a restart in flight, so quit does not wait out the boot timeout. */
+	private restartAbort: AbortController | null = null;
 
 	constructor(
 		supervised: Supervised,
@@ -269,6 +274,7 @@ export class EngineSupervisor {
 
 	async shutdown(): Promise<void> {
 		this.stopped = true;
+		this.restartAbort?.abort();
 		await this.busy;
 		const running = this.supervised;
 		this.supervised = null;
@@ -308,6 +314,7 @@ export class EngineSupervisor {
 				if (!this.autoRestartAttempted) {
 					this.autoRestartAttempted = true;
 					if (await this.attemptRestart()) return;
+					if (this.stopped) return;
 					if (this.isLowDisk()) {
 						this.enterAwaitingDisk();
 						return;
@@ -363,14 +370,25 @@ export class EngineSupervisor {
 				if (!this.deps.pidCanAct(engine.pid)) {
 					return { exitCode: 1, signal: null, lockPid: engine.pid, lockPort: engine.port };
 				}
-				return { exitCode: 1, signal: null, lockPid, lockPort: engine.port };
+				return this.missedHealth({ exitCode: 1, signal: null, lockPid, lockPort: engine.port });
 			}
+			this.missedProbes = 0;
 			return null;
 		}
-		if (!this.deps.pidCanAct(running.pid) || !(await this.deps.health(running.port))) {
+		if (!this.deps.pidCanAct(running.pid)) {
 			return { exitCode: 1, signal: null, lockPid: running.pid, lockPort: running.port };
 		}
+		if (!(await this.deps.health(running.port))) {
+			return this.missedHealth({ exitCode: 1, signal: null, lockPid: running.pid, lockPort: running.port });
+		}
+		this.missedProbes = 0;
 		return null;
+	}
+
+	/** A live pid that stops answering is dead only after several misses in a row, as in the Tauri shell. */
+	private missedHealth(death: DeathInfo): DeathInfo | null {
+		this.missedProbes += 1;
+		return this.missedProbes >= UNRESPONSIVE_AFTER_MISSES ? death : null;
 	}
 
 	private async reapChild(): Promise<void> {
@@ -384,6 +402,7 @@ export class EngineSupervisor {
 	}
 
 	private async attemptRestart(): Promise<boolean> {
+		if (this.stopped) return false;
 		const exitCode = this.exitCode ?? -1;
 		const { payload, dataDir, logPath } = this.paths;
 		if (this.stopped) return false;
@@ -419,6 +438,11 @@ export class EngineSupervisor {
 		let engine: Engine;
 		try {
 			const port = await this.deps.freePort();
+			if (this.stopped) {
+				appendShellLog('INFO', 'quit began during restart; not spawning the new engine');
+				parentWatchClaim.release();
+				return false;
+			}
 			engine = this.deps.spawn(payload, dataDir, logPath, port);
 		} catch (error) {
 			parentWatchClaim.release();
@@ -430,12 +454,19 @@ export class EngineSupervisor {
 			parentWatchClaim.release();
 			return false;
 		}
+		// No await between the stopped check above and this assignment, so shutdown() cannot slip in between.
+		const abort = new AbortController();
+		this.restartAbort = abort;
 		try {
-			await engine.waitUntilHealthy(this.deps.bootTimeoutMs);
+			await engine.waitUntilHealthy(this.deps.bootTimeoutMs, abort.signal);
 		} catch (error) {
 			await engine.shutdown();
 			parentWatchClaim.release();
+			// Quit cancelled the wait; it is not a restart failure.
+			if (this.stopped) return false;
 			return this.restartFailed(`restart failed: ${(error as Error).message}`);
+		} finally {
+			this.restartAbort = null;
 		}
 		parentWatchClaim.keep();
 		this.supervised = { kind: 'spawned', engine };
@@ -446,6 +477,7 @@ export class EngineSupervisor {
 		this.phase = 'running';
 		this.deadAt = null;
 		this.autoRestartAttempted = false;
+		this.missedProbes = 0;
 		appendShellLog('INFO', `${utcTimestampIso()} engine restarted after exit code ${exitCode}`);
 		this.updateSurfaces();
 		const running = this.supervised;

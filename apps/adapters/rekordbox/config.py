@@ -1,11 +1,11 @@
 """Path constants, cache schemas, and the in-process file-existence cache.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C0 (source lines
-75-169 on ``af--t4-design``) per ``.planning/t3b-decomposition-map.md``
+75-169 on ``af--t4-design``) per ``(private path)``
 section 2 target #2.
 
 **Every constant here is a rebindable module attribute, on purpose.**
-``.planning/e2e-gating/run_daemon.py`` and the test suite point the adapter
+``(private path)`` and the test suite point the adapter
 at a different library by assigning to these names on the module object.
 That only works while every reader dereferences ``config.<NAME>`` at call
 time; a ``from .config import MASTER_PLAIN_DB`` in a consumer captures the
@@ -110,7 +110,9 @@ LOCAL_WAVEFORM_CACHE_SCHEMA: int = 2
 from apps.shared.runtime_policy import FILE_EXISTS_TTL_S  # noqa: E402
 
 _FILE_EXISTS_LOCK = threading.Lock()
-_FILE_EXISTS_CACHE: dict[str, tuple[float, int | None]] = {}
+# path -> (monotonic time, materialised size, the file that size was measured at,
+# the resolver namespace it was measured under: another namespace is a miss)
+_FILE_EXISTS_CACHE: dict[str, tuple[float, int | None, str | None, str]] = {}
 
 
 __all__ = [

@@ -33,25 +33,38 @@ from urllib.parse import quote
 
 import httpx
 
-from apps.autodj.compile import compile_plan, control_command
-from apps.autodj.http import build_service
-from apps.autodj.live import ANCHOR_LEAD_BARS
-from apps.autodj.live import lead_short as _lead_short
-from apps.autodj.live import live_bar as _live_bar
-from apps.autodj.live import with_in_track as _with_in_track
-from apps.autodj.plan import (
+from apps.autodj.http import (
+    ANCHOR_LEAD_BARS,
+    ROLES,
+    MixWindow,
     PlanError,
+    ProfileError,
+    TrackProfile,
     TransitionPlan,
     Validation,
+    build_service,
+    compile_plan,
+    control_command,
     first_dispatch_bar,
     live_child,
+    mix_windows,
     parse_plan,
+    profile_from_payloads,
+    propose_transition,
+    score_pair,
+    score_windows,
     validate_plan,
+    window_at,
 )
-from apps.autodj.profile import ProfileError, TrackProfile, profile_from_payloads
-from apps.autodj.propose import propose_transition
-from apps.autodj.scoring import score_pair, score_windows
-from apps.autodj.windows import ROLES, MixWindow, mix_windows, window_at
+from apps.autodj.http import (
+    lead_short as _lead_short,
+)
+from apps.autodj.http import (
+    live_bar as _live_bar,
+)
+from apps.autodj.http import (
+    with_in_track as _with_in_track,
+)
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     EngineClient,

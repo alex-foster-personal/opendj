@@ -8,6 +8,17 @@
 # reqs.json is generated structured JSON. Leave it unassigned so divergent edits
 # conflict instead of silently producing invalid JSON.
 
+# Machine-written files. linguist-generated collapses them in GitHub diffs and
+# drops them from language stats; it changes nothing about merging or checkout.
+# fleet-af `code_budgets/census.py` counts these as data or generated, in bytes.
+(private path)/** linguist-generated=true
+tools/deck-diagrams/devices/**/*.json linguist-generated=true
+tools/deck-diagrams/devices/**/*.html linguist-generated=true
+apps/webui/openapi.json linguist-generated=true
+apps/webui/frontend/src/lib/api-types.ts linguist-generated=true
+reqs.json linguist-generated=true
+.test_durations linguist-generated=true
+pylock.*.toml linguist-generated=true
 # Byte-pinned text fixtures: each file's sha256 and size are recorded in its
 # directory's manifest.json and checked before use, so a checkout must hand
 # back the committed bytes unchanged. Without this, core.autocrlf=true on

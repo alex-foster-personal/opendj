@@ -32,6 +32,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from apps.shared.engine_app_state import data_dir_from_engine_request
 from apps.stems.selection import library_buckets
 from apps.stems.tiers import (
     DEFAULT_TIER,
@@ -100,13 +101,6 @@ def stems_transport_state() -> tuple[str, str | None]:
     return _state()
 
 
-def _data_dir(request: Request) -> Path:
-    cfg = getattr(request.app.state, "engine_cfg", None)
-    if cfg is None:
-        raise RuntimeError("engine config is not mounted on app.state.engine_cfg")
-    return Path(cfg.data_dir)
-
-
 @router.get("/plan", response_model=StemsPlanOut)
 def get_stems_plan(
     request: Request,
@@ -139,7 +133,7 @@ def get_stems_plan(
 
     _ensure_throughput_loaded()
     try:
-        buckets = library_buckets(_data_dir(request))
+        buckets = library_buckets(data_dir_from_engine_request(request))
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)

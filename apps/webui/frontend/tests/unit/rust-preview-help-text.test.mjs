@@ -51,7 +51,8 @@ const UNNAMED = new Set([
 	'master_delay_ms',
 	'rescue_resume',
 	'rescue_stop_all',
-	'pairing_snapshot_save'
+	// DECKUX-6794: behind a default-off flag, so the preview's help text has no feature to name yet.
+	'grid_jump'
 ]);
 
 function detail() {

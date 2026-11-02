@@ -55,7 +55,7 @@ from . import queue_store, queue_targets, queue_user_cli
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
 from .lanes import own_backend, parse_own_backend
-from .queue_runner import drain, run_batch
+from .queue_runner import RunSummary, drain, run_batch
 from .store import open_conn
 
 log = logging.getLogger("apps.analysis.queue_cli")
@@ -261,7 +261,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             backend_for_lane=lambda lane: backend_for_lane(backend_cls, lane),
             cascade_resolver=cascade_resolver,
         )
-        summary = summaries[-1] if summaries else None
+        # The REQUESTED batch, never the last cascade batch the drain ran.
+        summary = summaries[0] if summaries else None
         if summary is None:
             items = queue_store.list_items(conn, args.batch_id, limit=1)
             if not items:
@@ -274,7 +275,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
     finally:
         conn.close()
-    payload = {
+    payload, exit_code = build_run_report(args.batch_id, summaries or [summary])
+    if not args.json:
+        console.print(
+            f"{summary.batch_id}: completed {summary.completed}, skipped "
+            f"{summary.skipped}, failed {summary.failed}, released on takeover "
+            f"{summary.released_on_takeover}; cascade batches "
+            f"{len(payload['cascade_batches'])}"
+        )
+    _emit(payload, as_json=args.json)
+    return exit_code
+
+
+def _summary_counts(summary: RunSummary) -> dict[str, Any]:
+    return {
         "batch_id": summary.batch_id,
         "runner_id": summary.runner_id,
         "workers": summary.workers,
@@ -290,16 +304,37 @@ def cmd_run(args: argparse.Namespace) -> int:
             if o.requeued
         ],
         "cascade_batch_id": summary.cascade_batch_id,
-        "drain_batches": len(summaries),
     }
-    if not args.json:
-        console.print(
-            f"{summary.batch_id}: completed {summary.completed}, skipped "
-            f"{summary.skipped}, failed {summary.failed}, released on takeover "
-            f"{summary.released_on_takeover}"
+
+
+def build_run_report(
+    requested_batch_id: str, summaries: list[RunSummary]
+) -> tuple[dict[str, Any], int]:
+    """The ``run`` payload and exit code for one drain.
+
+    The top level is the REQUESTED batch. ``drain`` also runs every cascade
+    batch the requested one spawned, and reporting the last of those instead
+    named a batch the caller never asked about (Sat 26 Sep 2026 retest:
+    ``qb_15bf...`` skipped 1 printed for a requested ``qb_3528...`` that was
+    done 1/1). Each cascade batch is listed with its own counts, and the exit
+    code counts a failed track in ANY batch of the drain, so a clean cascade
+    cannot mask a failure in the requested batch.
+    """
+    if not summaries:
+        raise ValueError(f"drain of {requested_batch_id!r} ran no batch")
+    requested = summaries[0]
+    if requested.batch_id != requested_batch_id:
+        raise ValueError(
+            f"drain of {requested_batch_id!r} reported batch "
+            f"{requested.batch_id!r} first; refusing to relabel it"
         )
-    _emit(payload, as_json=args.json)
-    return EXIT_TRACK_FAILURES if summary.failed else EXIT_OK
+    payload = {
+        **_summary_counts(requested),
+        "drain_batches": len(summaries),
+        "cascade_batches": [_summary_counts(s) for s in summaries[1:]],
+    }
+    any_failed = any(s.failed for s in summaries)
+    return payload, EXIT_TRACK_FAILURES if any_failed else EXIT_OK
 
 
 def cmd_version_bump(args: argparse.Namespace) -> int:

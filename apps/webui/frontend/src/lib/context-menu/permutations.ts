@@ -78,7 +78,7 @@ export function sampleTarget<K extends MenuTargetKind>(
 	ctx: MenuContextByKind[K]
 ): Extract<MenuTarget, { kind: K }> {
 	const targets: { [T in MenuTargetKind]: (c: MenuContextByKind[T]) => Extract<MenuTarget, { kind: T }> } = {
-		track: (c) => ({ kind: 'track', count: c.selection === 'many' ? 3 : 1 }),
+		track: (c) => ({ kind: 'track', count: c.selection === 'many' ? 3 : 1, rows: c.selection === 'many' ? 3 : 1 }),
 		'track-chip': () => ({ kind: 'track-chip' }),
 		'playlists-root': () => ({ kind: 'playlists-root' }),
 		playlist: () => ({ kind: 'playlist' }),

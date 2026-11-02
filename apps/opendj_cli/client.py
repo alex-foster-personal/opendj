@@ -61,7 +61,7 @@ class EngineClient:
 
         response = self._request("GET", MIRROR_PATH, timeout=MIRROR_TIMEOUT_S)
         if response.status_code == 409:
-            if ensure_performance_page(self.origin):
+            if ensure_performance_page(self.origin, timeout_s=MIRROR_TIMEOUT_S):
                 response = self._request("GET", MIRROR_PATH, timeout=MIRROR_TIMEOUT_S)
                 if response.status_code == 200:
                     return self._document(response)
@@ -92,7 +92,7 @@ class EngineClient:
             "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
         )
         if response.status_code == 409:
-            if ensure_performance_page(self.origin):
+            if ensure_performance_page(self.origin, timeout_s=self.timeout_s):
                 response = self._request(
                     "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
                 )
@@ -101,7 +101,9 @@ class EngineClient:
                         raise OrderRejected(self._detail(response))
                     self._require_ok(response)
                     return self._document(response)
-            raise NoPerformancePage(no_performance_page_message(self.origin))
+            raise NoPerformancePage(
+                no_performance_page_message(self.origin, timeout_s=self.timeout_s)
+            )
         if response.status_code == 422:
             raise OrderRejected(self._detail(response))
         self._require_ok(response)

@@ -17,6 +17,10 @@ on:
   workflow_run:
     workflows: [CI, E2E]
     types: [completed]
+    # Only the default branch: the job below admits nothing else, and without this filter every
+    # PR run of CI and E2E created a run here that skipped (S2 round 7, Mon 2 Nov 2026: 89 of 92 runs in 24 h).
+    # A scheduled run's head_branch is the default branch too, so it still arrives.
+    branches: [main]
 
 # workflow_run uses the default branch's workflow definition. Do not check out
 # or execute the triggering SHA because it may be untrusted pull-request code.

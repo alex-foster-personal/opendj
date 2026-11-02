@@ -15,10 +15,13 @@
  * thin orchestrator (auto-play-next.svelte.ts) that dispatches them.
  *
  * Requirements:
- *   ✔︎ The outgoing deck's last repetitive (non-progression) 8-beat window
- *     is found by energy-profile self-similarity, not by ear.
- *     [if] two adjacent 8-beat windows have near-identical low/mid/high
- *     energy profiles [then] the later window is offered as the loop
+ *   ✔︎ The outgoing deck loops about 16 bars before the end (B-16, B = end
+ *     of the beat grid), not on the last bars. DECKGAP-7691g, pin 9f05ca7e3f6f.
+ *     [if] a nearby downbeat has near-identical low/mid/high energy on the
+ *     4 beats before it and the 4 beats after it [then] that downbeat starts
+ *     the 8-beat loop
+ *     [else] the loop starts at B-16 anyway
+ *     Grids shorter than 16 bars keep the last repetitive 8-beat window.
  *   ✔︎ Once armed, that loop plays until the incoming track's bass enters.
  *     [if] the incoming deck's low-band energy crosses the bass threshold
  *     [then] planAutoPlayNextEqDuck returns a ducked LOW knob value exactly once
@@ -35,11 +38,21 @@ export const AUTO_PLAY_NEXT_MAX_LOOP_MS = 120_000;
 
 const AUTO_PLAY_NEXT_BEAT_LOOP_SPAN = 8;
 const ONE_SAMPLE_MS_48K = (1 / 48_000) * 1000;
+/** 4/4 bar. B-16 is 16 of these before the end of the grid. */
+const BEATS_PER_BAR = 4;
+const LOOP_BARS_BEFORE_END = 16;
+/** Beats compared on each side of a candidate loop start. */
+const SEAM_BEATS = 4;
+/** How far before B-16 a seamless bar may sit. */
+const SEAM_SEARCH_EARLIER_BARS = 32;
+/** How far after B-16 a seamless bar may sit (stays off the tail). */
+const SEAM_SEARCH_LATER_BARS = 4;
 
 /** Tunables - all config, no hidden defaults baked into the math. */
 export interface AutoPlayNextConfig {
-	/** 0..1 normalized-correlation floor two 8-beat windows must clear to be
-	 * called "the same repetitive loop material". */
+	/** 0..1 cosine-similarity floor two energy profiles must clear to count
+	 * as the same bar (4 beats before vs after a downbeat, or two 8-beat
+	 * windows on a grid shorter than 16 bars). */
 	similarityThreshold: number;
 	/** 0..1 low-band energy floor that counts as "bass has entered". */
 	bassEntryThreshold: number;
@@ -125,22 +138,34 @@ function _similarity(a: readonly [number, number, number], b: readonly [number, 
 	return dot / (magA * magB);
 }
 
+function _snapDownbeatAtOrBefore(beats: readonly AnlzBeat[], index: number): number | null {
+	if (index < 0) return null;
+	let idx = Math.min(index, beats.length - 1);
+	while (idx >= 0 && beats[idx].n !== 1) idx -= 1;
+	return idx >= 0 ? idx : null;
+}
+
+/** Downbeat where 16 bars remain, or null when the grid is shorter than that. */
+function _bMinus16LoopStart(beats: readonly AnlzBeat[], beatSpan: number): number | null {
+	const raw = beats.length - LOOP_BARS_BEFORE_END * BEATS_PER_BAR;
+	const start = _snapDownbeatAtOrBefore(beats, raw);
+	if (start === null) return null;
+	if (!_downbeatAlignedLoopFits(beats, start, beatSpan)) return null;
+	return start;
+}
+
 /**
- * Find the last two adjacent, non-overlapping 8-beat (or `beatSpan`-beat)
- * windows on the outgoing deck whose energy profiles are near-identical -
- * an approximation for "repetitive, non-progression" material. Returns the
- * LATER window's beat-index range, or null when no such pair clears
- * `config.similarityThreshold` or the grid/waveform is too short to try.
+ * Grids shorter than 16 bars: last two adjacent 8-beat windows whose energy
+ * profiles match. Returns the later window, or null when none clears the
+ * threshold.
  */
-export function findRepetitiveLoopWindow(
+function _findLastRepetitiveWindow(
 	waveform: AnlzWaveform,
 	beats: readonly AnlzBeat[],
 	durationSec: number,
 	config: AutoPlayNextConfig,
-	beatSpan = 8
+	beatSpan: number
 ): { startBeatIdx: number; endBeatIdx: number } | null {
-	_assertBeats(beats);
-	if (beats.length < beatSpan * 2) return null;
 	for (let laterStart = beats.length - beatSpan; laterStart >= beatSpan; laterStart -= beatSpan) {
 		const earlierStart = laterStart - beatSpan;
 		const later = _profile(waveform, beats, laterStart, beatSpan, durationSec);
@@ -154,6 +179,63 @@ export function findRepetitiveLoopWindow(
 		}
 	}
 	return null;
+}
+
+/**
+ * Pin 9f05ca7e3f6f: 8-beat loop near B-16. Prefer a downbeat whose 4 beats
+ * before and 4 beats after have near-identical energy; otherwise start the
+ * loop at B-16 itself. Null only when the grid has no such downbeat.
+ */
+function _findLoopAroundBMinus16(
+	waveform: AnlzWaveform,
+	beats: readonly AnlzBeat[],
+	durationSec: number,
+	config: AutoPlayNextConfig,
+	beatSpan: number
+): { startBeatIdx: number; endBeatIdx: number } | null {
+	const target = _bMinus16LoopStart(beats, beatSpan);
+	if (target === null) return null;
+	const earliest = Math.max(SEAM_BEATS, target - SEAM_SEARCH_EARLIER_BARS * BEATS_PER_BAR);
+	const latest = target + SEAM_SEARCH_LATER_BARS * BEATS_PER_BAR;
+	let best: { start: number; dist: number; sim: number } | null = null;
+	for (let start = earliest; start <= latest; start += 1) {
+		if (beats[start] === undefined || beats[start].n !== 1) continue;
+		if (!_downbeatAlignedLoopFits(beats, start, beatSpan)) continue;
+		const before = _profile(waveform, beats, start - SEAM_BEATS, SEAM_BEATS, durationSec);
+		const after = _profile(waveform, beats, start, SEAM_BEATS, durationSec);
+		if (before === null || after === null) continue;
+		const sim = _similarity(before, after);
+		if (sim < config.similarityThreshold) continue;
+		const dist = Math.abs(start - target);
+		if (
+			best === null ||
+			dist < best.dist ||
+			(dist === best.dist && (sim > best.sim || (sim === best.sim && start < best.start)))
+		) {
+			best = { start, dist, sim };
+		}
+	}
+	const chosen = best === null ? target : best.start;
+	return { startBeatIdx: chosen, endBeatIdx: chosen + beatSpan };
+}
+
+/**
+ * Outgoing-deck loop window for AutoPlay Next. On a grid of at least 16 bars
+ * this is an 8-beat span near B-16 (see `_findLoopAroundBMinus16`). Shorter
+ * grids use the last repetitive 8-beat window. Null when nothing fits.
+ */
+export function findRepetitiveLoopWindow(
+	waveform: AnlzWaveform,
+	beats: readonly AnlzBeat[],
+	durationSec: number,
+	config: AutoPlayNextConfig,
+	beatSpan = 8
+): { startBeatIdx: number; endBeatIdx: number } | null {
+	_assertBeats(beats);
+	if (beats.length < beatSpan * 2) return null;
+	const aroundEnd = _findLoopAroundBMinus16(waveform, beats, durationSec, config, beatSpan);
+	if (aroundEnd !== null) return aroundEnd;
+	return _findLastRepetitiveWindow(waveform, beats, durationSec, config, beatSpan);
 }
 
 /** Given a repetitive window, return beat_loop args anchored on a PQTZ downbeat,

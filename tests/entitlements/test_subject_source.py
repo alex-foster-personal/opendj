@@ -45,11 +45,6 @@ class RecordingSource:
         return self._inner.standing(subject, feature_id)
 
 
-@pytest.fixture(autouse=True)
-def _no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(PROVIDER_ENV, raising=False)
-
-
 def _source(state: str, quota_value: int | None = 7) -> RecordingSource:
     return RecordingSource({(SUB, FEATURE): Standing(state=state, quota=quota_value)})  # type: ignore[arg-type]
 

@@ -803,7 +803,6 @@ fn render_within(
                         engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
                     }
                     Action::Cmd(Command::Apply(cmd)) => {
-                        master_tempo |= matches!(cmd, EngineCmd::MasterTempo { enabled: true, .. });
                         // Narrowing the pitch range under a tempo ramp would
                         // fail the ramp at the step that crosses the new edge,
                         // blamed on the ramp. The ramp's steps run from where
@@ -912,6 +911,11 @@ fn render_within(
             k += 1;
         }
 
+        // Master Tempo is on by default, so a loaded deck counts, not only a
+        // command that turned it on. It changes only when an event fires.
+        if fired.len() > fired_before {
+            master_tempo |= (1..=MAX_DECKS as DeckId).any(|d| engine.deck(d).is_some_and(|d| d.track.is_some() && d.master_tempo));
+        }
         // A tempo ramp step is recorded on its own frame, so the tempo series
         // matches the varispeed the audio actually got.
         if now.is_multiple_of(tl_step) || fired.len() > fired_before || tempo_stepped {

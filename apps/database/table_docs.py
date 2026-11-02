@@ -294,6 +294,14 @@ TABLE_DOCS: dict[str, str] = {
         "materialiser share one write surface (apps/shared/pairings/"
         "schema_sql.py)."
     ),
+    "set_notes": (
+        "One markdown set-notes pad per scope, with its window geometry and a "
+        "revision for stale-write refusal (SETNOTE-6340c, apps/set_notes/schema.py)."
+    ),
+    "set_notes_schema_meta": (
+        "Private migration-version counter for set_notes, kept separate from "
+        "schema_meta (apps/set_notes/schema.py)."
+    ),
     "play_orders": (
         "A generated track sequence for a playlist (PLAY-01/03), e.g. an "
         "AI-suggested set order. Migrated by its own private "

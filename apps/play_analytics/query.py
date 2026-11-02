@@ -23,6 +23,7 @@ from typing import Any
 
 from .contract import (
     DEFAULT_MIN_AUDIBLE_S,
+    MISSING_EVENT_STORE_DETAIL_PREFIX,
     AnalyticsSchemaError,
     EventsTable,
     ShareState,
@@ -38,7 +39,7 @@ _EVENT_COLUMNS = frozenset(
 def _open_readonly(db_path: Path) -> sqlite3.Connection:
     resolved = db_path.resolve()
     if not resolved.is_file():
-        raise AnalyticsSchemaError(f"event store does not exist: {resolved}")
+        raise AnalyticsSchemaError(f"{MISSING_EVENT_STORE_DETAIL_PREFIX} {resolved}")
     try:
         connection = sqlite3.connect(
             f"{resolved.as_uri()}?mode=ro",

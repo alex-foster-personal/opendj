@@ -5,6 +5,9 @@
 // read, which crashed the preview on demon-llama (webui-client-errors log,
 // Thu 1 Oct 2026 05:43:46Z) once an armed hot cue's downbeat had landed.
 //
+// Graph-teardown/read ordering on the REAL browser AudioContext is proved in
+// tests/e2e/performance-armed-graph-teardown.spec.ts (issue #6680).
+//
 // Under node `$state` is normally an identity function, so a write during a
 // read is invisible. This file swaps in a `$state` whose objects refuse
 // writes while a simulated derived is evaluating, which is exactly the rule
@@ -14,7 +17,6 @@ import { before, test } from 'node:test';
 
 import { bundleTypeScriptModule } from './load-typescript.mjs';
 import { importBundledSource } from './import-bundled-source.mjs';
-
 let ipc;
 let derivedDepth = 0;
 

@@ -627,12 +627,14 @@ mod tests {
     fn varispeed_tempo_changes_pitch_and_rate_conversion_is_exact() {
         // Control: tempo 1.0 at a 44.1 kHz source rendered at 48 kHz keeps 1 kHz.
         let mut e = playing_tone(1000.0, 44100);
+        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
         let mut buf = vec![0.0f32; 48000 * 2];
         e.render(&mut buf);
         let f = freq(&buf, 48000.0);
         assert!((f - 1000.0).abs() < 0.5, "tempo 1.0 measured {f}");
 
         let mut e = playing_tone(1000.0, 44100);
+        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
         e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
         e.render(&mut buf);
         let f = freq(&buf, 48000.0);
@@ -660,6 +662,26 @@ mod tests {
             let pos = e.snapshot().decks[0].position_ms;
             assert!((pos - 1080.0).abs() < 1e-6, "position {pos}");
         }
+    }
+
+    #[test]
+    fn a_fresh_deck_is_key_locked_until_master_tempo_is_turned_off() {
+        // No MasterTempo command: a tempo move keeps the pitch, as the page's
+        // own deck default (MT lit) says it does.
+        let mut e = playing_tone(1000.0, 48000);
+        assert!(e.snapshot().decks[0].master_tempo);
+        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+        let mut buf = vec![0.0f32; 48000 * 2];
+        e.render(&mut buf);
+        let f = settled_freq(&buf);
+        assert!((f - 1000.0).abs() < 2.0, "default deck at tempo 1.08: {f} Hz, want 1000");
+        // Control: turned off, the same move is varispeed again.
+        let mut e = playing_tone(1000.0, 48000);
+        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
+        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+        e.render(&mut buf);
+        let f = settled_freq(&buf);
+        assert!((f - 1080.0).abs() < 2.0, "MT off at tempo 1.08: {f} Hz, want 1080");
     }
 
     #[test]

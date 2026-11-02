@@ -22,11 +22,14 @@ import {
 	pumpStream,
 	spawnEngine,
 	signalGroup,
+	spawnProcess,
 	stopProcessGroup,
+	sweepOrphanedGroup,
 	TaskkillUnavailableError,
 	EngineCleanupError,
 	windowsTaskkill
 } from '../src/engine';
+import { stopHolderPid } from '../src/launch';
 import { appendShellLog, installShellLogging, verifyLogWritable } from '../src/shell-log';
 import { FAKE_ENGINE, fakePayload, pidGone, scratchDir, statusServer, waitFor } from './helpers';
 
@@ -410,4 +413,74 @@ test('control: a taskkill /T that succeeds is waited on as a graceful stop', asy
 	await engine.shutdown();
 	assert.deepEqual(calls, ['SIGTERM']);
 	assert.equal(engine.tryReap()?.signal, 'SIGTERM');
+});
+
+// ----- orphans of an exited leader (EL-17-F9, #7127) ---------------------------
+const POSIX_GROUPS = process.platform === 'win32' && 'process groups are POSIX only';
+
+async function survivorOf(pidFile: string): Promise<number> {
+	await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() !== '', 10_000);
+	return Number(fs.readFileSync(pidFile, 'utf8').trim());
+}
+
+function spawnGroupFixture(label: string, mode: string, env: Record<string, string>): { engine: ReturnType<typeof spawnProcess>; pidFile: string } {
+	const dir = scratchDir(label);
+	const pidFile = path.join(dir, 'survivor.pid');
+	const engine = spawnProcess({
+		name: 'engine',
+		launcher: path.join(fakePayload(dir, mode), 'bin/opendj-engine'),
+		dataDir: path.join(dir, 'data'),
+		logPath: path.join(dir, '(private path)'),
+		port: 0,
+		env: { FAKE_ENGINE_CHILD_PID_FILE: pidFile, ...env }
+	});
+	return { engine, pidFile };
+}
+
+test('a worker left behind when the leader exits on its own is swept', { skip: POSIX_GROUPS }, async () => {
+	const { engine, pidFile } = spawnGroupFixture('orphan-sweep', 'leader-exit-child-lives', { FAKE_ENGINE_LEADER_EXIT_MS: '1500' });
+	const survivor = await survivorOf(pidFile);
+	assert.equal(pidGone(survivor), false, 'the worker must be alive before the leader goes, or this proves nothing');
+	assert.equal((await engine.waitReap()).code, 0);
+	await waitFor(() => pidGone(survivor), 5_000);
+	await engine.shutdown();
+	assert.equal(pidGone(survivor), true);
+});
+
+test('a worker that ignores SIGTERM does not outlive a leader that honored it', { skip: POSIX_GROUPS }, async () => {
+	const { engine, pidFile } = spawnGroupFixture('orphan-sweep-term', 'leader-term-child-ignores-term', {});
+	const survivor = await survivorOf(pidFile);
+	await engine.shutdown();
+	await waitFor(() => pidGone(survivor), 5_000);
+	assert.equal(pidGone(survivor), true);
+});
+
+test('stopping an adopted engine also sweeps what its leader leaves behind', { skip: POSIX_GROUPS }, async () => {
+	const dir = scratchDir('orphan-sweep-adopted');
+	const pidFile = path.join(dir, 'survivor.pid');
+	const holder = spawn(process.execPath, [FAKE_ENGINE, '--data-dir', dir, '--host', '127.0.0.1', '--port', '0'], {
+		detached: true,
+		stdio: 'ignore',
+		env: { ...process.env, FAKE_ENGINE_MODE: 'leader-term-child-ignores-term', FAKE_ENGINE_CHILD_PID_FILE: pidFile }
+	});
+	const survivor = await survivorOf(pidFile);
+	await stopHolderPid(holder.pid ?? 0);
+	await waitFor(() => pidGone(survivor), 5_000);
+	assert.equal(pidGone(survivor), true);
+});
+
+test('the sweep makes no signal attempt on Windows, for a pgid of 0 or below, or for a pid in use again', () => {
+	const sent: Array<[number, NodeJS.Signals]> = [];
+	const send = (pid: number, signal: NodeJS.Signals): boolean => (sent.push([pid, signal]), true);
+	sweepOrphanedGroup(4242, 'engine', 'win32', () => false, send);
+	sweepOrphanedGroup(0, 'engine', 'linux', () => false, send);
+	sweepOrphanedGroup(-1, 'engine', 'linux', () => false, send);
+	sweepOrphanedGroup(4242, 'engine', 'linux', () => true, send);
+	assert.deepEqual(sent, []);
+});
+
+test('the sweep SIGKILLs the group when the leader pid is free', () => {
+	const sent: Array<[number, NodeJS.Signals]> = [];
+	sweepOrphanedGroup(4242, 'engine', 'linux', () => false, (pid, signal) => (sent.push([pid, signal]), true));
+	assert.deepEqual(sent, [[4242, 'SIGKILL']]);
 });

@@ -96,5 +96,7 @@ jobs:
           echo "- started (UTC): $started" >> "$GITHUB_STEP_SUMMARY"
           scripts/ci_cargo_selfheal.sh apps/desktop/src-tauri/Cargo.toml dev \
             cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin opendj-desktop
+          scripts/ci_cargo_selfheal.sh apps/desktop/src-tauri/Cargo.toml dev \
+            cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin odj-output-probe
           finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "- finished (UTC): $finished" >> "$GITHUB_STEP_SUMMARY"

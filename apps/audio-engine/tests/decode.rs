@@ -14,7 +14,7 @@ use symphonia::core::meta::MetadataOptions;
 
 /// A tracked AAC clip from the analysis bench (44.1 kHz, about 60 s).
 fn clip() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/am-contra-heart-peripheral-cfg-a.m4a")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/failure-edge-cfg-a.m4a")
 }
 
 #[test]

@@ -11,6 +11,7 @@ import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
 import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
+import { gridJumpEnabled } from './grid-jump-flag';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -146,7 +147,26 @@ async function _exitLast(): Promise<void> {
 	await runPerformanceCommandFromUi({ type: 'loop', deck, loop: null });
 }
 
+/** DECKUX-6794: jump the transport deck (the last one clicked, else the
+ * playing one) on the fixed bar grid. An empty deck sends nothing. */
+async function _gridJump(bars: number): Promise<void> {
+	const deck = _resolveTransportDeck();
+	if (deck === null) return;
+	await runPerformanceCommandFromUi({ type: 'grid_jump', deck, bars });
+}
+
+/** True when a pointer press landed on a deck or mixer channel rather than
+ * the library, so Cmd+A means "jump back" instead of Select all. */
+function _isDeckPress(target: EventTarget | null): boolean {
+	if (!(target instanceof Element)) return false;
+	return target.closest('[data-deck-hover]') !== null || target.closest('[data-mixer-channel]') !== null;
+}
+
 export function installPerformanceHotkeys(): () => void {
+	let deckFocus = false;
+	const onPointer = (e: PointerEvent): void => {
+		deckFocus = _isDeckPress(e.target);
+	};
 	const onKey = (e: KeyboardEvent): void => {
 		handlePerformanceShortcutKeydown(
 			e,
@@ -160,13 +180,20 @@ export function installPerformanceHotkeys(): () => void {
 				exitLast: () => {
 					void _exitLast();
 				},
-				armPinPlacement
+				armPinPlacement,
+				gridJump: (bars) => {
+					void _gridJump(bars);
+				}
 			},
-			{ settingsOpen: isSettingsOpen() }
+			{ settingsOpen: isSettingsOpen(), gridJump: gridJumpEnabled(), deckFocus }
 		);
 	};
+	window.addEventListener('pointerdown', onPointer, { capture: true });
 	window.addEventListener('keydown', onKey, { capture: true });
-	return () => window.removeEventListener('keydown', onKey, { capture: true });
+	return () => {
+		window.removeEventListener('pointerdown', onPointer, { capture: true });
+		window.removeEventListener('keydown', onKey, { capture: true });
+	};
 }
 
 /** Fallback: if no interaction yet, prefer any engaged loop (lowest deck id). */

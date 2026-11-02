@@ -40,6 +40,7 @@ from ..etag import compute_etag
 from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
+    TrackIndexItemOut,
     TrackIndexOut,
     TrackListItemOut,
     TrackLoudnessOut,
@@ -244,17 +245,8 @@ def _optional_resource_flags(
     return lyrics, auto_cues, _stems_available(stable_id, stems, request)
 
 
-def _track_fields(
-    track: Track,
-    has_rb_mapping: bool,
-    *,
-    lyrics_available: bool,
-    auto_cues_available: bool,
-    stems_available: bool,
-    artwork_available: bool | None,
-) -> dict[str, Any]:
-    """The ``TrackOut`` fields as plain data, validated once by whoever builds
-    the response model (one track here, a whole page in the listing)."""
+def _track_own_fields(track: Track) -> dict[str, Any]:
+    """The ``TrackOut`` fields read off the state track alone, as plain data."""
     return {
         "stable_id": track.stable_id,
         "title": track.title,
@@ -282,12 +274,107 @@ def _track_fields(
             }
             for k, v in (track.provenance or {}).items()
         },
+    }
+
+
+def _track_fields(
+    track: Track,
+    has_rb_mapping: bool,
+    *,
+    lyrics_available: bool,
+    auto_cues_available: bool,
+    stems_available: bool,
+    artwork_available: bool | None,
+) -> dict[str, Any]:
+    """The ``TrackOut`` fields as plain data, validated once by whoever builds
+    the response model (one track here)."""
+    return {
+        **_track_own_fields(track),
         "has_rb_mapping": has_rb_mapping,
         "lyrics_available": lyrics_available,
         "auto_cues_available": auto_cues_available,
         "stems_available": stems_available,
         "artwork_available": artwork_available,
     }
+
+
+def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, Any]:
+    """One listing row as plain data: the state track plus its ``build_track_rows`` row.
+
+    The ONE place a builder field becomes a listing field (issue #5987). ``GET /tracks``
+    (``_listing_items``) and ``GET /tracks/index`` (``_index_rows``) read their rows
+    here, so a status field cannot be served by one and dropped by the other. The
+    golden probe keeps a separate oracle, so a wrong mapping here still fails the
+    byte comparison. The index keeps the subset ``TrackIndexItemOut`` serializes.
+
+    Carries every ``TrackListItemOut`` field except the three optional-resource flags
+    (``lyrics_available``, ``auto_cues_available``, ``stems_available``), which come
+    from reads outside the builder and only the listing pays for.
+    """
+    return {
+        **_track_own_fields(track),
+        # Lane values and their display triples come from build_track_rows
+        # (STANDALONE-03), not from the state track: the browser treats an
+        # absent status as "ok".
+        "bpm": row["bpm"],
+        "key": row["key"],
+        "has_rb_mapping": row["has_rb_mapping"],
+        "artwork_available": row["artwork_available"],
+        # The vendor row's count (rekordbox plays plus Open DJ plays, PLAYS-01).
+        "play_count": int(row["play_count"]),
+        "preview_b64": row["preview_b64"],
+        "preview_max": row["preview_max"],
+        "file_availability": row["file_availability"],
+        "file_exists": row["file_exists"],
+        "is_remote": bool(row["is_remote"]),
+        "is_streaming": row["is_streaming"],
+        "streaming_provider": row["streaming_provider"],
+        "has_remote_copy": bool(row["has_remote_copy"]),
+        "cloud_transfer": row["cloud_transfer"],
+        "quality": row["quality"],
+        "vocals": row["vocals"],
+        "stems": row["stems"],
+        "artwork_status": row["artwork_status"],
+        "energy": row["energy"],
+        "energy_source": row["energy_source"],
+        "energy_reason": row["energy_reason"],
+        "key_status": row["key_status"],
+        "key_reason": row["key_reason"],
+        "bpm_status": row["bpm_status"],
+        "bpm_reason": row["bpm_reason"],
+        # The four bpm provenance keys are the only optional builder keys:
+        # _bpm_analytics_wire adds them only when the track has bpm provenance
+        # or a stored confidence, so an absent one is a real "none". Every other
+        # field is read by key, so a builder that stops emitting one fails here
+        # instead of serving a fabricated 0, False or null (Sol P1 on #6019).
+        "bpm_source": row.get("bpm_source"),
+        "bpm_method": row.get("bpm_method"),
+        "bpm_confidence": row.get("bpm_confidence"),
+        "bpm_confidence_error": row.get("bpm_confidence_error"),
+        "loudness_status": row["loudness_status"],
+        "loudness_reason": row["loudness_reason"],
+        # AGENT-31: the loudness block is served by the single-track read only.
+        "loudness": None,
+        "lyrics": row["lyrics"],
+        "grid_quality": row["grid_quality"],
+        "is_remix": bool(row["is_remix"]),
+        "is_radio_edit": bool(row["is_radio_edit"]),
+        "genre": row["genre"],
+        "genre_source": row["genre_source"],
+        "genre_reason": row["genre_reason"],
+        "genre_guess": row["genre_guess"],
+        # CMDK-04: the index carries the comment the library shows. Listing
+        # models ignore this extra key, while the shared row still owns the
+        # builder-to-wire mapping.
+        "comments": row["comments"],
+    }
+
+
+#: The fields an index row serializes: every ``TrackIndexItemOut`` field it does not
+#: exclude (LIBM-172). ``_index_rows`` keeps exactly these of a listing row.
+INDEX_ROW_FIELDS: tuple[str, ...] = tuple(
+    name for name, field in TrackIndexItemOut.model_fields.items() if not field.exclude
+)
 
 
 def _track_to_out(
@@ -394,61 +481,12 @@ def _listing_items(
         if not include_non_music and is_non_music(track, row.get("tag_genre")):
             non_music_hidden += 1
             continue
-        base = _track_to_out(
-            track,
-            has_rb_mapping=row["has_rb_mapping"],
-            lyrics_available=lyrics_by_sid[track.stable_id],
-            auto_cues_available=auto_cues_by_sid[track.stable_id],
-            stems_available=_stems_available(track.stable_id, row["stems"], request),
-            artwork_available=row["artwork_available"],
-        ).model_dump()
-        # TrackOut already carries play_count (default 0). The listing value is
-        # the vendor row's, so it replaces the dumped field instead of being
-        # passed twice.
-        base["play_count"] = int(row.get("play_count") or 0)
-        # Lane display triples come from build_track_rows (STANDALONE-03), not
-        # from TrackOut: the state-layer Track carries provenance, but the
-        # listing previously dropped bpm_status/key_status/loudness_status here
-        # and the browser then treated an absent status as "ok".
-        base["bpm"] = row["bpm"]
-        base["key"] = row["key"]
         items.append(
             TrackListItemOut(
-                **base,
-                preview_b64=row["preview_b64"],
-                preview_max=row["preview_max"],
-                file_availability=row["file_availability"],
-                file_exists=row["file_exists"],
-                is_remote=bool(row.get("is_remote")),
-                is_streaming=row["is_streaming"],
-                streaming_provider=row["streaming_provider"],
-                has_remote_copy=bool(row["has_remote_copy"]),
-                cloud_transfer=row["cloud_transfer"],
-                quality=row["quality"],
-                vocals=row["vocals"],
-                stems=row["stems"],
-                artwork_status=row["artwork_status"],
-                energy=row["energy"],
-                energy_source=row["energy_source"],
-                energy_reason=row["energy_reason"],
-                key_status=row["key_status"],
-                key_reason=row.get("key_reason"),
-                bpm_status=row["bpm_status"],
-                bpm_reason=row.get("bpm_reason"),
-                bpm_source=row.get("bpm_source"),
-                bpm_method=row.get("bpm_method"),
-                bpm_confidence=row.get("bpm_confidence"),
-                bpm_confidence_error=row.get("bpm_confidence_error"),
-                loudness_status=row["loudness_status"],
-                loudness_reason=row.get("loudness_reason"),
-                lyrics=row.get("lyrics"),
-                grid_quality=row["grid_quality"],
-                is_remix=bool(row.get("is_remix")),
-                is_radio_edit=bool(row.get("is_radio_edit")),
-                genre=row.get("genre"),
-                genre_source=row.get("genre_source"),
-                genre_reason=row.get("genre_reason"),
-                genre_guess=row.get("genre_guess"),
+                **_listing_row_from_builder(track, row),
+                lyrics_available=lyrics_by_sid[track.stable_id],
+                auto_cues_available=auto_cues_by_sid[track.stable_id],
+                stems_available=_stems_available(track.stable_id, row["stems"], request),
             )
         )
     return items, non_music_hidden
@@ -459,8 +497,9 @@ def _index_rows(
 ) -> tuple[list[dict[str, Any]], int]:
     """One library index row per track, in order, as plain data (LIBM-172).
 
-    Only the fields :class:`TrackIndexItemOut` serializes, read as a ``GET /tracks``
-    row reads them, minus the per-row disk reads (``with_row_assets=False``). The
+    Only the fields :class:`TrackIndexItemOut` serializes (``INDEX_ROW_FIELDS``), read
+    off the same ``_listing_row_from_builder`` a ``GET /tracks`` row is, minus the
+    per-row disk reads (``with_row_assets=False``). The
     route validates every row ONCE, in one call, and serializes once: building a
     ``TrackOut``, dumping it and validating a listing row again, per row, was the
     largest pure-Python cost of the index after the disk reads.
@@ -480,54 +519,11 @@ def _index_rows(
         for track, row in zip(tracks, rows, strict=True)
         if include_non_music or not is_non_music(track, row.get("tag_genre"))
     ]
-    return [
-        {
-            "stable_id": track.stable_id,
-            "title": track.title,
-            "artist": track.artist,
-            "album": track.album,
-            "duration_ms": track.duration_ms,
-            "bpm": row["bpm"],
-            "key": row["key"],
-            "rating": track.rating,
-            "notes": track.notes,
-            # The comment the library shows (a webui edit, else rekordbox, else state).
-            "comments": row.get("comments"),
-            "file_path": track.file_path,
-            "play_count": int(row.get("play_count") or 0),
-            "has_rb_mapping": row["has_rb_mapping"],
-            "file_availability": row["file_availability"],
-            "file_exists": row["file_exists"],
-            "is_remote": bool(row.get("is_remote")),
-            "is_streaming": row["is_streaming"],
-            "streaming_provider": row["streaming_provider"],
-            "has_remote_copy": bool(row["has_remote_copy"]),
-            "cloud_transfer": row["cloud_transfer"],
-            "quality": row["quality"],
-            "energy": row["energy"],
-            "energy_source": row["energy_source"],
-            "energy_reason": row["energy_reason"],
-            "key_status": row["key_status"],
-            "key_reason": row.get("key_reason"),
-            "bpm_status": row["bpm_status"],
-            "bpm_reason": row.get("bpm_reason"),
-            "bpm_source": row.get("bpm_source"),
-            "bpm_method": row.get("bpm_method"),
-            "bpm_confidence": row.get("bpm_confidence"),
-            "bpm_confidence_error": row.get("bpm_confidence_error"),
-            "loudness_status": row["loudness_status"],
-            "loudness_reason": row.get("loudness_reason"),
-            "lyrics": row.get("lyrics"),
-            "grid_quality": row["grid_quality"],
-            "is_remix": bool(row.get("is_remix")),
-            "is_radio_edit": bool(row.get("is_radio_edit")),
-            "genre": row.get("genre"),
-            "genre_source": row.get("genre_source"),
-            "genre_reason": row.get("genre_reason"),
-            "genre_guess": row.get("genre_guess"),
-        }
-        for track, row in kept
-    ], len(tracks) - len(kept)
+    index_rows = [
+        {name: full[name] for name in INDEX_ROW_FIELDS}
+        for full in (_listing_row_from_builder(track, row) for track, row in kept)
+    ]
+    return index_rows, len(tracks) - len(kept)
 
 
 #: Tracks read per backend call while the index is assembled (the backend's own cap).

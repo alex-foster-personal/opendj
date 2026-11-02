@@ -25,7 +25,7 @@ import pytest
 
 from apps.analysis_waveform import decode
 from apps.shared import platform_paths
-from apps.shared.odj_audio_binary import BIN_ENV
+from apps.shared.odj_audio_binary import BIN_ENV, EXE_NAME, REPO_TARGET, find_binary
 from tests.rust_build_env import build_audio_engine
 
 pytestmark = pytest.mark.requirement("NATIVE-21")
@@ -126,6 +126,24 @@ def test_an_engine_build_without_the_waveform_command_is_not_chosen(
     capable.chmod(0o755)
     monkeypatch.setenv("ODJ_AUDIO_BIN", str(capable))
     assert decode.select_decoder(tmp_path / "a.wav") == "engine"
+
+
+def test_auto_prefers_ffmpeg_for_wav_when_the_checkout_engine_is_repo_debug(tmp_path: Path) -> None:
+    """Issue #6281: a shard-built debug odj-audio can disagree with ffmpeg on
+    mono WAV calibration; auto must not pick it for WAV, whichever build the
+    unmodified resolver classifies from a real checkout layout."""
+    debug_binary = tmp_path / REPO_TARGET / "debug" / EXE_NAME
+    debug_binary.parent.mkdir(parents=True)
+    debug_binary.write_text("#!/bin/sh\n")
+    debug_binary.chmod(0o755)
+
+    source = find_binary({}, tmp_path).source
+
+    assert source == "repo-debug"
+    assert decode._auto_decoder_order(".wav", source) == ("ffmpeg", "engine")
+    assert decode._auto_decoder_order(".flac", source) == ("engine", "ffmpeg")
+    assert decode._auto_decoder_order(".wav", "repo-release") == ("engine", "ffmpeg")
+    assert decode._auto_decoder_order(".wav", None) == ("engine", "ffmpeg")
 
 
 @pytest.mark.requires_ffmpeg

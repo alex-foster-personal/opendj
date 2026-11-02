@@ -350,6 +350,41 @@ export function signalGroup(
 	}
 }
 
+/** Whether any process holds this pid; EPERM still means it exists. */
+function pidExists(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
+
+/**
+ * SIGKILL whatever is left in a group whose leader was just reaped, as Tauri's
+ * `sweep_orphaned_group` does. The kernel does not reissue a pid while a group of
+ * that number exists, so a live process at the leader's pid proves our group is
+ * gone and the number now belongs to someone else: refuse. Otherwise the group is
+ * ours or empty, and an empty group is ESRCH. POSIX only: Windows has no groups,
+ * so its tree sweep is separate work.
+ */
+export function sweepOrphanedGroup(
+	pgid: number,
+	name: string,
+	platform: NodeJS.Platform = process.platform,
+	pidIsLive: (pid: number) => boolean = pidExists,
+	send: (pid: number, signal: NodeJS.Signals) => boolean = (target, signal) => signalGroup(target, signal, platform)
+): void {
+	if (platform === 'win32' || pgid <= 0) return;
+	if (pidIsLive(pgid)) {
+		appendShellLog('shutdown', `${name} pgid ${pgid}: that pid is in use again, so the group is not ours; not sweeping`);
+		return;
+	}
+	if (send(pgid, 'SIGKILL')) {
+		appendShellLog('shutdown', `${name} pgid ${pgid}: SIGKILLed processes left behind by the exited ${name}`);
+	}
+}
+
 /** SIGTERM a process group this shell created at spawn. */
 export function stopProcessGroup(pgid: number): void {
 	signalGroup(pgid, 'SIGTERM');
@@ -386,7 +421,10 @@ export class Engine {
 	) {
 		this.exited = new Promise((resolve) => {
 			const record = (code: number | null, signal: NodeJS.Signals | null): void => {
-				if (this.exit === null) this.exit = { code, signal };
+				if (this.exit === null) {
+					this.exit = { code, signal };
+					sweepOrphanedGroup(this.pid, this.name);
+				}
 				resolve(this.exit);
 			};
 			if (child.exitCode !== null || child.signalCode !== null) {
@@ -423,9 +461,15 @@ export class Engine {
 	}
 
 	/** Wait for the engine to answer its own health route. */
-	async waitUntilHealthy(timeoutMs: number): Promise<void> {
+	async waitUntilHealthy(timeoutMs: number, signal?: AbortSignal): Promise<void> {
 		const deadline = Date.now() + timeoutMs;
 		for (;;) {
+			if (signal?.aborted) {
+				throw new EngineError(
+					`Open DJ stopped waiting for the ${this.name}.`,
+					`Quit was requested while the ${this.name} was starting.\nData directory: ${this.dataDir}\nEngine log: ${this.logPath}`
+				);
+			}
 			// BEFORE the exit check: a pump failure stops the engine, and asked
 			// the other way round this would report a bare exit status.
 			const lost = this.logFailure();

@@ -264,6 +264,9 @@ def test_payload_manifest_carries_the_default_hub_block(tmp_path: Path) -> None:
     engine_bin = payload_dir / payload.AUDIO_ENGINE_RELATIVE
     engine_bin.parent.mkdir(parents=True, exist_ok=True)
     engine_bin.write_bytes(b"\0")
+    output_probe = payload_dir / payload.OUTPUT_PROBE_RELATIVE
+    output_probe.parent.mkdir(parents=True, exist_ok=True)
+    output_probe.write_bytes(b"\0")
     identity = payload.PayloadIdentity(
         label=None, product_name="Open DJ", identifier="com.example.opendj",
         app_version="0.0.0", engine_version="0.0.0", default_hub_url=_DEFAULT_HUB,

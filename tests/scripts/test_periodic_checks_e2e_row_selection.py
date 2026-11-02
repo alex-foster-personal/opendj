@@ -55,6 +55,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -152,6 +153,20 @@ else
 fi
 """
 
+_STUB_NEVER_RAN = "gh stub never ran"
+
+
+def _e2e_script_failure_diagnostics(tmp_path: Path, proc: subprocess.CompletedProcess[str]) -> str:
+    e2e_err_path = tmp_path / "e2e.err"
+    e2e_err = (
+        e2e_err_path.read_text(encoding="utf-8") if e2e_err_path.exists() else "(absent)"
+    )
+    return (
+        f"exit code {proc.returncode}\n"
+        f"stderr:\n{proc.stderr}\n"
+        f"e2e.err:\n{e2e_err}"
+    )
+
 
 def _run_with_stub_gh(
     tmp_path: Path,
@@ -160,6 +175,7 @@ def _run_with_stub_gh(
     fail: str | None = None,
     jobs_fail_id: str | None = None,
     base_at: str | None = None,
+    make_stub_executable: bool = True,
     date_shim: str = _DATE_SHIM,
 ) -> tuple[str, str]:
     """Run the extracted script against the stub `gh` above and return
@@ -172,11 +188,17 @@ def _run_with_stub_gh(
     """
     stub = tmp_path / "gh"
     stub.write_text(_STUB_GH, encoding="utf-8")
-    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    if make_stub_executable:
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    stub_abs = shlex.quote(str(stub.resolve()))
     date = tmp_path / "date"
     date.write_text(date_shim.format(gnu_date=GNU_DATE), encoding="utf-8")
     date.chmod(date.stat().st_mode | stat.S_IEXEC)
-    script = f'{_extract_e2e_line_script()}\nprintf "%s" "$e2e_line"\n'
+    script = (
+        f"gh() {{ {stub_abs} \"$@\"; }}\n"
+        f"{_extract_e2e_line_script()}\n"
+        'printf "%s" "$e2e_line"\n'
+    )
     env = dict(os.environ)
     env["PATH"] = f"{tmp_path}:{env['PATH']}"
     env["STUB_LOG"] = str(tmp_path / "gh.argv")
@@ -206,11 +228,30 @@ def _run_with_stub_gh(
         env=env,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     argv_path = tmp_path / "gh.argv"
     argv_log = argv_path.read_text(encoding="utf-8") if argv_path.exists() else ""
+    diagnostics = _e2e_script_failure_diagnostics(tmp_path, proc)
+    if not argv_log.strip():
+        raise AssertionError(
+            f"{_STUB_NEVER_RAN}: the test stub was not invoked, so this measurement is "
+            f"not trustworthy (another gh may have run instead).\n{diagnostics}"
+        )
+    assert proc.returncode == 0, (
+        "extracted e2e_line script failed:\n" + diagnostics
+    )
     return proc.stdout, argv_log
+
+
+def test_row_selection_gh_stub_fails_closed_when_stub_is_not_executable(
+    tmp_path: Path,
+) -> None:
+    """Regression (#4103): without an absolute-path `gh` function, Bash can fall
+    through to a later PATH `gh` when the stub file is not executable; missing
+    `gh.argv` must never be read as a legitimate measurement."""
+    with pytest.raises(AssertionError, match=_STUB_NEVER_RAN):
+        _run_with_stub_gh(tmp_path, runs=[], make_stub_executable=False)
 
 
 def test_the_query_restricts_to_completed_runs(tmp_path: Path) -> None:

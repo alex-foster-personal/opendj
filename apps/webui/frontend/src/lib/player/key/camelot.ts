@@ -182,6 +182,89 @@ export function effectiveCamelotKey(key: string | null, semitones: number): stri
 	return `${shifted.number}${shifted.mode}`;
 }
 
+/** How far one key-nudge click moves.
+ *
+ * `semitone` is the standard DJ key shift (CDJ, rekordbox, Serato, Traktor):
+ * one chromatic step. `tone` is a whole step. `scale` is the next degree of
+ * this track's scale (natural minor on the A wheel, major on the B wheel),
+ * measured from the current shift, so the size is 1 or 2 and an off-scale
+ * shift snaps back onto the scale. `camelot` is one same-wheel step, a
+ * perfect fifth (+7 / -7), which moves the Camelot number by one.
+ * Scale returns null when the key cannot be parsed. */
+export type KeyNudgeStep = 'semitone' | 'tone' | 'scale' | 'camelot';
+
+/** Every step size, in the order the deck header shows them. */
+export const KEY_NUDGE_STEPS: readonly KeyNudgeStep[] = ['semitone', 'tone', 'scale', 'camelot'];
+
+export function isKeyNudgeStep(value: unknown): value is KeyNudgeStep {
+	return typeof value === 'string' && (KEY_NUDGE_STEPS as readonly string[]).includes(value);
+}
+
+// DECKGAP-7691b: the one step size every deck's arrows use. Semitone is the
+// standard DJ key shift. Set only through the `key_nudge_step` performance
+// command; read by the deck header and by query state.
+let _keyNudgeStep: KeyNudgeStep = 'semitone';
+const _keyNudgeStepListeners = new Set<(step: KeyNudgeStep) => void>();
+
+export function readKeyNudgeStep(): KeyNudgeStep {
+	return _keyNudgeStep;
+}
+
+export function writeKeyNudgeStep(step: KeyNudgeStep): void {
+	if (!isKeyNudgeStep(step)) throw new RangeError(`key nudge step must be one of ${KEY_NUDGE_STEPS.join(', ')}, got ${String(step)}`);
+	_keyNudgeStep = step;
+	for (const fn of _keyNudgeStepListeners) fn(step);
+}
+
+export function subscribeKeyNudgeStep(fn: (step: KeyNudgeStep) => void): () => void {
+	_keyNudgeStepListeners.add(fn);
+	return () => _keyNudgeStepListeners.delete(fn);
+}
+
+const SCALE_INTERVALS: Record<CamelotKey['mode'], readonly number[]> = {
+	A: [0, 2, 3, 5, 7, 8, 10],
+	B: [0, 2, 4, 5, 7, 9, 11]
+};
+
+function _scaleStepSemitones(key: CamelotKey, currentShift: number, direction: -1 | 1): number {
+	const scale = SCALE_INTERVALS[key.mode];
+	const position = _pitchClass(currentShift);
+	if (direction === 1) {
+		for (const interval of scale) {
+			if (interval > position) return interval - position;
+		}
+		return 12 - position;
+	}
+	for (let i = scale.length - 1; i >= 0; i--) {
+		const interval = scale[i];
+		if (interval < position) return interval - position;
+	}
+	return scale[scale.length - 1] - 12 - position;
+}
+
+export function keyNudgeSemitones(
+	step: KeyNudgeStep,
+	direction: -1 | 1,
+	key: string | null,
+	currentShift = 0
+): number | null {
+	if (direction !== -1 && direction !== 1) {
+		throw new RangeError(`key nudge direction must be -1 or 1, got ${String(direction)}`);
+	}
+	if (step === 'semitone') return direction;
+	if (step === 'tone') return direction * 2;
+	if (step === 'camelot') return direction * 7;
+	if (step !== 'scale') {
+		throw new RangeError(`unknown key nudge step ${String(step)}`);
+	}
+	const parsed = parseCamelotKey(key);
+	if (parsed === null) return null;
+	if (!Number.isInteger(currentShift)) {
+		throw new TypeError(`key nudge shift must be an integer, got ${String(currentShift)}`);
+	}
+	return _scaleStepSemitones(parsed, currentShift, direction);
+}
+
 function _camelotCircularDistance(left: number, right: number): number {
 	const raw = Math.abs(left - right);
 	return Math.min(raw, 12 - raw);

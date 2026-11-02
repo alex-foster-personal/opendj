@@ -22,7 +22,7 @@
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import { deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
+	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
@@ -65,6 +65,7 @@
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import DeckLyricLine from './deck/DeckLyricLine.svelte';
+	import { DECK_PAUSE_DIM_AFTER_MS, deckActivityLook } from './deck/deck-activity-look';
 	import { deckLyricRowBudget, deckLyricStripPx } from '$lib/rb/lyrics/deck-lyric-row-budget';
 	import PadModeMenu from './deck/PadModeMenu.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
@@ -111,9 +112,56 @@
 	const deck: DeckState = $derived(getDeckState(deckId));
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
 	const pending: boolean = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
+
+	// DECKGAP-7691f (Preview pin aa2989e367d7): pause age is wall-clock, not playhead. The clock restarts on a new load
+	// and when transport starts. A loaded deck that never started counts.
+	let pausedSinceMs = $state<number | null>(null);
+	let pauseAnchor = '';
+	let pauseDimTick = $state(0);
+
+	$effect(() => {
+		const stableId = deck.stable_id;
+		const generation = deck.load_generation;
+		const playing = deck.playing;
+		if (stableId === null || playing) {
+			pauseAnchor = '';
+			if (pausedSinceMs !== null) pausedSinceMs = null;
+			return;
+		}
+		const anchor = `${stableId}:${generation}`;
+		if (pauseAnchor === anchor && pausedSinceMs !== null) return;
+		pauseAnchor = anchor;
+		pausedSinceMs = Date.now();
+	});
+
+	$effect(() => {
+		const since = pausedSinceMs;
+		if (since === null) return;
+		const wait = Math.max(0, DECK_PAUSE_DIM_AFTER_MS - (Date.now() - since));
+		const timer = setTimeout(() => {
+			pauseDimTick += 1;
+		}, wait);
+		return () => clearTimeout(timer);
+	});
+
+	const deckLook = $derived.by(() => {
+		void pauseDimTick;
+		return deckActivityLook({
+			loaded: deck.stable_id !== null,
+			playing: deck.playing,
+			audible: deck.audible,
+			transportPending: deck.transport_pending,
+			commandPending: pending,
+			positionMs: deck.position_ms,
+			durationMs: deck.duration_ms,
+			loopEngaged: deck.loop !== null && deck.loop.engaged,
+			pausedForMs: pausedSinceMs === null ? null : Date.now() - pausedSinceMs
+		});
+	});
 	const controlError: string | null = $derived(
+		// DECKGAP-7691c: an unsynced start's reason glows on Play; it is not a deck error (PLAY-27).
 		performanceCommandStatus.deck_errors[deckId] ??
-			deck.sync_error ??
+			bannerSyncError(deck.sync_error) ??
 			deck.processor_error ??
 			queryPerformanceState().decks[deckId].presentation_clock_error
 	);
@@ -497,7 +545,7 @@
 		});
 	}
 
-	async function nudgeKey(semitones: -1 | 1): Promise<void> {
+	async function nudgeKey(semitones: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'key_nudge', deck: deckId, semitones });
 	}
 
@@ -565,6 +613,8 @@
 	class:deck-focus={deckHoverUi.deckId === deckId}
 	class:selected={selected}
 	class:is-master={deck.is_master}
+	class:deck-dim={deckLook.dim}
+	class:deck-looping={deckLook.looping}
 	data-deck={deckId}
 	data-deck-hover={deckId}
 	data-command-pending={pending}
@@ -828,6 +878,34 @@
 	}
 	.rb-deck.is-master.deck-focus {
 		box-shadow: inset 0 0 0 2px var(--rb-yellow);
+	}
+	/* Finished, or paused longer than 30s: pull the whole panel back so a
+	   deck that is actually playing stays the bright one. A veil, not a
+	   filter: a filter would make the deck the containing block for its
+	   fixed-position menus (tempo editor, loop source, explainer) and clip
+	   them. Same layer as the loop veil, so deck menus stay undimmed. */
+	.rb-deck.deck-dim::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 85;
+		pointer-events: none;
+		background: rgba(0, 0, 0, 0.42);
+	}
+	/* Engaged loop. A veil, not a background swap, so opaque controls tint too.
+	   Sits under deck menus (z-index 1000) and above transport (z-index 80). */
+	.rb-deck.deck-looping::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 85;
+		pointer-events: none;
+		background: color-mix(in srgb, var(--rb-orange) 14%, transparent);
+	}
+	.rb-deck.deck-dim.deck-looping::before {
+		background:
+			linear-gradient(color-mix(in srgb, var(--rb-orange) 14%, transparent), color-mix(in srgb, var(--rb-orange) 14%, transparent)),
+			rgba(0, 0, 0, 0.42);
 	}
 	.main-row {
 		display: flex;

@@ -33,7 +33,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
+from tests.scripts.ci_runner_routes import MAIN_TOKEN_RUNS_ON, TOKEN_RUNS_ON
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
@@ -325,5 +325,6 @@ def test_only_the_default_branch_fetches_the_live_list(workflow: str) -> None:
 def test_pull_requests_do_not_start_the_token_fetch(workflow: str) -> None:
     # Self-hosted, no hosted fallback (ADR-NEW-trunk-token-jobs-self-hosted).
     job = _jobs(workflow)[LIST_JOB]
-    assert job["runs-on"] == TOKEN_RUNS_ON
+    # ci.yml's list job also prefers the main-push reserve (CI_RUNS_ON_MAIN) first.
+    assert job["runs-on"] == (MAIN_TOKEN_RUNS_ON if workflow == "ci.yml" else TOKEN_RUNS_ON)
     assert "github.event_name != 'pull_request'" in job["if"]

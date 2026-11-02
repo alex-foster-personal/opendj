@@ -129,7 +129,8 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'auto_play_decide_now',
 	'rescue_resume',
 	'rescue_stop_all',
-	'pairing_snapshot_save',
+	// DECKUX-6794 J1: the snapped jump plans on the page engine's clock first.
+	'grid_jump',
 	// GRIDEDIT-6235: the native engine keeps the grid it was given at load, so a
 	// live edit would move the waveform but not beat jump or beat loops.
 	'grid_edit'

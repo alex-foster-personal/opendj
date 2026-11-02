@@ -26,7 +26,7 @@
 		presentCloudSyncError,
 		syncNowRequest,
 		syncRuntimeGateReason,
-		type UiMirrorDecks
+		type UiMirrorGateDoc
 	} from './cloudsync-view';
 
 	interface Notice {
@@ -46,7 +46,7 @@
 	} = $props();
 
 	let config = $state<CloudSyncConfigOut | null>(null);
-	let uiMirror = $state<{ decks?: UiMirrorDecks } | null>(null);
+	let uiMirror = $state<UiMirrorGateDoc | null>(null);
 	let loadError = $state<string | null>(null);
 	let syncing = $state(false);
 	let refreshing = $state(false);

@@ -290,7 +290,9 @@ pub struct Deck {
     pub filter: f64,
     pub fader: f64,
     pub assign: Assign,
-    /// Master Tempo (key lock): tempo changes keep the pitch.
+    /// Master Tempo (key lock): tempo changes keep the pitch. On for a new
+    /// deck, as the page's deck default is: Beat Sync and its phase lock
+    /// move a follower's tempo, and with key lock that never moves its key.
     pub master_tempo: bool,
     /// Key shift in semitones, -12..=12, reset by a load.
     pub key_shift: i32,
@@ -477,7 +479,7 @@ impl Deck {
             filter: 0.5,
             fader: 1.0,
             assign: Assign::Thru,
-            master_tempo: false,
+            master_tempo: true,
             key_shift: 0,
             strip: Strip::new(sr),
             stretch: Stretcher::new(sr, slot),
@@ -1230,6 +1232,7 @@ mod tests {
             let t = Arc::new(noise_track(n));
             let want = filter_move_reference(&t.pcm, at, n, to);
             let mut d = Deck::new(48000.0);
+            d.set_master_tempo(false); // the varispeed path, sample for sample
             d.load(t.clone());
             d.play(true).unwrap();
             let mut buf = vec![0.0f32; n * 2];
@@ -1704,6 +1707,7 @@ mod tests {
         let ms = |frames: f64| frames * 1000.0 / sr as f64;
         let render = |track: &Arc<Track>, bounds: Option<(f64, f64)>| {
             let mut d = Deck::new(48000.0);
+            d.set_master_tempo(false); // the varispeed path, sample for sample
             d.load(track.clone());
             d.seek(510.0).unwrap();
             if let Some((a, b)) = bounds {
@@ -1734,6 +1738,7 @@ mod tests {
         // And a loop still ahead of the playhead leaves the audio before it
         // alone: the first 400 ms are the track's silence, not the loop's.
         let mut d = Deck::new(48000.0);
+        d.set_master_tempo(false); // the varispeed path, sample for sample
         d.load(whole.clone());
         d.set_loop(Some((500.0, 600.0))).unwrap();
         d.play(true).unwrap();
@@ -2179,6 +2184,7 @@ mod tests {
     fn past_the_decoded_head_a_deck_plays_silence_and_keeps_time_until_the_rest_lands() {
         let (head_n, stated) = (1000usize, 2000u64);
         let mut d = Deck::new(48000.0);
+        d.set_master_tempo(false); // the varispeed path, sample for sample
         d.load(Arc::new(Track::head(48000, vec![0.5; head_n * 2], Some(stated), vec![], None, 3)));
         // The stated length bounds seeks, not the head: a seek past the head
         // is taken.

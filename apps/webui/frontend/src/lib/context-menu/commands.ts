@@ -76,6 +76,8 @@ export const MENU_COMMANDS = {
 	'track.library_job': http('POST', '/api/v1/library-jobs/enqueue'),
 	'track.stems.generate': http('POST', '/api/v1/stems/generate'),
 	'track.remove_from_library': http('POST', '/api/v1/tracks/{stable_id}:remove'),
+	// PAIR-10: a loose pair (no snapshot) of exactly two selected rows.
+	'track.pair': http('POST', '/api/v1/pairings'),
 	// Playlists and smartlists.
 	'playlist.create': http('POST', '/api/v1/playlists'),
 	'playlist.update': http('PATCH', '/api/v1/playlists/{playlist_id}'),

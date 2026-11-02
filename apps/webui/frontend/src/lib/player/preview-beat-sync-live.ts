@@ -26,6 +26,12 @@ export function playingMasterBpm(): number | null {
 	return null;
 }
 
+/** CUEOUT-6060: whether a preview starting now snaps to the master's bar.
+ * Read here so the preview voice stays off the prefs module's fan-in. */
+export function previewSnapsToPhase(): boolean {
+	return uiPrefs.preview_beat_sync === 'phase';
+}
+
 /** The rate a preview starting NOW should run at. */
 export function previewRateFor(trackBpm: number | null): number {
 	return previewSyncRate({

@@ -64,6 +64,10 @@ class FakeSocket {
 		this.onclose?.({ code, reason });
 	}
 
+	send(_data) {
+		// shell.quit acks are ignored in these contract tests.
+	}
+
 	close() {
 		this.closedByClient = true;
 	}

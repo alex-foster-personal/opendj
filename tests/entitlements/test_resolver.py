@@ -57,12 +57,6 @@ UNKNOWN_FEATURES: tuple[str, ...] = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The SHIPPED state, asserted rather than inherited from the shell."""
-    monkeypatch.delenv(PROVIDER_ENV, raising=False)
-
-
 # ----- ENT-04: inert and entitled ----------------------------------------
 def test_unknown_feature_ids_are_absent_from_the_catalog() -> None:
     """If an UNKNOWN_FEATURES id is catalogued then the ENT-04 tests stop testing unknown ids."""

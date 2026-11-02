@@ -33,16 +33,32 @@ function _labelOf(outputs: readonly FaultInputs['outputs'][number][], deviceId: 
 
 type OutputRow = FaultInputs['outputs'][number];
 
+/** Token for whether two ids are the same physical output (CUEOUT-26). */
+function _physicalOutputKey(outputs: readonly OutputRow[], deviceId: string): string {
+	const physical = outputs.find((output) => output.id === deviceId)?.physical_id;
+	if (physical !== undefined && physical !== '') return physical;
+	return deviceId;
+}
+
 /** The id of the output that actually sounds for `deviceId`. The Mac shell
  * names it (`physical_id`: the occupied jack for the muted built-in
- * speakers); a browser listing has no such field, so every id is its own. */
+ * speakers). Electron uses a `coreaudio:` token for the same join and this
+ * resolves it back to the Chromium sink id routing needs. */
 export function physicalOutputId(outputs: readonly OutputRow[], deviceId: string): string {
-	return outputs.find((output) => output.id === deviceId)?.physical_id ?? deviceId;
+	const key = _physicalOutputKey(outputs, deviceId);
+	if (!key.startsWith('coreaudio:')) return key;
+	const peers = outputs.filter((output) => output.physical_id === key);
+	const self = peers.find((output) => output.id === deviceId && output.muted_by_jack !== true);
+	if (self !== undefined) return self.id;
+	const audible = peers.find(
+		(output) => output.muted_by_jack !== true && output.id !== 'default'
+	);
+	return audible?.id ?? deviceId;
 }
 
 /** True when two ids are ONE physical output, so MAIN and CUE cannot be two outputs on them. */
 export function sameOutputDevice(outputs: readonly OutputRow[], a: string, b: string): boolean {
-	return physicalOutputId(outputs, a) === physicalOutputId(outputs, b);
+	return _physicalOutputKey(outputs, a) === _physicalOutputKey(outputs, b);
 }
 
 /** True for an output the shell knows is silent right now (the jack-muted speakers). */

@@ -34,7 +34,7 @@ from collections.abc import Iterable, Iterator
 from scripts.oss_tip_rules import PATTERNS, RULE_PREFILTERS, _is_placeholder_home, _rule_accepts
 
 RULE = "known-login"
-_HOME_RULES = frozenset({"home-path", "windows-home-path", "linux-home-path"})
+HOME_RULES = frozenset({"home-path", "windows-home-path", "linux-home-path"})
 
 # The login as a TOKEN: the leading run of characters a login is made of. A capture
 # that ran into a separator, an escape or prose (a `\` before a newline escape, a `:`
@@ -64,7 +64,9 @@ BARE_MATCH_EXEMPT = frozenset(
 
 # A match whose preceding text ends at a home root is already reported by the
 # home-path rule that owns that position; reporting it twice adds a line, not a leak.
-_HOME_ROOT_BEFORE = re.compile(r"(?:/users/|/home/|users\\+)$", re.IGNORECASE)
+_HOME_ROOT_BEFORE = re.compile(r"(?:/users/|/home/user)$", re.IGNORECASE)
+# How many characters before a bare match `is_bare_position` is shown.
+BARE_WINDOW = 16
 
 
 def _login_from_segment(segment: str) -> str | None:
@@ -80,18 +82,24 @@ def logins_in_text(text: str) -> set[str]:
     lowered = text.lower()
     found: set[str] = set()
     for rule, pattern in PATTERNS:
-        if rule not in _HOME_RULES:
+        if rule not in HOME_RULES:
             continue
         if not any(token in lowered for token in RULE_PREFILTERS[rule]):
             continue
         for match in pattern.finditer(text):
             preceding = text[max(0, match.start() - 256) : match.start()]
-            if not _rule_accepts(rule, match, preceding):
-                continue
-            login = _login_from_segment(match.group(1))
-            if login is not None and not _is_placeholder_home(login):
+            login = revealed_login(rule, match, preceding)
+            if login is not None:
                 found.add(login)
     return found
+
+
+def revealed_login(rule: str, match: re.Match[str], preceding: str) -> str | None:
+    """The login one home-rule match reveals, or None. Shared with the native backend."""
+    if not _rule_accepts(rule, match, preceding):
+        return None
+    login = _login_from_segment(match.group(1))
+    return login if login is not None and not _is_placeholder_home(login) else None
 
 
 def revealed_logins(texts: Iterable[str]) -> frozenset[str]:
@@ -99,7 +107,12 @@ def revealed_logins(texts: Iterable[str]) -> frozenset[str]:
     found: set[str] = set()
     for text in texts:
         found |= logins_in_text(text)
-    return frozenset(found - BARE_MATCH_EXEMPT)
+    return reviewed_logins(found)
+
+
+def reviewed_logins(found: Iterable[str]) -> frozenset[str]:
+    """Harvested logins minus the reviewed bare-match exemptions."""
+    return frozenset(set(found) - BARE_MATCH_EXEMPT)
 
 
 def known_login_pattern(logins: frozenset[str]) -> re.Pattern[str] | None:
@@ -123,6 +136,11 @@ def bare_login_matches(
     if pattern is None or not any(login in lowered for login in logins):
         return
     for match in pattern.finditer(text):
-        if _HOME_ROOT_BEFORE.search(text[max(0, match.start() - 16) : match.start()]):
+        if not is_bare_position(text[max(0, match.start() - BARE_WINDOW) : match.start()]):
             continue
         yield match
+
+
+def is_bare_position(preceding: str) -> bool:
+    """False when the text before a login ends at a home root (that rule owns it)."""
+    return _HOME_ROOT_BEFORE.search(preceding) is None

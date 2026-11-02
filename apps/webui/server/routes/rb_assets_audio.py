@@ -16,6 +16,19 @@ from .rb_assets import _CACHE_AUDIO, router
 
 _BLOCKED_ACCESS_ERRNOS: frozenset[int] = frozenset({errno.EACCES, errno.EPERM})
 
+# Starlette's FileResponse reads 64 KiB per chunk, and each chunk is a separate
+# anyio threadpool read plus an ASGI send on the one event loop: about 1,000
+# round trips for a 63 MB WAV deck load. 2 MiB cuts that 32x; stems.py made
+# the same move (8 MiB) for the same reason. Range/206 and HEAD are inherited.
+AUDIO_CHUNK_SIZE_BYTES: int = 2 * 1024 * 1024
+
+
+class AudioFileResponse(FileResponse):
+    """FileResponse that streams library audio in ``AUDIO_CHUNK_SIZE_BYTES`` chunks."""
+
+    chunk_size = AUDIO_CHUNK_SIZE_BYTES
+
+
 _AUDIO_BLOCKED_RESPONSES: dict[int | str, dict[str, object]] = {
     503: {
         "description": (
@@ -83,7 +96,7 @@ def get_track_audio(
                 ),
             },
         )
-    return FileResponse(
+    return AudioFileResponse(
         picked.path,
         media_type=picked.media_type,
         headers={

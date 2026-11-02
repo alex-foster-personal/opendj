@@ -35,9 +35,9 @@ from typing import Any
 
 from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
-from apps.shared.state import cue_store
+from apps.shared.numeric_coerce import coerce_optional
+from apps.shared.state import cue_store, deleted_tracks
 from apps.shared.state import db as state_db
-from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state.events import _DryRunSilentBus
@@ -81,23 +81,16 @@ class IngestReport:
         return dataclasses.asdict(self)
 
 
-def _safe_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
-    """Yield raw DjmdContent attributes we need (ISRC, Length, KeyName,
-    Rating, updated_at) without editing the shared ``rekordbox_db.py``
-    helper (which the M2 orchestrator also owns)."""
+    """Yield normalised DjmdContent dicts for state ingest.
+
+    Reads raw ``get_content()`` rows and coerces optional integer fields
+    (BPM, Length, Rating, FileSize) through :func:`coerce_optional`.
+    """
     for row in rb_db.get_content():
         folder_path = row.FolderPath or ""
         streaming = folder_path.startswith(("spotify:", "tidal:", "http://", "https://"))
-        bpm_raw = _safe_int(row.BPM)
+        bpm_raw = coerce_optional(row.BPM, int)
         # Rekordbox stores BPM as an int*100 (e.g. 12800 = 128.0 BPM). A raw
         # value of 0 is ambiguous (unanalysed tracks and genuine 0.0 share
         # the encoding) but we preserve it as 0.0 rather than dropping to
@@ -105,7 +98,7 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
         # "missing". Only a None row value (column absent / non-numeric)
         # maps back to None. See (private path).
         bpm_value = bpm_raw / 100.0 if bpm_raw is not None else None
-        length_s = _safe_int(getattr(row, "Length", None))
+        length_s = coerce_optional(getattr(row, "Length", None), int)
         duration_ms = length_s * 1000 if length_s else None
 
         artist_name = getattr(row.Artist, "Name", "") if row.Artist else ""
@@ -124,9 +117,9 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
             "is_streaming": streaming,
             "isrc": ((row.ISRC or "").strip() or None),
             "bpm": bpm_value,
-            "rating": _safe_int(getattr(row, "Rating", None)),
+            "rating": coerce_optional(getattr(row, "Rating", None), int),
             "duration_ms": duration_ms,
-            "file_size": _safe_int(getattr(row, "FileSize", None)),
+            "file_size": coerce_optional(getattr(row, "FileSize", None), int),
             "key_name": key_name,
             "updated_at": getattr(row, "updated_at", None),
         }
@@ -149,13 +142,13 @@ def _rb_cues_by_content(rb_db: Any) -> dict[str, list[dict[str, Any]]]:
     """
     out: dict[str, list[dict[str, Any]]] = {}
     for row in rb_db.get_cue():
-        if _safe_int(getattr(row, "rb_local_deleted", 0)):
+        if coerce_optional(getattr(row, "rb_local_deleted", 0), int):
             continue
-        kind = _safe_int(getattr(row, "Kind", None))
-        in_ms = _safe_int(getattr(row, "InMsec", None))
+        kind = coerce_optional(getattr(row, "Kind", None), int)
+        in_ms = coerce_optional(getattr(row, "InMsec", None), int)
         if kind is None or not 0 <= kind <= 8 or in_ms is None or in_ms < 0:
             continue
-        out_ms = _safe_int(getattr(row, "OutMsec", None))
+        out_ms = coerce_optional(getattr(row, "OutMsec", None), int)
         is_loop = out_ms is not None and out_ms > 0
         if kind == 0:
             cue_kind, slot = ("loop" if is_loop else "memory"), None
@@ -167,9 +160,9 @@ def _rb_cues_by_content(rb_db: Any) -> dict[str, list[dict[str, Any]]]:
                 "slot": slot,
                 "in_ms": in_ms,
                 "out_ms": out_ms if is_loop else None,
-                "active_loop": bool(_safe_int(getattr(row, "ActiveLoop", 0))),
-                "beat_loop_size": _safe_int(getattr(row, "BeatLoopSize", None)),
-                "color_table_index": _safe_int(getattr(row, "ColorTableIndex", None)),
+                "active_loop": bool(coerce_optional(getattr(row, "ActiveLoop", 0), int)),
+                "beat_loop_size": coerce_optional(getattr(row, "BeatLoopSize", None), int),
+                "color_table_index": coerce_optional(getattr(row, "ColorTableIndex", None), int),
                 "comment": getattr(row, "Comment", None) or None,
             }
         )

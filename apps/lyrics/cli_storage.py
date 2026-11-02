@@ -68,3 +68,9 @@ def cmd_storage(args: argparse.Namespace) -> int:
 
 
 __all__ = ["STORAGE_COMMANDS", "add_storage_commands", "cmd_storage"]
+
+
+if __name__ == "__main__":
+    from apps.lyrics.cli_guard import refuse_direct_run
+
+    refuse_direct_run(__spec__.name if __spec__ is not None else __file__)

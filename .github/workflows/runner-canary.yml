@@ -351,6 +351,13 @@ jobs:
         timeout-minutes: 3
         run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
+      # Mirrors ci.yml's step of the same name (the drift check compares them); why it
+      # exists and how its cache works are written there.
+      - name: Build the oss audit kernel and route the suite's audits through it
+        timeout-minutes: 3
+        run: |
+          .venv/bin/python scripts/ci_oss_audit_kernel.py
+
       # CANARY DIFFERENCE (the only one inside a step): MDT_PYTEST_TIMEOUT_S is 1440 here,
       # not ci.yml's 2400, so the shard's own budget (24 min, plus the 60 s kill grace)
       # fires before this job's 30-minute cap and a slow vendor shard reports a named

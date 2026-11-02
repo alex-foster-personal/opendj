@@ -30,7 +30,7 @@ type = layers
 containers =
     apps
 layers =
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -72,7 +72,7 @@ layers =
     engine_core : opendj_cli
     webui
     transition_score
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
 ; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
 ; domain package imports back into it you get a cycle, and the domain package can
@@ -156,6 +156,7 @@ enforced =
     playlist_sets
     reconcile
     rescue
+    set_notes
     streaming_transfer
     tags
 delivery =

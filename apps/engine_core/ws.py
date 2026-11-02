@@ -33,6 +33,9 @@ HELLO_TOPIC: str = "hello"
 TOPIC_JOBS_UPDATED: str = "jobs.updated"
 TOPIC_HEALTH_CHANGED: str = "health.changed"
 TOPIC_LIBRARY_CHANGED: str = "library.changed"
+TOPIC_SHELL_QUIT: str = "shell.quit"
+# Client-to-server only (not bus fan-out). Clears retained shell.quit state.
+TOPIC_SHELL_QUIT_ACK: str = "shell.quit.ack"
 TOPIC_ANALYSIS_CHANGED: str = "analysis.changed"
 TOPICS: tuple[str, ...] = (
     TOPIC_JOBS_UPDATED,
@@ -42,16 +45,34 @@ TOPICS: tuple[str, ...] = (
 )
 
 
+# RFC 6455 1008 (policy violation): the shell broke the ack wire contract.
+SHELL_ACK_PROTOCOL_ERROR_CODE: int = 1008
+
+
+class ShellAckProtocolError(ValueError):
+    """A ``consumer=shell`` socket sent a frame that is not a valid ack."""
+
+
 @dataclass(eq=False)
 class Subscriber:
     """One connected socket's outbox.
 
     ``eq=False`` keeps identity hashing: subscribers live in a set, and two
     connections with equal-looking queues are still two different sockets.
+
+    ``delivers_shell_quit`` marks the desktop-shell webview (``consumer=shell``
+    on attach). ``shell.quit`` is retained until one such subscriber is
+    connected and receives the frame; browser tabs on the same bus do not
+    count (issue #6262).
     """
 
     queue: asyncio.Queue[str]
     overflow: asyncio.Event
+    delivers_shell_quit: bool = False
+    # True only after the hello frame (and any shell.quit replay) reached the
+    # socket. Until then _dispatch must not treat this subscriber as able to
+    # receive shell.quit (issue #6262).
+    ready: bool = False
 
 
 class WsHub:
@@ -70,6 +91,13 @@ class WsHub:
         self._subscribers: set[Subscriber] = set()
         self._seq: int = 0
         self._loop: asyncio.AbstractEventLoop | None = None
+        # shell.quit is a one-shot lifecycle signal (OPS-07). publish() with no
+        # WS subscriber used to burn a seq and drop the frame; the desktop shell
+        # could POST lifecycle/quit before /events attaches (issue #6262).
+        self._pending_shell_quit_body: str | None = None
+        # Seq of the last emitted retained shell.quit (live queue or replay).
+        # Cleared only when the shell acks that exact seq (issue #6262).
+        self._pending_shell_quit_seq: int | None = None
 
     # ----- lifecycle -----------------------------------------------------
     def bind(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -85,6 +113,12 @@ class WsHub:
     @property
     def subscriber_count(self) -> int:
         return len(self._subscribers)
+
+    def _has_shell_quit_subscriber(self) -> bool:
+        return any(
+            subscriber.delivers_shell_quit and subscriber.ready
+            for subscriber in self._subscribers
+        )
 
     # ----- publish -------------------------------------------------------
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
@@ -117,18 +151,40 @@ class WsHub:
     def _dispatch(self, topic: str, body: str) -> None:
         """Runs on the engine loop, so seq assignment and delivery order
         agree for every subscriber."""
+        if topic == TOPIC_SHELL_QUIT:
+            self._pending_shell_quit_body = body
+            if not self._has_shell_quit_subscriber():
+                self._pending_shell_quit_seq = None
+                return
         self._seq += 1
+        if topic == TOPIC_SHELL_QUIT:
+            self._pending_shell_quit_seq = self._seq
         frame = _envelope(topic, self._seq, body)
         for subscriber in self._subscribers:
-            if subscriber.overflow.is_set():
+            if (
+                topic == TOPIC_SHELL_QUIT
+                and subscriber.delivers_shell_quit
+                and not subscriber.ready
+            ):
+                # A connecting shell gets the retained quit as its replay once
+                # hello is out; queuing the live frame too would hand it the
+                # same quit twice. Browser subscribers still get the frame:
+                # seq is one counter across topics, so skipping them would
+                # read as a gap and force a full resync (they ignore it).
                 continue
-            try:
-                subscriber.queue.put_nowait(frame)
-            except asyncio.QueueFull:
-                subscriber.overflow.set()
+            self.enqueue_frame(subscriber, frame)
+
+    def enqueue_frame(self, subscriber: Subscriber, frame: str) -> None:
+        """Queue ``frame``; a full outbox marks the subscriber as overflowed."""
+        if subscriber.overflow.is_set():
+            return
+        try:
+            subscriber.queue.put_nowait(frame)
+        except asyncio.QueueFull:
+            subscriber.overflow.set()
 
     # ----- subscription --------------------------------------------------
-    def attach(self) -> tuple[Subscriber, str]:
+    def attach(self, *, delivers_shell_quit: bool = False) -> tuple[Subscriber, str]:
         """Register a socket and mint its hello frame in one atomic step.
 
         Both halves are synchronous and the loop is single-threaded, so no
@@ -137,22 +193,67 @@ class WsHub:
         subscriber = Subscriber(
             queue=asyncio.Queue(maxsize=self.queue_size),
             overflow=asyncio.Event(),
+            delivers_shell_quit=delivers_shell_quit,
         )
         self._subscribers.add(subscriber)
+        hello_seq = self._seq
         hello = _envelope(
             HELLO_TOPIC,
-            self._seq,
+            hello_seq,
             json.dumps(
                 {
                     "contract_rev": self.contract_rev,
                     "engine_version": self.engine_version,
-                    "seq_start": self._seq,
+                    "seq_start": hello_seq,
                     "topics": list(TOPICS),
                 },
                 sort_keys=True,
             ),
         )
         return subscriber, hello
+
+    def pending_shell_quit_replay_frame(self) -> str | None:
+        """Mint one replay envelope for ``_pending_shell_quit_body``, if any."""
+        if self._pending_shell_quit_body is None:
+            return None
+        self._seq += 1
+        self._pending_shell_quit_seq = self._seq
+        return _envelope(
+            TOPIC_SHELL_QUIT, self._seq, self._pending_shell_quit_body
+        )
+
+    def handle_shell_quit_ack(self, subscriber: Subscriber, raw: str) -> None:
+        """Drop retained shell.quit state once the desktop shell received it.
+
+        Raises ``ShellAckProtocolError`` on a frame that is not a well-formed
+        ``shell.quit.ack``: the shell sends nothing else on this socket, so a
+        malformed frame is a broken client and must not pass silently. A
+        well-formed ack that is stale or early is ignored by design (A2).
+        """
+        try:
+            message = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ShellAckProtocolError(f"shell sent a non-JSON frame: {exc}") from exc
+        if not isinstance(message, dict):
+            raise ShellAckProtocolError("shell sent a non-object frame")
+        if message.get("topic") != TOPIC_SHELL_QUIT_ACK:
+            raise ShellAckProtocolError(
+                f"shell sent topic {message.get('topic')!r}, "
+                f"expected {TOPIC_SHELL_QUIT_ACK!r}"
+            )
+        seq = message.get("seq")
+        if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+            raise ShellAckProtocolError(
+                f"shell ack seq {seq!r} is not a non-negative integer"
+            )
+        if not subscriber.delivers_shell_quit or not subscriber.ready:
+            return
+        if self._pending_shell_quit_body is None:
+            return
+        if seq != self._pending_shell_quit_seq:
+            return
+        self._pending_shell_quit_body = None
+        self._pending_shell_quit_seq = None
 
     def detach(self, subscriber: Subscriber) -> None:
         self._subscribers.discard(subscriber)
@@ -179,20 +280,38 @@ async def events_endpoint(websocket: WebSocket) -> None:
     # send -- lives inside, because a client that dies before the hello lands
     # would otherwise leave its subscriber in the hub forever, holding a
     # 256-frame queue that nothing ever drains.
-    subscriber, hello = hub.attach()
+    delivers_shell_quit = websocket.query_params.get("consumer") == "shell"
+    subscriber, hello = hub.attach(delivers_shell_quit=delivers_shell_quit)
     pump: asyncio.Task[None] | None = None
     try:
         await websocket.send_text(hello)
+        if delivers_shell_quit:
+            # Queued, not sent directly, so the pump delivers any frame published
+            # during the hello send first and sequence numbers stay ordered.
+            replay_shell_quit = hub.pending_shell_quit_replay_frame()
+            if replay_shell_quit is not None:
+                hub.enqueue_frame(subscriber, replay_shell_quit)
         # Only the send side runs as a task. The disconnect is awaited in this
         # coroutine directly, so noticing a closed socket costs one scheduler
         # hop rather than several -- an ASGI server that cancels the connection
         # task right after delivering the disconnect must still find us
         # finished.
         pump = asyncio.create_task(_pump(websocket, subscriber))
+        if delivers_shell_quit:
+            # After hello, pump, and any queued replay: live shell.quit may fan out.
+            subscriber.ready = True
         while True:
-            # The bus is one-way; reading exists only to notice the client
-            # left, so whatever it sends is deliberately discarded.
-            await websocket.receive_text()
+            # The bus is one-way for engine events; shell clients may ack
+            # shell.quit receipt so retention clears only after delivery.
+            raw = await websocket.receive_text()
+            if delivers_shell_quit:
+                try:
+                    hub.handle_shell_quit_ack(subscriber, raw)
+                except ShellAckProtocolError as exc:
+                    await websocket.close(
+                        code=SHELL_ACK_PROTOCOL_ERROR_CODE, reason=str(exc)[:120]
+                    )
+                    return
     except WebSocketDisconnect:
         return
     finally:
@@ -224,6 +343,8 @@ __all__ = [
     "TOPIC_HEALTH_CHANGED",
     "TOPIC_JOBS_UPDATED",
     "TOPIC_LIBRARY_CHANGED",
+    "TOPIC_SHELL_QUIT",
+    "TOPIC_SHELL_QUIT_ACK",
     "Subscriber",
     "WsHub",
     "events_endpoint",

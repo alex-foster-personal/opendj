@@ -382,7 +382,13 @@ const BUDGETS = [
   // One clean vite build of main cc2a31a6c2, after #7956 (the Cmd K v2 bundle, behind flags default off) and #6835: bundle merges do not gate on the budget. Measured 289,990, 198 B over; ceiled to KiB (290,816) plus 1 KiB of jitter. Payback: none planned.
   // Merged onto main d20ef4367 Sat 31 Oct 2026, after e00c7b879 took main's ceiling to 291,840: main 290,409;
   // main + this PR 293,053 (+2,644). Ceiled to KiB plus 1 KiB the limit stays 294,912.
-  { name: 'library', limit: 294912, measured: 293053, note: 'initial load of "/"' },
+  // RAISED Mon 2 Nov 2026 (+1 KiB, headroom repair, no feature): main sat 335 B under this limit, so unrelated
+  // PRs tipped it at random. CI frontend job 125490304350 (main 8f3c5ac827) measured 294,352; one clean nucbox vite
+  // build each, 8f3c5ac827 294,350 and main 9a89085862 294,575 (+225), so main on CI is 294,577. Measured ceiled to KiB
+  // (294,912) plus 1 KiB of jitter => 295,936. Payback: none planned.
+  // RAISED Mon 2 Nov 2026 (+2 KiB, deck preview port, PR #7691, merged main b1cdc8056c): one clean vite build each,
+  // main 294,955 and main + this PR 296,699 (+1,744), ceiled to +2 KiB on main's 295,936, so 297,984. Payback: none planned.
+  { name: 'library', limit: 297984, measured: 296699, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
@@ -662,7 +668,19 @@ const BUDGETS = [
   // plus 1 KiB the limit stays 315,392, +3 KiB over main's ceiling, within the V1 rule.
   // Re-land of #6221 (the I18 remote speaker), merged onto main cbd06578dd Sat 31 Oct 2026: one clean local
   // vite build each, main 314,035 and main + this PR 314,401 (+366); inside the limit above, so no raise.
-  { name: 'performance', limit: 315392, measured: 313717, note: '/performance and children' },
+  // RAISED Mon 2 Nov 2026 (+1 KiB, headroom repair, no feature): main sat 843 B under this limit, so unrelated
+  // PRs tipped it at random. CI frontend job 125490304350 (main 8f3c5ac827) measured 314,475; one clean nucbox vite
+  // build each, 8f3c5ac827 314,422 and main 9a89085862 314,496 (+74), so main on CI is 314,549. Measured ceiled to KiB
+  // (315,392) plus 1 KiB of jitter => 316,416. Payback: none planned.
+  // RAISED Mon 2 Nov 2026 (+3 KiB, deck preview port, PR #7691, the DECKGAP-7691 family, merged main b1cdc8056c): one
+  // clean vite build each, main 314,471 and main + this PR 316,584 (+2,113), ceiled to +3 KiB on main's 316,416, so
+  // 319,488. Payback: the reset panel can load on first open, as QuickDrawMenuLoader does.
+  { name: 'performance', limit: 319488, measured: 316584, note: '/performance and children' },
+  // The Set notes editor (PR #6340): ProseMirror, imported only on the pad's first open, so no first-paint
+  // cost. Stays between performance and other-lazy for the same reason as any lazy feature bucket: a file is
+  // charged to the first budget that reaches it. Mon 2 Nov 2026, one clean vite build on main 638ea5a1da.
+  // Limit: measured plus 5 percent, ceiled to KiB. Payback: none planned; the editor is the feature.
+  { name: 'set-notes-editor', limit: 81920, measured: 77306, note: 'Set notes editor, lazy on first open' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -946,8 +964,15 @@ const BUDGETS = [
   // Sat 31 Oct 2026, merged main 4f1b2f2010: main 457,591 and main + this PR 463,842 (+6,251).
   // Sat 31 Oct 2026, merged main cbd06578dd: main 462,764 and main + this PR 468,808 (+6,044); ceiled to KiB
   // (468,992) plus 1 KiB of jitter => 470,016.
-  { name: 'other-lazy', limit: 470016, measured: 468808, note: 'all other routes plus deferred shell' },
+  // RAISED Mon 2 Nov 2026 (+2 KiB, PR #7691 deck preview port, merged main b1cdc8056c): main itself measures 470,633,
+  // 617 B over its own 470,016; main + this PR 471,082 (+449, the preset runner's unsynced-start check among it).
+  // Ceiled to KiB, 472,064. Of the +2 KiB, 617 B is main's own overrun, owed by whichever main change grew the lazy
+  // routes. Payback: none planned.
+  { name: 'other-lazy', limit: 472064, measured: 471082, note: 'all other routes plus deferred shell' },
 ];
+
+// A CSS class ProseMirror's view writes into the DOM; only the editor chunk carries it.
+const SET_NOTES_EDITOR_MARKER = 'ProseMirror-focused';
 
 // ---------------------------------------------------------------- helpers ---
 
@@ -1088,13 +1113,30 @@ function main() {
   }
   const otherFiles = _staticClosure(immutableDir, otherRoots, known);
 
-  const reach = { library: libraryFiles, performance: performanceFiles, 'other-lazy': otherFiles };
+  // The editor is two dynamic imports below the deferred pad host, so it is found by content.
+  const setNotesEditorRoots = inventory.filter(
+    (file) =>
+      !libraryFiles.has(file) &&
+      !performanceFiles.has(file) &&
+      readFileSync(join(immutableDir, file), 'utf8').includes(SET_NOTES_EDITOR_MARKER),
+  );
+  if (setNotesEditorRoots.length === 0) {
+    _fail(`no lazy chunk carries ${SET_NOTES_EDITOR_MARKER}; the set-notes-editor budget would measure nothing.`);
+  }
+  const setNotesEditorFiles = _staticClosure(immutableDir, setNotesEditorRoots, known);
+
+  const reach = {
+    library: libraryFiles,
+    performance: performanceFiles,
+    'set-notes-editor': setNotesEditorFiles,
+    'other-lazy': otherFiles,
+  };
 
   // Second pass: runtime-loaded modules (AudioWorklet processors and the like)
   // are fetched by URL, so no import edge reaches them. Charge each to the
   // surface whose own code names it. Anything named by nobody stays
   // unattributed and fails below, which is the intended loud failure.
-  const attributedByGraph = new Set([...libraryFiles, ...performanceFiles, ...otherFiles]);
+  const attributedByGraph = new Set([...libraryFiles, ...performanceFiles, ...setNotesEditorFiles, ...otherFiles]);
   const leftovers = inventory.filter((f) => !attributedByGraph.has(f));
   if (leftovers.length) {
     const bodies = Object.fromEntries(

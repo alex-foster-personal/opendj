@@ -5,6 +5,7 @@
  * loads it; the root layout and stores need just the route predicates.
  */
 import type { PerformanceCommand, PerformanceState } from '$lib/rb/performance-ipc.svelte';
+import { isUnsyncedStartSyncError } from '$lib/rb/beat-sync-math';
 import { frameOrTimeout } from '$lib/rb/frame-backstop';
 import { MUTED_MASTER_VOLUME } from '$lib/rb/performance-preset-constants';
 import {
@@ -210,7 +211,8 @@ function _assertPresetDeckStaticState(
 			throw new Error(`deck ${definition.deck} configured loop does not match preset`);
 		} else if (deck.is_master !== (definition.deck === preset.master_deck)) {
 			throw new Error(`deck ${definition.deck} configured master selection does not match preset`);
-		} else if (deck.sync_error !== null) {
+		} else if (deck.sync_error !== null && !isUnsyncedStartSyncError(deck.sync_error)) {
+			// DECKGAP-7691c: an unsynced start's reason is not a sync failure (PLAY-27).
 			throw new Error(`deck ${definition.deck} sync failed: ${deck.sync_error}`);
 		} else if (deck.processor_error !== null) {
 			throw new Error(`deck ${definition.deck} processor failed: ${deck.processor_error}`);

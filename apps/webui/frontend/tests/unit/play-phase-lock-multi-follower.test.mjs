@@ -147,11 +147,16 @@ test('[PLAY-27] Sol r4202961938 via setDeckMaster: the plannable follower syncs,
 	captureConsole();
 	try {
 		await playSet({ 2: SID_126, 3: SID_160 });
-		assert.equal(deck(3).sync_error, null, 'a single refused follower that starts unsynced is no deck error (LOW thread :3396)');
+		// DECKGAP-7691c: it carries the Play glow's reason, which the deck error strip leaves out, so it is still no deck error (LOW thread :3396).
+		assert.match(deck(3).sync_error ?? '', /^tempo is too far from master to beat sync \(/, 'a single refused follower that starts unsynced carries only the unsynced-start reason');
 		assert.ok(redNotice(3), 'the single refusal raises the red notice');
 		lines.length = 0;
 		await audio.engine.setDeckMaster(2); // followers: deck 1 (128 -> 126, plannable), deck 3 (160 -> 126, ratio 1.27, not)
 		await wait(300);
+		// The tempo ramp is timer-driven: under CI load 300ms can end before it converges,
+		// so wait for the same condition the assertion below checks, bounded.
+		const deadline = Date.now() + 3000;
+		while (Math.abs(bpmNow(1) - bpmNow(2)) >= 0.25 && Date.now() < deadline) await wait(50);
 	} finally { releaseConsole(); }
 	assert.equal(deck(2).is_master, true, 'the handover stands');
 	assert.equal(deck(1).playing, true, 'deck 1 still playing');

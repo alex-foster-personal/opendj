@@ -181,6 +181,8 @@
 		data-testid="library-selection-count"
 		title="Tracks selected in the active browser tab"
 	>{selectedCount} selected</span>
+	<!-- SETNOTE-6340g: upgraded by the set-notes app once it loads (lib/set-notes/toggle-element.ts). -->
+	<set-notes-toggle></set-notes-toggle>
 	<CloudSyncStatusChip />
 </header>
 
@@ -365,5 +367,11 @@
 	.selection-count {
 		color: var(--rb-text-dim);
 		font-variant-numeric: tabular-nums;
+	}
+	/* SETNOTE-6340g: holds the toggle's size so the bar does not shift when it is upgraded. */
+	set-notes-toggle {
+		display: inline-flex;
+		flex: 0 0 22px;
+		height: 20px;
 	}
 </style>

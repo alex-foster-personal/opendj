@@ -56,6 +56,7 @@
  */
 import { formatErrorId, mintErrorId } from './error-id';
 import { recordPerfEvent } from './perf-event-log';
+import { isUnsyncedStartSyncError } from './beat-sync-math';
 
 /**
  * The deck id union, declared inline rather than imported from `types.ts`.
@@ -118,4 +119,13 @@ export function noteDeckError(deck: DeckErrorDeckId, message: string | null): vo
 	_notedMessages[deck] = message;
 	deckErrorIds[deck] = id;
 	recordPerfEvent(`${DECK_ERROR_KIND} ${id}`, message, deck, 'error');
+}
+
+/**
+ * DECKGAP-7691c: the deck's `sync_error` as the error banner should see it. An
+ * unsynced start's reason (PLAY-27) is the Play button's glow, never a deck
+ * error, so the banner gets null for it; any other sync error passes through.
+ */
+export function bannerSyncError(syncError: string | null): string | null {
+	return isUnsyncedStartSyncError(syncError) ? null : syncError;
 }

@@ -23,6 +23,7 @@ def test_macos_desktop_compile_workflow_runs_cargo_check_for_opendj_desktop() ->
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin opendj-desktop" in workflow
+    assert "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --bin odj-output-probe" in workflow
     assert "mkdir -p apps/desktop/src-tauri/payload" in workflow
     assert "scripts/ci_cargo_selfheal.sh apps/desktop/src-tauri/Cargo.toml dev" in workflow
 

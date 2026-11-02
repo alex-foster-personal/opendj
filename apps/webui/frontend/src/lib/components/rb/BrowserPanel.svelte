@@ -105,6 +105,9 @@
 		createLibraryEditKeys,
 		openIoView,
 		PairingIndex,
+		PairingGraph,
+		subscribePairingsChanged,
+		pairingOutageToaster,
 		CompatibleFilterPopover,
 		LibraryKeyFilterPopover,
 		libraryEditShortcut,
@@ -372,9 +375,14 @@
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	// A failed pairing lookup is unknown, not empty: say so instead of
 	// silently dropping the purple underlines (Sol P1, PR #4014).
-	const pairingIndex = new PairingIndex({
-		onError: (message) => pushToast(message, 'error')
-	});
+	// One outage, one toast (Sol P1, #6062): either store can fail on its own, so
+	// the outage is the graph's error or the index's, whichever is set. The toast
+	// fires when an outage starts and not again while it lasts.
+	const pairingIndex = new PairingIndex();
+	// PAIR-09: every pairing, for the zigzag edge on each paired row.
+	const pairingGraph = new PairingGraph();
+	const pairingOutage = pairingOutageToaster((message) => untrack(() => pushToast(message, 'error')));
+	$effect(() => pairingOutage(pairingGraph, pairingIndex));
 	let browserConfirmOpen = $state(false);
 	// The confirm dialog renders only after a delete or drop asks, so it loads on
 	// first use instead of riding the /performance route's eager bundle budget.
@@ -711,8 +719,16 @@
 		return null;
 	});
 
+	/** The ELECTED master only, with no fallback: the PAIR arrow and the master's
+	 * partner ring are master-relative (PAIR-09), so a playing or loaded deck that
+	 * is not MASTER must not point the arrow at its partners. */
+	const electedMasterStableId = $derived.by((): string | null => {
+		const master = DECK_IDS.map((d) => decks[d]).find((s) => s.is_master && s.stable_id !== null);
+		return master?.stable_id ?? null;
+	});
+
 	$effect(() => {
-		void pairingIndex.refresh(() => referenceMasterStableId);
+		void pairingIndex.refresh(() => electedMasterStableId);
 	});
 
 	function askBrowserConfirm(cfg: {
@@ -972,7 +988,13 @@
 	});
 
 	onMount(() => {
-		pairingIndex.start(() => referenceMasterStableId);
+		pairingIndex.start(() => electedMasterStableId);
+		pairingGraph.start();
+		const onPairingsChanged = (): void => {
+			pairingGraph.requestRefresh();
+			void pairingIndex.refresh(() => electedMasterStableId);
+		};
+		const unsubscribePairingsChanged = subscribePairingsChanged(onPairingsChanged);
 		const uninstallBrowserSortIpc = installBrowserSortIpc({
 			sort: sortBy,
 			restoreOrder: restorePlaylistOrder,
@@ -1101,7 +1123,9 @@
 		const healthRefetchTimer = setInterval(() => void _loadIngestCoverage(), HEALTH_REFETCH_MS);
 
 		return () => {
+			unsubscribePairingsChanged();
 			pairingIndex.stop();
+			pairingGraph.stop();
 			uninstallBrowserSortIpc();
 			unregisterMidiBrowser();
 			unregisterPerformanceBrowser();
@@ -3266,6 +3290,13 @@
 	// drag-and-drop moves row.order positions, which only lines up with the
 	// visible row order when there is no client sort/search in effect.
 	const editablePane = $derived(source === 'collection' && canMutatePlaylist(pane));
+	// PAIR-10: a Spotify pane, an autolist, or a taglist is read-only, so its rows
+	// never offer the pair command. Taglists and autolists both report as collection.
+	const readOnlyPane = $derived(
+		source === 'spotify' ||
+			isAutolistId(pane.playlist_id) ||
+			(pane.playlist_id ?? '').startsWith('taglist:')
+	);
 	const reorderablePane = $derived(
 		editablePane && pane.sort_key === null && pane.search.trim() === ''
 	);
@@ -3772,6 +3803,9 @@
 		<TrackTable
 			libraryMode={library !== null}
 			pairedPartnerIds={pairingIndex.partnerIds}
+			pairPartners={pairingGraph.partners}
+			pairError={pairingGraph.error ?? pairingIndex.error}
+			pairPulses={pairingGraph.pulses}
 			{provider}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}
@@ -3793,6 +3827,7 @@
 			scrollTop={pane.scroll_top}
 			{browseScroll}
 			removable={editablePane}
+			readOnly={readOnlyPane}
 			reorderable={reorderablePane}
 			{reorderBlocked}
 			onrestoreorder={restorePlaylistOrder}

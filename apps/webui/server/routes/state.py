@@ -6,10 +6,25 @@ mirror that could be mistaken for an idle four-deck screen.
 
 Agents compute staleness from ``received_at``; ``meter.age_ms`` is page-relative
 and freezes with the page.
+
+TWO ARRIVAL STAMPS, ONE PER KIND OF READER
+
+- ``received_at`` is wall-clock UTC and is served on GET. It is the only stamp
+  another process can use, and a reader there must expect it to step.
+- ``MIRROR_RECEIVED_MONOTONIC_KEY`` is this process's monotonic clock and is
+  NOT served on GET: its origin is private to this process. Every in-process
+  gate (the CloudSync deck-playing gate, the telemetry live-set gate) ages the
+  mirror with it through ``apps.shared.telemetry.mirror_age_s``, because a page
+  that dies mid-track sends no DELETE and its last document stays here until
+  the engine exits.
+
+Both are stamped on ingest and never on read or on a server-side merge, so a
+mirror nobody is publishing only ever gets older.
 """
 from __future__ import annotations
 
 import logging
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +38,9 @@ from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from apps.webui.server import pair_capture
 from apps.webui.server.headphone_reports import client_id_of, headphone_reports
 from apps.webui.server.routes.commands import order_loop_state
+
+from apps.shared.sync_runtime_gates import mirror_is_stale
+from apps.shared.telemetry import MIRROR_RECEIVED_MONOTONIC_KEY
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
 _LOG = logging.getLogger(__name__)
@@ -235,6 +253,11 @@ def _received_at() -> str:
     )
 
 
+def _received_monotonic_s() -> float:
+    """The engine's monotonic clock at ingest; the one read a test may place in the past."""
+    return time.monotonic()
+
+
 def _mirror_store(request: Request) -> dict[str, Any] | None:
     mirror = getattr(request.app.state, "ui_mirror", None)
     if mirror is None:
@@ -367,6 +390,7 @@ async def publish_ui_mirror(
     _log_new_deck_stops(current_doc, body)
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
+    stored[MIRROR_RECEIVED_MONOTONIC_KEY] = _received_monotonic_s()
     request.app.state.ui_mirror = stored
     request.app.state.ui_mirror_received_monotonic = monotonic()
     pair_capture.observe_mirror(request, body)
@@ -414,6 +438,9 @@ async def get_ui_mirror(request: Request) -> dict[str, Any] | JSONResponse:
     if mirror is None:
         return JSONResponse(status_code=409, content={"client_open": False})
     document = deepcopy(mirror)
+    document.pop(MIRROR_RECEIVED_MONOTONIC_KEY, None)
+    # CLOUDSYNC-14: the same verdict the server gate reaches, so the UI gate agrees.
+    document["mirror_stale"] = mirror_is_stale(mirror, None)
     # AGENT-22: engine-observed, never page-reported: a dead order loop keeps
     # publishing this mirror, so only the engine can say it stopped asking.
     document["last_order_poll_at"], document["order_loop_state"] = order_loop_state(

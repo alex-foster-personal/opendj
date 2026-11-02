@@ -58,8 +58,9 @@ import yaml
 
 from tests.scripts.ci_runner_routes import (
     LIGHT_RUNS_ON,
+    MAIN_RESERVE_DISJUNCT,
+    MAIN_SHARD_RUNS_ON,
     QUALITY_RUNS_ON,
-    SHARD_RUNS_ON,
     SHARD_TAIL,
 )
 
@@ -80,7 +81,7 @@ SHARD_JOB = "test"
 #: guarded CI_RUNS_ON_MERGE_QUEUE disjunct follows the trunk clause. The composed
 #: string lives in tests/scripts/ci_runner_routes.py, evaluated by
 #: (private path).
-EXPECTED_RUNS_ON = SHARD_RUNS_ON
+EXPECTED_RUNS_ON = MAIN_SHARD_RUNS_ON
 MAIN_FIX_DISJUNCT = (
     "(github.event_name == 'pull_request' && "
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
@@ -139,7 +140,10 @@ def test_main_fix_job_prefers_the_reserved_pool_for_trunk_repair_prs_only() -> N
     assert raw == EXPECTED_RUNS_ON, f"test job runs-on changed shape, got: {raw}"
     # The push-to-main clause may guard CI_RUNS_ON_TRUNK (nine agentbox runners),
     # never the two-runner reserve: the reserve disjunct is the first one, whole.
-    assert raw.startswith("${{ fromJSON(" + MAIN_FIX_DISJUNCT + " || "), raw
+    # Mon 2 Nov 2026: the main-push CI_RUNS_ON_MAIN reserve precedes it (a separate
+    # variable, tests/scripts/test_ci_main_push_runner_reserve.py).
+    head = f"${{{{ fromJSON({MAIN_RESERVE_DISJUNCT} || {MAIN_FIX_DISJUNCT} || "
+    assert raw.startswith(head), raw
     assert "refs/heads/main" not in MAIN_FIX_DISJUNCT
     assert raw.count("vars.CI_RUNS_ON_MAIN_FIX") == 1, (
         "a push to main must never be routed to the main-fix reserve"

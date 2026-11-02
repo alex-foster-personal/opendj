@@ -59,18 +59,18 @@ def _is_stale(checked_at: datetime, *, now: datetime | None = None) -> bool:
     return anchor - checked_at > timedelta(seconds=FILE_EXISTS_TTL_S)
 
 
-def stat_logical_path(path: str) -> int | None:
-    """Materialised size of a library path after containment mapping.
+def measure_logical_path(path: str) -> tuple[int | None, str | None]:
+    """Materialised size of a library path, and the file it was measured at.
 
-    None when the path does not resolve, is missing, is not a file, or is a
-    dataless stub. This is the background refresher's stat; request handlers
-    stat through ``track_rows._stat_size`` so the per-request budget stays
-    observable in one place.
+    The size is None when the path does not resolve, is missing, is not a
+    file, or is a dataless stub. This is the background refresher's stat;
+    request handlers stat through ``track_rows._stat_size`` so the per-request
+    budget stays observable in one place.
     """
     resolved = resolve_asset_path(path).resolved
     if resolved is None:
-        return None
-    return fs_residency.materialised_size(resolved)
+        return None, None
+    return fs_residency.materialised_size(resolved), str(resolved)
 
 
 def resolver_namespace(data_dir: Path) -> str:
@@ -171,7 +171,7 @@ def upsert_rows(
 __all__ = [
     "IndexEntry",
     "bulk_lookup",
+    "measure_logical_path",
     "resolver_namespace",
-    "stat_logical_path",
     "upsert_rows",
 ]

@@ -141,6 +141,8 @@ def _read_source(
     state = sqlite3.connect(f"file:{state_db_path}?mode=ro", uri=True)
     state.row_factory = sqlite3.Row
     try:
+        # One snapshot for both reads: tracks and their fields must agree.
+        state.execute("BEGIN")
         if has_soft_deletes(state, "tracks"):
             tracks_sql = (
                 "SELECT stable_id, title, artists_json FROM tracks "
@@ -163,16 +165,17 @@ def _read_source(
 
 
 def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
+    # Each attempt fingerprints, then reads in one transaction. A quiet source
+    # settles at once (the retry absorbs the read itself touching the WAL). A
+    # source that a background job keeps writing never settles: the index is
+    # then labelled with the fingerprint taken BEFORE the last read, so it is
+    # at worst labelled older than its content and the next search rebuilds.
+    # It never labels stale content as current, and it never refuses a search.
     for _ in range(_SOURCE_READ_ATTEMPTS):
-        before = _source_fingerprint(state_db_path)
-        tracks, eav = _read_source(state_db_path)
         source_fingerprint = _source_fingerprint(state_db_path)
-        if source_fingerprint == before:
+        tracks, eav = _read_source(state_db_path)
+        if _source_fingerprint(state_db_path) == source_fingerprint:
             break
-    else:
-        raise SearchIndexUnavailable(
-            f"state.db changed during search index rebuild at {state_db_path}"
-        )
 
     conn.execute("BEGIN")
     try:

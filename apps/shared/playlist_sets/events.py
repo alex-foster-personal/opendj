@@ -4,32 +4,25 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import threading
 from datetime import UTC, datetime
 from typing import Literal
+
+from apps.shared.lazy_event_bus import LazyModuleEventBus
 
 _logger = logging.getLogger(__name__)
 _logged_bus_missing = False
 
 Action = Literal["created", "performed", "practiced"]
 
-_BUS_LOCK = threading.Lock()
-_SHARED_BUS = None  # type: ignore[var-annotated]
+_MODULE_BUS = LazyModuleEventBus()
 
 
 def _get_shared_bus():
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        if _SHARED_BUS is None:
-            from apps.shared.state.events import EventBus
-            _SHARED_BUS = EventBus()
-        return _SHARED_BUS
+    return _MODULE_BUS.get()
 
 
 def set_event_bus(bus) -> None:  # type: ignore[no-untyped-def]
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        _SHARED_BUS = bus
+    _MODULE_BUS.set(bus)
 
 
 def emit_playlist_set_changed(
@@ -60,7 +53,7 @@ def emit_playlist_set_changed(
             ),
         )
     except sqlite3.OperationalError as exc:
-        global _logged_bus_missing
+        global _logged_bus_missing  # noqa: PLW0603
         if not _logged_bus_missing:
             _logger.info(
                 "playlist_set_changed event dropped (event bus not online): %s",

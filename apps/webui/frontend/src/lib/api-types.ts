@@ -5647,6 +5647,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/set-notes/{scope}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Set Note */
+        get: operations["get_set_note"];
+        /** Put Set Note */
+        put: operations["put_set_note"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -5781,6 +5799,30 @@ export interface paths {
          * @description Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.
          */
         post: operations["dismiss_api_v1_setup_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Configured Folders
+         * @description Return the folder roots used by the live rescan scheduler.
+         */
+        get: operations["configured_folders_api_v1_setup_folders_get"];
+        /**
+         * Replace Configured Folders
+         * @description Replace rescan roots without re-running the setup wizard.
+         */
+        put: operations["replace_configured_folders_api_v1_setup_folders_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12209,6 +12251,17 @@ export interface components {
             sample?: string[];
         };
         /**
+         * FolderWatchIn
+         * @description The durable folder-rescan targets edited after onboarding.
+         */
+        FolderWatchIn: {
+            /**
+             * Folders
+             * @description absolute paths to rescan; at least one
+             */
+            folders: string[];
+        };
+        /**
          * FolderWatchOut
          * @description LIBM-128: the continuous folder-rescan scheduler's own status.
          *
@@ -16864,6 +16917,44 @@ export interface components {
         SelectionIn: {
             /** Proposal Ids */
             proposal_ids: string[];
+        };
+        /** SetNoteOut */
+        SetNoteOut: {
+            /** Body Md */
+            body_md: string;
+            /** H */
+            h: number | null;
+            /** Rev */
+            rev: number;
+            /** Scope */
+            scope: string;
+            /** Updated At */
+            updated_at: string;
+            /** Visible */
+            visible: boolean;
+            /** W */
+            w: number | null;
+            /** X */
+            x: number | null;
+            /** Y */
+            y: number | null;
+        };
+        /** SetNotePutIn */
+        SetNotePutIn: {
+            /** Base Rev */
+            base_rev: number;
+            /** Body Md */
+            body_md: string;
+            /** H */
+            h?: number | null;
+            /** Visible */
+            visible: boolean;
+            /** W */
+            w?: number | null;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
         };
         /** SettingItem */
         SettingItem: {
@@ -30552,6 +30643,79 @@ export interface operations {
             };
         };
     };
+    get_set_note: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetNoteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_set_note: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetNotePutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetNoteOut"];
+                };
+            };
+            /** @description base_rev is stale; body carries current_rev */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_settings_api_v1_settings_get: {
         parameters: {
             query?: never;
@@ -30747,6 +30911,63 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    configured_folders_api_v1_setup_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+    };
+    replace_configured_folders_api_v1_setup_folders_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderWatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { OUTPUT_PROBE_HELPER, outputHealthJson } from '../src/output-health';
+import { OUTPUT_PROBE_HELPER, coreAudioOutputDevices, outputHealthJson } from '../src/output-health';
 import { scratchDir } from './helpers';
 
 function payloadWithHelper(script: string): string {
@@ -33,6 +33,37 @@ test('on macOS the helper answers, with the action passed through', () => {
 	const payload = payloadWithHelper('printf \'{"verdict":"ok","action":"%s"}\' "$1"');
 	assert.deepEqual(JSON.parse(outputHealthJson('probe', payload, 'darwin')), { verdict: 'ok', action: 'probe' });
 	assert.deepEqual(JSON.parse(outputHealthJson('switch', payload, 'darwin')), { verdict: 'ok', action: 'switch' });
+});
+
+test('coreAudioOutputDevices is null off macOS', () => {
+	assert.equal(coreAudioOutputDevices(scratchDir('linux'), 'linux'), null);
+});
+
+test('coreAudioOutputDevices runs list on macOS and returns the parsed array', () => {
+	const payload = payloadWithHelper(
+		'if [ "$1" != list ]; then echo "expected list, got $1" >&2; exit 3; fi\n' +
+			"printf '[{\"uid\":\"BuiltInHeadphoneOutputDevice\",\"name\":\"External Headphones\",\"transport\":\"builtin\",\"is_default\":true,\"muted_by_jack\":false,\"physical_uid\":\"BuiltInHeadphoneOutputDevice\"}]'"
+	);
+	const devices = coreAudioOutputDevices(payload, 'darwin');
+	assert.ok(Array.isArray(devices));
+	const first = (devices as { uid: string }[])[0];
+	assert.ok(first !== undefined);
+	assert.equal(first.uid, 'BuiltInHeadphoneOutputDevice');
+});
+
+test('coreAudioOutputDevices throws when the helper is missing or invalid on macOS', () => {
+	assert.throws(() => coreAudioOutputDevices(scratchDir('no-list-helper'), 'darwin'), /helper not bundled/);
+	const failing = payloadWithHelper('echo boom >&2; exit 4');
+	assert.throws(() => coreAudioOutputDevices(failing, 'darwin'), /helper failed: boom/);
+	const garbage = payloadWithHelper('echo not-json');
+	assert.throws(() => coreAudioOutputDevices(garbage, 'darwin'), /not JSON/);
+	const object = payloadWithHelper('printf \'{"verdict":"ok"}\'');
+	assert.throws(() => coreAudioOutputDevices(object, 'darwin'), /JSON array/);
+});
+
+test('coreAudioOutputDevices fails when the helper exceeds the spawn timeout on macOS', () => {
+	const slow = payloadWithHelper('sleep 15');
+	assert.throws(() => coreAudioOutputDevices(slow, 'darwin'), /timed out|ETIMEDOUT/i);
 });
 
 test('a failing or non-JSON helper is unknown, never a verdict', () => {

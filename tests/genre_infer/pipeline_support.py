@@ -8,7 +8,6 @@ counts every request, so a test can prove a cached search was NOT paid for again
 
 from __future__ import annotations
 
-import hashlib
 import json
 import threading
 from collections import Counter
@@ -22,6 +21,7 @@ from typing import Any
 import pytest
 
 from apps.genre_infer import providers
+from tests.genre_infer.captured_fixture import load_captured
 from tests.webui.library_wheel_fixtures import _make_state_db
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "genre_pipeline"
@@ -29,12 +29,7 @@ ROUTES = {"/search": "serper_search", "/alpha/decisions": "jev_decision", "/v1/c
 
 
 def captured(name: str) -> dict[str, Any]:
-    manifest = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
-    entry = manifest["files"][f"{name}.json"]
-    raw = (FIXTURES / f"{name}.json").read_bytes()
-    assert len(raw) == entry["bytes"], f"{name}.json is not the captured fixture (size)"
-    assert hashlib.sha256(raw).hexdigest() == entry["sha256"], f"{name}.json is not the captured fixture (sha256)"
-    return json.loads(raw.decode("utf-8"))
+    return load_captured(FIXTURES, name)
 
 
 @dataclass

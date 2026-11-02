@@ -138,7 +138,7 @@ test('[PLAY-27] SHAPE GUARD: the engine raises the typed refusal and every join 
 	// Ruling on r4203758016: only an ALL-failed refusal is quiet; a partial failure brands the unlocked deck.
 	assert.match(engine, /if \(options\.quietPlanRefusal === true\) for \(const f of planFailed\) deckStates\[f\.deck\]\.sync_error = f\.message;/);
 	// The refusal is RED on every path (pin 9bf12adccb45: the pitch bound stays hard).
-	assert.match(play, /unsynced, console\.info, _toastUnlocked\)/);
+	assert.match(play, /unsynced, console\.info, _toastUnlocked, \(d, reason\) => \(deckStates\[d as DeckId\]\.sync_error = reason\)\)/);
 	assert.match(engine, /pushToast\(f\.notice, 'error'\)/);
 	const src = readFrontendSource('src/lib/player/grid-features.ts');
 	assert.match(src, /if \(!\(error instanceof BeatSyncPhaseLockError\)\) throw error;/);

@@ -52,6 +52,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
+from functools import cached_property
 from pathlib import Path, PurePosixPath
 
 from scripts.affected_tests import REPO, _imports_of, build_graph, reverse_reach
@@ -415,6 +416,13 @@ COUPLINGS: tuple[Coupling, ...] = (
     Coupling("data/", ('"data"', "data/"), "data: tests read committed data files by tree"),
     Coupling("tools/", ('"tools"', "tools/"), "tools: tests run tool scripts by tree"),
     Coupling(
+        "scripts/native/oss_tip_audit/",
+        ("oss_tip_audit", "oss_tip_native"),
+        "oss audit Rust kernel: no Python imports it, yet CI runs every oss_tip_audit test through it"
+        " (ODJ_OSS_AUDIT_BACKEND=auto); before this a kernel-only change selected no parity test"
+        " (replayed Thu 15 Oct 2026, PR #6796)",
+    ),
+    Coupling(
         "apps/desktop/src-tauri/capabilities/",
         ("capabilities/",),  # not `"capabilities"`, a JSON key ten CloudSync tests spell
         "Tauri capability files: a guard checks them against the frontend's plugin calls (found Wed 14 Oct 2026"
@@ -536,7 +544,7 @@ class Graph:
         edges = _plugin_edges(module_of, root)
         for plugin, conftests in edges.items():
             importers.setdefault(plugin, set()).update(conftests)
-        path_of = {name: str(relative) for name, relative in module_of.items()}
+        path_of = {name: relative.as_posix() for name, relative in module_of.items()}
         plugin_modules = frozenset(plugin for plugin in edges if plugin in module_of)
         return cls(importers, path_of, {path: name for name, path in path_of.items()}, plugin_modules)
 
@@ -893,22 +901,32 @@ class SourceTokens:
     dotted prefix of a written token is a `prefix`.
     """
 
+    text: str
     written: frozenset[str]
     prefixes: frozenset[str]
-    #: `written`, minus what only an import statement's module part writes.
-    written_outside_imports: frozenset[str]
+
+    @cached_property
+    def written_outside_imports(self) -> frozenset[str]:
+        """`written`, minus what only an import statement's module part writes.
+
+        Lazy: only a reached `__main__` package (`Names.exact`) reads it, and computing it
+        for every test file was half the source scan, measured Fri 16 Oct 2026.
+        """
+        outside_imports, _ = _tokens_of(_IMPORT_STATEMENT.sub("", self.text))
+        return frozenset(outside_imports)
 
     def name_any(self, names: set[str]) -> bool:
         return not names.isdisjoint(self.written) or not names.isdisjoint(self.prefixes)
 
     def name_outside_imports(self, names: set[str]) -> bool:
+        if not names:
+            return False
         return not names.isdisjoint(self.written_outside_imports)
 
 
 def _source_tokens(text: str) -> SourceTokens:
     written, prefixes = _tokens_of(text)
-    outside_imports, _ = _tokens_of(_IMPORT_STATEMENT.sub("", text))
-    return SourceTokens(frozenset(written), frozenset(prefixes), frozenset(outside_imports))
+    return SourceTokens(text, frozenset(written), frozenset(prefixes))
 
 
 def _tokens_of(text: str) -> tuple[set[str], set[str]]:

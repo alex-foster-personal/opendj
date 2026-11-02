@@ -17,6 +17,7 @@
     "test:live:playhead-smoothness": "node tests/live/playhead-smoothness.mjs",
     "test:live:device-latency-floor": "node tests/live/device-latency-floor.mjs",
     "test:live:stem-decode-workers": "node tests/live/stem-decode-workers.mjs",
+    "test:live:preview-beat-snap": "node tests/live/preview-beat-snap-harness.mjs",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
     "test:e2e:performance:smoke": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_SMOKE=1 playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-smoke --max-failures=1 --reporter=list",
     "test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
@@ -79,6 +80,14 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@wasm-audio-decoders/flac": "0.2.11",
     "openapi-fetch": "0.17.0",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.1",
+    "prosemirror-inputrules": "1.5.1",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-schema-list": "1.5.1",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.42.6",
     "signalsmith-stretch": "1.3.2"
   }
 }

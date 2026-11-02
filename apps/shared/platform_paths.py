@@ -385,6 +385,14 @@ def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> str | None:
     return None
 
 
+def may_remap(folder_path: str, path_map: PathMap) -> bool:
+    """True when resolving ``folder_path`` could land on a different file. No I/O."""
+    return (
+        folder_path.startswith("/PIONEER/")
+        or _rewrite_with_path_map(folder_path, path_map) is not None
+    )
+
+
 def _path_map_suffix(folder_path: str, from_prefix: str) -> str | None:
     """Return a boundary-safe mapped suffix, or ``None`` when no match.
 

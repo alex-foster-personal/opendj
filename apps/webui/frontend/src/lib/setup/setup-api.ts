@@ -156,6 +156,14 @@ export async function getFolderCandidates(): Promise<FolderCandidates> {
 	return unwrap(api.GET('/api/v1/setup/detect/music-folders'));
 }
 
+export async function getConfiguredFolders(): Promise<string[]> {
+	return (await unwrap(api.GET('/api/v1/setup/folders'))).folders;
+}
+
+export async function setConfiguredFolders(folders: string[]): Promise<string[]> {
+	return (await unwrap(api.PUT('/api/v1/setup/folders', { body: { folders } }))).folders;
+}
+
 /** The caveat sentence for a count, or null when nothing was blocked.
  *
  * HONEST DENOMINATORS: a track or file count taken while a folder was

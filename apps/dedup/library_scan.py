@@ -109,8 +109,9 @@ def run_library_scan(
 
     def one(item: tuple[str, Path]) -> None:
         sid, path = item
-        if missing_backend:
-            return
+        with lock:
+            if missing_backend:
+                return
         if not fs_residency.is_materialised(path):
             bump(not_local=1, done=1)
             return
@@ -127,7 +128,8 @@ def run_library_scan(
                 results.append(fp)
             bump(computed=1, done=1)
         except ChromaprintMissing as exc:
-            missing_backend.append(exc)
+            with lock:
+                missing_backend.append(exc)
         except Exception as exc:  # noqa: BLE001 -- one bad file never stops the scan
             with lock:
                 if len(prog.error_samples) < 5:
@@ -142,7 +144,7 @@ def run_library_scan(
     # A cache hit keeps the stable_id it was stored with; re-key rows the
     # library now knows under another id, so clusters name today's tracks.
     by_path = {str(p): sid for sid, p in tracks}
-    conn = sqlite3.connect(use_db)
+    conn = sqlite3.connect(use_db, timeout=5.0)
     try:
         conn.executemany(
             "UPDATE fingerprints SET stable_id = ? WHERE path = ? "

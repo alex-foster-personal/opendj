@@ -16,6 +16,8 @@ Regression lines:
   - if a worker reads its parent's start time itself instead of taking the
     owner's record then an owner that died and had its pid recycled before
     the worker started reads as alive forever -> broken
+  - if a stepped wall clock changes the recorded start time then a live
+    parent reads as gone and its workers exit -> broken
 """
 from __future__ import annotations
 
@@ -120,6 +122,20 @@ def test_parent_gone_compares_against_the_recorded_parent() -> None:
     # Same pid, another start time: the pid was reused, which is what an
     # unreparented Windows orphan's pid looks like once the OS recycles it.
     assert worker_diagnostics.parent_gone(os.getpid(), started_at - 1.0) is True
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="btime is Linux's wall clock offset")
+def test_a_stepped_clock_does_not_read_as_a_new_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # psutil adds /proc/stat btime to a process's start ticks on every read, and
+    # a wall clock step moves btime. Main run 41483236378 lost both workers of
+    # a live owner this way on a WSL2 runner stepping 3 s every 35 s. The step
+    # here is far larger because steps add up over a long-lived worker.
+    started_at = worker_diagnostics.parent_started_at(os.getpid())
+    assert started_at is not None
+    stepped_btime = psutil.boot_time() + 3600.0
+    monkeypatch.setattr("psutil._pslinux.boot_time", lambda: stepped_btime)
+    assert psutil.boot_time() == stepped_btime
+    assert worker_diagnostics.parent_gone(os.getpid(), started_at) is False
 
 
 def test_a_dead_parent_is_gone_by_pid_and_start_time() -> None:

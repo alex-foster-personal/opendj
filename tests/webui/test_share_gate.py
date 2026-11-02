@@ -111,7 +111,7 @@ def test_health_on_share_host_without_token_discloses_no_benign_env_name(
     the exact path the round exists to close. `/api/v1/health` is exempt
     from this module's own auth gate in token mode (see
     `test_health_is_exempt_on_share_host` above, and
-    `share_gate.EXEMPT_SUFFIXES` / `share_gate_middleware`'s
+    `share_gate.EXEMPT_SUFFIXES` / `share_gate_rejection`'s
     `if config.auth == AUTH_TOKEN and is_exempt(...)` early return) so that
     cloudflared can probe liveness before a token is presented. Round 3's
     `process_env_keys` field handed that same unauthenticated caller the

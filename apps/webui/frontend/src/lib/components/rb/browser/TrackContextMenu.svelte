@@ -8,8 +8,10 @@
 	import {
 		menuItemsForTrack,
 		menuTargetIds,
+		menuTargetRowCount,
 		reportMenuLoadFailure,
 		runCopyPaths,
+		runPairTracks,
 		runReanalyze,
 		runRevealTracks
 	} from './track-context-menu';
@@ -31,6 +33,7 @@
 		onremovefromlibrary,
 		onremoverow,
 		removable = false,
+		readOnly = false,
 		onshowinplaylists,
 		onrelocate
 	}: {
@@ -45,6 +48,8 @@
 		onremovefromlibrary?: ((stableIds: string[]) => void) | undefined;
 		onremoverow?: ((row: BrowserRow) => void) | undefined;
 		removable?: boolean;
+		/** Read-only pane: its rows are not writable, so pairing is hidden (PAIR-10). */
+		readOnly?: boolean;
 		onshowinplaylists: (row: BrowserRow, x: number, y: number) => void;
 		onrelocate: (row: BrowserRow, x: number, y: number) => void;
 	} = $props();
@@ -54,6 +59,7 @@
 		y: number;
 		row: BrowserRow;
 		targetIds: string[];
+		rowCount: number;
 	} | null>(null);
 
 	function openMenu(
@@ -69,7 +75,8 @@
 			x,
 			y,
 			row,
-			targetIds: menuTargetIds(row, selectedOrders, selectedIds)
+			targetIds: menuTargetIds(row, selectedOrders, selectedIds),
+			rowCount: menuTargetRowCount(row, selectedOrders)
 		};
 	}
 
@@ -110,14 +117,22 @@
 		{ menuFor, trackAudioOf }: NonNullable<ReturnType<typeof menuRegistry>>,
 		row: BrowserRow,
 		targetIds: string[],
+		rowCount: number,
 		menuX: number,
 		menuY: number
 	): BoundMenuItem[] {
 		const resolved = menuFor(
-			{ kind: 'track', count: targetIds.length },
+			{ kind: 'track', count: targetIds.length, rows: rowCount },
 			{
-				selection: targetIds.length > 1 ? 'many' : 'one',
-				source: isUsbTrackId(row.stable_id) ? 'usb' : removable ? 'playlist' : 'collection',
+				// Rows, not distinct ids: two rows of one track are still a multi-row selection.
+				selection: rowCount > 1 ? 'many' : 'one',
+				source: isUsbTrackId(row.stable_id)
+					? 'usb'
+					: readOnly
+						? 'readonly-import'
+						: removable
+							? 'playlist'
+							: 'collection',
 				audio: trackAudioOf(row),
 				stems: row.stems?.status === 'ready' ? 'ready' : 'none',
 				// LIBWS-03: the registry drops deck loads and worker starters here.
@@ -137,6 +152,7 @@
 			'show-in-playlists': () => onshowinplaylists(row, menuX, menuY),
 			'copy-path': () => runCopyPaths(targetIds),
 			analyze: () => runReanalyze(targetIds),
+			pair: () => runPairTracks(targetIds),
 			'stems-generate': onstemsdonext ? () => onstemsdonext(targetIds) : undefined,
 			lyrics: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined,
 			'remove-playlist': onremoverow ? () => onremoverow(row) : undefined,
@@ -152,7 +168,7 @@
 {/if}
 {#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
-		items={trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.x, menu.y)}
+		items={trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.rowCount, menu.x, menu.y)}
 		x={menu.x}
 		y={menu.y}
 		onclose={() => (menu = null)}

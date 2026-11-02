@@ -175,3 +175,6 @@ tests/quality/test_hosted_runner_pins_are_allowlisted.py
 # nearly every change. Sol on #7495. 55.3 s locally at load 13 (Fri 30 Oct 2026), 36.1 s on
 # Tue 27 Oct; its sibling `helper_carried` guard reads 24.1 s in main's CI durations ledger.
 tests/scripts/test_ci_plan_carry_paths.py
+
+# A plist template that spells a placeholder inside a comment renders unparseable on a `--` path.
+tests/scripts/test_plist_templates_keep_placeholders_out_of_comments.py

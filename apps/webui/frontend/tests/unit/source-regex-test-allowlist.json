@@ -330,6 +330,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "deck-header-live-bpm.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "deck-header-rating-color.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -586,6 +590,10 @@
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
+			"file": "key-nudge-step-ipc.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "key-shift-compat.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
@@ -770,8 +778,16 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "pair-read-only-panes.test.mjs",
+			"reason": "PR #6062 (PAIR-10): pins the readOnly prop chain BrowserPanel -> TrackTable -> TrackContextMenu across three components; rendering BrowserPanel needs the whole library store and engine, so the chain is read as text. Merged before the ratchet reached this branch."
+		},
+		{
 			"file": "pairing-library-indicators.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "pairing-zigzag-edge.test.mjs",
+			"reason": "PR #6062 (PAIR-09): checks the paired row's ::after CSS (mask layers, reduced-motion stop) and the PairingGraph call sites in TrackTable and BrowserPanel; SSR render emits no CSS cascade or animation, and the behavior itself is covered by pairing-library-edge.spec.ts against the real engine."
 		},
 		{
 			"file": "pairings-capture-wiring.test.mjs",
@@ -948,6 +964,14 @@
 		{
 			"file": "play-counter.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "play-unsynced-glow-reason.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
+			"file": "play-unsynced-glow.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
 		},
 		{
 			"file": "playlist-count-alignment.test.mjs",
@@ -1178,6 +1202,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "strip-playhead-played.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "suggest-next-chevron-title-overlap.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1276,6 +1304,10 @@
 		{
 			"file": "track-library-menu.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "track-load-reset-ipc.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7691, the deck preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
 		},
 		{
 			"file": "track-minor-issues.test.mjs",

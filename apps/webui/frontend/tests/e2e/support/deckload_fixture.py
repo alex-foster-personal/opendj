@@ -270,6 +270,22 @@ HUNT_TRACKS: tuple[FixtureTrack, ...] = (
     FixtureTrack(filename="webkit-fixture-hunt-06-124bpm.wav", bpm=124.0, seconds=60.0),
 )
 
+#: --seed-pairing-arrow only (pairing-arrow.spec.ts). The master deck loads
+#: FIXTURE_TRACKS[0]; the PAIR arrow needs a paired partner that is in the
+#: table but scrolled out of view, so the browse list must be longer than one
+#: screen. Browse-only and never loaded; 30 s because
+#: webkit-deckload-runway.test.mjs asserts every declared fixture track meets
+#: its one-test runway floor. Kept out of FIXTURE_TRACKS so no other gate sees
+#: the extra rows.
+PAIRING_ARROW_BROWSE_TRACKS: tuple[FixtureTrack, ...] = tuple(
+    FixtureTrack(filename=f"webkit-fixture-arrow-{n:02d}-120bpm.wav", bpm=120.0, seconds=30.0)
+    for n in range(1, 25)
+)
+PAIRING_ARROW_TRACKS: tuple[FixtureTrack, ...] = (
+    *FIXTURE_TRACKS,
+    *PAIRING_ARROW_BROWSE_TRACKS,
+)
+
 MANIFEST_FILENAME: str = "fixture-manifest.json"
 
 
@@ -1209,6 +1225,26 @@ def write_manifest(
     )
 
 
+def build_pairing_arrow(
+    data_dir: Path,
+) -> list[tuple[str, str | None, str | None]]:
+    """Build the pairing-arrow library: the 2 deck tracks plus a long browse list.
+
+    Own function, like ``build_autoplay_hunt``: ``build()`` and its 2-track shape
+    stay untouched for the five other gates. Playwright re-imports its config
+    more than once per run, so this tolerates being called against its own
+    finished output.
+    """
+    _discard_stale_revision(data_dir)
+    _reset_feedback_dir(data_dir)
+    audio_dir = data_dir / AUDIO_SUBDIR
+    files = ensure_audio(audio_dir, PAIRING_ARROW_TRACKS)
+    rows = _ingest_and_verify(data_dir, audio_dir, files, "pairing-arrow")
+    # Raises StopIteration if the master file was not ingested.
+    _sid_for_filename(rows, FIXTURE_TRACKS[0].filename)
+    return rows
+
+
 def build(
     data_dir: Path, *, seed_playlists: bool = False
 ) -> list[tuple[str, str | None, str | None]]:
@@ -1274,6 +1310,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--seed-pairing-arrow",
+        action="store_true",
+        help=(
+            "2 deck tracks plus a 24-track browse list, so a paired partner can "
+            "sit off screen (pairing-arrow e2e only; exclusive with the other "
+            "--seed-* library shapes)"
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         default=None,
         help="absolute path to write a machine-readable JSON manifest",
@@ -1281,11 +1326,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if sum(
         int(flag)
-        for flag in (args.seed_autoplay_chain, args.seed_autoplay_hunt, args.seed_rescue_playback)
+        for flag in (
+            args.seed_autoplay_chain,
+            args.seed_autoplay_hunt,
+            args.seed_rescue_playback,
+            args.seed_pairing_arrow,
+        )
     ) > 1:
         raise SystemExit(
-            "[ERROR] --seed-autoplay-chain, --seed-autoplay-hunt, and "
-            "--seed-rescue-playback are mutually exclusive"
+            "[ERROR] --seed-autoplay-chain, --seed-autoplay-hunt, "
+            "--seed-rescue-playback, and --seed-pairing-arrow are mutually exclusive"
         )
     if args.seed_own_beatgrid and not args.seed_rescue_playback:
         raise SystemExit("[ERROR] --seed-own-beatgrid requires --seed-rescue-playback")
@@ -1309,6 +1359,8 @@ def main(argv: list[str] | None = None) -> int:
         autoplay_hunt_playlist_a_name = HUNT_PLAYLIST_A_NAME
         autoplay_hunt_playlist_b_id = HUNT_PLAYLIST_B_ID
         autoplay_hunt_playlist_b_name = HUNT_PLAYLIST_B_NAME
+    elif args.seed_pairing_arrow:
+        rows = build_pairing_arrow(data_dir)
     elif args.seed_autoplay_chain:
         rows = build_autoplay_chain(data_dir)
         autoplay_chain_playlist_id = AUTOPLAY_CHAIN_PLAYLIST_ID

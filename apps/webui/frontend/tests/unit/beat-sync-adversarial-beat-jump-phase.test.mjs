@@ -168,13 +168,18 @@ test('control: every OTHER quantized seek still snaps to the grid (cue, hot cue,
 
 test('SOURCE: beatJump takes beatJumpSeekPlan with the deck\'s desired transport and passes its skip flag', () => {
 	const engine = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
-	const start = engine.indexOf('async beatJump(deck: DeckId, beats: number): Promise<void> {');
-	assert.ok(start > 0, 'beatJump not found');
+	// beatJump and DECKUX-6794's gridJump share one body, run from the anchor each planned from.
+	const entry = engine.indexOf('async beatJump(deck: DeckId, beats: number): Promise<void> {');
+	assert.ok(entry > 0, 'beatJump not found');
+	assert.match(engine.slice(entry, engine.indexOf('\n\t}\n', entry)), /await this\._beatJumpFrom\(deck, st, grid, anchorMs, beats\);/);
+	const start = engine.indexOf('private async _beatJumpFrom(');
+	assert.ok(start > 0, '_beatJumpFrom not found');
 	const body = engine.slice(start, engine.indexOf('\n\t}\n', start));
 	assert.match(
 		body,
-		/const \{ targetMs, skipGridQuantize \} = beatJumpSeekPlan\(grid, anchorMs, beats, _durationSec\(deck\) \* 1000, _rt\[deck\]\.desiredActive\);/
+		/const seek = beatJumpSeekPlan\(grid, anchorMs, beats, _durationSec\(deck\) \* 1000, _rt\[deck\]\.desiredActive\);/
 	);
+	assert.match(body, /const skipGridQuantize = snapped \|\| seek\.skipGridQuantize;/);
 	// Round 2: the jump also hands its beat count through, so a playing deck lands
 	// that many beats from wherever it is when the schedule lands (`phaseKeepingLandingSec`, beat-sync-math.ts).
 	assert.match(

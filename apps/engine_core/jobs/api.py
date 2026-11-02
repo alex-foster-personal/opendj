@@ -29,6 +29,7 @@ from apps.engine_core.jobs.store import (
     JobNotFound,
     JobStore,
 )
+from apps.shared.engine_app_state import data_dir_from_engine_request
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -104,19 +105,6 @@ def _store(request: Request) -> JobStore:
     return store
 
 
-def _engine_data_dir(request: Request) -> Path:
-    """The engine's own data dir: the library a payload with no ``data_dir``
-    separates (the worker inherits it as ``MDT_DATA_DIR``)."""
-    cfg = getattr(request.app.state, "engine_cfg", None)
-    if cfg is None:
-        raise RuntimeError(
-            "engine config is not mounted on app.state.engine_cfg; the "
-            "stems.separate duplicate rule cannot tell which library a "
-            "payload without data_dir names, and it will not guess"
-        )
-    return Path(cfg.data_dir)
-
-
 def _runner(request: Request) -> JobRunner:
     runner = getattr(request.app.state, "jobs_runner", None)
     if runner is None:
@@ -179,7 +167,7 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
         # second request for work an active job already does is refused
         # atomically with the insert, and the caller gets that job to adopt.
         requested = payload
-        default_data_dir = _engine_data_dir(request)
+        default_data_dir = data_dir_from_engine_request(request)
         job, created = _store(request).enqueue_unless_active(
             body.kind,
             payload,
@@ -280,7 +268,7 @@ def reenqueue_job(request: Request, job_id: str) -> dict[str, Any]:
     try:
         job = store.get(job_id)
         conflicts = (
-            _reenqueue_conflicts(job, _engine_data_dir(request))
+            _reenqueue_conflicts(job, data_dir_from_engine_request(request))
             if job["kind"] == "stems.separate"
             else None
         )

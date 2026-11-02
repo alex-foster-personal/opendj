@@ -1,0 +1,20 @@
+[package]
+name = "oss-tip-audit-native"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Scanning kernel for scripts/oss_tip_audit.py: reads published blobs and runs the rules it is handed"
+
+[[bin]]
+name = "oss-tip-audit-native"
+path = "src/main.rs"
+
+[dependencies]
+# Lookaround (the rules use lookbehind and lookahead) with Python-compatible
+# backtracking semantics; the plain `regex` crate has neither.
+fancy-regex = "0.17"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1

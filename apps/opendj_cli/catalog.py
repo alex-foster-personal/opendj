@@ -201,6 +201,8 @@ _VERBS: tuple[Verb, ...] = (
         arg("start_ms", "number", number_value, optional=True),
     ), quick_draws=("loop.start_4", "loop.start_8", "loop.start_16")),
     Verb("beat_jump", "beat_jump", (_DECK, arg("beats", "int", int_value))),
+    Verb("grid_jump", "grid_jump", (_DECK, arg("bars", "int", int_value)),
+         note="DECKUX-6794: snapped jump on the fixed bar grid; -4 back, 4 forward, 8 with Shift."),
     Verb("loop_interval_mode", "loop_interval_mode", (_DECK, _ENABLED)),
     Verb("loop_interval_base", "loop_interval_base", (_DECK, arg("base", "number", number_value))),
     Verb("tempo", "tempo", (_DECK, arg("ratio", "number", number_value)),
@@ -323,6 +325,12 @@ _VERBS: tuple[Verb, ...] = (
     ), note="TOPVIEW-01..03: the top bar's view icons; what the wavestack area shows."),
     Verb("show_pads", "show_pads", (_ENABLED,),
          note="TOPVIEW-04: the top bar's PAD button; show or hide the performance-pad rows."),
+    Verb("key_nudge_step", "key_nudge_step", (
+        arg("step", "enum", enum_value(("semitone", "tone", "scale", "camelot")), "semitone|tone|scale|camelot"),
+    ), note="DECKGAP-7691b: the key nudge arrows' step size, shared by every deck (camelot = one fifth)."),
+    Verb("track_load_reset", "track_load_reset", tuple(
+        arg(item, "bool", bool_value, "true|false") for item in ("level", "stems", "eq", "trim", "filter")
+    ), note="DECKGAP-7691: which mixer values return to neutral when a track loads (all five, every deck)."),
     Verb("auto_play_next_arm", "auto_play_next_arm", (
         arg("intent", "enum", enum_value(TRANSITION_INTENT_VALUES), "smooth|energy_up|wind_down|showy|vocals_clean", optional=True),
         arg("out_deck", "deck", deck_value, "1-4", optional=True),

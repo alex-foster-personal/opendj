@@ -16,6 +16,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { alignHotcues, latestSyncSnapshot, PartialAlignmentError } from '$lib/rb/pairing-capture';
 	import { pushToast } from '$lib/stores.svelte';
+	import { announcePairingsChanged } from '$lib/rb/pairings-changed';
 
 	let {
 		open = $bindable(false),
@@ -53,8 +54,15 @@
 		snapshot = state.pairing_snapshot;
 	}
 
+	/** Close and drop the frozen snapshot, so a reopen always freezes afresh and
+	 * the sheet never renders open over a missing snapshot (F06, #7146). */
+	function _dismiss(): void {
+		open = false;
+		snapshot = null;
+	}
+
 	async function _save(): Promise<void> {
-		if (busy || selected.length !== 2) return;
+		if (busy || selected.length !== 2 || snapshot === null) return;
 		busy = true;
 		try {
 			await dispatchPerformanceCommand({
@@ -69,7 +77,8 @@
 		} finally {
 			busy = false;
 		}
-		open = false;
+		announcePairingsChanged();
+		_dismiss();
 		pushToast('Pairing captured', 'info');
 	}
 
@@ -153,11 +162,11 @@
 
 </script>
 
-{#if open}
+{#if open && snapshot !== null}
 	<div class="sheet" role="dialog" aria-label="Create pairing">
 		<header>
 			<strong>Create pairing</strong>
-			<button type="button" class="x" onclick={() => (open = false)}>×</button>
+			<button type="button" class="x" onclick={_dismiss}>×</button>
 		</header>
 		<p class="hint">This pairing is frozen at the moment you opened it.</p>
 		<ul>

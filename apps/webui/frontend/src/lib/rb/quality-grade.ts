@@ -76,8 +76,16 @@ export interface LoadedHover {
 }
 
 /** The title to show: the loaded hover only if it describes the current grade. */
-export function hoverTitle(loaded: LoadedHover | null, gradeKey: string, fallback: string): string {
-	return loaded !== null && loaded.key === gradeKey ? loaded.text : fallback;
+export function hoverTitle(
+	loaded: LoadedHover | null,
+	gradeKey: string,
+	fallback: string,
+	now = Date.now()
+): string {
+	if (loaded !== null && loaded.key === gradeKey && now - loaded.at < HOVER_TTL_MS) {
+		return loaded.text;
+	}
+	return fallback;
 }
 
 /** True when a mouseenter need not ask again: same grade, inside the TTL. */

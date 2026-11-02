@@ -3,7 +3,7 @@
 // THIN SHELL WITH A LIFECYCLE (ADR-0048, apps/desktop/README.md). This process
 // owns no application logic: no product decisions, no data access, no HTTP
 // client for the API. It starts the engine that ships inside the app, keeps it
-// alive, opens a Chromium window onto it, and offers the page four native
+// alive, opens a Chromium window onto it, and offers the page five native
 // features. Everything a user sees is served by the engine over HTTP.
 //
 // Port of apps/desktop/src-tauri/src/main.rs. Behaviors are numbered P1-P19 in
@@ -32,7 +32,7 @@ import {
 import { defaultBootDeps, startEngine } from './boot';
 import { PAYLOAD_DIR } from './engine';
 import { makeLockProbe, performancePageUrl } from './launch';
-import { outputHealthJson } from './output-health';
+import { coreAudioOutputDevices, outputHealthJson } from './output-health';
 import {
 	APP_HOST,
 	APP_ORIGIN,
@@ -267,7 +267,7 @@ function main(): void {
 	});
 	app.on('window-all-closed', () => exitApp(0, 'all windows closed'));
 
-	// ----- the four native features, origin-checked (D4) --------------------
+	// ----- native bridge IPC, origin-checked (D4) ---------------------------
 	const trusted = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => {
 		const url = event.senderFrame?.url ?? '';
 		if (event.sender !== window?.webContents || !isTrustedPage(url)) {
@@ -323,6 +323,10 @@ function main(): void {
 			},
 			(progress) => event.sender.send('opendj:update-progress', progress)
 		);
+	});
+	ipcMain.handle('opendj:list-coreaudio-outputs', (event) => {
+		if (!trusted(event)) return refuse();
+		return coreAudioOutputDevices(payloadDir());
 	});
 
 	void app.whenReady().then(async () => {

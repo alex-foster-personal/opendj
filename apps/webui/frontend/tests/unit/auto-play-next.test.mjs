@@ -1,3 +1,4 @@
+// requirement: DECKGAP-7691g
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -72,6 +73,66 @@ test('findRepetitiveLoopWindow degrades to null rather than throwing on too few 
 	const waveform = _flatWaveform(100, 0.4, 0.3, 0.2);
 	assert.equal(findRepetitiveLoopWindow(waveform, _beats(4), 2, DEFAULT_AUTO_PLAY_NEXT_CONFIG), null);
 	assert.throws(() => findRepetitiveLoopWindow(waveform, [], 2, DEFAULT_AUTO_PLAY_NEXT_CONFIG), /beats must be non-empty/);
+});
+
+// Pin 9f05ca7e3f6f. 160 beats = 40 bars, so B-16 is beat 96 (64 beats remain).
+// The old tail search would arm beat 144.
+const LONG_BEATS = 160;
+const LONG_DURATION_SEC = LONG_BEATS * 0.469;
+const FLAT_PROFILE = [0.4, 0.3, 0.2];
+
+function _detailForBeats(beats, durationSec, valueAtBeat) {
+	const length = beats.length * 10;
+	const low = new Array(length).fill(0);
+	const mid = new Array(length).fill(0);
+	const high = new Array(length).fill(0);
+	const scale = length / Math.max(durationSec, 1e-6);
+	for (let beatIdx = 0; beatIdx < beats.length; beatIdx++) {
+		const t0 = beats[beatIdx].t;
+		const t1 = beatIdx + 1 < beats.length ? beats[beatIdx + 1].t : durationSec;
+		const lo = Math.round(t0 * scale);
+		const hi = Math.round(t1 * scale);
+		const [l, m, h] = valueAtBeat(beatIdx);
+		for (let i = Math.max(0, lo); i < Math.min(length, hi); i++) {
+			low[i] = l;
+			mid[i] = m;
+			high[i] = h;
+		}
+	}
+	return {
+		kind: 'tri',
+		preview: { length: 1, low: [0], mid: [0], high: [0] },
+		detail: { length, low, mid, high }
+	};
+}
+
+function _alternatingBar(beatIdx) {
+	return Math.floor(beatIdx / 4) % 2 === 0 ? [0.9, 0.1, 0.1] : [0.1, 0.1, 0.9];
+}
+
+test('9f05ca7e3f6f: a long grid loops at B-16 instead of the tail', () => {
+	const beats = _beats(LONG_BEATS);
+	const waveform = _detailForBeats(beats, LONG_DURATION_SEC, () => FLAT_PROFILE);
+	const window = findRepetitiveLoopWindow(waveform, beats, LONG_DURATION_SEC, DEFAULT_AUTO_PLAY_NEXT_CONFIG);
+	assert.deepEqual(window, { startBeatIdx: 96, endBeatIdx: 104 });
+});
+
+test('9f05ca7e3f6f: picks the nearby downbeat whose 4 beats before and after match', () => {
+	const beats = _beats(LONG_BEATS);
+	const seam = 80;
+	const waveform = _detailForBeats(beats, LONG_DURATION_SEC, (beatIdx) => {
+		if (beatIdx >= seam - 4 && beatIdx < seam + 4) return FLAT_PROFILE;
+		return _alternatingBar(beatIdx);
+	});
+	const window = findRepetitiveLoopWindow(waveform, beats, LONG_DURATION_SEC, DEFAULT_AUTO_PLAY_NEXT_CONFIG);
+	assert.deepEqual(window, { startBeatIdx: seam, endBeatIdx: seam + 8 });
+});
+
+test('9f05ca7e3f6f: falls back to B-16 when no nearby 4-beat seam matches', () => {
+	const beats = _beats(LONG_BEATS);
+	const waveform = _detailForBeats(beats, LONG_DURATION_SEC, _alternatingBar);
+	const window = findRepetitiveLoopWindow(waveform, beats, LONG_DURATION_SEC, DEFAULT_AUTO_PLAY_NEXT_CONFIG);
+	assert.deepEqual(window, { startBeatIdx: 96, endBeatIdx: 104 });
 });
 
 test('loopWindowToMs maps a beat-index window to the grid\'s own ms timestamps', () => {

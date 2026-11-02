@@ -359,13 +359,41 @@ def artifact_dir() -> Path:
 ARTIFACT_FILES = ("bin/ffmpeg", "bin/ffprobe", "LICENSE-ffmpeg", "LICENSE-soxr", "NOTICE-ffmpeg")
 
 
+def _artifact_files_present(prefix: Path) -> bool:
+    return all((prefix / name).is_file() for name in ARTIFACT_FILES)
+
+
 def cached_artifact() -> Path | None:
     """The cached artifact if complete and guard-clean, else None."""
     prefix = artifact_dir()
-    if not all((prefix / name).is_file() for name in ARTIFACT_FILES):
+    if not _artifact_files_present(prefix):
         return None
     verify_lgpl_binary(prefix / "bin/ffmpeg")
     return prefix
+
+
+# What a COLD build (no cached artifact for the current key) runs besides the
+# compiler: build_soxr needs cmake, both halves need make. silver (Mon 2 Nov
+# 2026) had no cmake, so its first `just dmg` died at payload staging, minutes
+# in, instead of in the one-second preflight.
+COLD_BUILD_TOOLS = ("cmake", "make")
+
+
+def build_readiness() -> str:
+    """Read-only: can `build()` succeed here without fetching tools?
+
+    Returns a one-line verdict. Raises FfmpegBuildError naming every missing
+    cold-build tool when the cache for the current key is absent.
+    """
+    prefix = artifact_dir()
+    if _artifact_files_present(prefix):
+        return f"cached path={prefix}"
+    missing = [tool for tool in COLD_BUILD_TOOLS if shutil.which(tool) is None]
+    if missing:
+        raise FfmpegBuildError(
+            f"no cached payload ffmpeg at {prefix} and a cold build needs {', '.join(missing)}, which is not on PATH"
+        )
+    return f"cold-build tools={','.join(COLD_BUILD_TOOLS)}"
 
 
 def unsupported_host(host: str, machine: str) -> str | None:
@@ -440,8 +468,14 @@ def stage(payload_dir: Path, relative: str) -> dict[str, str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="guard the cached artifact only")
+    parser.add_argument(
+        "--preflight", action="store_true", help="read-only: is the cache present, or can a cold build run here"
+    )
     opts = parser.parse_args(argv)
     try:
+        if opts.preflight:
+            print(build_readiness())
+            return 0
         if opts.check:
             found = cached_artifact()
             if found is None:

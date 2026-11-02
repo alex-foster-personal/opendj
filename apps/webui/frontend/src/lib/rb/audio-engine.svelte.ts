@@ -118,6 +118,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
+import { notifyPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
 import {
@@ -171,8 +172,7 @@ import {
 	phaseKeepingLandingSec,
 	planArm
 } from '$lib/rb/beat-sync-math';
-import type { ArmAtPosition, ScheduleWhen, TempoRampStep } from '$lib/rb/beat-sync-math';
-import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
+import { beatSyncOutcomeNotices, TempoOutOfSyncRangeError, type ArmAtPosition, type ScheduleWhen, type TempoRampStep } from '$lib/rb/beat-sync-math';
 import {
 	BeatSyncPhaseLockError,
 	beatSyncClockMaster,
@@ -188,6 +188,7 @@ import {
 	hasRealBeatGrid,
 	hasTrustedBeatGrid,
 	joinPhaseOrStartUnsynced,
+	planDeckGridJump,
 	unlockedFollowerNotice
 } from '$lib/player/grid-features';
 import {
@@ -220,6 +221,7 @@ import {
 	type StemBuffers
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
+import { applyStemCarry, applyTrackLoadChannelReset, captureStemCarry } from '$lib/rb/track-load-reset';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
@@ -865,6 +867,7 @@ function _resetGraphState(releaseHeadphones: () => void): void {
 	_djOutputProfileActive = null;
 	clearDjOutputResolution();
 	_ctx = null; _steps.cancelAll(); for (const deck of DECK_IDS) _positionAnchor[deck] = null; // a retired context takes its steps and its clock pairings with it (Codex + Sol #7594)
+	notifyPerformanceArmedContextReset();
 	resetMasterSilenceWatch();
 	resetPresentationClockStall();
 }
@@ -1953,6 +1956,26 @@ export function deckAudioClockPositionMs(deck: DeckId): number {
 	return _currentPosSec(deck) * 1000;
 }
 
+/** The control clock's now, in context seconds, or null before the graph exists. */
+export function audioContextNowSec(): number | null {
+	return _ctx?.currentTime ?? null;
+}
+
+/**
+ * Where a deck's transport will be at context instant `when`, and its rate
+ * there, read through the same segment schedule the deck's own sync uses. A
+ * linear extrapolation from now is wrong across a fractional loop or a seek
+ * already queued inside the lead, so a preview that must land on the master's
+ * beat reads the schedule at its own start instant instead.
+ */
+export function deckMasterAtContextSec(
+	deck: DeckId,
+	when: number
+): { positionSec: number; tempoRatio: number } {
+	if (_ctx === null) throw new Error('deckMasterAtContextSec: audio graph not initialised');
+	return { positionSec: _projectPositionAt(deck, when), tempoRatio: _tempoAt(deck, when) };
+}
+
 /** Render/control-clock position in seconds, with manual loop wrap. This is
  * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
@@ -2469,7 +2492,7 @@ async function _synchronizeFollowers(
 			rawFollowerPositionSec: number;
 		};
 		const planned: _PlannedFollower[] = [];
-		const planFailed: { deck: DeckId; message: string; notice: string }[] = [];
+		const planFailed: { deck: DeckId; message: string; notice: string; outOfRange: boolean }[] = [];
 		// Ownership is re-read HERE, downstream of every await above (context
 		// resume, and the superseded-pending wait that can park this call for a
 		// scheduled instant). A deck whose BEAT SYNC went dark inside that
@@ -2505,7 +2528,7 @@ async function _synchronizeFollowers(
 				planned.push({ deck, st, plan, rawFollowerPositionSec });
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				planFailed.push({ deck, message, notice: unlockedFollowerNotice(deck, deckStates[deck], masterState, pitchRanges[deck], message) });
+				planFailed.push({ deck, message, notice: unlockedFollowerNotice(deck, deckStates[deck], masterState, pitchRanges[deck], message), outOfRange: error instanceof TempoOutOfSyncRangeError });
 				if (options.quietPlanRefusal !== true) deckStates[deck].sync_error = message;
 			}
 		}
@@ -2646,6 +2669,7 @@ const _phaseLock = createWebAudioPhaseLock({ // NAE-19; bookkeeping lives in pha
 	desiredTempo: (deck) => _rt[deck].pending.at(-1)?.tempoRatio ?? _rt[deck].controlTempoRatio,
 	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
 	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
+	keyLocked: (deck) => _rt[deck].pending.at(-1)?.masterTempoEnabled ?? _rt[deck].controlMasterTempoEnabled,
 	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
 	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message) });
 export const beatSyncFold = _phaseLock.normalizationOf; // TOPVIEW-02/03: Beat Sync's tempo fold for a deck, null with no lock (Sol P1 4301847502, 4349021851)
@@ -2908,6 +2932,7 @@ async function _upgradeDeckStems(
 			{ source: probe.manifest.source, model: probe.manifest.model, layout },
 			created.alignment
 		);
+		applyStemCarry(deck, token, readyState, created.processor); // DECKGAP-7691: "reset stems" off keeps the previous mix
 		// STEM-47: a playing deck takes the stems live instead of holding them until it stops.
 		const landed = await time('landStems', _landStems(deck, { token, processor: created.processor, state: readyState }, ctx, stale));
 		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
@@ -3002,6 +3027,7 @@ class RbAudioEngine implements AudioEngine {
 		clearDjOutputResolution();
 		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
+		notifyPerformanceArmedContextReset();
 		_masterDeck = null;
 		_masterMode = 'auto';
 		_masterReason = 'dispose';
@@ -3175,9 +3201,9 @@ class RbAudioEngine implements AudioEngine {
 				}
 				throw error;
 			}
-			// LAZY-STEMS: the outgoing track may have had a stem bundle waiting for
-			// a stop that will now never come for it.
+			// LAZY-STEMS: the outgoing track may have had a stem bundle waiting for a stop that will now never come for it.
 			_releasePendingStemUpgrade(rt);
+			captureStemCarry(deck, token, st.stems.controls); // DECKGAP-7691: the outgoing stem mix, before it is cleared
 			_clearLoadedTrackState(st);
 			rt.processor = candidateProcessor;
 			rt.durationSec = candidateBuffer.duration;
@@ -3260,6 +3286,7 @@ class RbAudioEngine implements AudioEngine {
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
 		st.last_load_stages = { ...stages };
+		if (rt.loadToken === token && st.stable_id === stable_id) applyTrackLoadChannelReset(mixerState.channels[deck], { setFader: (v) => this.setFader(deck, v), setTrim: (v) => this.setTrim(deck, v), setFilter: (v) => this.setFilter(deck, v), setEq: (band, v) => this.setEq(deck, band, v) }); // DECKGAP-7691: only for the load that won
 		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		// LAZY-STEMS: deliberately NOT awaited. `load` resolves as soon as the
 		// deck can play; the stem bundle lands afterwards and moves st.stems off
@@ -3366,7 +3393,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		// PLAY-27: a plan the follower cannot satisfy starts it unsynced, never aborts play.
 		const joinPhase = (master: DeckId, unsynced: () => Promise<void> = () => schedulePlainTransport()) =>
-			joinPhaseOrStartUnsynced(deck, () => _synchronizeFollowers(master, [deck], { quietPlanRefusal: true, ...(pressT0Ms === undefined ? {} : { pressT0Ms }) }), unsynced, console.info, _toastUnlocked);
+			joinPhaseOrStartUnsynced(deck, () => _synchronizeFollowers(master, [deck], { quietPlanRefusal: true, ...(pressT0Ms === undefined ? {} : { pressT0Ms }) }), unsynced, console.info, _toastUnlocked, (d, reason) => (deckStates[d as DeckId].sync_error = reason)); // DECKGAP-7691c: the glow's reason
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
 			if (syncClock !== null && canPhaseLockTo(st, deckStates[syncClock])) {
 				await joinPhase(syncClock);
@@ -3842,7 +3869,33 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'beatJump');
 		const grid = requireBeatGrid(st, 'beatJump');
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
-		const { targetMs, skipGridQuantize } = beatJumpSeekPlan(grid, anchorMs, beats, _durationSec(deck) * 1000, _rt[deck].desiredActive);
+		await this._beatJumpFrom(deck, st, grid, anchorMs, beats);
+	}
+
+	/** DECKUX-6794: snapped jump on the fixed bar grid (grid-features.ts); a refusal moves nothing. */
+	async gridJump(deck: DeckId, bars: number) {
+		const { st } = _requireLoaded(deck, 'gridJump');
+		const grid = requireBeatGrid(st, 'gridJump');
+		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
+		const plan = planDeckGridJump(st, grid, anchorMs, bars, _rt[deck].desiredActive);
+		if (plan.kind === 'seek') await this.quantizedSeek(deck, plan.targetMs, true);
+		else if (plan.kind === 'jump') await this._beatJumpFrom(deck, st, grid, anchorMs, plan.deltaBeats, true);
+		return plan;
+	}
+
+	private async _beatJumpFrom(
+		deck: DeckId,
+		st: DeckState,
+		grid: readonly AnlzBeat[],
+		anchorMs: number,
+		beats: number,
+		snapped = false
+	): Promise<void> {
+		const seek = beatJumpSeekPlan(grid, anchorMs, beats, _durationSec(deck) * 1000, _rt[deck].desiredActive);
+		const { targetMs } = seek;
+		// A snapped grid jump already chose its bar; the deck's coarser quantize
+		// must not move that target back to the beat it was counted from.
+		const skipGridQuantize = snapped || seek.skipGridQuantize;
 		if (st.loop !== null && st.loop.engaged) {
 			const previousLoop = st.loop;
 			// quantizedSeek preserves an in-range loop. Shift its exact PQTZ
@@ -4034,10 +4087,8 @@ class RbAudioEngine implements AudioEngine {
 		st.slip_enabled = false;
 	}
 
-	async nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void> {
-		if (semitones !== -1 && semitones !== 1) {
-			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
-		}
+	async nudgeKey(deck: DeckId, semitones: number): Promise<void> {
+		if (!Number.isInteger(semitones) || semitones === 0 || Math.abs(semitones) > 12) throw new RangeError(`nudgeKey: semitones must be a non-zero integer from -12 to 12, got ${semitones}`);
 		_requireLoaded(deck, 'nudgeKey');
 		const next = _desiredKeyShiftSemitones(deck) + semitones;
 		_assertKeyShift(next); // validate first: a refused nudge must not disarm KEY SYNC

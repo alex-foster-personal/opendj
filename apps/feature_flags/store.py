@@ -160,6 +160,19 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=False,
     ),
     FlagDef(
+        flag_id="deck.snapped_jump",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Snapped deck jumps (DECKUX-6794, (private path)): "
+            "Cmd/Ctrl+Left and Right (and Cmd+A/D) jump the selected deck on a "
+            "fixed 4-bar grid from bar 1 (Shift 8), stopping at section starts, "
+            "so Right then Left replays the same block. OFF leaves the keys unbound."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="cmdk.v2.preview",
         default=False,
         owner="maintainer",
@@ -232,6 +245,20 @@ FLAGS: tuple[FlagDef, ...] = (
             "search, which shortlists tracks that mix into the master and ranks them by "
             "one JEV call on OpenRouter; with no OPENROUTER_API_KEY it shows an add-key "
             "row instead. Needs cmdk.v2."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="library.pair_edge_pulses",
+        default=False,
+        owner="maintainer",
+        note=(
+            "PAIR-09's earlier in-row pulses: three pulses lapping a paired "
+            "row's ring forever while a partner is on a deck. OFF ships the "
+            "Comet edge (one lap on view and on hover, then still), which the maintainer "
+            "picked Thu 8 Oct 2026; kept so the looping version can come back "
+            "if it measures fine for performance."
         ),
         retire_by="2027-03-01",
         sandbox_gated=False,

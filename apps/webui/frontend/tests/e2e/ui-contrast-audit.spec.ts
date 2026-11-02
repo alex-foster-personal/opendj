@@ -725,6 +725,35 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 		expect(backdrops.probes.some((p) => p.el.endsWith(cls))).toBe(false);
 	}
 
+	// Edge-ring control (PAIR-09): a row's ::after fill masked to thin strips
+	// along its edges paints nothing under text in the middle of the row, so
+	// that text is measured; the same fill masked with strips thick enough to
+	// reach the text stays unmeasured.
+	await page.addStyleTag({
+		content:
+			'.probe-ring, .probe-thick { position: relative; } ' +
+			'.probe-ring::after, .probe-thick::after { content: ""; position: absolute; inset: 0; background: #ffffff; ' +
+			'mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000); mask-repeat: repeat-x, repeat-y; } ' +
+			'.probe-ring::after { mask-size: 10px 3px, 3px 10px; } .probe-thick::after { mask-size: 10px 30px, 30px 10px; }',
+	});
+	await page.evaluate(() => {
+		const host = document.createElement('div');
+		host.setAttribute('data-contrast-probe', '');
+		host.style.cssText = 'position:fixed;left:700px;top:40px;z-index:99999;background:#101010;width:200px';
+		host.innerHTML =
+			'<div class="probe-ring" style="height:24px;padding:4px 12px"><span style="position:relative;color:#333333;font-size:12px">ringtext</span></div>' +
+			'<div class="probe-thick" style="height:24px;padding:4px 12px"><span class="probe-in-thick" style="position:relative;color:#333333;font-size:12px">thicktext</span></div>';
+		document.body.appendChild(host);
+	});
+	const rings = await _audit(page);
+	const ring = rings.probes.find((p) => p.text === 'ringtext');
+	expect(ring, 'text inside an edge-ring pseudo was not measured').toBeTruthy();
+	expect(ring!.ratio).toBeLessThan(2);
+	expect(
+		rings.unmeasured.find((u) => u.el.endsWith('span.probe-in-thick'))?.why,
+		'text under a thick masked fill was measured instead of reported unmeasured'
+	).toContain('pseudo-element fill');
+
 	// Inert styling and filters (Codex on #5727): a status row that only
 	// carries the app's inert class is text and must be measured, while the
 	// same class on a control exempts it; text under a color-changing filter

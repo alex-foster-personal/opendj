@@ -114,7 +114,16 @@ def _duration_s(state_db: Path, sid: str) -> float | None:
 
 def _state_files_for(state_dir: Path, sids: set[str], with_stems: bool) -> list[Path]:
     out: list[Path] = []
-    for root, dirs, files in os.walk(state_dir):
+    # Linked roots are followed (state/stems on an external disk is a supported
+    # layout, see apps/stems/bundle_lock.py), each real directory only once so a
+    # link back up the tree cannot loop.
+    seen: set[tuple[int, int]] = set()
+    for root, dirs, files in os.walk(state_dir, followlinks=True):
+        st = os.stat(root)
+        if (st.st_dev, st.st_ino) in seen:
+            dirs[:] = []
+            continue
+        seen.add((st.st_dev, st.st_ino))
         rel_root = Path(root).relative_to(state_dir)
         if not with_stems and rel_root.parts[:1] == ("stems",):
             dirs[:] = []
@@ -568,13 +577,19 @@ def _data_dir_problem(data: Path) -> str | None:
     return None
 
 
-def _put_back_replaced(aside: Path, data: Path, held: list[str]) -> None:
-    """Clear what a failed forced import wrote and move the library it replaced back."""
-    for root in LIBRARY_ROOTS:
-        _remove(data / root)
-    for root in held:
+def _put_back_replaced(aside: Path, data: Path, moved: list[str], installing: bool) -> None:
+    """Move the roots a failed forced import set aside back, clearing what it wrote first.
+
+    Before installing began only the move itself can have failed: the roots not yet
+    moved are still the earlier library's and stay where they are.
+    """
+    if installing:
+        for root in LIBRARY_ROOTS:
+            _remove(data / root)
+    for root in moved:
         (aside / root).rename(data / root)
-    aside.rmdir()
+    if aside.exists():
+        aside.rmdir()
 
 
 def cmd_import(a: argparse.Namespace) -> int:
@@ -604,16 +619,20 @@ def cmd_import(a: argparse.Namespace) -> int:
         # aside, not deleted, until the new one is complete, so a failure anywhere
         # below (disk full, permissions, SQLite) puts it back.
         aside = data / f"{REPLACED_PREFIX}{os.getpid()}"
-        if held:
-            aside.mkdir()
-            for root in held:
-                (data / root).rename(aside / root)
+        moved: list[str] = []
+        installing = False
         try:
+            if held:
+                aside.mkdir()
+                for root in held:
+                    (data / root).rename(aside / root)
+                    moved.append(root)
+            installing = True
             rewritten = _install(z, manifest, data)
         except BaseException:
             if held:
                 try:
-                    _put_back_replaced(aside, data, held)
+                    _put_back_replaced(aside, data, moved, installing)
                 except OSError as e:
                     print(f"[FAIL] the import failed and putting the earlier library back failed too ({e}); "
                           f"it is in {aside}", file=sys.stderr)

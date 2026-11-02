@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared import hashing
+from apps.shared.argparse_types import nonnegative_int as _nonnegative_int
 from apps.shared.platform_paths import DATA_DIR, PathMap, load_path_map, resolve_asset_path
 from apps.shared.state import db as state_db
 from apps.shared.state import locations as state_locations
@@ -214,13 +215,12 @@ def run_backfill(data_dir: Path, *, live: bool, limit: int | None = None) -> Bac
 
 
 def _track_row(conn: sqlite3.Connection, stable_id: str) -> sqlite3.Row | None:
-    row = conn.execute(
+    return conn.execute(
         "SELECT stable_id, stable_id_tier, title, artists_json, album, "
         "isrc, duration_ms, file_path, updated_at, origin_device_id "
         "FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
         (stable_id,),
     ).fetchone()
-    return row
 
 
 def _row_change_from_track(
@@ -371,13 +371,6 @@ def _print_summary(report: BackfillReport) -> None:
     print(f"  resolved via tracks.file_path: {report.resolved_via_track_path}")
     if not report.live and report.resolvable:
         print("  (dry-run: no writes; pass --live to persist these hashes)")
-
-
-def _nonnegative_int(raw_value: str) -> int:
-    value = int(raw_value)
-    if value < 0:
-        raise argparse.ArgumentTypeError("must be zero or greater")
-    return value
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -278,9 +278,16 @@ test.describe('playlist folder drop', () => {
 	}) => {
 		test.setTimeout(150_000); // two real drops, then the queued refresh's own run
 		const refreshPosts: number[] = [];
+		// The job each 202 started for the SECOND drop's batch, as the engine
+		// answered that POST: the job it created, not whatever holds the slot.
+		const secondBatchJobs: Promise<RefreshStatus>[] = [];
 		page.on('response', (r) => {
 			if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh') {
 				refreshPosts.push(r.status());
+				const batchDir = (JSON.parse(r.request().postData() ?? '{}') as { batch_dir?: string }).batch_dir;
+				if (r.status() === 202 && batchDir?.includes('E2E Busy Second-')) {
+					secondBatchJobs.push(r.json() as Promise<RefreshStatus>);
+				}
 			}
 		});
 		await page.goto('/performance');
@@ -304,18 +311,39 @@ test.describe('playlist folder drop', () => {
 		// The running job cannot see the second batch (a batch job enumerates
 		// only its own batch_dir), so the queued request must start a job over
 		// the second drop's batch once the slot frees, and that job must end.
+		//
+		// GET /refresh/status shows only the job in the one slot NOW. The
+		// analyze-on-import watcher (analysis_autostart, a tick every 60 s)
+		// claims that slot whenever it is free and the unmapped backlog has
+		// changed, and both drops leave their tracks in that backlog. A tick
+		// landing between the batch job's end and the next poll here hides that
+		// job for good (PR #6199, CI run 37881866899). So the job is followed by
+		// its own identity, the started_at its POST answered with: a job of
+		// ours that the slot still shows must be over with the second batch in
+		// its log, and a LATER job in the slot proves ours left it, since the
+		// slot starts a job only once the previous one is no longer active. A
+		// worker can leave the slot without logging its scope, so the scope line
+		// must have been seen on our own job before a later job counts.
+		let secondBatchScoped = false;
 		await expect
 			.poll(
 				async () => {
+					if (secondBatchJobs.length === 0) return 'the second batch has no started job yet';
+					const ours = (await secondBatchJobs[0]).started_at;
 					const s = await refreshStatus(page.request);
-					return (
-						!s.running &&
-						s.log_tail.some((l) => l.includes('batch scope:') && l.includes('E2E Busy Second-'))
-					);
+					if (s.started_at === ours) {
+						secondBatchScoped ||= s.log_tail.some((l) => l.includes('batch scope:') && l.includes('E2E Busy Second-'));
+						if (s.running) return 'the second batch job is still running';
+						return secondBatchScoped ? 'ended' : 'the second batch job ended without scoping the second batch';
+					}
+					if (ours === null || s.started_at === null || s.started_at < ours) {
+						return `the slot holds an earlier job (${s.started_at}, ours ${ours})`;
+					}
+					return secondBatchScoped ? 'ended' : 'a later job took the slot before the second batch was seen scoped';
 				},
-				{ timeout: 100_000, message: 'no refresh ever ran over the second drop\'s batch' }
+				{ intervals: [250], timeout: 100_000, message: 'no refresh ever ran over the second drop\'s batch' }
 			)
-			.toBe(true);
+			.toBe('ended');
 		expect(refreshPosts.slice(refreshPosts.indexOf(409))).toContain(202);
 		await expect(toastStack(page)).not.toContainText('folder drop failed');
 	});

@@ -18,6 +18,7 @@ Regression one-liners:
   - if an already-cached track isn't refused cached_demucs then broken
   - if stable_ids and playlist_id are both given or both omitted then broken
   - if playlist_id doesn't resolve through backend.get_playlist then broken
+  - if a corrupt cache on a mapped track answers 500 on analyze or status then broken
 """
 from __future__ import annotations
 
@@ -298,6 +299,27 @@ def test_ready_roformer_bundle_is_derived(client: TestClient, roformer_bundle: N
     )
     assert response.status_code == 202, response.text
     assert response.json() == {"claimed": ["roformer"], "refused": {}}
+
+
+def test_corrupt_cache_on_a_mapped_track_never_answers_500(
+    client: TestClient, data_dir: Path, stem_bundle: None
+) -> None:
+    """[if] a mapped track's cache is corrupt [then] it is refused alone and reads not_analyzed, [else stop]."""
+    entry = vcache.cache_path(data_dir, "nostem")
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("{not json", encoding="utf-8")
+
+    analyzed = client.post(
+        "/api/v1/vocals/analyze",
+        json={"stable_ids": ["nostem", "hasstem"], "mode": "from-stems"},
+    )
+    assert analyzed.status_code == 202, analyzed.text
+    assert analyzed.json()["refused"] == {"nostem": "broken_vocal_cache"}
+    assert analyzed.json()["claimed"] == ["hasstem"]
+
+    status = client.get("/api/v1/vocals/nostem/status")
+    assert status.status_code == 200, status.text
+    assert status.json()["status"] == "not_analyzed"
 
 
 def test_exactly_one_of_stable_ids_or_playlist_id_required() -> None:

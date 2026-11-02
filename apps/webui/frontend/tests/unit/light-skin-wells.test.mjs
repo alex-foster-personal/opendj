@@ -41,8 +41,8 @@ const HOOKS = {
 			'lib/components/rb/FeedbackPinDraftBubble.svelte'
 		]
 	},
-	'rb-strip-pos': { fallback: '#ffffff', files: ['lib/components/rb/deck/StripWaveform.svelte'] },
-	'rb-strip-pos-glow': { fallback: 'rgba(255, 255, 255, 0.7)', files: ['lib/components/rb/deck/StripWaveform.svelte'] },
+	'rb-strip-pos': { fallback: '#ff2d2d', files: ['lib/components/rb/deck/StripWaveform.svelte'] },
+	'rb-strip-pos-glow': { fallback: 'rgba(255, 45, 45, 0.95)', files: ['lib/components/rb/deck/StripWaveform.svelte'] },
 	'rb-text-muted': { fallback: '#aaa', files: ['lib/components/rb/AppPostureChip.svelte'] },
 	'rb-key-lightness-major': { fallback: '62%', files: ['lib/rb/camelot-color.ts'] },
 	'rb-key-lightness-minor': { fallback: '55%', files: ['lib/rb/camelot-color.ts'] },

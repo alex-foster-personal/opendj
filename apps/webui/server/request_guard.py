@@ -37,7 +37,8 @@ _BENCH_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1):87\d\d$"
 #   5275  tests/e2e/playwright.webkit-deckload.config.ts
 #   5277  tests/e2e/vite.library-jobs.config.ts
 #           (LIBRARY_JOBS_E2E_FRONTEND_PORT)
-_E2E_FRONTEND_PORTS: tuple[int, ...] = (5273, 5275, 5277)
+#   5332  tests/e2e/vite.pairing-arrow.config.ts (PAIRING_ARROW_FRONTEND_PORT)
+_E2E_FRONTEND_PORTS: tuple[int, ...] = (5273, 5275, 5277, 5332)
 
 
 class RequestGuardBindRefused(RuntimeError):
@@ -205,7 +206,8 @@ def _origin_allowed(request: Request, origin: str) -> bool:
     return False
 
 
-async def host_allowlist_middleware(request: Request, call_next) -> Response:
+def host_allowlist_rejection(request: Request) -> Response | None:
+    """The 403 for a host outside the allowlist, or None to let it through."""
     hostname = request_host(request)
     if hostname not in _allowed_hostnames(request):
         return JSONResponse(
@@ -215,19 +217,20 @@ async def host_allowlist_middleware(request: Request, call_next) -> Response:
             },
             status_code=403,
         )
-    return await call_next(request)
+    return None
 
 
-async def origin_guard_middleware(request: Request, call_next) -> Response:
+def origin_guard_rejection(request: Request) -> Response | None:
+    """The 403 for a mutating request from an untrusted origin, or None."""
     if not getattr(request.app.state, "origin_guard_enabled", False):
-        return await call_next(request)
+        return None
     if request.method not in _MUTATING_METHODS:
-        return await call_next(request)
+        return None
     origin = request.headers.get("origin")
     if not origin:
-        return await call_next(request)
+        return None
     if _origin_allowed(request, origin.strip()):
-        return await call_next(request)
+        return None
     return JSONResponse(
         {
             "code": "ORIGIN_NOT_ALLOWED",
@@ -244,9 +247,9 @@ __all__ = [
     "assert_request_guard_bind_allowed",
     "build_allowed_hostnames",
     "build_trusted_origins",
-    "host_allowlist_middleware",
+    "host_allowlist_rejection",
     "install_request_guard",
-    "origin_guard_middleware",
+    "origin_guard_rejection",
     "parse_allowed_hosts",
     "request_host",
     "resolve_allowed_hosts_from_environ",

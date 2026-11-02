@@ -44,6 +44,7 @@
 #   MDT_MACOS_SIGNING_IDENTITY          Developer ID identity to sign with
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE   notarytool keychain profile
 #   MDT_SHIP_UNSIGNED                   1 = deliberately unsigned dev image
+#   MDT_LOCAL_FAST_UNNOTARIZED          1 = local signed app, no notary profile needed
 #   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_ID       Desktop-app client baked into payload
 #   OPENDJ_GOOGLE_OAUTH_CLIENT_SECRET   non-confidential installed-app secret
@@ -62,7 +63,7 @@ set -euo pipefail
 
 case "${1:-}" in
     "") ;;
-    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,49p' "$0"; exit 0 ;;
     *) echo "[ERROR] unknown argument '${1}'. Run with --help." >&2; exit 2 ;;
 esac
 
@@ -201,7 +202,13 @@ check_signing_config() {
         security find-identity -v -p codesigning 2>&1 | sed 's/^/          /' || true
         return
     fi
-    if [ -n "$identity" ] && [ -z "$notary" ]; then
+    # MDT_LOCAL_FAST_UNNOTARIZED=1 (ship_dmg.sh --local-fast, this machine
+    # only) signs with Developer ID and deliberately notarizes nothing, so it
+    # needs no notary profile. Only that one rule is relaxed: the identity is
+    # still required and still measured below.
+    if [ -n "$identity" ] && [ -z "$notary" ] && [ "${MDT_LOCAL_FAST_UNNOTARIZED:-}" = "1" ]; then
+        ok "MDT_LOCAL_FAST_UNNOTARIZED=1: a local, never-notarized app; no notary profile needed"
+    elif [ -n "$identity" ] && [ -z "$notary" ]; then
         fail "signing configuration" \
              "MDT_MACOS_SIGNING_IDENTITY is set but MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is not. A Developer ID signature that is never notarized is still refused by Gatekeeper on a downloaded image, so it buys nothing on its own" \
              "Create a profile with: xcrun notarytool store-credentials"
@@ -693,7 +700,7 @@ check_icon_composer_asset() {
     if [ "$status" -ne 0 ]; then
         fail "Icon Composer asset" \
              "$result" \
-             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate apps/desktop/src-tauri/icons/AppIcon.icon/Assets.car and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
+             "Install full Xcode 26+ and run 'xcode-select -s /Applications/Xcode.app', or regenerate (private path) and Assets.car.source.sha256 on a host with actool when the Icon Composer source changes."
         return
     fi
     case "$result" in
@@ -709,6 +716,29 @@ check_icon_composer_asset() {
                  "Re-run: uv run --no-project python -m scripts.icon_composer_asset --check --source $icon_source"
             ;;
     esac
+}
+
+#----- K. payload ffmpeg (cache, or the tools a cold build needs) ---------
+
+# The payload builder builds the pinned LGPL ffmpeg on first use and caches it
+# per configure key. A host with no cache for the current key and no cmake
+# died minutes into the build, at payload staging (silver, Mon 2 Nov 2026).
+check_payload_ffmpeg() {
+    section "K. payload ffmpeg"
+    if ! command -v uv >/dev/null 2>&1; then
+        fail "payload ffmpeg" \
+             "cannot run the payload ffmpeg readiness check: uv is not on PATH" \
+             "Install uv (see section E). The check is not being skipped, it could not be measured."
+        return
+    fi
+    local status=0 result
+    result="$(cd "$SELF_ROOT" && env -u UV_LOCKED uv run --no-project python -m scripts.build_ffmpeg_lgpl --preflight 2>&1)" || status=$?
+    if [ "$status" -ne 0 ]; then
+        fail "payload ffmpeg" "$result" \
+             "brew install cmake (and make, from the Xcode Command Line Tools), or copy a prebuilt cache dir for the current key from another build host into ~/Library/Caches/opendj-ffmpeg-build/."
+        return
+    fi
+    ok "payload ffmpeg: $result"
 }
 
 #----- I. Google OAuth client (packaged sign-in) --------------------------
@@ -817,6 +847,7 @@ check_signing_config
 check_rust_toolchain
 check_apple_xattr
 check_uv
+check_payload_ffmpeg
 check_pnpm_pin
 check_spa_built
 check_updater_signing_key

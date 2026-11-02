@@ -11,14 +11,19 @@ without gh (bifrost1-wsl, PR #3940 shard 4) raised FileNotFoundError here.
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from scripts import adr_pr_lookup as mod
+from scripts import gh_pr_view
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+_ADR_FIELDS = "number,title,body,headRefName,author,isCrossRepository"
 
 
 def _gh_pr_view_reply(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -85,6 +90,22 @@ def test_current_pr_number_passes_branch_to_gh_when_repo_given(tmp_path: Path) -
     assert argv[3] == branch, f"gh pr view got no branch before --repo: {argv}"
     # No PR exists for this branch, so the caller must fall back to commit messages.
     assert number is None
+
+
+def test_pr_view_forwards_six_field_contract() -> None:
+    """[if] ADR gate reads a PR [then] it requests the six-field gh JSON contract."""
+    with patch.object(mod, "_shared_pr_view") as fake_shared:
+        fake_shared.return_value = {"number": 42, "title": "t"}
+        payload = mod.pr_view(42, "other-owner/other-repo")
+    fake_shared.assert_called_once_with(42, "other-owner/other-repo", fields=_ADR_FIELDS)
+    assert payload == {"number": 42, "title": "t"}
+
+
+def test_gh_pr_view_requires_explicit_fields() -> None:
+    """Shared transport must not default ``fields`` (PRRT_kwDOSEvNd86tpMJc)."""
+    params = inspect.signature(gh_pr_view.pr_view).parameters
+    assert "fields" in params
+    assert params["fields"].default is inspect.Parameter.empty
 
 
 def test_current_pr_number_skips_gh_on_detached_head(tmp_path: Path) -> None:

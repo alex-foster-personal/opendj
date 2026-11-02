@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..state import Event, SetsState
+from .event_emit import emit_recorded_event
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +72,13 @@ class RekordboxHistorySource:
         return max(0.0, delta.total_seconds())
 
     def _emit(self, event: Event) -> None:
-        try:
-            self.state.record_event(event)
-        except Exception as exc:  # pragma: no cover -- guard
-            logger.warning("rb_source: record_event failed: %s", exc)
-        if self._on_event_cb is not None:
-            try:
-                self._on_event_cb(event)
-            except Exception as exc:  # pragma: no cover -- guard
-                logger.warning("rb_source: on_event callback raised: %s", exc)
+        emit_recorded_event(
+            state=self.state,
+            event=event,
+            on_event_cb=self._on_event_cb,
+            log_label="rb_source",
+            logger=logger,
+        )
 
     def _emit_error(self, exc: Exception) -> None:
         self._emit(
@@ -137,9 +136,9 @@ class RekordboxHistorySource:
         # are skipped via the cursor.
         seen_cursor = self._last_song_id
         skip = seen_cursor is not None
-        for song_pl_id, content_id in items:
-            song_pl_id = str(song_pl_id)
-            content_id = str(content_id) if content_id is not None else None
+        for raw_song_pl_id, raw_content_id in items:
+            song_pl_id = str(raw_song_pl_id)
+            content_id = str(raw_content_id) if raw_content_id is not None else None
             if skip:
                 if song_pl_id == seen_cursor:
                     skip = False
@@ -166,4 +165,4 @@ class RekordboxHistorySource:
             self._last_song_id = song_pl_id
 
 
-__all__ = ["RekordboxHistorySource", "SOURCE_NAME"]
+__all__ = ["SOURCE_NAME", "RekordboxHistorySource"]

@@ -41,6 +41,7 @@ interface ElectronShellBridge {
 	/** Absent in shells built before the engine choice moved to disk. */
 	setAudioEngineChoice?(choice: string): Promise<void>;
 	applyUpdate(onProgress?: (progress: ShellUpdateProgress) => void): Promise<ShellUpdateOutcome>;
+	listCoreAudioOutputs(): Promise<unknown[]>;
 }
 
 /** The global Tauri v2 injects into every window it owns. */
@@ -140,4 +141,11 @@ export function electronSaveAudioEngineChoice(choice: string, scope: Scope = glo
 		return Promise.reject(new Error('this Electron shell cannot save the audio engine choice; update the app'));
 	}
 	return electron.setAudioEngineChoice(choice);
+}
+
+/** CoreAudio output descriptors for Electron on macOS; null in browser tabs and Tauri. */
+export async function listCoreAudioOutputs(scope: Scope = globalThis): Promise<unknown[] | null> {
+	const electron = electronBridge(scope);
+	if (electron === null || typeof electron.listCoreAudioOutputs !== 'function') return null;
+	return electron.listCoreAudioOutputs();
 }

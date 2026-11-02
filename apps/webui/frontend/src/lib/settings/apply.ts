@@ -581,8 +581,8 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		}
 		case 'preview_beat_sync': {
-			if (value !== 'off' && value !== 'tempo') {
-				throw new Error(`preview_beat_sync must be off|tempo, got ${String(value)}`);
+			if (value !== 'off' && value !== 'tempo' && value !== 'phase') {
+				throw new Error(`preview_beat_sync must be off|tempo|phase, got ${String(value)}`);
 			}
 			setPreviewBeatSync(value as PreviewBeatSync);
 			return;

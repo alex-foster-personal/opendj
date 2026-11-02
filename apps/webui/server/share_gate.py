@@ -136,7 +136,8 @@ def is_exempt(path: str) -> bool:
     return any(path == suffix or path.endswith(suffix) for suffix in EXEMPT_SUFFIXES)
 
 
-async def share_gate_middleware(request: Request, call_next) -> Response:
+def share_gate_rejection(request: Request) -> Response | None:
+    """Stamp the share audience on request.state; return the 401/403, or None."""
     config = configured_share(request)
     decision = decide(request, config)
     request.state.share_audience = decision.audience
@@ -145,7 +146,7 @@ async def share_gate_middleware(request: Request, call_next) -> Response:
     # Access mode guards every public-host request; cloudflared independently
     # verifies the JWT signature and audience before forwarding to loopback.
     if config.auth == AUTH_TOKEN and is_exempt(request.url.path):
-        return await call_next(request)
+        return None
     if not decision.authorized:
         return JSONResponse(
             {
@@ -162,7 +163,7 @@ async def share_gate_middleware(request: Request, call_next) -> Response:
             },
             status_code=403,
         )
-    return await call_next(request)
+    return None
 
 
 from .request_guard import request_host  # noqa: E402

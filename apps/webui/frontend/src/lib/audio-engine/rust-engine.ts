@@ -29,6 +29,7 @@ import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToas
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
 import { rawAnlz } from '$lib/rb/anlz-raw';
 import { deckAutoGainDb } from '$lib/rb/auto-gain';
+import { applyTrackLoadChannelReset } from '$lib/rb/track-load-reset';
 import { deckAutoGain, deckAutoGainApplied, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
 import {
 	cancelArmedJump,
@@ -205,6 +206,7 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
 	invalidateRustPhaseLocks(deck);
 	deckStates[deck].load_generation += 1;
+	const generation = deckStates[deck].load_generation;
 	loadFences[deck] = Infinity;
 	holdLoadFailures(deck);
 	let trackRes, anlz, slots, loaded: unknown, autoGain;
@@ -254,7 +256,30 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 			? loaded.path
 			: null;
 	releaseLoadFailures(deck, loadedPath);
+	await resetRustChannelOnLoad(deck, generation, stable_id);
 	link.client?.send({ type: 'engine_state' }).catch(() => {});
+}
+
+/**
+ * DECKGAP-7691 in this mode: the native load keeps the channel strip, so the
+ * chosen resets (level, trim, EQ, filter) go out as ordinary mixer commands,
+ * each published only once the engine acknowledges it, and only while this
+ * load is still the deck's latest. Stems have no native control yet.
+ */
+export async function resetRustChannelOnLoad(deck: DeckId, generation: number, stableId: string): Promise<void> {
+	const commands: PerformanceCommand[] = [];
+	applyTrackLoadChannelReset(mixerState.channels[deck], {
+		setFader: (value) => commands.push({ type: 'fader', deck, value }),
+		setTrim: (value) => commands.push({ type: 'trim', deck, value }),
+		setFilter: (value) => commands.push({ type: 'filter', deck, value }),
+		setEq: (band, value) => commands.push({ type: 'eq', deck, band, value })
+	});
+	for (const command of commands) {
+		const st = deckStates[deck];
+		if (st.load_generation !== generation || st.stable_id !== stableId) return;
+		await send(command);
+		applyAcknowledged(command);
+	}
 }
 
 /** Per deck, while a load is in flight there: the late decode failures heard

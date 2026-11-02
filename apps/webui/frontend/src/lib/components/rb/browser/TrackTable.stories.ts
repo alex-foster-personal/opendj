@@ -35,6 +35,8 @@ const meta = {
 		selectedIds: [],
 		selectedOrders: [],
 		loadedIds: new Set<string>(),
+		pairPartners: new Map<string, ReadonlySet<string>>(),
+		pairError: null,
 		vocalsById: {},
 		markerAnlzById: {},
 		previewStripById: {},

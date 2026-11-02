@@ -597,6 +597,18 @@ test('null artwork availability identifies an unavailable reader without request
 	// (ingest-pending.svelte.ts `startIngestPendingWatch`, LIBMX-13). An empty
 	// batches array means the store never arms its own follow-up poll.
 	await page.route('**/api/v1/ingest/pending', (route) => route.fulfill({ json: { batches: [] } }));
+	// PAIR-09's PairingGraph (pairing-graph.svelte.ts) mounts with the library
+	// panel and reads every pairing once. This harness (rekordbox-gate config)
+	// runs vite with no daemon, so the pairing list is UNAVAILABLE here: the
+	// GET is aborted (not answered with a fabricated list) and the table shows
+	// "Pairings unavailable", which does not touch the artwork cell under
+	// test. The real list is covered against the engine by
+	// pairing-library-edge.spec.ts.
+	const pairingRequests: string[] = [];
+	await page.route('**/api/v1/pairings', (route) => {
+		pairingRequests.push(route.request().method());
+		return route.abort('failed');
+	});
 	// The /performance route's own onMount calls runPerformanceRescueAutoRestore
 	// (rescue-restore.svelte.ts, #2704). An empty snapshots list makes it
 	// return immediately with no follow-up /rescue/restore call.
@@ -666,6 +678,9 @@ test('null artwork availability identifies an unavailable reader without request
 
 	expect(artworkRequests).toEqual([]);
 	expect(unexpectedRequests).toEqual([]);
+	// Presence, not absence: the panel did ask for pairings, and was told no.
+	expect(pairingRequests).toContain('GET');
+	await expect(page.getByTestId('pair-unknown')).toBeVisible();
 	// Exactly one: the boot clear. A second would be a resend of an unchanged
 	// list or a retry of a request the engine accepted.
 	expect(nextUpRequests).toEqual([{ method: 'PUT', body: { stable_ids: [] } }]);

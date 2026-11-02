@@ -17,10 +17,18 @@
  * do without. Its siblings `preview-cue-library` and `preview-space-stop` need
  * no tempo and stay on the root config.
  *
+ * CUEOUT-6060 adds the phase half: with the setting on 'phase' (the default), a
+ * click snaps onto the master's bar. The phase maths is measured in
+ * `tests/unit/preview-beat-snap.test.mjs` and timed in
+ * `tests/live/preview-beat-snap-harness.mjs`; this spec shows the wiring: the
+ * clicked track's grid is fetched, the master is read, and the snap reaches
+ * the source and is reported over IPC.
+ *
  * Regression lines:
  * - if a preview does not take the master tempo then the operator auditions against a clashing pulse - broken
  * - if a tempo three times off is matched then a preview plays at a tempo the track cannot hold - broken
  * - if the setting is off and the preview is still re-pitched then the dropdown does nothing - broken
+ * - if a 'phase' preview under a playing master does not snap then the default does nothing - broken
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -50,18 +58,26 @@ async function _stableIdOfRow(page: Page, index: number): Promise<string> {
 	return id;
 }
 
-async function _previewRate(page: Page, stable_id: string, bpm: number): Promise<number> {
+async function _previewOnce(
+	page: Page,
+	stable_id: string,
+	bpm: number
+): Promise<PerformanceState['preview']> {
 	await _dispatch(page, { type: 'preview_cue', stable_id, ratio: 0.3, bpm });
 	await expect
 		.poll(async () => (await _query(page)).preview.playing, { timeout: 30_000 })
 		.toBe(true);
-	const rate = (await _query(page)).preview.rate;
+	const preview = (await _query(page)).preview;
 	await _dispatch(page, { type: 'preview_stop' });
-	return rate;
+	return preview;
+}
+
+async function _previewRate(page: Page, stable_id: string, bpm: number): Promise<number> {
+	return (await _previewOnce(page, stable_id, bpm)).rate;
 }
 
 /** Open the settings overlay, find the row by its own tooltip, pick an option. */
-async function _setPreviewBeatSync(page: Page, value: 'off' | 'tempo'): Promise<void> {
+async function _setPreviewBeatSync(page: Page, value: 'off' | 'tempo' | 'phase'): Promise<void> {
 	await page.keyboard.press('Meta+Comma');
 	// The row and its control carry the same tooltip, so this asks for the
 	// control by element: a `getByTitle` here matches both and is ambiguous.
@@ -101,6 +117,20 @@ test('a preview takes the master deck tempo when the match fits, and never when 
 	if (masterBpm === null) throw new Error('master deck reported no effective BPM');
 	const previewed = await _stableIdOfRow(page, 0);
 
+	// CUEOUT-6060, the default: the master's own track has a grid and the same
+	// tempo, so the click must snap, at the master's pitch.
+	const snapped = await _previewOnce(page, onAir, masterBpm);
+	expect(
+		snapped.snap,
+		`if a 'phase' preview under a playing master does not snap then the default does nothing - broken (refusal: ${snapped.snap_refusal})`
+	).not.toBeNull();
+	expect(snapped.snap_refusal).toBeNull();
+	expect(snapped.rate).toBeCloseTo((await _query(page)).decks[1].pitch, 3);
+
+	// The R6 checks below use invented row BPMs, which only the tempo mode
+	// reads (a snap takes its tempo from the real grids).
+	await _setPreviewBeatSync(page, 'tempo');
+
 	// A track 5 percent slower than the master: inside the range, so it matches.
 	const inRange = await _previewRate(page, previewed, masterBpm / 1.05);
 	expect(
@@ -123,7 +153,7 @@ test('a preview takes the master deck tempo when the match fits, and never when 
 		'if the setting is off and the preview is still re-pitched then the dropdown does nothing - broken'
 	).toBe(1);
 
-	await _setPreviewBeatSync(page, 'tempo');
+	await _setPreviewBeatSync(page, 'phase');
 	await _dispatch(page, { type: 'play', deck: 1, playing: false });
 	await _dispatch(page, { type: 'unload', deck: 1 });
 });

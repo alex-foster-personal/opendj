@@ -79,6 +79,7 @@ function fakeEngine({ followerRateError = 0, scheduleDelaySync = true } = {}) {
 			return decks[d].pos;
 		},
 		pitchRangePct: () => 8,
+		keyLocked: () => false, // varispeed: the 0.3% cap these cases test
 		loopEngaged: (d) => decks[d].loop,
 		scheduleTempo: (d, ratio) => {
 			log.schedules.push({ deck: d, ratio });
@@ -617,5 +618,29 @@ test('SOURCE: trims and re-seeks go through the engine schedule and sync paths',
 	assert.match(ports, /resync: \(master, deck\) => _synchronizeFollowers\(master, \[deck\]\)/);
 	for (const settled of ['rt.pending.length === 0', 'rt.scheduleIntentCount === 0', '!_presentationPending(rt)', '!_reanchorRampPending(rt)', '_quantizedLaunchAt[deck] === null']) {
 		assert.ok(ports.includes(settled), `settled() checks ${settled}`);
+	}
+});
+
+test('a key-locked follower (the keyLocked port) bends 40 ms back instead of re-joining', async () => {
+	for (const keyLocked of [true, false]) {
+		const e = fakeEngine();
+		e.ports.keyLocked = (d) => (d === 2 ? keyLocked : false);
+		const lock = await agedLock(e);
+		e.decks[2].pos = inPhase(e.decks[1].pos) + 0.04 * BASE; // 40 ms ahead
+		let step;
+		for (let tick = 0; tick < pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS + 2 && e.log.resyncs.length === 0; tick++) {
+			[step] = lock.tick(e.now);
+			await flush();
+			e.clockOnly(0.05);
+		}
+		if (keyLocked) {
+			assert.deepEqual(e.log.resyncs, [], 'key-locked: never re-joined');
+			assert.equal(step.decision.action, 'trim');
+			// Past the varispeed cap: the port reached the decision.
+			assert.ok(e.log.schedules.at(-1).ratio < BASE * (1 - pl.PHASE_LOCK_MAX_TRIM), `ratio ${e.log.schedules.at(-1).ratio}`);
+		} else {
+			// Control: the same 40 ms on a varispeed follower re-joins.
+			assert.deepEqual(e.log.resyncs, [{ master: 1, deck: 2 }]);
+		}
 	}
 });

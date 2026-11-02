@@ -44,6 +44,10 @@ function electronScope(overrides = {}) {
 			calls.push(['applyUpdate']);
 			return { kind: 'no-update' };
 		},
+		listCoreAudioOutputs: async () => {
+			calls.push(['listCoreAudioOutputs']);
+			return [{ uid: 'hp' }];
+		},
 		...overrides
 	};
 	return { scope: { opendjShell: bridge }, calls };
@@ -107,4 +111,12 @@ test('electronApplyUpdate forwards progress and the outcome', async () => {
 	const outcome = await mod.electronApplyUpdate((p) => seen.push(p.phase), scope);
 	assert.deepEqual(outcome, { kind: 'no-update' });
 	assert.deepEqual(seen, ['checking']);
+});
+
+test('listCoreAudioOutputs forwards the Electron bridge and is absent elsewhere', async () => {
+	const { scope, calls } = electronScope();
+	assert.deepEqual(await mod.listCoreAudioOutputs(scope), [{ uid: 'hp' }]);
+	assert.deepEqual(calls, [['listCoreAudioOutputs']]);
+	assert.equal(await mod.listCoreAudioOutputs({}), null);
+	assert.equal(await mod.listCoreAudioOutputs({ __TAURI_INTERNALS__: {} }), null);
 });

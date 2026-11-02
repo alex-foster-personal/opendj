@@ -1,8 +1,8 @@
 /**
  * PAIR-04 / Sol P1 on PR #4014 (r4161786229): a FAILED pairing lookup must not
  * read as a successful lookup with no pairings. PairingIndex keeps the two
- * apart (error state + one onError notification, which BrowserPanel turns into
- * an error toast) and still clears the underlines, which would be stale.
+ * apart (the error state, which pairingOutageToaster turns into one toast) and
+ * still clears the underlines, which would be stale.
  *
  * Also Sol P2 (r4161786240): switching to a different master clears the
  * previous master's partners at once instead of after the new answer lands.
@@ -68,8 +68,7 @@ for (const mode of ['http500', 'malformed']) {
 	test(`a ${mode} lookup surfaces an error and is not an empty success`, async () => {
 		const state = { mode: 'ok', rows: [pairing('p1', 'master', 'partner')] };
 		installServer(state);
-		const errors = [];
-		const index = new mod.PairingIndex({ onError: (m) => errors.push(m) });
+		const index = new mod.PairingIndex();
 
 		await index.refresh(() => 'master');
 		assert.deepEqual([...index.partnerIds], ['partner']);
@@ -80,39 +79,31 @@ for (const mode of ['http500', 'malformed']) {
 		assert.deepEqual([...index.partnerIds], [], 'stale partners must not stay underlined');
 		assert.equal(typeof index.error, 'string', 'failure must be visible as an error state');
 		assert.match(index.error, /pairing lookup failed/);
-		assert.equal(errors.length, 1, 'the panel must be told once');
-		assert.equal(errors[0], index.error);
 	});
 }
 
-test('repeated failures notify once; a later success clears the error and re-arms it', async () => {
+test('a failure stays visible across repeated refreshes; a later success clears it', async () => {
 	const state = { mode: 'http500', rows: [pairing('p1', 'master', 'partner')] };
 	installServer(state);
-	const errors = [];
-	const index = new mod.PairingIndex({ onError: (m) => errors.push(m) });
+	const index = new mod.PairingIndex();
 
 	await index.refresh(() => 'master');
+	const first = index.error;
 	await index.refresh(() => 'master');
-	assert.equal(errors.length, 1, 'a refresh storm must not spam toasts');
+	assert.equal(index.error, first, 'the same outage keeps its one error state');
 
 	state.mode = 'ok';
 	await index.refresh(() => 'master');
 	assert.equal(index.error, null);
 	assert.deepEqual([...index.partnerIds], ['partner']);
-
-	state.mode = 'http500';
-	await index.refresh(() => 'master');
-	assert.equal(errors.length, 2, 'a new failure after recovery notifies again');
 });
 
 test('control: a successful empty lookup is not an error', async () => {
 	installServer({ mode: 'ok', rows: [] });
-	const errors = [];
-	const index = new mod.PairingIndex({ onError: (m) => errors.push(m) });
+	const index = new mod.PairingIndex();
 	await index.refresh(() => 'master');
 	assert.deepEqual([...index.partnerIds], []);
 	assert.equal(index.error, null);
-	assert.equal(errors.length, 0);
 });
 
 test('a failure for a superseded master is dropped, not reported', async () => {
@@ -125,14 +116,12 @@ test('a failure for a superseded master is dropped, not reported', async () => {
 		})
 	};
 	installServer(state);
-	const errors = [];
-	const index = new mod.PairingIndex({ onError: (m) => errors.push(m) });
+	const index = new mod.PairingIndex();
 	const stale = index.refresh(() => 'track-a');
 	index.stop();
 	release();
 	await stale;
 	assert.equal(index.error, null);
-	assert.equal(errors.length, 0);
 });
 
 test('switching master clears the previous partners before the new answer lands', async () => {

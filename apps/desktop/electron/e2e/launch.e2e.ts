@@ -106,7 +106,15 @@ test('the page sees the shell globals and the bridge, and no Node', async () => 
 	assert.equal(seen.quitHook, 'function');
 	assert.equal(seen.pending, true);
 	assert.equal(seen.bridgeKind, 'electron');
-	assert.deepEqual(seen.bridgeFns, ['applyUpdate', 'exit', 'openExternal', 'pickFolder', 'relaunch', 'setAudioEngineChoice']);
+	assert.deepEqual(seen.bridgeFns, [
+		'applyUpdate',
+		'exit',
+		'listCoreAudioOutputs',
+		'openExternal',
+		'pickFolder',
+		'relaunch',
+		'setAudioEngineChoice'
+	]);
 	assert.equal(seen.require, 'undefined');
 	assert.equal(seen.process, 'undefined');
 });

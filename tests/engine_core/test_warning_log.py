@@ -13,6 +13,8 @@ import pytest
 
 from apps.engine_core import log_disk, warning_log
 from apps.engine_core.warning_log import _WarningJsonHandler, configure_warning_log
+from apps.shared.telemetry import DSN_ENV, TELEMETRY_ENV, decide_telemetry, init_telemetry
+from tests.support.sentry_client import close_sentry_client
 
 pytestmark = pytest.mark.usefixtures("hermetic_rotation_gate")
 
@@ -23,7 +25,7 @@ def uvicorn_error_logger_at_default_level() -> Iterator[logging.Logger]:
 
     uvicorn.Config(log_level=...) pins logging.getLogger("uvicorn.error") at that
     level for the rest of the process; 16 tests start an in-process uvicorn, and one
-    of them (tests/agentic_testing/test_engine_host.py) runs at "error". Whichever
+    of them ((private path)) runs at "error". Whichever
     of them the CI split seats before this file drops the uvicorn warning below,
     so the stream held 1 record where 2 were written (PR #3396, fast tier leg 1).
     The engine boots uvicorn with log_config=None and its own log level, so the
@@ -221,3 +223,52 @@ def test_warning_log_rotation_resumes_after_disk_recovers(
     warning_log._rotate_if_needed(path, 1)
     assert not path.exists()
     assert len(list(tmp_path.glob("engine-warn.log.*"))) == 1
+
+
+@pytest.mark.requirement("OBS-5447")
+def test_uvicorn_graceful_shutdown_timeout_stays_off_sentry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] warning_log ships uvicorn shutdown timeout [then] broken, [else stop]."""
+    sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
+    from sentry_sdk.transport import Transport
+
+    monkeypatch.setenv("OPENDJ_ERROR_SINK_LOG", str(tmp_path / "sink.jsonl"))
+    envelopes: list[dict] = []
+
+    class CapturingTransport(Transport):
+        def capture_envelope(self, envelope) -> None:  # type: ignore[no-untyped-def]
+            envelopes.extend(
+                item.payload.json for item in envelope.items if item.payload.json is not None
+            )
+
+    decision = decide_telemetry(
+        {TELEMETRY_ENV: "1", DSN_ENV: "https://public@o0.ingest.de.sentry.io/1"},
+        build_source="payload",
+        release="0123456789abcdef0123456789abcdef01234567",
+    )
+    handler = configure_warning_log(tmp_path / "engine-warn.log", "boot-obs10")
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    try:
+        assert init_telemetry(decision, transport=CapturingTransport()) is True
+        uvicorn_error.error("Cancel 1 running task(s), timeout graceful shutdown exceeded")
+        uvicorn_error.error("engine disk full: rotation disabled")
+        sentry_sdk.flush()
+    finally:
+        logging.getLogger().removeHandler(handler)
+        uvicorn_error.removeHandler(handler)
+        uvicorn_error.propagate = True
+        close_sentry_client()
+
+    warn_rows = [
+        json.loads(line)
+        for line in (tmp_path / "engine-warn.log").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any("timeout graceful shutdown exceeded" in row["message"] for row in warn_rows)
+    sink_rows = [
+        json.loads(line) for line in (tmp_path / "sink.jsonl").read_text().splitlines()
+    ]
+    assert len(sink_rows) == 2
+    messages = [item.get("message") for item in envelopes]
+    assert "Cancel 1 running task(s), timeout graceful shutdown exceeded" not in messages
+    assert "engine disk full: rotation disabled" in messages

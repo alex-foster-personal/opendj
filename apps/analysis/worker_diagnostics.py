@@ -93,15 +93,34 @@ def parent_started_at(parent_pid: int) -> float | None:
     so its parent pid stays put after the parent dies, and any OS can hand a
     dead pid to a new process. The pid plus its start time names the same
     process on every platform. A zombie is gone: it can no longer feed the
-    queue. Raises :class:`psutil.AccessDenied` when the OS will not say.
+    queue. The value is only ever compared with another from this function:
+    Linux gives clock ticks since boot, see :func:`_linux_start_ticks`, and
+    other platforms give epoch seconds. Raises :class:`psutil.AccessDenied`
+    when the OS will not say.
     """
     try:
         proc = psutil.Process(parent_pid)
         if proc.status() == psutil.STATUS_ZOMBIE:
             return None
-        return proc.create_time()
-    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return _linux_start_ticks(parent_pid) if sys.platform == "linux" else proc.create_time()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess, FileNotFoundError, ProcessLookupError):
         return None
+
+
+def _linux_start_ticks(pid: int) -> float:
+    """``starttime`` from ``/proc/<pid>/stat``: clock ticks from boot to process start.
+
+    It never changes for a process. psutil's ``create_time()`` adds ``btime``
+    from ``/proc/stat`` to it on every read, and ``btime`` moves whenever the
+    wall clock is stepped, so a live parent reads as a different process. A
+    WSL2 CI runner stepped its clock 3 s every 35 s (Mon 2 Nov 2026) and its
+    workers killed themselves. The steps add up over a worker's life, so no
+    tolerance on ``create_time()`` holds.
+    """
+    with open(f"/proc/{pid}/stat", "rb") as stat:
+        # Field 22 of the file. Field 2, the command name, can hold spaces and
+        # parentheses, so count from its closing parenthesis.
+        return float(stat.read().rpartition(b")")[2].split()[19])
 
 
 def parent_gone(parent_pid: int, started_at: float) -> bool:

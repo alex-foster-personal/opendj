@@ -39,7 +39,7 @@ from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from .grid_edit import apply_stored_grid_edit
 from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
-from .vocals import _own_vocals
+from .vocals import _own_vocals_for_serve
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -415,7 +415,7 @@ def get_track_anlz(
             # vocal-cache under the app's own stable id is the only source of
             # vocal bars (VOCALS-04): the same read GET /vocals/{id}/status
             # serves, so the deck waveform and that route cannot disagree.
-            payload["vocals"] = _own_vocals(stable_id)
+            payload["vocals"] = _own_vocals_for_serve(stable_id)
             # A relinked track whose rekordbox content row is gone keeps its PSSI
             # in the anlz cache; serve it behind a duration guard (PHRASE-RECOVER-01).
             payload = apply_cached_pssi(payload, stable_id, share=share)

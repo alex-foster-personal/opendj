@@ -23,7 +23,7 @@ Regression one-liners:
   - if a master.plain.db that exists but is unreadable is treated as "no rekordbox" then broken
   - if a rekordbox copy behind a directory the engine cannot enter answers a bare 500 or falls back then broken
   - if a rekordbox copy that vanishes after it was seen turns the request into a no-rekordbox one then broken
-  - if a vocal-cache path that is there but broken reads as not_analyzed then broken
+  - if a vocal-cache path that is there but broken answers 500 on status or /anlz then broken
   - if a state.db failure is reported as MASTER_DB_UNREADABLE then broken
 """
 from __future__ import annotations
@@ -408,46 +408,74 @@ def test_copy_that_vanishes_after_the_probe_fails_typed_never_falls_back(
 # ----- a vocal-cache path that is there but broken is NOT "not analyzed" -----
 
 
-def test_cache_path_that_is_a_directory_or_dangling_link_raises_on_status(
+def test_cache_path_that_is_a_directory_or_dangling_link_answers_not_analyzed_on_status(
     client: TestClient, data_dir: Path
 ) -> None:
-    """[if] a folder track's vocal-cache path is a directory or a dangling link [then] status raises the cache's ValueError, [else stop]."""
+    """[if] a folder track's vocal-cache path is a directory or a dangling link [then] status is not_analyzed, not 500, [else stop]."""
     directory = vcache.cache_path(data_dir, "nostem")
     directory.mkdir(parents=True)
     _as_dangling_link(vcache.cache_path(data_dir, "hasstem"))
 
     for stable_id in ("nostem", "hasstem"):
-        with pytest.raises(ValueError, match=r"vocal-cache entry .* is not a readable regular file"):
-            client.get(f"/api/v1/vocals/{stable_id}/status")
+        response = client.get(f"/api/v1/vocals/{stable_id}/status")
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "not_analyzed"
 
 
-def test_cache_path_that_is_a_directory_raises_on_analyze(
+def test_cache_path_that_is_a_directory_is_refused_on_analyze(
     client: TestClient, data_dir: Path, stem_bundle: None
 ) -> None:
-    """[if] a folder track's vocal-cache path is a directory [then] analyze raises the cache's ValueError instead of calling it todo, [else stop]."""
+    """[if] a folder track's vocal-cache path is a directory [then] analyze refuses broken_vocal_cache, [else stop]."""
     vcache.cache_path(data_dir, "hasstem").mkdir(parents=True)
 
-    with pytest.raises(ValueError, match=r"vocal-cache entry .* is not a readable regular file"):
-        client.post(
-            "/api/v1/vocals/analyze", json={"stable_ids": ["hasstem"], "mode": "from-stems"}
-        )
+    response = client.post(
+        "/api/v1/vocals/analyze", json={"stable_ids": ["hasstem"], "mode": "from-stems"}
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["refused"]["hasstem"] == "broken_vocal_cache"
+
+
+def test_corrupt_vocal_cache_json_is_refused_on_analyze(
+    client: TestClient, data_dir: Path, stem_bundle: None
+) -> None:
+    """[if] a folder track's vocal-cache file is corrupt JSON [then] analyze refuses broken_vocal_cache, [else stop]."""
+    entry = vcache.cache_path(data_dir, "hasstem")
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("{not json", encoding="utf-8")
+
+    response = client.post(
+        "/api/v1/vocals/analyze", json={"stable_ids": ["hasstem"], "mode": "from-stems"}
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["refused"]["hasstem"] == "broken_vocal_cache"
 
 
 @_needs_real_permissions
-def test_cache_under_an_unreadable_directory_raises_on_status(
+def test_cache_under_an_unreadable_directory_answers_not_analyzed_on_status(
     client: TestClient, data_dir: Path
 ) -> None:
-    """[if] the vocal-cache directory cannot be entered [then] status raises the cache's ValueError, never not_analyzed, [else stop]."""
+    """[if] the vocal-cache directory cannot be entered [then] status is not_analyzed, not 500, [else stop]."""
     cache_root = vcache.cache_dir(data_dir)
     cache_root.mkdir(parents=True, exist_ok=True)
     cache_root.chmod(0o000)
     try:
         with pytest.raises(PermissionError):  # control: the lock is real for this process
             vcache.cache_path(data_dir, "nostem").lstat()
-        with pytest.raises(ValueError, match=r"vocal-cache entry .* is not a readable regular file"):
-            client.get("/api/v1/vocals/nostem/status")
+        response = client.get("/api/v1/vocals/nostem/status")
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "not_analyzed"
     finally:
         cache_root.chmod(0o755)
+
+
+def test_broken_vocal_cache_on_anlz_answers_not_analyzed(
+    client: TestClient, data_dir: Path
+) -> None:
+    """[if] a folder track's vocal-cache path is a directory [then] /anlz vocals is not_analyzed, [else stop]."""
+    vcache.cache_path(data_dir, "nostem").mkdir(parents=True)
+    response = client.get("/api/v1/tracks/nostem/anlz")
+    assert response.status_code == 200, response.text
+    assert response.json()["vocals"]["status"] == "not_analyzed"
 
 
 # ----- a state.db failure keeps its own error, never the rekordbox copy's label -----

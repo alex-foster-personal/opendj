@@ -273,6 +273,30 @@ class FolderImportIn(BaseModel):
         return normalized
 
 
+class FolderWatchIn(BaseModel):
+    """The durable folder-rescan targets edited after onboarding."""
+
+    folders: list[str] = Field(
+        min_length=1,
+        description="absolute paths to rescan; at least one",
+    )
+
+    @field_validator("folders")
+    @classmethod
+    def folders_are_absolute_and_unique(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entry in value:
+            if not entry or not Path(entry).is_absolute():
+                raise ValueError(f"folder must be an absolute path, got {entry!r}")
+            canon = normalize_setup_folder_path(entry)
+            if canon in seen:
+                raise ValueError(f"duplicate folder path after normalization: {canon!r}")
+            seen.add(canon)
+            normalized.append(canon)
+        return normalized
+
+
 class FolderScanOut(BaseModel):
     """What a candidate folder actually holds, before anything is imported.
 
@@ -336,6 +360,7 @@ __all__ = [
     "FolderImportIn",
     "FolderLastImportOut",
     "FolderScanOut",
+    "FolderWatchIn",
     "FolderWatchOut",
     "LastImportOut",
     "PermissionsOut",

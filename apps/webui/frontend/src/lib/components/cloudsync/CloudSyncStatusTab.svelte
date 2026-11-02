@@ -36,7 +36,7 @@
 		syncNowRequest,
 		syncRuntimeGateReason,
 		type ConfigFormFields,
-		type UiMirrorDecks
+		type UiMirrorGateDoc
 	} from './cloudsync-view';
 
 	interface Notice {
@@ -62,7 +62,7 @@
 	let saving = $state(false);
 	let syncing = $state(false);
 	let notice = $state<Notice | null>(null);
-	let uiMirror = $state<{ decks?: UiMirrorDecks } | null>(null);
+	let uiMirror = $state<UiMirrorGateDoc | null>(null);
 
 	const syncGate = $derived({
 		appPosture: uiPrefs.app_posture,

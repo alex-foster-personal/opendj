@@ -5,7 +5,8 @@ These helpers let ``apps.sync.playlist_apply`` write into djay's
 yet. The page-data side is *exact* (simple int64-LE pack) and round-trip
 tested. The playlist-blob side is best-effort against
 ``docs/djay_db_schema_v2.md`` section 3.4, with the ``leaf`` type enum byte
-marked as a capture-me-live TODO.
+a best-guess placeholder pending the live-fixture capture tracked as D4 in
+``docs/known-issues.md``.
 
 Contract:
 
@@ -20,7 +21,7 @@ Contract:
   constant to validate the byte layout around it.
 
 See also ``scripts/capture_djay_playlist_fixture.py`` which emits a live
-blob into ``tests/fixtures/djay/leaf_playlist.blob`` + a sidecar for the
+blob into ``(private path)`` + a sidecar for the
 matching ``view_mediaItemPlaylistView_page.data`` row.
 """
 from __future__ import annotations

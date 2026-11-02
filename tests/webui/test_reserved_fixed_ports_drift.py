@@ -243,6 +243,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         8717,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vite.pairing-arrow.config.ts",
+        "export const PAIRING_ARROW_FRONTEND_PORT = 5332;",
+        5332,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.pairing-arrow.config.ts",
+        "export const PAIRING_ARROW_API_PORT = 8715;",
+        8715,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.hotcue-mapping-gate.config.ts",
         "export const HOTCUE_MAPPING_GATE_API_PORT = 8695;",
         8695,

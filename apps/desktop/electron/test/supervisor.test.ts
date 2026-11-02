@@ -228,6 +228,96 @@ test('shutdown stops the supervised engine and its group', async () => {
 	assert.equal(supervisor.current(), null);
 });
 
+// ----- liveness and quit during restart (EL-17-F10) ------------------------------
+// fakePayload writes a POSIX `#!/bin/sh` launcher, so the tests that run it are POSIX-only.
+const POSIX_LAUNCHER = process.platform === 'win32' && 'fakePayload launcher is a POSIX shell script';
+
+// Pinned to the Tauri shell's UNRESPONSIVE_AFTER_MISSES. A literal, so that moving the constant cannot move the test with it.
+test('a live engine that misses fewer than six health probes stays running', { skip: POSIX_LAUNCHER }, async () => {
+	const { supervisor, health } = await running('healthy', { health: async () => false });
+	try {
+		for (let miss = 1; miss < 6; miss += 1) {
+			await supervisor.tick();
+			assert.equal(supervisor.phase, 'running', `still running after ${miss} missed probe(s)`);
+		}
+		await supervisor.tick();
+		assert.equal(supervisor.phase, 'restarting');
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
+	}
+});
+
+test('quitting after a death stops the restart before it spawns an engine', { skip: POSIX_LAUNCHER }, async () => {
+	let spawns = 0;
+	const { supervisor, engine, health } = await running('healthy', {
+		spawn: (payload, dataDir, logPath, port) => {
+			spawns += 1;
+			return spawnEngine(payload, dataDir, logPath, port);
+		}
+	});
+	await engine.shutdown();
+	await supervisor.tick();
+	assert.equal(supervisor.phase, 'restarting');
+	await supervisor.shutdown();
+	await supervisor.tick();
+	assert.equal(spawns, 0);
+	assert.notEqual(supervisor.phase, 'running');
+	await health.close();
+});
+
+test('quitting from inside a restart, after its port is picked, spawns no engine', { skip: POSIX_LAUNCHER }, async () => {
+	let spawns = 0;
+	let current: EngineSupervisor | null = null;
+	const { supervisor, engine, health } = await running('healthy', {
+		freePort: async () => {
+			// Not awaited: shutdown waits for the restart this call is part of.
+			void current?.shutdown();
+			return freeLoopbackPort();
+		},
+		spawn: (payload, dataDir, logPath, port) => {
+			spawns += 1;
+			return spawnEngine(payload, dataDir, logPath, port);
+		}
+	});
+	current = supervisor;
+	try {
+		process.kill(engine.pid, 'SIGKILL');
+		await engine.waitReap();
+		await supervisor.tick();
+		await supervisor.tick();
+		assert.equal(spawns, 0);
+		assert.notEqual(supervisor.phase, 'running');
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
+	}
+});
+
+test('quitting while a restart waits for health cancels the wait, not the boot timeout', { skip: POSIX_LAUNCHER }, async () => {
+	const spawned: ReturnType<typeof spawnEngine>[] = [];
+	const { supervisor, health } = await running('never-ready', {
+		bootTimeoutMs: 60_000,
+		spawn: (payload, dataDir, logPath, port) => {
+			const engine = spawnEngine(payload, dataDir, logPath, port);
+			spawned.push(engine);
+			return engine;
+		}
+	});
+	try {
+		const restart = supervisor.requestRelaunch();
+		assert.ok(await waitFor(() => spawned.length === 1), 'the restart spawned its engine');
+		const quitStarted = Date.now();
+		await supervisor.shutdown();
+		await restart;
+		assert.ok(Date.now() - quitStarted < 10_000, 'quit returned well before the 60 s boot timeout');
+		assert.ok(await waitFor(() => pidGone(spawned[0]!.pid)), 'the engine the restart spawned is gone');
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
+	}
+});
+
 test('shutdown leaves an adopted engine running', async () => {
 	const pid = process.pid;
 	await shutdownSupervised({ kind: 'adopted', pid, host: '127.0.0.1', port: 9 });

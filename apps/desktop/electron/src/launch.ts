@@ -12,7 +12,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { sleep } from './engine';
+import { sleep, sweepOrphanedGroup } from './engine';
 import { appendShellLog } from './shell-log';
 
 const LOCK_FILE_NAME = '.engine.lock';
@@ -228,6 +228,7 @@ export async function stopHolderPid(pid: number): Promise<void> {
 	while (Date.now() - sent < 5_000) {
 		if (!pidAlive(pid)) {
 			appendShellLog('shutdown', `adopted engine pid ${pid} exited ${Date.now() - sent}ms after SIGTERM`);
+			sweepOrphanedGroup(pid, 'adopted engine');
 			return;
 		}
 		await sleep(50);

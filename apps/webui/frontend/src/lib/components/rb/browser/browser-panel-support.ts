@@ -109,6 +109,8 @@ export { createBrowserKeyboard } from './browser-keyboard';
 export { createLibraryEditKeys } from './library-edit-keys';
 export { openIoView } from '$lib/rb/io-surface.svelte';
 export { PairingIndex } from '$lib/rb/pairing-index.svelte';
+export { PairingGraph, pairingOutageToaster } from '$lib/rb/pairing-graph.svelte';
+export { subscribePairingsChanged } from '$lib/rb/pairings-changed';
 // Through here, not imported directly, to keep BrowserPanel's import fan-out
 // (frontend.max_fan_out quality ratchet) at main's figure.
 export {

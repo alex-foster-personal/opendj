@@ -21,6 +21,7 @@ from pathlib import Path
 from apps.sync.djay_monitor import DjayNowPlaying, HistoryItem
 
 from ..state import Event, SetsState
+from .event_emit import emit_recorded_event
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,13 @@ class DjaySource:
         return max(0.0, delta.total_seconds())
 
     def _emit(self, event: Event) -> None:
-        try:
-            self.state.record_event(event)
-        except Exception as exc:  # pragma: no cover -- guard
-            logger.warning("djay_source: record_event failed: %s", exc)
-        if self._on_event_cb is not None:
-            try:
-                self._on_event_cb(event)
-            except Exception as exc:  # pragma: no cover -- guard
-                logger.warning("djay_source: on_event callback raised: %s", exc)
+        emit_recorded_event(
+            state=self.state,
+            event=event,
+            on_event_cb=self._on_event_cb,
+            log_label="djay_source",
+            logger=logger,
+        )
 
     def _handle_track(self, item: HistoryItem) -> None:
         deck = self._deck_label(item)
@@ -150,7 +149,7 @@ class DjaySource:
                     value={"kind": "FileNotFoundError", "detail": str(exc)},
                 )
             )
-        except Exception as exc:  # pragma: no cover -- guard
+        except Exception as exc:  # pragma: no cover -- guard  # noqa: BLE001
             self._emit(
                 Event(
                     session_id=self.session_id,
@@ -165,4 +164,4 @@ class DjaySource:
             )
 
 
-__all__ = ["DjaySource", "SOURCE_NAME"]
+__all__ = ["SOURCE_NAME", "DjaySource"]

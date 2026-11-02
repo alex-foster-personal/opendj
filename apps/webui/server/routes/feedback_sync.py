@@ -24,15 +24,17 @@ from __future__ import annotations
 
 import threading
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from apps.shared.paths import DATA_DIR
 from apps.shared.state import db as state_db
+from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import maintenance as sync_maintenance
@@ -219,11 +221,22 @@ def _reconcile(store: FeedbackStore) -> tuple[int, int]:
     return result.exported, result.imported
 
 
-def sync_feedback_pins(store: FeedbackStore) -> FeedbackSyncOut:
+def ui_mirror_for_app(app: FastAPI) -> Mapping[str, Any] | None:
+    """The published UI mirror, or None before any page has published one."""
+    mirror = getattr(app.state, "ui_mirror", None)
+    if mirror is None or isinstance(mirror, Mapping):
+        return mirror
+    raise TypeError(f"app.state.ui_mirror must be a mapping, got {type(mirror).__name__}")
+
+
+def sync_feedback_pins(
+    store: FeedbackStore, *, ui_mirror: Mapping[str, Any] | None = None
+) -> FeedbackSyncOut:
     """Reconcile, run one CloudSync round trip, reconcile again.
 
     Raises :class:`FeedbackSyncError`; every failure has already been
-    journaled by :func:`apps.sync_hub.maintenance.sync` before it propagates.
+    journaled by :func:`apps.sync_hub.maintenance.sync` before it propagates,
+    except a CLOUDSYNC-14 deferral which has not (no hub I/O ran).
     """
     if not _SYNC_LOCK.acquire(blocking=False):
         raise FeedbackSyncError(409, "FEEDBACK_SYNC_IN_PROGRESS", "a sync is already running")
@@ -231,7 +244,15 @@ def sync_feedback_pins(store: FeedbackStore) -> FeedbackSyncOut:
         hub_url = _hub_url(store)
         exported, _ = _reconcile(store)
         try:
-            result = sync_maintenance.sync(store.data_dir, hub_url, name=store.machine_name)
+            result = sync_maintenance.sync(
+                store.data_dir, hub_url, name=store.machine_name, ui_mirror=ui_mirror
+            )
+        except SyncDeferredError as exc:
+            raise FeedbackSyncError(
+                409,
+                "FEEDBACK_SYNC_DEFERRED",
+                f"CloudSync sync deferred: {exc.reason}",
+            ) from exc
         except sync_client.SyncTransportError as exc:
             raise FeedbackSyncError(
                 503,
@@ -245,6 +266,7 @@ def sync_feedback_pins(store: FeedbackStore) -> FeedbackSyncOut:
             sync_client.SyncDigestMismatch,
             sync_client.SyncProtocolError,
             sync_client.SyncStillMoving,
+            sync_client.SyncStaleTracks,
             sync_client.SyncVersionMismatch,
         ) as exc:
             raise FeedbackSyncError(
@@ -341,7 +363,9 @@ def feedback_sync_status(
 @router.post("/sync", response_model=FeedbackSyncOut)
 def post_feedback_sync(request: Request) -> FeedbackSyncOut:
     try:
-        return sync_feedback_pins(store_for_app(request.app))
+        return sync_feedback_pins(
+            store_for_app(request.app), ui_mirror=ui_mirror_for_app(request.app)
+        )
     except FeedbackSyncError as exc:
         raise exc.to_http() from exc
 
@@ -369,4 +393,5 @@ __all__ = [
     "router",
     "store_for_app",
     "sync_feedback_pins",
+    "ui_mirror_for_app",
 ]

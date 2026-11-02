@@ -7,10 +7,10 @@
 //    origin, the build identity, the quit hook default, the pending shell
 //    error queue, the dead-engine supervisor state when there is one, and
 //    the saved audio engine choice when there is one.
-// 2. Expose `window.opendjShell`, the four native features the UI needs
-//    (folder picker, open in browser, exit/relaunch, updater) and the
-//    audio engine choice it saves to disk. The main
-//    process re-checks the calling frame's origin on every call.
+// 2. Expose `window.opendjShell`, the native features the UI needs
+//    (folder picker, open in browser, exit/relaunch, updater, CoreAudio list,
+//    and the audio engine choice it saves to disk). The main process re-checks
+//    the calling frame's origin on every call.
 //
 // Sandboxed preloads may only require 'electron', so this file imports nothing
 // from the rest of the shell.
@@ -75,6 +75,7 @@ if (init !== null) {
 			} finally {
 				ipcRenderer.removeListener('opendj:update-progress', listener);
 			}
-		}
+		},
+		listCoreAudioOutputs: (): Promise<unknown[]> => ipcRenderer.invoke('opendj:list-coreaudio-outputs')
 	});
 }

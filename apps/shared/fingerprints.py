@@ -35,6 +35,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -465,17 +466,22 @@ class FingerprintCache:
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self._lock = threading.Lock()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._conn() as c:
-            c.executescript(_CACHE_SCHEMA)
+        conn = self._conn()
+        try:
+            conn.executescript(_CACHE_SCHEMA)
+            conn.commit()
+        finally:
+            conn.close()
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        return sqlite3.connect(self.db_path, timeout=5.0)
 
     def get(self, path: Path) -> Fingerprint | None:
         """Return a cached :class:`Fingerprint` if size + mtime match."""
         st = path.stat()
-        with self._conn() as c:
+        with self._lock, self._conn() as c:
             row = c.execute(
                 "SELECT fingerprint, duration, size, mtime, bitrate, computed_at "
                 "FROM fingerprints WHERE path = ?",
@@ -495,7 +501,7 @@ class FingerprintCache:
             # iCloud placeholder is skipped: opening it would download it.
             bitrate = _safe_bitrate(path)
             if bitrate is not None:
-                with self._conn() as c:
+                with self._lock, self._conn() as c:
                     c.execute(
                         "UPDATE fingerprints SET bitrate = ? WHERE path = ?",
                         (bitrate, str(path)),
@@ -512,7 +518,7 @@ class FingerprintCache:
         )
 
     def put(self, fp: Fingerprint, *, stable_id: str | None = None) -> None:
-        with self._conn() as c:
+        with self._lock, self._conn() as c:
             c.execute(
                 "INSERT INTO fingerprints "
                 "(path, stable_id, fingerprint, duration, size, mtime, bitrate, computed_at) "
@@ -538,21 +544,24 @@ class FingerprintCache:
             c.commit()
 
     def iter_all(self) -> Iterable[Fingerprint]:
-        with self._conn() as c:
-            for row in c.execute(
+        # Rows are read under the lock and yielded after it is released: the
+        # lock is not reentrant, so a caller that calls get()/put() per item,
+        # or keeps a half-consumed iterator, must not be holding it.
+        with self._lock, self._conn() as c:
+            rows = c.execute(
                 "SELECT path, fingerprint, duration, size, mtime, bitrate, computed_at "
                 "FROM fingerprints"
-            ):
-                path, fp_str, duration, size, mtime, bitrate, computed_at = row
-                yield Fingerprint(
-                    path=Path(path),
-                    duration=float(duration),
-                    fp_str=fp_str,
-                    size=int(size),
-                    mtime=float(mtime),
-                    bitrate=int(bitrate) if bitrate is not None else None,
-                    computed_at=computed_at,
-                )
+            ).fetchall()
+        for path, fp_str, duration, size, mtime, bitrate, computed_at in rows:
+            yield Fingerprint(
+                path=Path(path),
+                duration=float(duration),
+                fp_str=fp_str,
+                size=int(size),
+                mtime=float(mtime),
+                bitrate=int(bitrate) if bitrate is not None else None,
+                computed_at=computed_at,
+            )
 
 
 def load_or_compute(

@@ -77,7 +77,9 @@ Exact command lines:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import logging
 import math
 import os
 import shutil
@@ -96,6 +98,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.argparse_types import nonnegative_int as _nonnegative_int
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import (
     MappedPath,
@@ -143,11 +146,14 @@ WORKER_UNAVAILABLE_MESSAGE: str = (
 )
 _SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 
+log = logging.getLogger(__name__)
+
 CATEGORY_PVDI = "pvdi"
 CATEGORY_CACHED = "cached_demucs"
 CATEGORY_MISSING = "missing_file"
 CATEGORY_MISSING_ANALYSIS = "missing_analysis"
 CATEGORY_TODO = "todo"
+CATEGORY_BROKEN_CACHE = "broken_vocal_cache"
 
 
 # Raised when the worker tree may still exist, so its claim must remain held.
@@ -456,9 +462,14 @@ def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
         if twoex.is_file() and pvdi_present(twoex):
             tr.category = CATEGORY_PVDI
             continue
-        entry = vcache.load_valid_entry(
-            vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
-        )
+        try:
+            entry = vcache.load_valid_entry(
+                vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
+            )
+        except ValueError as exc:
+            log.warning("broken vocal-cache for %s during classify: %s", tr.stable_id, exc)
+            tr.category = CATEGORY_BROKEN_CACHE
+            continue
         if entry is not None:
             tr.category = CATEGORY_CACHED
             continue
@@ -586,15 +597,13 @@ def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
         if signal_group(process_group_id, signal.SIGTERM) is not None:
             proc.wait()
             return
-        try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
-        except subprocess.TimeoutExpired:
-            pass
         if group_has_live_member(process_group_id):
             signal_group(process_group_id, signal.SIGKILL)
         proc.wait()
         if not wait_group_gone(process_group_id, WORKER_TERMINATE_GRACE_S):
-            raise WorkerCleanupError(
+            raise WorkerCleanupError(  # noqa: TRY301
                 f"vocal worker process group {process_group_id} survived SIGKILL"
             )
     except WorkerCleanupError:
@@ -735,7 +744,9 @@ def _read_claim_record(lock: Path) -> dict[str, Any] | None:
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise RuntimeError(f"invalid vocals claim record: {lock}") from exc
     if not isinstance(record, dict):
-        raise RuntimeError(f"invalid vocals claim record: {lock}")
+        raise RuntimeError(  # noqa: TRY004
+            f"invalid vocals claim record: {lock}"
+        )
     if (
         not isinstance(record.get("owner_token"), str)
         or not record["owner_token"]
@@ -795,7 +806,7 @@ def _heartbeat_claim(
                     return
                 record["heartbeat_at"] = time.time()
                 _write_claim_record(lock, record)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
             return
 
@@ -952,6 +963,7 @@ def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
         CATEGORY_MISSING: 0,
         CATEGORY_MISSING_ANALYSIS: 0,
         CATEGORY_TODO: 0,
+        CATEGORY_BROKEN_CACHE: 0,
     }
     for tr in tracks:
         counts[tr.category] += 1
@@ -994,6 +1006,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     print(f"  cached-demucs:     {counts[CATEGORY_CACHED]:>6}")
     print(f"  missing-file:      {counts[CATEGORY_MISSING]:>6}")
     print(f"  missing-analysis:  {counts[CATEGORY_MISSING_ANALYSIS]:>6}")
+    print(f"  broken-cache:      {counts[CATEGORY_BROKEN_CACHE]:>6}")
     print(
         f"  todo:              {counts[CATEGORY_TODO]:>6}"
         f"  ({_fmt_dur(todo_audio_s)} audio, "
@@ -1062,7 +1075,7 @@ def _process_one(
     return wall_s, entry
 
 
-def cmd_trickle(args: argparse.Namespace) -> int:
+def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901
     ctx = Ctx(data_dir=args.data_dir)
     live = bool(args.live)
     tracks = load_tracks(ctx, args.playlist)
@@ -1219,7 +1232,7 @@ def cmd_one(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_from_stems(args: argparse.Namespace) -> int:
+def cmd_from_stems(args: argparse.Namespace) -> int:  # noqa: C901
     """CPU backfill: stem bundles -> vocal-cache (no demucs)."""
     from apps.stems.artifacts import (
         StemArtifactError,
@@ -1236,11 +1249,11 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
         try:
             load_stem_bundle(args.stable_id, stems_dir=root)
         except StemBundleNotFoundError:
-            raise SystemExit(
+            raise SystemExit(  # noqa: B904
                 f"error: no stem bundle for {args.stable_id!r} under {root}"
             )
         except StemArtifactError as exc:
-            raise SystemExit(
+            raise SystemExit(  # noqa: B904
                 f"error: stem bundle invalid for {args.stable_id!r}: {exc}"
             )
         ids = [args.stable_id]
@@ -1299,7 +1312,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
                 tr.audio_path,
                 stems_root=root,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(
                 f"[FAIL] {tr.stable_id} {tr.title!r}: {type(exc).__name__}: {exc}",
                 file=sys.stderr,
@@ -1317,15 +1330,6 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
 
 
 # ----- parser ----------------------------------------------------------------------------
-
-
-def _nonnegative_int(raw_value: str) -> int:
-    """Parse a nonnegative CLI integer without Python slice semantics."""
-    value = int(raw_value)
-    if value < 0:
-        raise argparse.ArgumentTypeError("must be zero or greater")
-    return value
-
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1442,7 +1446,7 @@ def main(argv: list[str] | None = None) -> int:
         args = build_parser().parse_args(argv)
         return int(args.func(args))
     except UnknownPlaylistError as exc:
-        raise SystemExit(
+        raise SystemExit(  # noqa: B904
             2,
             f"error: unknown playlist {exc.name!r}. "
             f"Known: {', '.join(exc.known) or '(none)'}",

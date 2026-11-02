@@ -4,7 +4,7 @@
  * module owns the product decision.
  */
 
-import { subscribe, TOPIC_SHELL_QUIT, type Unsubscribe } from '$lib/api/events-bus';
+import { connect as connectEventsBus, subscribe, TOPIC_SHELL_QUIT, type Unsubscribe } from '$lib/api/events-bus';
 import { reportClientError } from '$lib/client-error-reporting';
 import { flushPerformanceSessionSnapshot } from '$lib/rb/performance-session.svelte';
 import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
@@ -30,6 +30,72 @@ type QuitGateDeps = {
 };
 
 let confirming = false;
+let shellQuitBusListener: Unsubscribe | null = null;
+let requestQuitHookInstalled = false;
+
+function installShellQuitBusListener(deps?: Partial<QuitGateDeps>): void {
+	if (typeof window === 'undefined' && deps?.window === undefined) return;
+	const scope = (deps?.window ?? window) as Window & ShellScope;
+	const detectFn = deps?.detect ?? detectSurface;
+	if (detectFn(scope) !== 'desktop-shell') return;
+	if (shellQuitBusListener !== null) return;
+	const resolved: QuitGateDeps = {
+		query: deps?.query ?? queryPerformanceState,
+		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		exitShell: deps?.exitShell ?? exitShellDefault,
+		detect: deps?.detect ?? detectSurface,
+		subscribeShellQuit:
+			deps?.subscribeShellQuit ?? ((listener) => subscribe(TOPIC_SHELL_QUIT, () => listener())),
+		document: deps?.document ?? document,
+		window: scope
+	};
+	shellQuitBusListener = resolved.subscribeShellQuit(() => {
+		handleQuitRequest({ force: true, source: 'engine' }, resolved);
+	});
+}
+
+function installRequestQuitHook(deps?: Partial<QuitGateDeps>): void {
+	if (typeof window === 'undefined' && deps?.window === undefined) return;
+	const scope = (deps?.window ?? window) as Window & ShellScope;
+	const detectFn = deps?.detect ?? detectSurface;
+	if (detectFn(scope) !== 'desktop-shell') return;
+	if (requestQuitHookInstalled) return;
+	const resolved: QuitGateDeps = {
+		query: deps?.query ?? queryPerformanceState,
+		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		exitShell: deps?.exitShell ?? exitShellDefault,
+		detect: deps?.detect ?? detectSurface,
+		subscribeShellQuit:
+			deps?.subscribeShellQuit ?? ((listener) => subscribe(TOPIC_SHELL_QUIT, () => listener())),
+		document: deps?.document ?? document,
+		window: scope
+	};
+	const requestQuit = (): void => handleQuitRequest({ source: 'shell' }, resolved);
+	(scope as Window & ShellScope & { __OPENDJ_requestQuit?: () => void }).__OPENDJ_requestQuit =
+		requestQuit;
+	requestQuitHookInstalled = true;
+}
+
+/** Test-only: clear idempotent install flags between unit cases. */
+export function resetShellQuitGateForTests(): void {
+	shellQuitBusListener?.();
+	shellQuitBusListener = null;
+	requestQuitHookInstalled = false;
+}
+
+/** Desktop shell: listen for lifecycle/quit before +layout onMount runs (issue #6262). */
+export function ensureEarlyShellQuitGate(deps?: Partial<QuitGateDeps>): void {
+	if (typeof window === 'undefined' && deps?.window === undefined) return;
+	const scope = (deps?.window ?? window) as Window & ShellScope;
+	const detectFn = deps?.detect ?? detectSurface;
+	if (detectFn(scope) !== 'desktop-shell') return;
+	if (deps?.window === undefined) {
+		connectEventsBus();
+	}
+	installShellQuitBusListener(deps);
+	installRequestQuitHook(deps);
+}
+
 
 async function exitShellDefault(): Promise<void> {
 	await exitApp(0);
@@ -139,20 +205,13 @@ export function installQuitGate(deps?: Partial<QuitGateDeps>): () => void {
 		return () => undefined;
 	}
 
-	const requestQuit = (): void => handleQuitRequest({ source: 'shell' }, resolved);
-	(
-		resolved.window as Window & ShellScope & { __OPENDJ_requestQuit?: () => void }
-	).__OPENDJ_requestQuit = requestQuit;
+	installRequestQuitHook(resolved);
+	installShellQuitBusListener(resolved);
 
 	const onKeydown = (event: KeyboardEvent): void => onDialogKeydown(event);
 	resolved.document.addEventListener('keydown', onKeydown, true);
 
-	const unsubscribe = resolved.subscribeShellQuit(() => {
-		handleQuitRequest({ force: true, source: 'engine' }, resolved);
-	});
-
 	return () => {
-		unsubscribe();
 		resolved.document.removeEventListener('keydown', onKeydown, true);
 	};
 }

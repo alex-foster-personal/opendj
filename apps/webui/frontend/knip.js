@@ -119,6 +119,10 @@ export default {
 		// Same shape: the stem-load-under-playback scorer, imported into an open
 		// /performance page by a person or an agent (PERF-STEMDEC-04 rounds).
 		'tests/live/stem-load-under-playback-scorer.js',
+		// Same shape: the PVSNAP preview beat snap timing harness, run directly in
+		// headless Chromium; its entry is what esbuild bundles into the page.
+		'tests/live/preview-beat-snap-harness.mjs',
+		'tests/live/preview-beat-snap-harness-entry.ts',
 		'tests/unit/fixtures/**/*.ts',
 		'tests/e2e/fixtures/**/*.ts',
 		'tests/manual/wkwebview-spike/inject.mjs',

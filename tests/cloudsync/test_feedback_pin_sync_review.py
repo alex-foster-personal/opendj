@@ -28,6 +28,7 @@ import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -37,9 +38,11 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import service as sync_service
+from apps.sync_hub import single_flight
 from apps.sync_hub import status as sync_status
 from apps.webui.server.app import create_app
 from apps.webui.server.cloudsync_scheduler import CloudSyncScheduler
+from apps.webui.server.routes.feedback_sync import ui_mirror_for_app
 from tests.cloudsync.test_feedback_pin_sync import _T_NEW, Engine, _engine, _pin_doc, _serve
 from tests.waits import wait_for_external_state
 
@@ -341,3 +344,97 @@ def test_a_scheduler_switch_that_is_not_0_or_1_is_a_loud_misconfiguration(
         record.levelno >= logging.WARNING and "'yes'" in record.getMessage()
         for record in caplog.records
     )
+
+
+def _scheduler_for(air: Engine, hub_url: str) -> CloudSyncScheduler:
+    scheduler = CloudSyncScheduler(air.app, interval_s=60.0, env={
+        sync_status.SCHEDULER_ENV: "1", sync_status.ENDPOINT_ENV: hub_url,
+    })
+    air.app.state.cloudsync_scheduler = scheduler
+    return scheduler
+
+
+@pytest.mark.requirement("FBSYNC-5414")
+def test_a_gig_tick_is_deferred_not_crashed(
+    air: Engine, hub_url: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """[if] Gig posture defers a scheduled tick [then] INFO not ERROR, [else stop]."""
+    prefs = air.data_dir / "state" / "ui-prefs.json"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text('{"app_posture": "gig"}', encoding="utf-8")
+    scheduler = _scheduler_for(air, hub_url)
+    with caplog.at_level(logging.INFO, logger="apps.webui.server.cloudsync_scheduler"):
+        result = scheduler.run_once()
+    assert result is None
+    assert scheduler.status().last_error is None
+    journal = sync_status.read_results(air.data_dir)
+    assert journal and journal[0].status == "deferred"
+    assert "gig_posture" in journal[0].message
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("FEEDBACK_SYNC_DEFERRED" in message for message in messages)
+    assert not any("scheduled sync crashed" in message for message in messages)
+    assert all(
+        record.levelno < logging.ERROR
+        for record in caplog.records
+        if "CloudSync scheduled" in record.getMessage()
+    )
+
+
+@pytest.mark.requirement("FBSYNC-5414")
+def test_post_feedback_sync_deferred_under_gig(air: Engine) -> None:
+    """[if] POST /feedback/sync during Gig [then] 409 FEEDBACK_SYNC_DEFERRED, [else stop]."""
+    prefs = air.data_dir / "state" / "ui-prefs.json"
+    prefs.parent.mkdir(parents=True, exist_ok=True)
+    prefs.write_text('{"app_posture": "gig"}', encoding="utf-8")
+    response = air.http.post("/api/v1/feedback/sync")
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "FEEDBACK_SYNC_DEFERRED"
+    assert "gig_posture" in response.json()["detail"]["message"]
+
+
+@pytest.mark.requirement("FBSYNC-5414")
+def test_a_busy_flock_tick_is_deferred_not_crashed(
+    air: Engine, hub_url: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """[if] a flock holder defers a tick [then] INFO not crashed ERROR, [else stop]."""
+    scheduler = _scheduler_for(air, hub_url)
+    with single_flight.sync_flock_for(air.data_dir):
+        with caplog.at_level(logging.INFO, logger="apps.webui.server.cloudsync_scheduler"):
+            result = scheduler.run_once()
+    assert result is None
+    assert scheduler.status().last_error is None
+    journal = sync_status.read_results(air.data_dir)
+    assert journal and journal[0].status == "deferred"
+    assert "sync_in_progress" in journal[0].message
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("FEEDBACK_SYNC_DEFERRED" in message for message in messages)
+    assert not any("scheduled sync crashed" in message for message in messages)
+
+
+@pytest.mark.requirement("FBSYNC-5414")
+def test_a_playing_deck_tick_is_deferred_not_crashed(
+    air: Engine, hub_url: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """[if] a playing deck defers a tick [then] INFO not ERROR, [else stop]."""
+    air.app.state.ui_mirror = {"decks": {"1": {"playing": True}}}
+    scheduler = _scheduler_for(air, hub_url)
+    with caplog.at_level(logging.INFO, logger="apps.webui.server.cloudsync_scheduler"):
+        result = scheduler.run_once()
+    assert result is None
+    journal = sync_status.read_results(air.data_dir)
+    assert journal and journal[0].status == "deferred"
+    assert "deck_playing" in journal[0].message
+    assert not any(
+        "scheduled sync crashed" in record.getMessage() for record in caplog.records
+    )
+
+
+def test_a_mapping_mirror_reaches_the_gate_and_junk_fails_fast(air: Engine) -> None:
+    """[if] the UI mirror is any mapping [then] it is passed on, and a non-mapping raises, [else stop]."""
+    air.app.state.ui_mirror = MappingProxyType({"decks": {"1": {"playing": True}}})
+    assert ui_mirror_for_app(air.app) is air.app.state.ui_mirror
+    air.app.state.ui_mirror = None
+    assert ui_mirror_for_app(air.app) is None
+    air.app.state.ui_mirror = ["not", "a", "mapping"]
+    with pytest.raises(TypeError, match="must be a mapping, got list"):
+        ui_mirror_for_app(air.app)

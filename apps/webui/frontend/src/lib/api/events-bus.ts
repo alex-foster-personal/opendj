@@ -28,6 +28,7 @@
  */
 
 import { API_BASE } from './base';
+import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
 
 export const EVENTS_PATH = '/api/v1/events';
 
@@ -41,10 +42,12 @@ export const TOPIC_ANALYSIS_CHANGED = 'analysis.changed';
 export const TOPIC_JOBS_UPDATED = 'jobs.updated';
 export const TOPIC_HEALTH_CHANGED = 'health.changed';
 export const TOPIC_SHELL_QUIT = 'shell.quit';
+/** Desktop shell -> engine: confirms a shell.quit frame was received (issue #6262). */
+export const TOPIC_SHELL_QUIT_ACK = 'shell.quit.ack';
 
 /** `kind` values the server publishes on `library.changed`. Mirrors the
  * `publish("library.changed", {"kind": ...})` call sites under
- * `apps/webui/server/routes/`. */
+ * `apps/webui/server/routes/` and `apps/set_notes/routes.py`. */
 export const LIBRARY_KINDS = [
 	'tracks',
 	'playlists',
@@ -59,6 +62,7 @@ export const LIBRARY_KINDS = [
 	'library_jobs',
 	'playlist_sets',
 	'midi_maps',
+	'set_notes',
 	'sections'
 ] as const;
 
@@ -106,6 +110,7 @@ export interface WebSocketLike {
 	onmessage: ((event: { data: unknown }) => void) | null;
 	onclose: ((event: { code: number; reason: string }) => void) | null;
 	onerror: ((event: unknown) => void) | null;
+	send(data: string): void;
 	close(): void;
 }
 
@@ -388,6 +393,26 @@ function _onFrame(raw: unknown): void {
 		_fireResync('gap');
 	}
 	_fireEnvelope(envelope);
+	if (envelope.topic === TOPIC_SHELL_QUIT) {
+		_ackShellQuitDelivery(envelope.seq);
+	}
+}
+
+function _ackShellQuitDelivery(seq: number): void {
+	if (typeof window === 'undefined') return;
+	if (detectSurface(window as Window & ShellScope) !== 'desktop-shell') return;
+	const socket = _socket;
+	if (socket === null) return;
+	try {
+		socket.send(
+			JSON.stringify({
+				topic: TOPIC_SHELL_QUIT_ACK,
+				seq
+			})
+		);
+	} catch (exc) {
+		console.error(`[events-bus] shell.quit ack failed: ${String(exc)}`);
+	}
 }
 
 function _onHello(envelope: EventEnvelope): void {
@@ -414,6 +439,12 @@ function _resolveUrl(url?: string): string {
 	const base = API_BASE === '' ? _windowOrigin() : API_BASE;
 	const resolved = new URL(EVENTS_PATH, base);
 	resolved.protocol = resolved.protocol === 'https:' ? 'wss:' : 'ws:';
+	if (
+		typeof window !== 'undefined' &&
+		detectSurface(window as Window & ShellScope) === 'desktop-shell'
+	) {
+		resolved.searchParams.set('consumer', 'shell');
+	}
 	return resolved.toString();
 }
 

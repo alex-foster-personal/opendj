@@ -374,3 +374,167 @@ export function savedIoDeviceNotices(args: {
 	}
 	return notices;
 }
+
+/** CoreAudio row from `odj-output-probe list` (wire field `physical_uid`). */
+export interface CoreAudioOutputDescriptor {
+	uid: string;
+	name: string;
+	transport: string;
+	is_default: boolean;
+	muted_by_jack: boolean;
+	physical_uid: string;
+}
+
+const CORE_AUDIO_PHYSICAL_PREFIX = 'coreaudio:';
+
+function _assertCoreAudioDescriptor(row: unknown): CoreAudioOutputDescriptor {
+	if (typeof row !== 'object' || row === null) {
+		throw new TypeError('CoreAudio output row must be an object');
+	}
+	const candidate = row as Record<string, unknown>;
+	const required: Array<[keyof CoreAudioOutputDescriptor, string]> = [
+		['uid', 'string'],
+		['name', 'string'],
+		['transport', 'string'],
+		['physical_uid', 'string']
+	];
+	for (const [key, kind] of required) {
+		if (typeof candidate[key] !== kind || (candidate[key] as string).trim() === '') {
+			throw new TypeError(`CoreAudio output row ${key} must be a non-empty ${kind}`);
+		}
+	}
+	if (typeof candidate.is_default !== 'boolean') {
+		throw new TypeError('CoreAudio output row is_default must be a boolean');
+	}
+	if (typeof candidate.muted_by_jack !== 'boolean') {
+		throw new TypeError('CoreAudio output row muted_by_jack must be a boolean');
+	}
+	return {
+		uid: candidate.uid as string,
+		name: candidate.name as string,
+		transport: candidate.transport as string,
+		is_default: candidate.is_default,
+		muted_by_jack: candidate.muted_by_jack,
+		physical_uid: candidate.physical_uid as string
+	};
+}
+
+function _labelCounts(outputs: readonly HeadphoneOutputDevice[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const output of outputs) {
+		if (output.id === SYSTEM_DEFAULT_OUTPUT_ID) continue;
+		counts.set(output.label, (counts.get(output.label) ?? 0) + 1);
+	}
+	return counts;
+}
+
+function _coreAudioNameCounts(rows: readonly CoreAudioOutputDescriptor[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const row of rows) {
+		counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
+	}
+	return counts;
+}
+
+function _coreAudioPhysicalToken(uid: string): string {
+	return `${CORE_AUDIO_PHYSICAL_PREFIX}${uid}`;
+}
+
+/**
+ * Join CoreAudio classification onto Chromium `HeadphoneOutputDevice` rows
+ * without replacing browser ids (Electron CUEOUT-26).
+ */
+export function joinElectronCoreAudioOutputs(
+	browserOutputs: readonly HeadphoneOutputDevice[],
+	coreAudioRaw: unknown
+): HeadphoneOutputDevice[] {
+	if (!Array.isArray(coreAudioRaw)) throw new TypeError('CoreAudio listing must be an array');
+	const coreAudio = coreAudioRaw.map(_assertCoreAudioDescriptor);
+	const browserLabelCounts = _labelCounts(browserOutputs);
+	const coreNameCounts = _coreAudioNameCounts(coreAudio);
+
+	const enriched = browserOutputs.map((output) => {
+		if (output.id === SYSTEM_DEFAULT_OUTPUT_ID) return { ...output };
+		if ((browserLabelCounts.get(output.label) ?? 0) !== 1) return { ...output };
+		const core = coreAudio.find((row) => row.name === output.label);
+		if (core === undefined || (coreNameCounts.get(core.name) ?? 0) !== 1) return { ...output };
+		return {
+			...output,
+			muted_by_jack: core.muted_by_jack,
+			transport: core.transport,
+			physical_id: _coreAudioPhysicalToken(core.physical_uid)
+		};
+	});
+
+	for (const core of coreAudio) {
+		if (!core.muted_by_jack) continue;
+		const browserLabelUnique = (browserLabelCounts.get(core.name) ?? 0) === 1;
+		const coreNameUnique = (coreNameCounts.get(core.name) ?? 0) === 1;
+		const browserMatch = enriched.find((output) => output.label === core.name && output.id !== SYSTEM_DEFAULT_OUTPUT_ID);
+		if (!browserLabelUnique || !coreNameUnique || browserMatch === undefined) {
+			throw new Error(
+				`Muted jack ${core.name}: no unique match for that label`
+			);
+		}
+		const jackCore = coreAudio.find((row) => row.uid === core.physical_uid);
+		if (jackCore === undefined) {
+			throw new Error(
+				`Muted jack ${core.name}: physical_uid ${core.physical_uid} is missing`
+			);
+		}
+		const jackBrowserUnique = (browserLabelCounts.get(jackCore.name) ?? 0) === 1;
+		const jackCoreUnique = (coreNameCounts.get(jackCore.name) ?? 0) === 1;
+		const jackBrowser = enriched.find(
+			(output) => output.label === jackCore.name && output.id !== SYSTEM_DEFAULT_OUTPUT_ID
+		);
+		if (!jackBrowserUnique || !jackCoreUnique || jackBrowser === undefined) {
+			throw new Error(
+				`Muted jack ${core.name}: no unique match for ${jackCore.name}`
+			);
+		}
+	}
+
+	const defaultIndex = enriched.findIndex((output) => output.id === SYSTEM_DEFAULT_OUTPUT_ID);
+	if (defaultIndex === -1) return enriched;
+	const defaultRow = enriched[defaultIndex];
+	// CUEOUT-27 / PRRT_kwDOSEvNd86y2ORd: `physical_id` on the default row is the
+	// concrete Chromium device id from `_withDefaultPhysicalId`, not a CoreAudio token.
+	const concreteBrowserId = defaultRow.physical_id;
+	const concreteEnriched =
+		concreteBrowserId === undefined
+			? undefined
+			: enriched.find(
+					(output) => output.id === concreteBrowserId && output.id !== SYSTEM_DEFAULT_OUTPUT_ID
+				);
+	if (concreteEnriched !== undefined && concreteEnriched.physical_id !== undefined) {
+		const next = [...enriched];
+		const patched: HeadphoneOutputDevice = {
+			...defaultRow,
+			physical_id: concreteEnriched.physical_id
+		};
+		if (concreteEnriched.muted_by_jack !== undefined) {
+			patched.muted_by_jack = concreteEnriched.muted_by_jack;
+		}
+		if (concreteEnriched.transport !== undefined) {
+			patched.transport = concreteEnriched.transport;
+		}
+		next[defaultIndex] = patched;
+		return next;
+	}
+	if (concreteEnriched !== undefined) {
+		return enriched;
+	}
+	const defaultCore = coreAudio.filter((row) => row.is_default);
+	if (defaultCore.length === 1) {
+		const core = defaultCore[0];
+		const next = [...enriched];
+		next[defaultIndex] = {
+			...defaultRow,
+			physical_id: _coreAudioPhysicalToken(core.physical_uid),
+			muted_by_jack: core.muted_by_jack,
+			transport: core.transport
+		};
+		return next;
+	}
+	return enriched;
+}

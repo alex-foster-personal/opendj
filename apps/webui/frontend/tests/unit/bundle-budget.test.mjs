@@ -11,7 +11,7 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 294912 then the figure moved
+// - if the library limit stops being exactly 297984 then the figure moved
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
@@ -96,6 +96,8 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
   write('chunks/lib.js', `import"./shared.js";export const l=1;${_pad(sizes.library ?? 64, 1)}`);
   write('chunks/perf.js', `import"./shared.js";export const p=1;${_pad(sizes.performance ?? 64, 2)}`);
   write('chunks/other.js', `import"./shared.js";export const o=1;${_pad(sizes['other-lazy'] ?? 64, 3)}`);
+  // The Set notes editor: lazy from the root layout, found by its ProseMirror class name.
+  write('chunks/editor.js', `export const e="ProseMirror-focused";${_pad(sizes['set-notes-editor'] ?? 64, 4)}`);
   write('chunks/error-template.js', 'export default()=>"err";');
 
   write('entry/start.AAAAAAAA.js', 'import"../chunks/shared.js";');
@@ -109,7 +111,7 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
       'import("../chunks/error-template.js");',
   );
 
-  write('nodes/0.CCCCCCCC.js', 'import"../chunks/shared.js";'); // root layout
+  write('nodes/0.CCCCCCCC.js', 'import"../chunks/shared.js";import("../chunks/editor.js");'); // root layout
   write('nodes/1.CCCCCCCC.js', 'import"../chunks/shared.js";'); // error node
   write('nodes/2.CCCCCCCC.js', 'import"../chunks/lib.js";'); // route "/"
   write('nodes/3.CCCCCCCC.js', 'import"../chunks/other.js";'); // route "/sets"
@@ -142,13 +144,13 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 294912: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move, plus the #6835 re-land, the #6235 deck controls and its #7956 and fd170f45c merges', () => {
+test('the library limit is exactly 297984: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move, plus the #6835 re-land, the #6235 deck controls and its #7956 and fd170f45c merges, and the Mon 2 Nov headroom repair', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 294912,/,
+    /\{ name: 'library', limit: 297984,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
@@ -158,6 +160,7 @@ test('the library limit is exactly 294912: the inherited 256000 plus the reviewe
   assert.match(source, /Merge note \(PR #6235 x main [0-9a-f]+, Fri 30 Oct 2026\)/, 'the re-base onto main must carry its note');
   assert.match(source, /LOWERED Wed 28 Oct 2026 \(-17 KiB, PR #6829, re-land of #6205/, 'the move must carry its note');
   assert.match(source, /RAISED Fri 30 Oct 2026 \(\+1 KiB, PR #6127, decode-on-bytes/, 'the raise must carry its note');
+  assert.match(source, /RAISED Mon 2 Nov 2026 \(\+1 KiB, headroom repair, no feature\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 30 Oct 2026 \(\+3 KiB, trunk repair after #7957 and #6534\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
@@ -185,7 +188,7 @@ test('a clean build passes and every emitted chunk is charged to a budget', () =
   const { code, out } = _run(_fixture());
   assert.equal(code, 0, out);
   assert.match(out, /all bundle budgets satisfied/);
-  assert.match(out, /coverage: 12 of 12 emitted JS files charged to a budget/);
+  assert.match(out, /coverage: 13 of 13 emitted JS files charged to a budget/);
 });
 
 test('dynamic imports are budget boundaries, so the shell does not pull every route into library', () => {
@@ -232,7 +235,7 @@ function _limitOf(name) {
   return Number(match[1]);
 }
 
-for (const surface of ['library', 'performance', 'other-lazy']) {
+for (const surface of ['library', 'performance', 'set-notes-editor', 'other-lazy']) {
   // EVERY surface derives from the gate, none is a literal. A literal goes
   // stale the moment a ceiling is raised and then asserts a failure that can
   // no longer happen: when PR #1587 raised performance to 227,328, the pinned
@@ -271,7 +274,7 @@ test('a URL-loaded AudioWorklet is charged to the surface whose code names it', 
     }),
   );
   assert.equal(clean.code, 0, clean.out);
-  assert.match(clean.out, /coverage: 13 of 13 emitted JS files charged to a budget/);
+  assert.match(clean.out, /coverage: 14 of 14 emitted JS files charged to a budget/);
 
   // The same worklet with nobody naming it must fail, so attribution is real
   // and not a blanket pass for anything sitting in assets/.

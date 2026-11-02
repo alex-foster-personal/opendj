@@ -58,8 +58,29 @@ class BoundedFileOpenError(RuntimeError):
         super().__init__(message or f"bounded open failed for {path}")
 
 
+# The probe child is an isolated interpreter running this inline program: no
+# site/.pth processing (-S), no user site or cwd on sys.path (-I), and no
+# import of the apps package, so its start-up is the bare interpreter (about
+# 17 ms vs 48 ms for ``-m apps.shared.bounded_file_open_worker`` on Linux).
+# It does exactly what bounded_file_open_worker.main does and writes errors in
+# the same ``<errno>:<message>`` form (tests/shared/test_bounded_file_open.py
+# pins the two to the same exit code and errno). The leading comment names the
+# worker so a process listing still identifies the probe child. Every flag
+# here is portable: -I, -S and -c behave the same on macOS, Linux and Windows.
+_INLINE_WORKER_SOURCE = """\
+# bounded_file_open_worker (inline)
+import sys
+try:
+    with open(sys.argv[1], "rb") as fh:
+        fh.read(1)
+except OSError as exc:
+    sys.stderr.write(f"{exc.errno}:{exc}")
+    sys.exit(1)
+"""
+
+
 def _worker_command(path: Path) -> list[str]:
-    return [sys.executable, "-m", "apps.shared.bounded_file_open_worker", str(path)]
+    return [sys.executable, "-I", "-S", "-c", _INLINE_WORKER_SOURCE, str(path)]
 
 
 def _process_kwargs() -> dict[str, Any]:

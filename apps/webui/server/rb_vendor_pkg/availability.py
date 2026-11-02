@@ -36,6 +36,7 @@ from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import _open_ro
 from apps.adapters.rekordbox.paths import is_streaming_path, resolve_asset_path
 from apps.shared import fs_residency, remote_status
+from apps.shared.platform_paths import PathMap, load_path_map, may_remap
 from apps.shared.state import db as state_db
 from apps.shared.state import locations as track_locations
 from apps.shared.state.locations import ID_BIND_BATCH
@@ -109,12 +110,23 @@ class ProbeBudget:
 
 @dataclass(frozen=True)
 class PathProbeResult:
+    """``resolved_path`` is the file ``materialised_size`` was measured at, or
+    None when that cannot be proven without touching the disk."""
+
     status: FileAvailabilityStatus
     materialised_size: int | None = None
+    resolved_path: str | None = None
 
 
-def _size_result(size: int | None) -> PathProbeResult:
-    return PathProbeResult("present" if size is not None else "absent", size)
+def _size_result(size: int | None, measured_path: str | None = None) -> PathProbeResult:
+    return PathProbeResult("present" if size is not None else "absent", size, measured_path)
+
+
+def _index_measured_path(path: str, path_map: PathMap) -> str | None:
+    """The file an index answer measured, when ``path`` alone proves it. No I/O:
+    an index row keeps no resolved path, so one a rule could send elsewhere is
+    unproven until a stat this process made says where it landed."""
+    return None if may_remap(path, path_map) else path
 
 
 _PENDING_RESULT = PathProbeResult(PENDING)
@@ -134,13 +146,15 @@ def _stat_size(resolved: Path | None) -> int | None:
     return fs_residency.materialised_size(resolved)
 
 
-def _l1_hits(wanted: Sequence[str], now: float) -> dict[str, int | None]:
+def _l1_hits(wanted: Sequence[str], now: float, namespace: str) -> dict[str, PathProbeResult]:
+    """Answers this process stat within the TTL, under the current resolver: a
+    path map that changed since then can land the same path on another file."""
     with config._FILE_EXISTS_LOCK:
         hits = {path: config._FILE_EXISTS_CACHE.get(path) for path in wanted}
     return {
-        path: hit[1]
+        path: _size_result(hit[1], hit[2])
         for path, hit in hits.items()
-        if hit is not None and now - hit[0] < config.FILE_EXISTS_TTL_S
+        if hit is not None and hit[3] == namespace and now - hit[0] < config.FILE_EXISTS_TTL_S
     }
 
 
@@ -167,7 +181,7 @@ def _load_index(
 
 def _record_stats(
     namespace: str,
-    sizes: Mapping[str, int | None],
+    measured: Mapping[str, PathProbeResult],
     now: float,
     *,
     state_db_path: Path | None = None,
@@ -180,12 +194,14 @@ def _record_stats(
     refresher running (CLI, script, no-lifespan test) the rows are written
     here, as before, because nothing else would write them.
     """
-    if not sizes:
+    if not measured:
         return
     with config._FILE_EXISTS_LOCK:
-        for path, size in sizes.items():
-            config._FILE_EXISTS_CACHE[path] = (now, size)
-    rows = list(sizes.items())
+        for path, result in measured.items():
+            config._FILE_EXISTS_CACHE[path] = (
+                now, result.materialised_size, result.resolved_path, namespace
+            )
+    rows = [(path, result.materialised_size) for path, result in measured.items()]
     if path_availability_refresh.record(namespace, rows, state_db_path=state_db_path):
         return
     db_path = _state_db(state_db_path)
@@ -202,7 +218,9 @@ def _recent_answers(
     paths: Sequence[str],
     index: Mapping[str, path_index.IndexEntry | None],
     now: float,
-) -> dict[str, int | None]:
+    path_map: PathMap,
+    namespace: str,
+) -> dict[str, PathProbeResult]:
     """Answers no older than :data:`SERVE_RECENT_MAX_S`: this process's own
     expired L1 stat first (its time is exact), else a trusted index row. The
     index row's ``checked_at`` can lag the last stat by up to
@@ -210,15 +228,17 @@ def _recent_answers(
     with config._FILE_EXISTS_LOCK:
         l1 = {path: config._FILE_EXISTS_CACHE.get(path) for path in paths}
     wall_now = datetime.now(UTC)
-    out: dict[str, int | None] = {}
+    out: dict[str, PathProbeResult] = {}
     for path in paths:
         hit, entry = l1[path], index.get(path)
-        if hit is not None and now - hit[0] < SERVE_RECENT_MAX_S:
-            out[path] = hit[1]
+        if hit is not None and hit[3] == namespace and now - hit[0] < SERVE_RECENT_MAX_S:
+            out[path] = _size_result(hit[1], hit[2])
         elif entry is not None and (wall_now - entry.checked_at).total_seconds() < (
             SERVE_RECENT_MAX_S
         ):
-            out[path] = entry.materialised_size
+            out[path] = _size_result(
+                entry.materialised_size, _index_measured_path(path, path_map)
+            )
     return out
 
 
@@ -227,7 +247,8 @@ def _triage(
     index: Mapping[str, path_index.IndexEntry | None],
     budget: ProbeBudget,
     out: dict[str, PathProbeResult],
-    recent: Mapping[str, int | None],
+    recent: Mapping[str, PathProbeResult],
+    path_map: PathMap,
 ) -> tuple[list[str], list[str]]:
     """Answer fresh index hits into ``out``; split the rest into the paths
     this request stats now and the ones handed to the background refresher.
@@ -238,15 +259,19 @@ def _triage(
     for path in paths:
         entry = index.get(path)
         if entry is not None and not entry.stale:
-            out[path] = _size_result(entry.materialised_size)
+            out[path] = _size_result(
+                entry.materialised_size, _index_measured_path(path, path_map)
+            )
         elif budget.take():
             stat_now.append(path)
         else:
             background.append(path)
             if entry is not None and budget.serves_stale:
-                out[path] = _size_result(entry.materialised_size)
+                out[path] = _size_result(
+                    entry.materialised_size, _index_measured_path(path, path_map)
+                )
             elif path in recent and budget.serves_recent:
-                out[path] = _size_result(recent[path])
+                out[path] = recent[path]
             else:
                 out[path] = _PENDING_RESULT
     return stat_now, background
@@ -279,19 +304,26 @@ def bulk_probe_paths(
         return {}
     budget = budget if budget is not None else ProbeBudget(probe_mode)
     now = time.monotonic()
-    out = {path: _size_result(size) for path, size in _l1_hits(wanted, now).items()}
+    namespace = path_index.resolver_namespace(config.DATA_DIR)
+    out = _l1_hits(wanted, now, namespace)
     rest = [path for path in wanted if path not in out]
     if not rest:
         return out
-    namespace = path_index.resolver_namespace(config.DATA_DIR)
+    path_map = load_path_map(config.DATA_DIR)
     index = (
         _load_index(namespace, rest, state_db_path=state_db_path) if trust_index else {}
     )
-    recent = _recent_answers(rest, index, now) if budget.serves_recent else {}
-    stat_now, background = _triage(rest, index, budget, out, recent)
-    sizes = {path: _stat_size(resolve_asset_path(path).resolved) for path in stat_now}
-    out.update((path, _size_result(size)) for path, size in sizes.items())
-    _record_stats(namespace, sizes, now, state_db_path=state_db_path)
+    recent = (
+        _recent_answers(rest, index, now, path_map, namespace) if budget.serves_recent else {}
+    )
+    stat_now, background = _triage(rest, index, budget, out, recent, path_map)
+    resolved = {path: resolve_asset_path(path).resolved for path in stat_now}
+    measured = {
+        path: _size_result(_stat_size(target), str(target) if target is not None else None)
+        for path, target in resolved.items()
+    }
+    out.update(measured)
+    _record_stats(namespace, measured, now, state_db_path=state_db_path)
     if background:
         path_availability_refresh.schedule(background)
     return out
@@ -349,6 +381,11 @@ def _alternate_paths(
     }
 
 
+def _first_present(results: Sequence[PathProbeResult | None]) -> PathProbeResult | None:
+    """The copy a row uses: its primary when present, else its first present alternate."""
+    return next((result for result in results if _is_present(result)), None)
+
+
 def classify_availability(
     path: str | None,
     results: Sequence[PathProbeResult | None],
@@ -363,7 +400,7 @@ def classify_availability(
     is meaningless).
     """
     statuses = {result.status for result in results if result is not None}
-    if "present" in statuses:
+    if _first_present(results) is not None:
         return "present"
     if PENDING in statuses:
         return PENDING
@@ -440,6 +477,7 @@ def classify_rows(
     budget: ProbeBudget,
     *,
     distrust_index_sids: set[str] | None = None,
+    selected_probes: dict[str, PathProbeResult] | None = None,
 ) -> dict[str, FileAvailabilityStatus]:
     """Status per stable_id, consulting ``track_locations`` alternates for
     every row whose primary path is not already known present. Alternates
@@ -468,12 +506,16 @@ def classify_rows(
     alt_probed = bulk_probe_paths(trusted, budget=budget)
     if forced:
         alt_probed.update(bulk_probe_paths(forced, budget=budget, trust_index=False))
+    results_by_sid = {
+        sid: [primary[sid], *(alt_probed.get(p) for p in alternates.get(sid, []))]
+        for sid in folder_by_sid
+    }
+    if selected_probes is not None:
+        for sid, results in results_by_sid.items():
+            if (selected := _first_present(results)) is not None:
+                selected_probes[sid] = selected
     return {
-        sid: classify_availability(
-            path,
-            [primary[sid], *(alt_probed.get(p) for p in alternates.get(sid, []))],
-            awaiting_volume=sid in awaiting,
-        )
+        sid: classify_availability(path, results_by_sid[sid], awaiting_volume=sid in awaiting)
         for sid, path in folder_by_sid.items()
     }
 

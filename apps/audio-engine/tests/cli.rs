@@ -213,7 +213,8 @@ fn render_reports_what_a_scorer_needs() {
     // The plan comes back with the render, verbatim and hashed.
     assert_eq!(s["plan"], plan);
     assert_eq!(s["plan_sha256"].as_str().unwrap().len(), 64);
-    assert_eq!(s["master_tempo"], false);
+    // Master Tempo is on by default (a loaded deck counts, not only a command).
+    assert_eq!(s["master_tempo"], true);
     // The summary names the channel count, and every file it wrote carries that count (WAV bytes 22..24).
     let channels = s["channels"].as_u64().expect("summary channels");
     for f in [d.join("mix.wav"), d.join("decks").join("deck1.wav"), d.join("decks").join("deck2.wav")] {
@@ -728,7 +729,7 @@ fn mp3_fixture() -> std::path::PathBuf {
 
 /// A tracked AAC clip (stereo, 44.1 kHz, about 60 s).
 fn m4a_fixture() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/am-contra-heart-peripheral-cfg-a.m4a")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/failure-edge-cfg-a.m4a")
 }
 
 /// A tracked mono AAC clip (22.05 kHz, about 3 s) with an edit list.

@@ -154,10 +154,10 @@ describe('pairing-library-indicators', () => {
 		assert.equal(wired.length, tables.length, 'every TrackTable needs pairedPartnerIds wired');
 		const scripts = [ast.instance].map((s) => source.slice(s.start, s.end)).join('\n');
 		assert.match(scripts, /const pairingIndex = new PairingIndex\(/);
-		// A failed lookup must reach the operator as an error toast (Sol P1, r4161786229).
-		assert.match(
-			scripts,
-			/new PairingIndex\(\{\s*onError: \(message\) => pushToast\(message, 'error'\)/
-		);
+		// A failed lookup from EITHER store reaches the operator as exactly one error
+		// toast (Sol P1, r4161786229 and the filtered-index failure on 90c34f5db): one
+		// outage effect reads both errors and toasts once per outage.
+		assert.match(scripts, /const pairingOutage = pairingOutageToaster\(/);
+		assert.match(scripts, /\$effect\(\(\) => pairingOutage\(pairingGraph, pairingIndex\)\)/);
 	});
 });

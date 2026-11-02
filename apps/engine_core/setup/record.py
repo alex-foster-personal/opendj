@@ -145,6 +145,19 @@ def set_last_import(data_dir: Path, outcome: dict[str, Any]) -> SetupRecord:
     )
 
 
+def set_folder_watch_roots(data_dir: Path, roots: list[str]) -> SetupRecord:
+    """Replace the configured folder-rescan roots, keeping setup history."""
+    current = read(data_dir)
+    return write(
+        data_dir,
+        SetupRecord(
+            dismissed=current.dismissed,
+            last_import=current.last_import,
+            folder_watch_roots=list(dict.fromkeys(roots)),
+        ),
+    )
+
+
 __all__ = [
     "RECORD_NAME",
     "RECORD_VERSION",
@@ -153,6 +166,7 @@ __all__ = [
     "read",
     "record_path",
     "set_dismissed",
+    "set_folder_watch_roots",
     "set_last_import",
     "write",
 ]

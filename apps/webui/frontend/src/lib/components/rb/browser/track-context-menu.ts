@@ -1,6 +1,6 @@
 /** Track context-menu targeting and first-action runners (issue #2286). */
 
-import { getTrack } from '$lib/api';
+import { createPairing, getTrack } from '$lib/api';
 import { backfillProgress, enqueueBackfill } from '$lib/rb/api-analysis-backfill';
 import {
 	describeReanalyzePlan,
@@ -14,6 +14,7 @@ import {
 import { revealTrack } from '$lib/rb/api-track-reveal';
 import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
+import { announcePairingsChanged } from '$lib/rb/pairings-changed';
 
 export const REVEAL_TRACK_TITLE = 'POST /api/v1/tracks/{stable_id}:reveal';
 
@@ -62,6 +63,15 @@ export function menuTargetIds(
 	selectedIds: readonly string[]
 ): string[] {
 	return selectedOrders.includes(row.order) ? [...selectedIds] : [row.stable_id];
+}
+
+/**
+ * The library rows the menu's target covers, by position. Duplicate rows share
+ * one stable id, so `menuTargetIds(...).length` can be smaller than the rows the
+ * user selected. PAIR-10 counts rows, so the pair rule reads this instead.
+ */
+export function menuTargetRowCount(row: { order: number }, selectedOrders: readonly number[]): number {
+	return selectedOrders.includes(row.order) ? selectedOrders.length : 1;
 }
 
 export function isStreamingUri(path: string | null | undefined): boolean {
@@ -200,4 +210,32 @@ export async function runReanalyze(
 	} catch (error) {
 		deps.pushToast(error instanceof Error ? error.message : String(error), 'error');
 	}
+}
+
+/**
+ * PAIR-10: "Pair these 2 tracks" makes a LOOSE pair: no snapshot, so loading
+ * either track later loads it like any other. The route publishes
+ * `library.changed` kind=pairings, which repaints the paired-row edges.
+ */
+export async function runPairTracks(targetIds: readonly string[]): Promise<void> {
+	if (targetIds.length !== 2 || targetIds[0] === targetIds[1]) {
+		pushToast('Pairing needs exactly 2 different tracks', 'error');
+		return;
+	}
+	const [from_stable_id, to_stable_id] = targetIds as [string, string];
+	try {
+		await createPairing({
+			from_stable_id,
+			to_stable_id,
+			direction: '<->',
+			source: 'manual',
+			notes: null,
+			snapshot: null
+		});
+	} catch (error) {
+		pushToast(error instanceof Error ? error.message : String(error), 'error');
+		return;
+	}
+	announcePairingsChanged();
+	pushToast('Paired 2 tracks (loose: no alignment)', 'info');
 }

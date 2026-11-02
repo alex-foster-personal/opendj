@@ -115,6 +115,7 @@
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/transition-in-cue-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/autoplay-error-hunt-data/", "kind": "build_output", "data_class": null},
+{"pattern": "apps/webui/frontend/tests/e2e/fixtures/pairing-arrow-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-data/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-manifest.json", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/test-results/", "kind": "build_output", "data_class": null},

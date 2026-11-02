@@ -7,10 +7,15 @@ how: `(private path)` and
 
 The shell does what the Tauri shell does and nothing more. It starts or adopts
 the bundled engine, supervises it, serves shell health, and opens one Chromium
-window onto the engine's loopback origin. The page reaches four native
-features (folder picker, open in browser, quit, updater) through
-`window.opendjShell`, and the web UI's `src/lib/shell/native-shell.ts` picks
-whichever shell is present.
+window onto the engine's loopback origin. The page reaches five native
+features (folder picker, open in browser, quit, updater, CoreAudio output
+listing for CUEOUT-26) through `window.opendjShell`, and the web UI's
+`src/lib/shell/native-shell.ts` picks whichever shell is present.
+
+On macOS the shell runs `payload/bin/odj-output-probe list` (staged with every
+engine payload) and exposes the JSON array through `listCoreAudioOutputs` on the
+preload bridge. Linux and Windows Electron builds return null so the UI keeps
+browser-only device enumeration.
 
 Known quirks and gotchas (data dirs, signing, permissions, CDP, CI): see
 [`(private path)`](../../../docs/desktop/electron-quirks.md).
@@ -24,7 +29,7 @@ Known quirks and gotchas (data dirs, signing, permissions, CDP, CI): see
 | `src/engine.ts`, `src/engine-log.ts`, `src/shell-log.ts` | `engine.rs`, `engine_log.rs` |
 | `src/launch.ts`, `src/boot.ts` | `launch.rs`, `start_engine` in `main.rs` |
 | `src/supervisor.ts` | `supervisor.rs` (INSTALL-23) |
-| `src/shell-health.ts`, `src/output-health.ts` | `shell_health.rs`, `output_health.rs` (probe pending, D7) |
+| `src/shell-health.ts`, `src/output-health.ts` | `shell_health.rs`, `output_health.rs`; `list` via `odj-output-probe` |
 | `src/updater.ts` | the updater plugin (OPS-15) |
 | `src/policy.ts` | flags, window size, build identity, trusted origins, permissions |
 

@@ -30,8 +30,10 @@
 
 import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 
-/** Preview tempo behaviour. Persisted as a pref, read per preview start. */
-export type PreviewBeatSync = 'off' | 'tempo';
+/** Preview tempo behaviour. Persisted as a pref, read per preview start.
+ * 'phase' (CUEOUT-6060) also snaps the start onto the master's bar and phase
+ * (`preview-beat-snap.ts`); its tempo half is this file's, unchanged. */
+export type PreviewBeatSync = 'off' | 'tempo' | 'phase';
 
 /**
  * Pitch range the match must fit inside, in percent.

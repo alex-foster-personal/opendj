@@ -69,6 +69,16 @@ def test_folder_imports_accumulate_watch_roots_independently_of_last_import(
     assert saved.folder_watch_roots == ["/one", "/two"]
 
 
+def test_setting_folder_watch_roots_replaces_the_configured_scan_targets(
+    data_dir: Path,
+) -> None:
+    record.set_last_import(data_dir, {"kind": "folder", "roots": ["/old"]})
+
+    record.set_folder_watch_roots(data_dir, ["/new", "/other"])
+
+    assert record.read(data_dir).folder_watch_roots == ["/new", "/other"]
+
+
 @pytest.mark.parametrize(
     "contents",
     [

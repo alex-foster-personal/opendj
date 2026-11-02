@@ -43,7 +43,7 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
-import { COMPATIBLE_KEY_SHIFT_MAX, type KeySyncStatus } from '$lib/player/key/camelot';
+import { COMPATIBLE_KEY_SHIFT_MAX, KEY_NUDGE_STEPS, isKeyNudgeStep, readKeyNudgeStep, writeKeyNudgeStep, type KeyNudgeStep, type KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
@@ -106,6 +106,7 @@ import {
 	type GridEditIntent
 } from '$lib/rb/grid-edit-command';
 import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
+import { onPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
@@ -199,6 +200,7 @@ import {
 	type TrackInfoDeck
 } from '$lib/rb/track-info-state.svelte';
 import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler, uiPrefs } from '$lib/rb/prefs.svelte';
+import { TRACK_LOAD_RESET_IDS, readTrackLoadReset, writeTrackLoadReset, type TrackLoadResetPrefs } from '$lib/rb/track-load-reset';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
 export {
@@ -299,6 +301,8 @@ export type PerformanceCommand =
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; quantize?: false; if_load_generation?: number }
 	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
+	/** DECKUX-6794: snapped jump onto the fixed bar grid; the sign is the direction, |bars| the block (4, or 8 with Shift). */
+	| { type: 'grid_jump'; deck: DeckId; bars: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
 	| { type: 'tempo'; deck: DeckId; ratio: number }
@@ -332,7 +336,7 @@ export type PerformanceCommand =
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
-	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
+	| { type: 'key_nudge'; deck: DeckId; semitones: number }
 	// GRIDEDIT-6235/-6235d: the deck's grid adjust / grid shift, one press (or a
 	// reset of one half) on the stored grid edit of the track the deck holds.
 	// Queued on the deck's persistence scope, as hot-cue writes are: a preset's
@@ -379,6 +383,10 @@ export type PerformanceCommand =
 	/** TOPVIEW-04: whether the performance-pad rows are shown (the top bar's
 	 * PAD button; persists uiPrefs.show_pads). */
 	| { type: 'show_pads'; enabled: boolean }
+	/** DECKGAP-7691: which mixer values reset when a track loads (one choice, every deck). */
+	| { type: 'track_load_reset'; level: boolean; stems: boolean; eq: boolean; trim: boolean; filter: boolean }
+	/** DECKGAP-7691b: the key nudge arrows' step size, shared by every deck. */
+	| { type: 'key_nudge_step'; step: KeyNudgeStep }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
 	 * of the AutoPlay button. Real (not stubbed) - see auto-play-next.ts /
 	 * auto-play-next.svelte.ts for the approximate loop/duck/cut it arms. */
@@ -597,6 +605,18 @@ export interface PerformanceState {
 		route: 'cue' | 'main_practice' | 'split_right' | null;
 		/** CUEOUT-15 R6: 1, or the tempo-match rate against the master deck. */
 		rate: number;
+		/** CUEOUT-6060: the bar and phase a snapped preview started on, else null;
+		 * `snap_refusal` says why a 'phase' preview played unsnapped. */
+		snap: {
+			master_beat_number: 1 | 2 | 3 | 4;
+			beat_phase: number;
+			offset_ms: number;
+			clamped: boolean;
+			/** True when the master and preview lock only at half or double tempo:
+			 * the start is in phase but the bar counts differ (beat-sync-fold). */
+			tempo_folded: boolean;
+		} | null;
+		snap_refusal: string | null;
 		/** Decoded preview audio held right now, and the cap it is held under.
 		 * Readable here because "how much memory is the preview holding" is a
 		 * question an agent has to be able to answer without a profiler. */
@@ -629,6 +649,10 @@ export interface PerformanceState {
 		perf_view: PerfView;
 		/** TOPVIEW-04: the performance-pad rows are shown. */
 		show_pads: boolean;
+		/** DECKGAP-7691: which mixer values reset when a track loads. */
+		track_load_reset: TrackLoadResetPrefs;
+		/** DECKGAP-7691b: the key nudge arrows' step size. */
+		key_nudge_step: KeyNudgeStep;
 		/** Stored pref; 'auto' follows the skin. */
 		waveform_design: WaveformDesignPref;
 		/** What the waveforms actually paint (auto resolved through the skin). */
@@ -1591,6 +1615,18 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'key_nudge_step') {
+		_exactKeys(record, ['type', 'step']);
+		if (!isKeyNudgeStep(record.step)) {
+			throw new TypeError(`key_nudge_step step must be one of ${KEY_NUDGE_STEPS.join(', ')}; got ${String(record.step)}`);
+		}
+		return { type, step: record.step };
+	}
+	if (type === 'track_load_reset') {
+		_exactKeys(record, ['type', ...TRACK_LOAD_RESET_IDS]);
+		const [level, stems, eq, trim, filter] = TRACK_LOAD_RESET_IDS.map((id) => _boolean(id, record[id]));
+		return { type, level, stems, eq, trim, filter };
+	}
 	if (type === 'auto_play_next_arm') {
 		_exactKeys(record, ['type', 'intent', 'out_deck', 'in_deck', 'from_ms']);
 		if (record.intent !== undefined && !TRANSITION_INTENTS.includes(record.intent as TransitionIntent)) {
@@ -1909,6 +1945,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`beats must be a non-zero integer; got ${beats}`);
 		}
 		return { type, deck, beats };
+	} else if (type === 'grid_jump') {
+		_exactKeys(record, ['type', 'deck', 'bars']);
+		const bars = _finite('bars', record.bars);
+		if (!Number.isInteger(bars) || bars === 0) {
+			throw new RangeError(`bars must be a non-zero integer; got ${bars}`);
+		}
+		return { type, deck, bars };
 	} else if (type === 'loop_interval_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -1962,10 +2005,19 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
 	} else if (type === 'key_nudge') {
 		_exactKeys(record, ['type', 'deck', 'semitones']);
-		if (record.semitones !== -1 && record.semitones !== 1) {
-			throw new RangeError(`semitones must be -1 or 1, got ${String(record.semitones)}`);
+		const semitones = record.semitones;
+		if (
+			typeof semitones !== 'number' ||
+			!Number.isInteger(semitones) ||
+			semitones === 0 ||
+			semitones < -12 ||
+			semitones > 12
+		) {
+			throw new RangeError(
+				`semitones must be a non-zero integer from -12 to 12, got ${String(semitones)}`
+			);
 		}
-		return { type, deck, semitones: record.semitones };
+		return { type, deck, semitones };
 	} else if (type === 'grid_edit') {
 		_exactKeys(record, ['type', 'deck', 'edit']);
 		return { type, deck, edit: parseGridEditIntent(record.edit) };
@@ -2114,15 +2166,27 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
  * `state_unsafe_mutation` on any `$state` write from there. Queries must
  * not mutate reactive state while a consumer derives or renders the snapshot.
  * An expired record is reported as null and left for the command paths and
- * session lifecycle owners (the next arm, unload, or session teardown) to
- * clear or replace. */
+ * session lifecycle owners (the next arm, unload, session teardown, or an
+ * audio-graph rebuild that replaces the AudioContext) to clear or replace. */
+function _remainingMsUntilContextTime(targetContextSec: number, readContextSec: () => number): number | null {
+	try {
+		return (targetContextSec - readContextSec()) * 1000;
+	} catch {
+		// Graph rebuild/teardown can land between an armed record and the next read.
+		return null;
+	}
+}
+
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {
 	const armed = waveformSeekArmed[deckId];
 	if (armed === null) return null;
-	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) return null;
+	const remainingMs = _remainingMsUntilContextTime(
+		armed.target_context_time,
+		() => _hotCueDriver.contextTimeNowSec()
+	);
+	if (remainingMs === null || remainingMs <= 0) return null;
 	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -2131,8 +2195,11 @@ function _hotCueArmedSnapshot(
 ): { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null {
 	const armed = hotCueArmed[deckId];
 	if (armed === null) return null;
-	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) return null;
+	const remainingMs = _remainingMsUntilContextTime(
+		armed.target_context_time,
+		() => _hotCueDriver.contextTimeNowSec()
+	);
+	if (remainingMs === null || remainingMs <= 0) return null;
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -2141,8 +2208,11 @@ function _quantizedLaunchArmedSnapshot(
 ): { remaining_ms: number; launch_at_context_sec: number } | null {
 	const armed = quantizedLaunchArmed[deckId];
 	if (armed === null) return null;
-	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) return null;
+	const remainingMs = _remainingMsUntilContextTime(
+		armed.launch_at_context_sec,
+		() => _quantizedLaunchDriver.contextTimeNowSec()
+	);
+	if (remainingMs === null || remainingMs <= 0) return null;
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
@@ -2407,6 +2477,17 @@ export function queryPerformanceState(): PerformanceState {
 			duration_ms: previewCue.duration_ms,
 			route: previewCue.route,
 			rate: previewCue.rate,
+			snap:
+				previewCue.snap === null
+					? null
+					: {
+							master_beat_number: previewCue.snap.masterBeatNumber,
+							beat_phase: previewCue.snap.beatPhase,
+							offset_ms: previewCue.snap.offsetSec * 1000,
+							clamped: previewCue.snap.clamped,
+							tempo_folded: previewCue.snap.tempoNormalization !== 1
+						},
+			snap_refusal: previewCue.snap_refusal,
 			cache_tracks: previewStats.tracks,
 			cache_bytes: previewStats.bytes,
 			cache_budget_bytes: previewStats.budget_bytes
@@ -2451,6 +2532,8 @@ export function queryPerformanceState(): PerformanceState {
 			auto_play_two_deck: uiPrefs.auto_play_two_deck,
 			perf_view: uiPrefs.perf_view,
 			show_pads: uiPrefs.show_pads,
+			track_load_reset: { ...readTrackLoadReset() },
+			key_nudge_step: readKeyNudgeStep(),
 			waveform_design: uiPrefs.waveform_design,
 			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
@@ -2608,6 +2691,8 @@ export function performanceCommandQueueScopes(
 		// TOPVIEW: the view icons and the PAD button are preference writes with no deck.
 		command.type === 'set_perf_view' ||
 		command.type === 'show_pads' ||
+		command.type === 'track_load_reset' ||
+		command.type === 'key_nudge_step' ||
 		command.type === 'set_waveform_design' ||
 		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
@@ -2660,6 +2745,7 @@ export function performanceCommandQueueScopes(
 		// see armHotCueTrigger), so grouping with seek/play cannot stall.
 		command.type === 'hot_cue_trigger' ||
 		command.type === 'beat_jump' ||
+		command.type === 'grid_jump' ||
 		command.type === 'tempo' ||
 		command.type === 'beat_sync' ||
 		command.type === 'sync_mode' ||
@@ -2868,6 +2954,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.engageBeatLoop(command.deck, command.beats, command.start_ms);
 	} else if (command.type === 'beat_jump') {
 		await engine.beatJump(command.deck, command.beats);
+	} else if (command.type === 'grid_jump') {
+		const plan = await engine.gridJump(command.deck, command.bars);
+		// A refusal moves nothing and says why (DECKUX-6794 AC-13), the way a
+		// grid-inert control does, so a key press is never a silent no-op.
+		if (plan.kind === 'refused') pushToast(`Deck ${command.deck}: ${plan.reason}`, 'info');
 	} else if (command.type === 'loop_interval_mode') {
 		setLoopIntervalMode(command.deck, command.enabled);
 	} else if (command.type === 'loop_interval_base') {
@@ -3131,6 +3222,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setPerfView(command.view);
 	} else if (command.type === 'show_pads') {
 		setShowPads(command.enabled);
+	} else if (command.type === 'key_nudge_step') {
+		writeKeyNudgeStep(command.step);
+	} else if (command.type === 'track_load_reset') {
+		const { level, stems, eq, trim, filter } = command;
+		writeTrackLoadReset({ level, stems, eq, trim, filter });
 	} else if (command.type === 'auto_play_next_arm') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
@@ -3339,6 +3435,16 @@ function _startCommandSession(): number {
 	return _commandGeneration;
 }
 
+function _clearPerformanceArmedRecords(): void {
+	for (const deckId of DECK_IDS) {
+		waveformSeekArmed[deckId] = null;
+		hotCueArmed[deckId] = null;
+		quantizedLaunchArmed[deckId] = null;
+	}
+}
+
+onPerformanceArmedContextReset(_clearPerformanceArmedRecords);
+
 function _invalidateCommandSession(generation: number): void {
 	_assertCommandSession(generation);
 	_activeCommandSession = null;
@@ -3352,11 +3458,7 @@ function _invalidateCommandSession(generation: number): void {
 	// Armed records carry a target time on the route-owned AudioContext, which
 	// dies with this session: a record surviving into the next mount would be
 	// measured against an uninitialised or brand-new clock (#4011 review).
-	for (const deckId of DECK_IDS) {
-		waveformSeekArmed[deckId] = null;
-		hotCueArmed[deckId] = null;
-		quantizedLaunchArmed[deckId] = null;
-	}
+	_clearPerformanceArmedRecords();
 }
 
 /** The value of the last master_volume command this page executed, or null

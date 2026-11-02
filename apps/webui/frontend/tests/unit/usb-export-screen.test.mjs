@@ -299,9 +299,9 @@ test('the shell quit path reaches the veto and the engine shutdown does not (sou
 		/if \(options\.force !== true && quitVetoed\(\)\) \{\s*closeQuitConfirm\(\);\s*return;\s*\}\s*const action = planQuitRequest\(/,
 		'a user quit checks the veto before it can confirm or exit'
 	);
-	const install = gate.slice(gate.indexOf('export function installQuitGate'));
+	const install = gate.slice(gate.indexOf('function installShellQuitBusListener'));
 	assert.match(install, /const requestQuit = \(\): void => handleQuitRequest\(\{ source: 'shell' \}, resolved\);/);
-	assert.match(install, /\.__OPENDJ_requestQuit = requestQuit;/);
+	assert.match(install, /\.__OPENDJ_requestQuit =\s*requestQuit;/);
 	assert.match(install, /handleQuitRequest\(\{ force: true, source: 'engine' \}, resolved\);/);
 	// Both shells hand window close and Cmd-Q to that hook.
 	const electron = read('../../../../desktop/electron/src/main.ts');

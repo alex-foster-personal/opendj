@@ -40,7 +40,14 @@
 		type ColId
 	} from '$lib/rb/library-column-widths';
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
-	import { isPairedRow } from '$lib/rb/pairing-row';
+	import {
+		nearestOffscreenPartner,
+		partnerIndices,
+		isPairedRow,
+		pairFoldCenterPx,
+		pairFoldGroupMasterCenterPx,
+		pairRowState
+	} from '$lib/rb/pairing-row';
 	import {
 		genreCellTitle,
 		listingGenre,
@@ -476,6 +483,7 @@
 		scrollTop,
 		browseScroll = null,
 		removable = false,
+		readOnly = false,
 		reorderable = false,
 		reorderBlocked = null,
 		onrestoreorder = undefined,
@@ -500,6 +508,9 @@
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId = null as string | null,
 		pairedPartnerIds = new Set<string>() as ReadonlySet<string>,
+		pairPartners,
+		pairError,
+		pairPulses = false,
 		/** pin 02717d4ea496. Rendered INSIDE the table region, pinned just
 		 * below the sticky column-header row, so a panel-owned status
 		 * surface (the library load indicator) cannot push the headers down
@@ -553,6 +564,8 @@
 		/** add-remove-reorder-tracks: true when the pane is a real playlist
 		 * (not All Tracks / blank) - shows the per-row remove control. */
 		removable?: boolean;
+		/** True when the pane is read-only (Spotify, a taglist, an autolist). */
+		readOnly?: boolean;
 		/** True when removable AND the pane is in its natural membership
 		 * order (no client sort/search) - drag handles only render then,
 		 * since row.order would otherwise not match the visual position. */
@@ -629,6 +642,15 @@
 		suggestHoverId?: string | null;
 		/** Purple pairing underline: partner ids of the current master. */
 		pairedPartnerIds?: ReadonlySet<string>;
+		/** PAIR-09: every paired track's partners (both directions), for the
+		 * zigzag edge on every paired row and its crackle when a partner is loaded. */
+		/** Required: an omitted map must not read as "no pairings". */
+		pairPartners: ReadonlyMap<string, ReadonlySet<string>>;
+		/** Non-null while the pairing list failed to load: edges are UNKNOWN,
+		 * so the table says so instead of reading as "no pairings". */
+		pairError: string | null;
+		/** PAIR-09: loop the earlier pulses on live rows (library.pair_edge_pulses). */
+		pairPulses?: boolean;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
 		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
@@ -1167,6 +1189,9 @@
 	 * font, never with a window resize, so this is not the listener the
 	 * pin's "lazy on resize" requirement was written against. */
 	let masterFoldBadgeWidth = $state(0);
+	/** PAIR-09: the PAIR arrow's own width, for the same clamp and for sitting
+	 * beside MASTER when both point off the same edge. */
+	let pairFoldWidth = $state(0);
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
@@ -1345,6 +1370,50 @@
 		})
 	);
 
+	/** PAIR-09 fold cue: hidden while any of the master's partners is on screen,
+	 * else pointing at the nearest off-screen partner, which a click jumps to. */
+	const pairRowIndices = $derived(partnerIndices(rows, pairedPartnerIds));
+	const pairTarget = $derived(
+		nearestOffscreenPartner(
+			pairRowIndices,
+			(rowIndex) =>
+				masterFoldVisibility({
+					rowIndex,
+					rowHeight,
+					scrollTop: liveScrollTop,
+					viewportHeight,
+					headerOffsetPx: TRACK_TABLE_THEAD_PX
+				}),
+			(liveScrollTop + viewportHeight / 2) / Math.max(1, rowHeight)
+		)
+	);
+	const pairIndex = $derived(pairTarget?.index ?? -1);
+	const pairFold = $derived(pairTarget?.fold ?? null);
+	const masterFoldSameEdge = $derived(masterFold !== null && masterFold === pairFold);
+	/** MASTER badge centre. Beside the PAIR arrow it moves as one group with the arrow,
+	 * so the arrow keeps its 6px gap to MASTER's right at the wrap's right edge (PAIR-09). */
+	const masterFoldLeftPx = $derived.by(() => {
+		const centre = masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2);
+		if (!masterFoldSameEdge || wrapWidth <= 0) return centre;
+		return pairFoldGroupMasterCenterPx({
+			masterCenterPx: centre,
+			masterWidthPx: masterFoldBadgeWidth,
+			pairWidthPx: pairFoldWidth,
+			wrapWidthPx: wrapWidth
+		});
+	});
+	const pairFoldLeftPx = $derived.by(() => {
+		if (masterFoldSameEdge) {
+			return pairFoldCenterPx({
+				titleCenterPx: masterFoldLeftPx,
+				masterOnSameEdge: true,
+				masterWidthPx: masterFoldBadgeWidth,
+				pairWidthPx: pairFoldWidth
+			});
+		}
+		return masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, pairFoldWidth / 2);
+	});
+
 	/** Suggest-next hover: jump to row while hovered, restore scroll on leave. */
 	let _suggestSavedScroll: number | null = null;
 	$effect(() => {
@@ -1379,6 +1448,19 @@
 		if (wrapEl === null || masterIndex < 0) return;
 		const target = scrollTopForRowIndex({
 			rowIndex: masterIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: viewportHeight * 0.35
+		});
+		wrapEl.scrollTop = target;
+		liveScrollTop = target;
+		onscrollcursor(target);
+	}
+
+	function jumpToPair(): void {
+		if (wrapEl === null || pairIndex < 0) return;
+		const target = scrollTopForRowIndex({
+			rowIndex: pairIndex,
 			rowHeight,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
 			offsetFromTopPx: viewportHeight * 0.35
@@ -1639,6 +1721,7 @@
 		{onremovefromlibrary}
 		{onremoverow}
 		{removable}
+		{readOnly}
 		onshowinplaylists={(row, x, y) => {
 			playlistsMenu = { x, y, stableId: row.stable_id };
 		}}
@@ -1652,7 +1735,7 @@
 		<button
 			type="button"
 			class="master-fold above"
-			style={`left:${masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
+			style={`left:${masterFoldLeftPx}px`}
 			onclick={jumpToMaster}
 			title="Master track is above - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
@@ -1664,13 +1747,40 @@
 		<button
 			type="button"
 			class="master-fold below"
-			style={`left:${masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
+			style={`left:${masterFoldLeftPx}px`}
 			onclick={jumpToMaster}
 			title="Master track is below - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
 		>
 			<SortArrowIcon asc={false} /> MASTER
 		</button>
+	{/if}
+	{#if pairFold !== null}
+		<!-- PAIR-09: the master's paired track is off screen. A bare purple
+		     bodkin arrow (a cursor head with no tail), beside MASTER when both
+		     point off the same edge. -->
+		<button
+			type="button"
+			class="pair-fold {pairFold}"
+			data-testid="pair-fold"
+			style={`left:${pairFoldLeftPx}px`}
+			onclick={jumpToPair}
+			title={`Paired track is ${pairFold} - click to jump`}
+			aria-label={`Paired track is ${pairFold} - jump to it`}
+			bind:clientWidth={pairFoldWidth}
+		>
+			<svg viewBox="0 0 12 13" width="14" height="15" aria-hidden="true">
+				<path d="M6 0.6 L11.4 12.4 L6 9.2 L0.6 12.4 Z" />
+			</svg>
+		</button>
+	{/if}
+	{#if pairError !== null}
+		<!-- PAIR-09: a failed pairing load leaves the edges unknown. Say so for
+		     as long as it lasts, rather than drawing the library as if it had
+		     no pairings. -->
+		<span class="pair-unknown" role="status" data-testid="pair-unknown" title={pairError}>
+			Pairings unavailable
+		</span>
 	{/if}
 	{#if bodyOverlay !== undefined}
 		<!-- `bind:clientHeight` only lands after the first resize callback, so on
@@ -1703,6 +1813,7 @@
 		<table
 			data-testid="track-table"
 			class={hiddenColumnClasses(uiPrefs.library_hidden_columns)}
+			class:rb-pair-pulses={pairPulses}
 			style={`width:${tableWidthPx}px`}
 			role="grid"
 			aria-label="Tracks"
@@ -2078,6 +2189,8 @@
 							bpmCellCompatibility(row.bpm)?.compatible === true}
 						class:rb-row-key-compat={keyCompat(row.key)}
 						class:rb-row-paired={isPairedRow(pairedPartnerIds, row.stable_id)}
+						class:rb-row-pair={pairRowState(pairPartners, loadedIds, row.stable_id) !== 'none'}
+						class:rb-row-pair-live={pairRowState(pairPartners, loadedIds, row.stable_id) === 'live'}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
@@ -3251,8 +3364,194 @@
 	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #d45a4f); }
 	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #e14238); }
 	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px var(--rb-bpm-mismatch-ring, #ff2f25); }
-	tr.rb-row-paired td {
-		box-shadow: inset 0 -2px 0 color-mix(in srgb, #a855f7 85%, transparent);
+	/* PAIR-09 (the maintainer, Thu 8 Oct 2026): a paired row gets a purple zigzag ring,
+	 * "as if being microwaved". the maintainer picked the Cmd K bar's "G · Comet" edge
+	 * (Cmd K thread, round 3, same day), so both surfaces draw the same ring:
+	 * --rb-pair mixed 62% with --rb-text-dim at 40% opacity, drawn inside the
+	 * row on a rect inset 1px, with jags every 5px alternating in and out
+	 * (10px period, about 0.8px peak to peak). Nothing draws outside the row,
+	 * so stacked pairs never overlap. The ring rides the row's ::after: a fill
+	 * cut to the zigzag by four SVG mask tiles, one per side, which replaces
+	 * the separator line. Not ::before: Chrome lays a row's ::before out ahead
+	 * of its cells and shifts every column one to the right.
+	 *
+	 * The comet: one pulse runs the whole way round once, clockwise from the
+	 * top left, in 0.85 s, fading in and back out along the lap (peak 95%)
+	 * with a fading trail behind it, then the ring stays still. It plays when
+	 * the row first draws as paired (scrolled into view, or the pairing just
+	 * landed) and once more each time the pointer enters the row. Four
+	 * gradient layers, one per side, carry the head; registered --pz-*
+	 * properties move it, so the animation is finite and costs nothing once
+	 * it ends. The master's partners (rb-row-paired) draw a slightly stronger
+	 * ring (52%) instead of a cell wash: a 7% purple wash pulled the muted
+	 * time column on a loaded light-theme row under AA (4.26:1), while the
+	 * ring paints only the row's edges.
+	 *
+	 * The looping in-row pulses this replaced stay behind the
+	 * library.pair_edge_pulses flag (default off), on .rb-pair-pulses. */
+	@property --pz-e {
+		syntax: '<percentage>';
+		inherits: false;
+		initial-value: 0%;
+	}
+	@property --pz-t {
+		syntax: '<percentage>';
+		inherits: false;
+		initial-value: -50%;
+	}
+	@property --pz-r {
+		syntax: '<percentage>';
+		inherits: false;
+		initial-value: -50%;
+	}
+	@property --pz-b {
+		syntax: '<percentage>';
+		inherits: false;
+		initial-value: -50%;
+	}
+	@property --pz-l {
+		syntax: '<percentage>';
+		inherits: false;
+		initial-value: -50%;
+	}
+	tbody tr.rb-row-pair {
+		--pz-ink: color-mix(in srgb, var(--rb-pair) 62%, var(--rb-text-dim));
+		--pz-base: color-mix(in srgb, var(--pz-ink) 40%, transparent);
+		--pz-hot: color-mix(in srgb, var(--pz-ink) 85%, transparent);
+		--pz-h: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 3' preserveAspectRatio='none'%3E%3Cpolyline points='0,1.9 5,1.1 10,1.9' fill='none' stroke='%23000' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+		--pz-v: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 10' preserveAspectRatio='none'%3E%3Cpolyline points='1.9,0 1.1,5 1.9,10' fill='none' stroke='%23000' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+	}
+	tbody tr.rb-row-pair::after {
+		top: 1px;
+		bottom: 1px;
+		left: 1px;
+		right: 1px;
+		height: auto;
+		background-color: var(--pz-base);
+		mask-image: var(--pz-h), var(--pz-h), var(--pz-v), var(--pz-v);
+		mask-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+		mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px;
+		mask-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0;
+		/* The comet head, one layer per side; --pz-e is its fade envelope. */
+		--pz-head: color-mix(in srgb, var(--pz-ink) calc(var(--pz-e) * 0.95), transparent);
+		--pz-tail: color-mix(in srgb, var(--pz-ink) calc(var(--pz-e) * 0.35), transparent);
+		background-image:
+			linear-gradient(90deg, transparent calc(var(--pz-t) - 40%), var(--pz-tail) calc(var(--pz-t) - 14%), var(--pz-head) var(--pz-t), transparent var(--pz-t)),
+			linear-gradient(180deg, transparent calc(var(--pz-r) - 40%), var(--pz-tail) calc(var(--pz-r) - 14%), var(--pz-head) var(--pz-r), transparent var(--pz-r)),
+			linear-gradient(270deg, transparent calc(var(--pz-b) - 40%), var(--pz-tail) calc(var(--pz-b) - 14%), var(--pz-head) var(--pz-b), transparent var(--pz-b)),
+			linear-gradient(0deg, transparent calc(var(--pz-l) - 40%), var(--pz-tail) calc(var(--pz-l) - 14%), var(--pz-head) var(--pz-l), transparent var(--pz-l));
+		background-size: 100% 50%, 50% 100%, 100% 50%, 50% 100%;
+		background-repeat: no-repeat;
+		background-position: left top, right top, left bottom, left top;
+		animation: pair-comet 0.85s linear;
+	}
+	/* Entering the row adds a second, identical run; the first one keeps its
+	 * place in the list, so leaving the row does not replay it. */
+	tbody tr.rb-row-pair:hover::after {
+		animation: pair-comet 0.85s linear, pair-comet-again 0.85s linear;
+	}
+	tbody tr.rb-row-pair.rb-row-paired::after {
+		--pz-base: color-mix(in srgb, var(--pz-ink) 52%, transparent);
+	}
+	/* A wide row is mostly its two long sides, so the head spends 48% of the
+	 * lap on each and 2% on each end. Each side's head runs on past its end
+	 * so the trail drains out, and sin(pi p) is the fade envelope. */
+	@keyframes pair-comet {
+		0% { --pz-t: 0%; --pz-r: -50%; --pz-b: -50%; --pz-l: -50%; --pz-e: 0%; }
+		25% { --pz-e: 71%; }
+		48% { --pz-t: 100%; --pz-r: 0%; }
+		50% { --pz-r: 100%; --pz-b: 0%; --pz-e: 100%; }
+		62% { --pz-t: 145%; --pz-r: 145%; }
+		75% { --pz-e: 71%; }
+		98% { --pz-b: 100%; --pz-l: 0%; }
+		100% { --pz-t: 145%; --pz-r: 145%; --pz-b: 104%; --pz-l: 100%; --pz-e: 0%; }
+	}
+	@keyframes pair-comet-again {
+		0% { --pz-t: 0%; --pz-r: -50%; --pz-b: -50%; --pz-l: -50%; --pz-e: 0%; }
+		25% { --pz-e: 71%; }
+		48% { --pz-t: 100%; --pz-r: 0%; }
+		50% { --pz-r: 100%; --pz-b: 0%; --pz-e: 100%; }
+		62% { --pz-t: 145%; --pz-r: 145%; }
+		75% { --pz-e: 71%; }
+		98% { --pz-b: 100%; --pz-l: 0%; }
+		100% { --pz-t: 145%; --pz-r: 145%; --pz-b: 104%; --pz-l: 100%; --pz-e: 0%; }
+	}
+	/* library.pair_edge_pulses: the earlier looping pulses on live rows (a
+	 * partner on a deck), three 85% pulses about 80px long, 443px apart,
+	 * lapping clockwise at 260px/s while the jag depth swells a little. */
+	.rb-pair-pulses tbody tr.rb-row-pair-live::after {
+		/* One pulse per 443px on each side, moving with the clockwise lap. */
+		background-image:
+			linear-gradient(90deg, transparent 363px, var(--pz-hot) 363px 443px),
+			linear-gradient(270deg, transparent 363px, var(--pz-hot) 363px 443px),
+			linear-gradient(180deg, transparent 363px, var(--pz-hot) 363px 443px),
+			linear-gradient(0deg, transparent 363px, var(--pz-hot) 363px 443px);
+		background-size: 443px 50%, 443px 50%, 50% 443px, 50% 443px;
+		background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+		background-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0;
+		animation: pair-pulse 1.7s linear infinite;
+	}
+	@keyframes pair-pulse {
+		0% { background-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0; mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px; }
+		50% { mask-size: 10px 3.6px, 10px 3.6px, 3.6px 10px, 3.6px 10px; }
+		100% { background-position: left 443px top 0, left -443px bottom 0, left 0 top -443px, right 0 top 443px; mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		tbody tr.rb-row-pair::after,
+		tbody tr.rb-row-pair:hover::after,
+		.rb-pair-pulses tbody tr.rb-row-pair-live::after {
+			animation: none;
+			background-image: none;
+		}
+	}
+	/* PAIR-09: the PAIR fold arrow, the purple sibling of .master-fold. */
+	.pair-fold {
+		position: absolute;
+		transform: translateX(-50%);
+		z-index: 4;
+		display: inline-flex;
+		align-items: center;
+		padding: 2px;
+		border: 0;
+		background: transparent;
+		color: var(--rb-pair);
+		cursor: pointer;
+		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+		pointer-events: auto;
+	}
+	.pair-fold svg path {
+		fill: currentColor;
+		stroke: color-mix(in srgb, var(--rb-bg) 70%, transparent);
+		stroke-width: 0.8;
+		stroke-linejoin: round;
+	}
+	.pair-fold.above {
+		top: 22px;
+	}
+	.pair-fold.below {
+		bottom: 4px;
+	}
+	.pair-fold.below svg {
+		transform: rotate(180deg);
+	}
+	.pair-fold:hover svg {
+		translate: 0 -1px;
+	}
+	.pair-fold.below:hover svg {
+		translate: 0 1px;
+	}
+	.pair-unknown {
+		position: absolute;
+		right: 12px;
+		bottom: 4px;
+		z-index: 4;
+		padding: 1px 6px;
+		border: 1px dashed var(--rb-pair);
+		border-radius: 3px;
+		background: var(--rb-bg);
+		color: var(--rb-text);
+		font-size: 11px;
+		pointer-events: auto;
 	}
 	.c-bpm.bpm-far {
 		border-radius: 2px;

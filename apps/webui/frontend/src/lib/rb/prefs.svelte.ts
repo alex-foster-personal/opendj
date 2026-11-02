@@ -375,7 +375,9 @@ const DEFAULTS: RbUiPrefs = {
 	library_hidden_columns: [],
 	beat_sync_max: true,
 	deck_autocue: false,
-	preview_beat_sync: 'tempo',
+	// CUEOUT-6060 (the maintainer's recommended default, fleet-af #335 1A): a preview
+	// snaps onto the master's bar in phase. A stored 'tempo' is kept.
+	preview_beat_sync: 'phase',
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
 	auto_play_enabled: true,
@@ -717,10 +719,11 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 	if (
 		parsed.preview_beat_sync !== undefined &&
 		parsed.preview_beat_sync !== 'off' &&
-		parsed.preview_beat_sync !== 'tempo'
+		parsed.preview_beat_sync !== 'tempo' &&
+		parsed.preview_beat_sync !== 'phase'
 	) {
 		throw new Error(
-			`${STORAGE_KEY}: malformed prefs blob (preview_beat_sync is not off or tempo) - ` +
+			`${STORAGE_KEY}: malformed prefs blob (preview_beat_sync is not off, tempo or phase) - ` +
 				'clear the localStorage key to recover'
 		);
 	}

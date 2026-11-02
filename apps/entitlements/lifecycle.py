@@ -92,16 +92,19 @@ class LifecycleTransitionError(ValueError):
     """An event was applied to a state it has no transition from."""
 
 
+def _assert_member(name: str, value: str, allowed: tuple[str, ...]) -> None:
+    if value not in allowed:
+        raise ValueError(f"unknown {name} {value!r}; expected one of {list(allowed)}")
+
+
 def assert_state(state: str) -> None:
-    if state not in STATES:
-        raise ValueError(f"unknown lifecycle state {state!r}; expected one of {list(STATES)}")
+    _assert_member("lifecycle state", state, STATES)
 
 
 def transition(state: LifecycleState, event: LifecycleEvent) -> LifecycleState:
     """The state ``event`` moves ``state`` to. Raises on an undefined pair."""
     assert_state(state)
-    if event not in EVENTS:
-        raise ValueError(f"unknown lifecycle event {event!r}; expected one of {list(EVENTS)}")
+    _assert_member("lifecycle event", event, EVENTS)
     target = TRANSITIONS.get((state, event))
     if target is None:
         raise LifecycleTransitionError(
@@ -116,8 +119,7 @@ def transition(state: LifecycleState, event: LifecycleEvent) -> LifecycleState:
 def allows(state: LifecycleState, operation: Operation) -> bool:
     """May a subject in ``state`` perform ``operation``?"""
     assert_state(state)
-    if operation not in OPERATIONS:
-        raise ValueError(f"unknown operation {operation!r}; expected one of {list(OPERATIONS)}")
+    _assert_member("operation", operation, OPERATIONS)
     return operation in _ALLOWED[state]
 
 

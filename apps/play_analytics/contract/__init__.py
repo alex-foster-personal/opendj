@@ -36,6 +36,11 @@ EventsTable = Literal["events", "set_events"]
 #: than as a capture-time gate that would destroy the evidence.
 DEFAULT_MIN_AUDIBLE_S: float = 60.0
 
+#: Prefix of ``AnalyticsSchemaError`` when the configured SQLite path is absent.
+#: The web UI treats this 503 detail as an empty library (UX-COPY-02);
+#: ``query._open_readonly`` formats from it, keep ``analytics-api.ts`` aligned.
+MISSING_EVENT_STORE_DETAIL_PREFIX = "event store does not exist:"
+
 
 class AnalyticsSchemaError(RuntimeError):
     """The configured event store cannot satisfy the analytics contract."""
@@ -114,6 +119,7 @@ class PlayAnalyticsService(Protocol):
 __all__ = [
     "CONTRACT_VERSION",
     "DEFAULT_MIN_AUDIBLE_S",
+    "MISSING_EVENT_STORE_DETAIL_PREFIX",
     "AnalyticsSchemaError",
     "EventsTable",
     "PlayAnalyticsFilters",

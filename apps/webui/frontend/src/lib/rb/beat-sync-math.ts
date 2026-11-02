@@ -435,7 +435,7 @@ function _bestFollowerAnchor(
 	// policy this code may relax, it is a speed the fader cannot reach. Letting
 	// it through would mean playing at a tempo that never lines up - drift, not
 	// funk.
-	throw new RangeError(
+	throw new TempoOutOfSyncRangeError(
 		`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
 			`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
 	);
@@ -690,6 +690,43 @@ export function resolveArmAtPosition(armAt: ArmAtPosition, nowPositionSec: numbe
 		);
 	}
 	return armAtPositionSec;
+}
+
+/** DECKGAP-7691c: what the DJ reads when a deck starts unsynced because its
+ * tempo is outside the pitch range the master would need. */
+export const TEMPO_TOO_FAR_TO_SYNC = 'tempo is too far from master to beat sync';
+
+/** The one hard limit `computeFollowerSyncPlan` keeps: no tempo inside the
+ * pitch range lines the follower up. The only failure Play falls back from;
+ * every other error still propagates. */
+export class TempoOutOfSyncRangeError extends RangeError {
+	override name = 'TempoOutOfSyncRangeError';
+}
+
+/** `sync_error` for a deck that started without its phase-lock: the plain
+ * wording first, the engine's detail kept behind it. */
+export function describeUnsyncedStart(error: Pick<TempoOutOfSyncRangeError, 'message'>): string {
+	return `${TEMPO_TOO_FAR_TO_SYNC} (${error.message})`;
+}
+
+/** DECKGAP-7691c: lead of every other unsynced-start reason and of the Play warning. */
+export const BEAT_SYNC_NOT_LOCKED = 'Beat Sync is not locked:';
+
+/** `sync_error` for a deck that started unsynced for a reason other than tempo range. */
+export function describeUnsyncedStartOther(message: string): string {
+	return `${BEAT_SYNC_NOT_LOCKED} ${message}`;
+}
+
+/** True for a `sync_error` written by an unsynced start (PLAY-27). It is the
+ * Play glow's reason, not a deck error, so the deck's error strip leaves it out. */
+export function isUnsyncedStartSyncError(syncError: string | null): boolean {
+	return syncError !== null && (syncError.startsWith(TEMPO_TOO_FAR_TO_SYNC) || syncError.startsWith(BEAT_SYNC_NOT_LOCKED));
+}
+
+/** The Play button's warning for a deck carrying `syncError`. */
+export function unsyncedPlayWarning(syncError: string): string {
+	if (syncError.startsWith(TEMPO_TOO_FAR_TO_SYNC)) return TEMPO_TOO_FAR_TO_SYNC;
+	return syncError.startsWith(BEAT_SYNC_NOT_LOCKED) ? syncError : `${BEAT_SYNC_NOT_LOCKED} ${syncError}`;
 }
 
 type ArmAnchor = { contextTime: number; positionSec: number; tempoRatio: number };

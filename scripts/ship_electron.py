@@ -11,7 +11,8 @@ runs none of them):
    the owner's Apple credentials and are NOT implemented: without
    ``--unsigned`` (or ``MDT_SHIP_UNSIGNED=1``) the run exits 3 saying so,
    before it touches anything.
-2. Checks it is on an arm64 Mac that may build (not silver), in a clean
+2. Checks it is on one of the three known arm64 Macs (any may build; silver
+   since Mon 2 Nov 2026), in a clean
    checkout whose HEAD is the target commit.
 3. Builds the SPA and the engine payload with the same commands the Tauri
    ``just dmg`` recipe uses (``scripts.build_engine_payload``, plain label),
@@ -89,8 +90,17 @@ STAMP_CHANNEL = "dev"
 # Machines: name -> ssh host. The same three Macs as ship_dmg.sh's default
 # rollout (OPS-50); agentbox is Linux and cannot run the app.
 MACHINES = {"air": "air", "silver": "silver", "demon-llama": "demon-llama"}
-# Owner rule carried from ship_dmg.sh: silver may not build.
-NO_BUILD_MACHINES = ("silver",)
+# Every Mac in MACHINES may build: the owner rule that barred silver was
+# lifted on Mon 2 Nov 2026. silver is now an M5 Max Mac Studio whose names
+# (maintainer-Mac-Studio, "the maintainer's Mac Studio") carry no "silver". Checked in
+# order, so demon-llama wins over a Studio-looking name.
+LOCAL_NAME_HINTS = (
+    ("demon-llama", "demon-llama"),
+    ("silver", "silver"),
+    ("mac-studio", "silver"),
+    ("mac studio", "silver"),
+    ("air", "air"),
+)
 SSH_OPTS = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=10")
 QUIT_TIMEOUT_S = 30
 NO_CLOSE_WAIT_S = 180
@@ -139,8 +149,8 @@ def local_machine_name(env: Mapping[str, str] | None = None) -> str:
         out = subprocess.run([scutil, "--get", key], capture_output=True, text=True, check=False)
         names.append(out.stdout.strip())
     joined = " ".join(names).lower()
-    for name in ("demon-llama", "silver", "air"):
-        if name in joined:
+    for hint, name in LOCAL_NAME_HINTS:
+        if hint in joined:
             return name
     return "other"
 
@@ -472,8 +482,8 @@ class Build:
     def preflight(self) -> None:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise ShipError(f"building needs an arm64 Mac; this is {platform.system()}/{platform.machine()}")
-        if self.opts.local in NO_BUILD_MACHINES or self.opts.local not in MACHINES:
-            raise ShipError(f"this machine ({self.opts.local}) may not build; run from the Air or demon-llama")
+        if self.opts.local not in MACHINES:
+            raise ShipError(f"this machine ({self.opts.local}) is not a known Mac; run from the Air, silver or demon-llama")
         if _git("rev-parse", "HEAD") != self.target_sha:
             raise ShipError(
                 f"the checkout is not at {self.target_sha[:12]}; check out the target first (this never moves a checkout)"

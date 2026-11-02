@@ -216,7 +216,7 @@
 	const autoPlayNextLine: string = $derived(
 		autoPlayNextState.armed
 			? `Next transition armed (${autoPlayNextState.phase}) - click >| to cancel`
-			: 'Next transition (>|): plan one from the live position; with no plan, loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'
+			: 'Next transition (>|): plan one from the live position; with no plan, loop 16 bars before the end where the 4 beats before and after match, or exactly 16 bars out, duck LOW 30% once the incoming bass enters, cut at the approximate drop'
 	);
 
 	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
@@ -1111,6 +1111,9 @@
 	<TrackInfoHost onclose={() => void runPerformanceCommandFromUi({ type: 'track_info_close' })} />
 
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
+
+	<!-- SETNOTE-6340g: the set-notes app upgrades this tag once it loads (lib/set-notes/toggle-element.ts). -->
+	<set-notes-toggle class="topbar-slot-pinned"></set-notes-toggle>
 
 	<button
 		type="button"
@@ -2241,5 +2244,11 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
+	}
+	/* SETNOTE-6340g: holds the toggle's size so the bar does not shift when it is upgraded. */
+	set-notes-toggle {
+		display: inline-flex;
+		flex: 0 0 22px;
+		height: 20px;
 	}
 </style>

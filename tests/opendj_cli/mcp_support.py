@@ -35,12 +35,17 @@ from mcp.types import CallToolResult, TextContent
 
 
 def stdio_params(
-    lock_path: Path | None, *, env: dict[str, str] | None = None
+    lock_path: Path | None,
+    *,
+    env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
 ) -> StdioServerParameters:
     """Params for one ``opendj mcp`` server, over the lock file given."""
     args = ["-m", "apps.opendj_cli"]
     if lock_path is not None:
         args += ["--lock", str(lock_path)]
+    if timeout_s is not None:
+        args += ["--timeout", str(timeout_s)]
     # --lock is a global flag, so it precedes the subcommand.
     return StdioServerParameters(
         command=sys.executable, args=[*args, "mcp"], env=env
@@ -61,9 +66,10 @@ async def call_tool_async(
     arguments: dict[str, Any],
     *,
     env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
 ) -> CallToolResult:
     """Call ``tool`` once, over a fresh server process."""
-    async with session(stdio_params(lock_path, env=env)) as s:
+    async with session(stdio_params(lock_path, env=env, timeout_s=timeout_s)) as s:
         return await s.call_tool(tool, arguments)
 
 
@@ -73,9 +79,12 @@ def call_tool(
     arguments: dict[str, Any],
     *,
     env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
 ) -> CallToolResult:
     """Blocking form of :func:`call_tool_async`."""
-    return asyncio.run(call_tool_async(lock_path, tool, arguments, env=env))
+    return asyncio.run(
+        call_tool_async(lock_path, tool, arguments, env=env, timeout_s=timeout_s)
+    )
 
 
 async def timed_call_tool_async(
@@ -84,6 +93,7 @@ async def timed_call_tool_async(
     arguments: dict[str, Any],
     *,
     env: dict[str, str] | None = None,
+    timeout_s: float | None = None,
 ) -> tuple[float, CallToolResult]:
     """Call ``tool`` once over a fresh server, timing the call and not the spawn.
 
@@ -95,7 +105,7 @@ async def timed_call_tool_async(
     that needs to know the tool answered promptly uses this; a test that needs
     to know the server starts at all should say so in its own name.
     """
-    async with session(stdio_params(lock_path, env=env)) as s:
+    async with session(stdio_params(lock_path, env=env, timeout_s=timeout_s)) as s:
         started = time.monotonic()
         result = await s.call_tool(tool, arguments)
         return time.monotonic() - started, result

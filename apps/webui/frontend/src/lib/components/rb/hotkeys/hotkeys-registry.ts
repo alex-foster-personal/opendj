@@ -31,6 +31,8 @@
  *       channel, restored per channel on release (R8).
  *     - playlist-history-hotkeys.ts (Cmd+Z / Cmd+Shift+Z) -- shift-gated undo
  *       vs redo on one key, dispatched through performance IPC.
+ *     - set-notes/hotkey/right-cmd-tap.ts (Right Cmd / Right Ctrl tap) -- a
+ *       press-release detector keyed on KeyboardEvent.code, not a chord.
  *
  * This array is the single list the overlay renders. Do not hand-write a
  * second disconnected hotkey list in the Svelte component.
@@ -45,6 +47,8 @@ export const DECK_LAYOUT_MORE_CHORD = 'Cmd+4';
 export const SETTINGS_CHORD_KEY = ',';
 export const SETTINGS_CHORD_CODE = 'Comma';
 export const SETTINGS_CHORD_LABEL = 'Cmd+,';
+
+export const SET_NOTES_TAP_CHORD = 'Right Cmd / Right Ctrl (tap)';
 
 export const HOTKEYS_OVERLAY_HOLD_KEY = '/';
 export const HOTKEYS_OVERLAY_TOGGLE_KEY = '?';
@@ -76,6 +80,12 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		chord: SETTINGS_CHORD_LABEL,
 		description: 'Open the settings overlay',
 		group: 'Settings'
+	},
+	{
+		id: 'set-notes-toggle',
+		chord: SET_NOTES_TAP_CHORD,
+		description: 'Show or hide the Set notes pad (a chord does not)',
+		group: 'Set notes'
 	},
 	{
 		id: 'deck-layout-less',

@@ -27,28 +27,25 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
+from scripts.gh_pr_view import (
+    DEFAULT_REPO,
+)
+from scripts.gh_pr_view import (
+    pr_view as _shared_pr_view,
+)
 from scripts.reqs_cited_unflipped import citations, pending_v1_ids
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-REQS_JSON = REPO_ROOT / "reqs.json"
-DEFAULT_REPO = "private_owner/music-dj-tools"
+_REQS_PR_VIEW_FIELDS = "number,title,body"
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
-    proc = subprocess.run(
-        ["gh", "pr", "view", str(pr), "--repo", repo, "--json", "number,title,body"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return json.loads(proc.stdout)
+    return _shared_pr_view(pr, repo, fields=_REQS_PR_VIEW_FIELDS)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REQS_JSON = REPO_ROOT / "reqs.json"
 
 
 def _no_flip_marker(req_id: str, body: str) -> bool:

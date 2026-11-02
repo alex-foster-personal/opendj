@@ -522,6 +522,9 @@ export const SYNC_DEFER_DECK_PLAYING = 'deck_playing';
 export type UiMirrorDeck = { playing?: boolean };
 export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
 
+/** `mirror_stale` is the engine's verdict: the page stopped publishing, so its decks say nothing about now. */
+export type UiMirrorGateDoc = { decks?: UiMirrorDecks; mirror_stale?: boolean };
+
 /**
  * ui-mirror read for Gig/playing-deck sync gates (HTTP parity with Status tab).
  * Fails closed: an UNEXPECTED fetch error propagates to the caller instead of
@@ -533,11 +536,11 @@ export type UiMirrorDecks = Record<string, UiMirrorDeck | unknown>;
  * must resolve to null rather than disable Sync / stall the Status tab on
  * every route besides `/performance`.
  */
-export async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } | null> {
+export async function fetchUiMirrorForGate(): Promise<UiMirrorGateDoc | null> {
 	try {
 		const { data } = await api.GET('/api/v1/state/ui-mirror', {});
 		if (data !== undefined && typeof data === 'object') {
-			return data as { decks?: UiMirrorDecks };
+			return data as UiMirrorGateDoc;
 		}
 		return null;
 	} catch (exc) {
@@ -546,8 +549,8 @@ export async function fetchUiMirrorForGate(): Promise<{ decks?: UiMirrorDecks } 
 	}
 }
 
-export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): boolean {
-	if (uiMirror === null) return false;
+export function anyDeckPlaying(uiMirror: UiMirrorGateDoc | null): boolean {
+	if (uiMirror === null || uiMirror.mirror_stale === true) return false;
 	const decks = uiMirror.decks;
 	if (decks === undefined || typeof decks !== 'object') return false;
 	for (const deck of Object.values(decks)) {
@@ -559,7 +562,7 @@ export function anyDeckPlaying(uiMirror: { decks?: UiMirrorDecks } | null): bool
 
 export function syncRuntimeGateReason(
 	appPosture: 'prep' | 'gig',
-	uiMirror: { decks?: UiMirrorDecks } | null
+	uiMirror: UiMirrorGateDoc | null
 ): typeof SYNC_DEFER_GIG | typeof SYNC_DEFER_DECK_PLAYING | null {
 	if (appPosture === 'gig') return SYNC_DEFER_GIG;
 	if (anyDeckPlaying(uiMirror)) return SYNC_DEFER_DECK_PLAYING;
@@ -585,7 +588,7 @@ function syncHubUrlDecision(config: CloudSyncConfigOut | null): SyncNowDecision 
 /** Sync now runs against the EFFECTIVE hub URL (env override included). */
 export function syncNowRequest(
 	config: CloudSyncConfigOut | null,
-	gate: { appPosture: 'prep' | 'gig'; uiMirror: { decks?: UiMirrorDecks } | null }
+	gate: { appPosture: 'prep' | 'gig'; uiMirror: UiMirrorGateDoc | null }
 ): SyncNowDecision {
 	const hub = syncHubUrlDecision(config);
 	if ('kind' in hub) return hub;

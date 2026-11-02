@@ -28,6 +28,30 @@ def build_service() -> PlayAnalyticsService:
     return PlayAnalytics()
 
 
+def _query_for_http(
+    service: PlayAnalyticsService,
+    db_path: Path,
+    *,
+    share_state: ShareState | None = None,
+    limit: int = 50,
+    events_table: EventsTable = "events",
+    min_audible_s: float = DEFAULT_MIN_AUDIBLE_S,
+) -> dict[str, object]:
+    """Run the service query and return a shallow dict for JSON responses."""
+    try:
+        return dict(
+            service.query_play_analytics(
+                db_path,
+                share_state=share_state,
+                limit=limit,
+                events_table=events_table,
+                min_audible_s=min_audible_s,
+            )
+        )
+    except AnalyticsSchemaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def create_router(*, db_path: Path = SETS_DB, events_table: EventsTable = "events") -> APIRouter:
     """Create a router bound to one explicit event-store path.
 
@@ -53,18 +77,14 @@ def create_router(*, db_path: Path = SETS_DB, events_table: EventsTable = "event
             ),
         ] = DEFAULT_MIN_AUDIBLE_S,
     ) -> dict[str, object]:
-        try:
-            return dict(
-                service.query_play_analytics(
-                    db_path,
-                    share_state=share_state,
-                    limit=limit,
-                    events_table=events_table,
-                    min_audible_s=min_audible_s,
-                )
-            )
-        except AnalyticsSchemaError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return _query_for_http(
+            service,
+            db_path,
+            share_state=share_state,
+            limit=limit,
+            events_table=events_table,
+            min_audible_s=min_audible_s,
+        )
 
     return router
 

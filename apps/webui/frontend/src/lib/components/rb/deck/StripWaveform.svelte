@@ -384,6 +384,7 @@
 		{/if}
 
 		{#if deck.stable_id !== null}
+			<span class="played" style={`width:${posPct}%`} aria-hidden="true"></span>
 			<span class="pos" style={`left:${posPct}%`}></span>
 		{/if}
 	</button>
@@ -546,12 +547,26 @@
 		background: var(--rb-green);
 		color: #04120a;
 	}
+	/* Already-played song: waveform, vocal bars, and cue chips sit under this. */
+	.played {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		z-index: 2;
+		background: rgba(0, 0, 0, 0.55);
+		pointer-events: none;
+	}
+	/* 1px on purpose. Red reads on the dark strip without a wider stroke. */
 	.pos {
 		position: absolute;
 		top: 0;
 		bottom: 0;
+		z-index: 3;
 		width: 1px;
-		background: var(--rb-strip-pos, #ffffff);
-		box-shadow: 0 0 3px var(--rb-strip-pos-glow, rgba(255, 255, 255, 0.7));
+		/* DECKGAP-7691e: red on Default and Gothic; a light skin keeps its own dark hook. */
+		background: var(--rb-strip-pos, #ff2d2d);
+		box-shadow: 0 0 3px var(--rb-strip-pos-glow, rgba(255, 45, 45, 0.95));
+		pointer-events: none;
 	}
 </style>

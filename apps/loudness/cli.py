@@ -42,7 +42,8 @@ def _render_human(path: Path, scan_json: dict[str, object]) -> str:
 # --------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the ``python -m apps.loudness`` argument parser."""
     parser = argparse.ArgumentParser(prog="python -m apps.loudness")
     sub = parser.add_subparsers(dest="command", required=True)
     scan_cmd = sub.add_parser("scan", help="measure EBU R128 loudness for files")
@@ -60,8 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"true-peak ceiling the gain may not breach (default {DEFAULT_CEILING_DBTP})",
     )
     scan_cmd.add_argument("--json", action="store_true", help="emit JSON lines")
-    args = parser.parse_args(argv)
+    return parser
 
+
+def run_scan_command(args: argparse.Namespace) -> int:
+    """Execute a parsed ``scan`` subcommand. Returns the process exit code."""
     failed = False
     for track in args.tracks:
         try:
@@ -78,3 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(_render_human(track, payload))
     return 1 if failed else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return run_scan_command(args)

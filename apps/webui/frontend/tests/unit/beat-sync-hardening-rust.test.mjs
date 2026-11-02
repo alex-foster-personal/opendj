@@ -16,6 +16,8 @@
  * - if one follower that cannot reach the new master tempo stops the others
  *   from re-joining, or is left looking locked, then broken
  * - if a NaN, zero or out-of-range tempo reaches the engine then broken
+ * - if a key-locked follower (Master Tempo on) 40 ms off is re-seeked instead
+ *   of bent back by tempo then broken; the control, Master Tempo off, seeks
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -190,4 +192,31 @@ test('NaN, zero and out-of-range tempos never reach the engine', async () => {
 		await assert.rejects(m.executeInRustEngine({ type: 'tempo', deck: 1, ratio }), RangeError, String(ratio));
 	}
 	assert.deepEqual(sent, []);
+});
+
+test('a key-locked follower 40 ms off is bent back by tempo; with Master Tempo off it re-seeks', async () => {
+	for (const keyLocked of [true, false]) {
+		m.rustMaster.deck = null;
+		for (const d of [1, 2]) Object.assign(m.deckStates[d], { playing: false, stable_id: null, beat_sync_enabled: false });
+		await playingMaster(1, grid(128, 0.1, 1200), 60_000);
+		const { seekMs, tempo } = await joinFollower(2, grid(126, 0.05, 1200), 30_000);
+		m.deckStates[2].master_tempo_enabled = keyLocked;
+		// In phase at the master's 60 000 ms is the planned landing less the
+		// join's lead; then 40 ms of wall clock ahead of that.
+		positions[2] = seekMs - 20 * tempo + 40 * tempo;
+		m.phaseLocksForTest()[2].joinedAtSec -= 600; // long past the re-join interval
+		for (let tick = 0; tick < 6; tick++) {
+			m.phaseLockTick();
+			await settle();
+		}
+		const seeks = sent.filter((c) => c.type === 'seek' && c.deck === 2);
+		const trims = sent.filter((c) => c.type === 'tempo' && c.deck === 2);
+		if (keyLocked) {
+			assert.deepEqual(seeks, [], 'key-locked: no seek');
+			assert.ok(trims.length > 0 && trims.at(-1).ratio < tempo * 0.99, `bent hard: ${JSON.stringify(trims)}`);
+		} else {
+			assert.equal(seeks.length, 1, `Master Tempo off: one re-seek, got ${JSON.stringify(sent)}`);
+		}
+		sent = [];
+	}
 });

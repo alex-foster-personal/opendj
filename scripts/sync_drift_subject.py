@@ -68,6 +68,7 @@ from apps.dedup import contract as dedup_contract
 from apps.engine_core.store import schema as engine_schema
 from apps.genre_infer import findings as genre_findings
 from apps.launcher.scripts import bootstrap_db as launcher_bootstrap
+from apps.set_notes import http as set_notes_http
 from apps.shared import fingerprints
 from apps.shared.pairings import schema_sql as pairings_sql
 from apps.shared.play_orders import schema as play_orders_schema
@@ -302,6 +303,13 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/shared/state/analysis_stale.py",
         lambda conn, _path: analysis_stale.ensure_stale_table(conn),
+    ),
+    # Set notes: its own schema_meta ladder on the shared connection, entered
+    # through http.py, the one module scripts may import.
+    # The module names its own file: the surface rule reads a literal path here as a load.
+    Authority(
+        set_notes_http.SCHEMA_FILE,
+        lambda conn, _path: set_notes_http.apply_set_notes_migrations(conn),
     ),
     # The genre findings store: one ensure_schema, reached from the genre
     # routes, the genre lane and the genre CLI.

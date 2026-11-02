@@ -90,7 +90,7 @@ test('TrackContextMenu keeps real rows and drops the inert unbuilt ones', () => 
 	}
 	assert.match(src, /id: 'remove-playlist',[\s\S]*?when: \(ctx\) => ctx\.source === 'playlist'/);
 	const host = read('src/lib/components/rb/browser/TrackContextMenu.svelte');
-	assert.match(host, /source: isUsbTrackId\(row\.stable_id\) \? 'usb' : removable \? 'playlist' : 'collection'/);
+	assert.match(host, /source: isUsbTrackId\(row\.stable_id\)\s*\?\s*'usb'\s*:\s*readOnly\s*\?\s*'readonly-import'\s*:\s*removable\s*\?\s*'playlist'\s*:\s*'collection'/);
 });
 
 test('TreeContextMenu keeps real rows and drops the inert unbuilt ones', () => {

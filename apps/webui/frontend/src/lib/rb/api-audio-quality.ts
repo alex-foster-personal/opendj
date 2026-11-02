@@ -36,10 +36,10 @@ export function ensureAudioQualityScan(): Promise<void> {
 				_scanAttempts = 0;
 			})
 			.catch((error: unknown) => {
-				_scanRequested = null;
 				_scanAttempts += 1;
 				console.error(`[audio-quality] scan request failed (attempt ${_scanAttempts} of ${SCAN_RETRY_LIMIT})`, error);
 				if (_scanAttempts < SCAN_RETRY_LIMIT) {
+					_scanRequested = null;
 					setTimeout(() => void ensureAudioQualityScan().catch(() => undefined), SCAN_RETRY_DELAY_MS);
 				}
 				throw error;

@@ -97,6 +97,7 @@ export default defineConfig({
 		'**/transition-in-cue.spec.ts', // playwright.transition-in-cue.config.ts (real backend, seeded grid)
 		'**/cmdk-preview-cue.spec.ts', // playwright.cmdk-preview-cue.config.ts (real engine, own-beatgrid fixture)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
+		'**/pairing-arrow.spec.ts', // playwright.pairing-arrow.config.ts (seeds the 26-track fixture its webServer needs; `just test-pairing-arrow`)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
 		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (PERFMODE-14 library-mode capture; operator-only)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)

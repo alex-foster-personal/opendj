@@ -3,12 +3,11 @@ the web UI's genre-guess routes (tests/webui/test_genre_guess_routes.py)."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
 from apps.genre_infer import jev
+from tests.genre_infer.captured_fixture import load_captured
 from tests.webui.library_wheel_fixtures import _make_state_db
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jev"
@@ -18,13 +17,7 @@ MANIFEST_VERSION = 1
 
 def captured(name: str) -> dict[str, Any]:
     """A captured reply, verified against the fixture manifest before it is parsed."""
-    manifest = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == MANIFEST_VERSION, manifest["version"]
-    entry = manifest["files"][f"{name}.json"]
-    raw = (FIXTURES / f"{name}.json").read_bytes()
-    assert len(raw) == entry["bytes"], f"{name}.json is not the captured fixture (size)"
-    assert hashlib.sha256(raw).hexdigest() == entry["sha256"], f"{name}.json is not the captured fixture (sha256)"
-    return json.loads(raw.decode("utf-8"))
+    return load_captured(FIXTURES, name, manifest_version=MANIFEST_VERSION)
 
 
 def library(tmp_path: Path) -> tuple[Path, Path]:

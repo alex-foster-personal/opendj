@@ -616,12 +616,12 @@ test('the wizard gates on the FINAL refusal, never on an unfinished probe', () =
 
 // REQ: SETUP-10
 test('the folder step offers a native picker beside the path field', () => {
-	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /class="folder-path-row"/);
-	assert.match(overlay, /type="button"\s*\n\s*class="folder-pick"/);
-	assert.match(overlay, /aria-label="Choose a folder"/);
-	assert.match(overlay, /bind:value=\{row\.path\}/);
-	assert.match(overlay, /aria-label="Folder to import"/);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	assert.match(rows, /class="folder-path-row"/);
+	assert.match(rows, /type="button"\s*\n\s*class="folder-pick"/);
+	assert.match(rows, /aria-label="Choose a folder"/);
+	assert.match(rows, /bind:value=\{row\.path\}/);
+	assert.match(rows, /aria-label="Folder to import"/);
 });
 
 test('the folder picker guards on a desktop shell and opens a directory dialog', () => {
@@ -661,22 +661,23 @@ test('a chosen folder is checked without pressing Check this folder', () => {
 
 test('the folder step can add and remove rows once a path is entered', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /setupWizard\.addFolderRow\(\)/);
-	assert.match(overlay, /aria-label="Add another folder"/);
-	assert.match(overlay, /setupWizard\.removeFolderRow\(row\.id\)/);
-	assert.match(overlay, /aria-label="Remove folder"/);
-	assert.match(overlay, /\{#if folderRows\.length > 1\}/);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	assert.match(overlay, /onAdd=\{\(\) => setupWizard\.addFolderRow\(\)\}/);
+	assert.match(overlay, /onRemove=\{\(id\) => setupWizard\.removeFolderRow\(id\)\}/);
+	assert.match(rows, /aria-label="Add another folder"/);
+	assert.match(rows, /aria-label="Remove folder"/);
+	assert.match(rows, /rows\.length <= 1/);
 });
 
 // REQ: SETUP-09
 test('the folder path placeholder is dim and italic, not the input itself', () => {
-	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /\.folder-form input::placeholder\s*\{/);
-	assert.match(overlay, /font-style:\s*italic/);
-	assert.match(overlay, /opacity:\s*0\.65/);
-	assert.match(overlay, /color:\s*var\(--muted\)/);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	assert.match(rows, /\.folder-path-row input::placeholder\s*\{/);
+	assert.match(rows, /font-style:\s*italic/);
+	assert.match(rows, /opacity:\s*0\.65/);
+	assert.match(rows, /color:\s*var\(--muted\)/);
 	// Dimming belongs on the pseudo-element only; typed text keeps normal styles.
-	const baseInputRule = overlay.match(/\.folder-form input\s*\{[^}]+\}/)?.[0] ?? '';
+	const baseInputRule = rows.match(/\.folder-path-row input\s*\{[^}]+\}/)?.[0] ?? '';
 	assert.doesNotMatch(baseInputRule, /font-style:\s*italic/);
 	assert.doesNotMatch(baseInputRule, /opacity:/);
 	assert.doesNotMatch(baseInputRule, /color:\s*var\(--muted\)/);
@@ -688,21 +689,28 @@ test('the folder picker is a real control, and says so when it cannot run', () =
 	// honestly-disabled placeholder this test used to guard. The requirement is
 	// unchanged in spirit: there is a visible picker affordance, and it never
 	// pretends to work where it cannot.
-	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /class="folder-pick"/);
-	assert.match(overlay, /onclick=\{\(\) => void chooseFolder\(row\.id\)\}/);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	assert.match(rows, /class="folder-pick"/);
+	assert.match(rows, /onclick=\{\(\) => onPick\(row\.id\)\}/);
 	// outside the desktop shell there is no native picker, and the control says
 	// which app can do it rather than failing silently
-	assert.match(overlay, /!nativeFolderPicker/);
-	assert.match(overlay, /available in the Open DJ desktop app/);
+	assert.match(rows, /!nativeFolderPicker/);
+	assert.match(rows, /available in the Open DJ desktop app/);
 });
 
 // REQ: SETUP-11
 test('denied folder candidates render as refused chips, not hidden', () => {
-	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /\{#if candidate\.readable\}/);
-	assert.match(overlay, /class="folder-chip refused"/);
-	assert.match(overlay, /data-agent-detail=\{candidate\.detail\}/);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	assert.match(rows, /\{#if candidate\.readable\}/);
+	assert.match(rows, /class="folder-chip refused"/);
+	assert.match(rows, /data-agent-detail=\{candidate\.detail\}/);
+});
+
+// REQ: SETUP-28
+test('settings music folders gate on the FINAL refusal, never on an unfinished probe', () => {
+	const settings = read('src/lib/components/settings/ConfiguredMusicFolders.svelte');
+	assert.match(settings, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
+	assert.doesNotMatch(settings, /setupRefusal\(\)/);
 });
 
 // ---------------------------------------------------------------- forward/back

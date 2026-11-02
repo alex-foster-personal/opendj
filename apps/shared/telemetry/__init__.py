@@ -118,6 +118,8 @@ from apps.shared.telemetry.decision import (
 )
 from apps.shared.telemetry.live import (
     MIRROR_LIVE_MAX_AGE_S,
+    MIRROR_RECEIVED_MONOTONIC_KEY,
+    mirror_age_s,
     mirror_transport_live,
     set_live_transport_probe,
     transport_is_live,
@@ -449,6 +451,7 @@ __all__ = [
     "LAST_DECISION",
     "LIVE_GATE",
     "MIRROR_LIVE_MAX_AGE_S",
+    "MIRROR_RECEIVED_MONOTONIC_KEY",
     "REDACTED",
     "SDK_CONTEXT_BLOCKS",
     "TELEMETRY_ENV",
@@ -458,6 +461,7 @@ __all__ = [
     "capture_browser_error",
     "decide_telemetry",
     "init_telemetry",
+    "mirror_age_s",
     "mirror_transport_live",
     "reset_live_gate_for_tests",
     "scrub_event",

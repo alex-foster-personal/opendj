@@ -343,6 +343,8 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # classified by nobody.
         "apps/analysis/queue_store.py": "analysis_queue_item",
         "apps/shared/state/analysis_stale.py": "analysis_stale",
+        # The set-notes pad (SETNOTE-6340c), its own ladder on the same state.db.
+        "apps/set_notes/schema.py": "set_notes",
         # The genre findings store (GENRE-03), additive on the same state.db.
         "apps/genre_infer/findings.py": "genre_findings",
         "apps/shared/pairings/schema_sql.py": "pairings",

@@ -1,7 +1,7 @@
 """One-shot NFC repair for ``track_locations`` paths already in the database.
 
 Contract: round 3 finding R3
-(``.planning/cloudsync-round3-adversarial.md``), triage item 3.
+(``(private path)``), triage item 3.
 :func:`apps.shared.state.locations.normalize_stored_text` NFC-normalizes
 every path and URL written from round 3 onward, so two Unicode spellings of
 one file resolve to a single row before the partial UNIQUE index ever sees
@@ -425,32 +425,22 @@ def state_db_path(data_dir: Path) -> Path:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    from apps.shared.state.normalize_cli import build_data_dir_dry_live_parser
+
+    return build_data_dir_dry_live_parser(
         prog="python -m apps.shared.state.normalize_locations",
         description=(
             "Collapse NFD/NFC duplicate track_locations rows and rewrite "
             "stored paths to NFC (round 3 finding R3)."
         ),
-    )
-    parser.add_argument(
-        "--data-dir",
-        required=True,
-        type=Path,
-        help="data dir holding state/state.db",
-    )
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--dry-run", action="store_true", help="report repairs, write nothing"
-    )
-    mode.add_argument("--live", action="store_true", help="apply the repairs")
-    return parser.parse_args(argv)
+    ).parse_args(argv)
 
 
 #: Exit code when the safe repairs ran but some group could not be touched
 #: because a member's stored stamp is unorderable, or because it is a collision
 #: chain (:func:`collision_chains`). NOT 0: a partial repair
 #: reported as success is the "clean binary answer for a case that should be
-#: messy" .claude/rules/verification.md names, and the operator has one more
+#: messy" (private path) names, and the operator has one more
 #: command to run before this pass can finish its job.
 EXIT_QUARANTINED: int = 3
 

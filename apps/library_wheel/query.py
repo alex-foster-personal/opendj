@@ -13,9 +13,9 @@ Requirements:
 
 Acceptance tests:
 [if] a folder-imported file carries a GENRE tag and no rekordbox is present [then
-     ⛔️] it counts as unclassified instead of joining a genre family
+     ⛔️] it stays unclassified instead of joining a genre family
 [if] a disabled axis is requested [then ⛔️] any track carries a non-null axis_value
-[if] state.db is missing [then ⛔️] an empty success payload is returned instead of raising
+[if] state.db is missing [then ⛔️] query raises LibraryWheelError instead of returning
 """
 
 from __future__ import annotations
@@ -374,10 +374,7 @@ def query_library_wheel(
     return {
         "schema_version": 1,
         "axis": axis,
-        "axes": [
-            {"key": a.key, "label": a.label, "enabled": a.enabled, "reason": a.reason}
-            for a in AXES
-        ],
+        "axes": [a.model_dump() for a in AXES],
         "selected_axis_enabled": selected.enabled,
         "selected_axis_reason": selected.reason,
         "total_tracks": len(library.tracks),

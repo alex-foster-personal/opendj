@@ -13,3 +13,4 @@ export {
 	runPerformanceCommandFromUi,
 	uiPrefs
 } from '$lib/rb/performance-ipc.svelte';
+export { readKeyNudgeStep } from '$lib/player/key/camelot';

@@ -136,6 +136,13 @@ async function runEndToastIds(page: Page): Promise<string[]> {
 	});
 }
 
+/** How many distinct run-end toasts this page has raised, from the durable record
+ * above: a tray full of restored-deck toasts can evict the row before a visibility
+ * poll sees it, so the tray is never what proves a run's end. */
+async function runEndToastCount(page: Page): Promise<number> {
+	return new Set(await runEndToastIds(page)).size;
+}
+
 /** Make the page's own library sweep launch a real CLI (the vocals step runs
  * its from-stems CLI whatever the target count), so the POST reliably answers
  * with the run still going. An analysis-only sweep has no targets once an
@@ -181,7 +188,7 @@ async function expectStaysDismissed(page: Page, request: APIRequestContext, wire
 	expect(wire.config.length, 'nothing opened the popover again').toBe(1);
 	// The run is still followed while it lasts: its done toast comes only
 	// from the status polling.
-	await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+	await expect.poll(() => runEndToastCount(page), { timeout: 30_000 }).toBe(1);
 	await expect(pop).toBeHidden();
 	await expectPollingStops(page, request, wire);
 }
@@ -303,28 +310,17 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 	}) => {
 		type Snap = { running: boolean; started_at: number | null; finished_at: number | null };
 		type Parked = { route: Route; sent: number };
-		const toasts = () => page.evaluate(() => (window as unknown as { __refreshToasts: number }).__refreshToasts);
 		for (let attempt = 1; attempt <= 3; attempt++) {
 			await page.goto('/performance');
 			const wire = watchWire(page);
 			const btn = page.getByTestId('refresh-analysis');
 			await expect(btn).toBeVisible({ timeout: 30_000 });
-			// Every toast the page inserts, counted as it appears: one that has
-			// already auto-dismissed still counts.
-			await page.evaluate(() => {
-				const w = window as unknown as { __refreshToasts: number };
-				w.__refreshToasts = 0;
-				const seen = new WeakSet<Node>();
-				new MutationObserver((records) => {
-					for (const r of records)
-						for (const n of r.addedNodes)
-							if (!seen.has(n) && /Refresh (done|failed):/.test(n.textContent ?? '')) {
-								seen.add(n);
-								w.__refreshToasts += 1;
-							}
-				}).observe(document.body, { childList: true, subtree: true });
-			});
 			await waitIdle(request);
+			// The ring is persisted across page.goto, so an earlier attempt's run-end
+			// toast is in it: count only the toasts this attempt raises.
+			const endToastsBefore = new Set(await runEndToastIds(page));
+			const toasts = async () =>
+				new Set((await runEndToastIds(page)).filter((id) => !endToastsBefore.has(id))).size;
 
 			// Park every status request the page sends (the request leg is slow),
 			// until passThrough, after which each goes straight to the engine.
@@ -591,8 +587,7 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		await drain();
 		// The engine's own end raises the done toast once its answer is released
 		// (or, if the run is still going, once a later real poll delivers it).
-		// Read the toast at once: it dismisses itself after 5 s.
-		await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+		await expect.poll(() => runEndToastCount(page), { timeout: 30_000 }).toBe(1);
 		await page.unroute(statusMatcher);
 		await expectPollingStops(page, request, wire);
 	});

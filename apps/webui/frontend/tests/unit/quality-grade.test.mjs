@@ -63,7 +63,8 @@ test('the meanings match the Python grade module word for word', () => {
 
 test('a loaded hover shows only for the grade it describes, and expires', () => {
 	const loaded = { key: 'k1', at: 1000, text: 'full hover' };
-	assert.equal(mod.hoverTitle(loaded, 'k1', 'summary'), 'full hover');
+	assert.equal(mod.hoverTitle(loaded, 'k1', 'summary', 1000), 'full hover');
+	assert.equal(mod.hoverTitle(loaded, 'k1', 'summary', 1000 + mod.HOVER_TTL_MS), 'summary');
 	assert.equal(mod.hoverTitle(loaded, 'k2', 'summary'), 'summary', 'a re-graded row must not keep the old hover');
 	assert.equal(mod.hoverIsFresh(loaded, 'k1', 1000 + mod.HOVER_TTL_MS - 1), true);
 	assert.equal(mod.hoverIsFresh(loaded, 'k1', 1000 + mod.HOVER_TTL_MS), false, 'past the TTL it asks again');

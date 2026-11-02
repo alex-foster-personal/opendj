@@ -2,7 +2,7 @@
 
 Builds its own fixture ``state.db`` under ``tmp_path`` via the real
 ``apps.shared.state`` schema/writer (never touches the repo's real
-data/state/state.db -- absent in CI/sandbox anyway, see test_search.py's
+(private path) -- absent in CI/sandbox anyway, see test_search.py's
 503 test). Exercises tokenisation/prefix-matching, bm25 ranking, EAV
 (genre/comments/notes/tags) indexing, pagination, and lazy refresh when
 SQLite's main database or active WAL changes.
@@ -298,5 +298,64 @@ def test_index_stored_separately_from_state_db(fixture_db: Path) -> None:
         conn.close()
     assert "tracks_fts" not in names
     assert "search_meta" not in names
+
+def test_search_works_while_the_library_is_being_written_to(
+    fixture_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] a second connection commits to state.db during every index read
+    [then] fail, [else stop]: search must answer, not 503."""
+    writer = sqlite3.connect(fixture_db, check_same_thread=False)
+    writer.execute("PRAGMA journal_mode=WAL")
+    commits: list[str] = []
+    real_connect = sqlite3.connect
+
+    def commit_during_read(sql: str) -> None:
+        if sql.lstrip().upper().startswith("SELECT"):
+            writer.execute("UPDATE tracks SET updated_at = ? WHERE stable_id = 's2'", (str(len(commits)),))
+            writer.commit()
+            commits.append(sql)
+
+    def connect_with_writer(database: str, *, uri: bool = False) -> sqlite3.Connection:
+        conn = real_connect(database, uri=uri)
+        if "mode=ro" in database:
+            conn.set_trace_callback(commit_during_read)
+        return conn
+
+    monkeypatch.setattr(search_index.sqlite3, "connect", connect_with_writer)
+    try:
+        hits, total = search_index.search(fixture_db, "levi", limit=10)
+    finally:
+        writer.close()
+
+    assert commits, "the control: a real commit must have landed during the source read"
+    assert total == 1
+    assert [sid for sid, _ in hits] == ["s1"]
+
+
+def test_index_source_is_read_from_one_snapshot(
+    fixture_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] a commit lands between the tracks read and the fields read
+    [then] the index must not mix the two states, [else stop]."""
+    statements: list[str] = []
+    real_connect = sqlite3.connect
+
+    def connect_with_trace(database: str, *, uri: bool = False) -> sqlite3.Connection:
+        conn = real_connect(database, uri=uri)
+        if "mode=ro" in database:
+            conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(search_index.sqlite3, "connect", connect_with_trace)
+
+    search_index.search(fixture_db, "levi", limit=10)
+
+    begin = next(i for i, sql in enumerate(statements) if sql.strip().upper() == "BEGIN")
+    reads = [i for i, sql in enumerate(statements) if sql.lstrip().upper().startswith("SELECT")]
+    assert reads, "the control: the source read must have been traced"
+    assert all(i > begin for i in reads), statements
+
 
 pytestmark = pytest.mark.rb_parity

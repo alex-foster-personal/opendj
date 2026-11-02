@@ -23,6 +23,11 @@
  *   `PHASE_LOCK_REJOIN_CONFIRM_TICKS` ticks, and never sooner than
  *   `PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC` after the last join. Until both
  *   hold, the capped trim keeps working on it.
+ * - a KEY-LOCKED follower (Master Tempo on) bends much harder, because its
+ *   tempo does not move its pitch: up to `PHASE_LOCK_KEYLOCK_MAX_TRIM` over
+ *   `PHASE_LOCK_KEYLOCK_CORRECTION_BEATS`, and it re-seeks only past
+ *   `PHASE_LOCK_RESEEK_BEATS`. A seek is an audible discontinuity; a
+ *   key-locked bend of that size is not ((private path)).
  *
  * Phase is measured through EACH deck's own grid (fractional beat index from
  * its beat timestamps). An EVEN grid is read exactly as stored. An UNEVEN
@@ -89,6 +94,38 @@ export const PHASE_LOCK_RESEEK_BEATS = 0.25;
  */
 export const PHASE_LOCK_RESEEK_MS = 15;
 
+/**
+ * Largest trim for a KEY-LOCKED follower (Master Tempo on), as a fraction of
+ * the base: 5%, Mixxx's own sync-adjustment cap (`kSyncAdjustmentCap`,
+ * bpmcontrol.cpp), which Mixxx applies even to varispeed decks. With key
+ * lock the tempo does not move the pitch, so the 0.3% varispeed cap (5 cents)
+ * has nothing to protect. Measured on this engine's stretcher
+ * ((private path)): bends to 8% stay within the
+ * measurement's +-6 dB of the uncorrected render on real music, a kick loop
+ * and a held chord, with no trend in bend size, where a jump of the same
+ * 15-60 ms clicks 18-57 dB over it on the kick loop and the chord; the
+ * stretcher's steady THD+N is flat from 1.00 to 1.08.
+ */
+export const PHASE_LOCK_KEYLOCK_MAX_TRIM = 0.05;
+
+/**
+ * A key-locked follower corrects the part of its error BEYOND
+ * `PHASE_LOCK_KEYLOCK_NEAR_MS` over this many master beats (0.94 s at 128
+ * BPM), near Mixxx's own gain (0.7 of the beat-fraction error, a 1.4-beat
+ * time constant).
+ */
+export const PHASE_LOCK_KEYLOCK_CORRECTION_BEATS = 2;
+
+/**
+ * Inside this error a key-locked follower uses `PHASE_LOCK_CORRECTION_BEATS`
+ * like any follower, so steady play, which holds well inside it, sends no more
+ * commands than the varispeed lock: a two-beat gain everywhere turned the
+ * +-0.5 ms feed jitter into 40% more tempo commands in the simulation. Under a
+ * flam (~10 ms), so the slow gain never carries an audible error; at 15 ms a
+ * 60 ms error spent 0.8 s of its 2.5 s walking back the last 5 ms.
+ */
+export const PHASE_LOCK_KEYLOCK_NEAR_MS = 5;
+
 /** A new trim is sent only when it moved by more than this fraction of the
  * base (or returns to base), so the loop does not send one command per tick:
  * about two a second in the simulation, against 30 state frames. */
@@ -143,6 +180,11 @@ export interface PhaseLockInput {
 	normalization?: TempoNormalization;
 	/** The follower's pitch range in percent (8 = +-8%). */
 	pitchRangePct: number;
+	/**
+	 * The follower plays key-locked (Master Tempo on): its tempo does not move
+	 * its pitch, so the lock bends harder and seeks less. Default false.
+	 */
+	keyLocked?: boolean;
 	/** A trim is in force now (the last tempo sent is not the base). */
 	trimming?: boolean;
 	/** Seconds since this follower's last join (any join re-records the lock). */
@@ -399,8 +441,14 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 		const local = inRange(measure.localTempo);
 		if (Math.abs(local / base - 1) > PHASE_LOCK_TEMPO_FOLLOW_RATIO) base = local;
 	}
+	const keyLocked = input.keyLocked === true;
+	// A key-locked bend fixes a quarter beat in about two seconds at its cap,
+	// inaudibly; only past that is a seek the better trade.
+	const reseekMs = keyLocked
+		? PHASE_LOCK_RESEEK_BEATS * beatWallMs
+		: Math.min(PHASE_LOCK_RESEEK_BEATS * beatWallMs, PHASE_LOCK_RESEEK_MS);
 	let overLineTicks = 0;
-	if (Math.abs(errorMs) > Math.min(PHASE_LOCK_RESEEK_BEATS * beatWallMs, PHASE_LOCK_RESEEK_MS)) {
+	if (Math.abs(errorMs) > reseekMs) {
 		overLineTicks = input.overLineTicks + 1;
 		if (
 			overLineTicks >= PHASE_LOCK_REJOIN_CONFIRM_TICKS &&
@@ -412,9 +460,15 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 	}
 	const deadband = input.trimming ? PHASE_LOCK_RELEASE_MS : PHASE_LOCK_DEADBAND_MS;
 	if (Math.abs(errorMs) < deadband) return { action: 'base', tempo: base, errorMs, base, overLineTicks };
-	// Ahead by E with W to fix it in: play slower by E/W.
-	const correction = -errorMs / (PHASE_LOCK_CORRECTION_BEATS * beatWallMs);
-	const trim = Math.max(-PHASE_LOCK_MAX_TRIM, Math.min(PHASE_LOCK_MAX_TRIM, correction));
+	// Ahead by E with W to fix it in: play slower by E/W. Key-locked, the
+	// error past the near line is fixed over the shorter window on top.
+	const near = keyLocked ? Math.min(Math.abs(errorMs), PHASE_LOCK_KEYLOCK_NEAR_MS) : Math.abs(errorMs);
+	const far = Math.abs(errorMs) - near;
+	const correction =
+		-Math.sign(errorMs) *
+		(near / (PHASE_LOCK_CORRECTION_BEATS * beatWallMs) + far / (PHASE_LOCK_KEYLOCK_CORRECTION_BEATS * beatWallMs));
+	const cap = keyLocked ? PHASE_LOCK_KEYLOCK_MAX_TRIM : PHASE_LOCK_MAX_TRIM;
+	const trim = Math.max(-cap, Math.min(cap, correction));
 	return { action: 'trim', tempo: inRange(base * (1 + trim)), errorMs, base, overLineTicks };
 }
 

@@ -150,6 +150,15 @@
 			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
 			"count": 1,
 			"reason": "A browser header control's top border sits on .rb-browser's top border, as on /performance, here inside the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "right",
+			"otherSide": "left",
+			"selector": "div.folder-path-row > input",
+			"other": "button.folder-pick",
+			"count": 4,
+			"reason": "The joined folder path field and Choose picker on /settings (MusicFolderRows.svelte) still paint a 2px seam in Chromium's border audit despite border-right: none on the input; remove when the control uses one bordered shell."
 		}
 	]
 }

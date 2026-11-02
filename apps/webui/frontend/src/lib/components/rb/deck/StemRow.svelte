@@ -6,6 +6,10 @@
 	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import type { StemControl } from '$lib/rb/stem-types';
+	import {
+		toggleTrackLoadResetPanel,
+		trackLoadResetEnabled
+	} from '$lib/rb/track-load-reset.svelte';
 
 	let {
 		deck,
@@ -41,6 +45,13 @@
 	const visibleStems = $derived(STEMS.filter((stem) =>
 		(stem.id !== 'bass' && stem.id !== 'other') || deck.stems.available_controls.includes(stem.id)));
 	const ready: boolean = $derived(deck.stems.status === 'ready');
+	const stemsResetOn = $derived(trackLoadResetEnabled('stems'));
+
+	function openResetConfig(event: MouseEvent): void {
+		event.stopPropagation();
+		const el = event.currentTarget;
+		if (el instanceof HTMLElement) toggleTrackLoadResetPanel('stems', el);
+	}
 
 	/** A control this bundle's layout cannot drive. RoFormer's 2-stem split
 	 * folds the drums into `instrumental`, so DRUMS has no signal of its own:
@@ -97,6 +108,18 @@
 			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
 		</button>
 	{/each}
+	<button
+		type="button"
+		class="reset-cfg"
+		class:armed={stemsResetOn}
+		data-track-load-reset-open
+		data-testid={`track-load-reset-${testIdScope}-${deck.deck_id}`}
+		aria-label={`Reset level, stems, EQ when a new track loads, deck ${deck.deck_id}`}
+		title="Reset level, stems, EQ, trim, or filter when a new track loads. Open DJ resets; your controller does not."
+		onclick={openResetConfig}
+	>
+		RST
+	</button>
 	{#if onLoad !== undefined && view.label !== ''}
 		{#if view.action !== null}
 			<button
@@ -222,5 +245,22 @@
 		opacity: 0.3;
 		border-style: dashed;
 		cursor: not-allowed;
+	}
+	/* DECKGAP-7691 (pin 251822d6104b): opens the per-item "reset on new track" list. */
+	.reset-cfg {
+		background: transparent;
+		border: 1px dashed var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		font-weight: 700;
+		padding: 1px 4px;
+		cursor: pointer;
+	}
+	.reset-cfg.armed {
+		border-style: solid;
+		border-color: var(--rb-accent, #49c8ff);
+		color: var(--rb-accent, #49c8ff);
 	}
 </style>

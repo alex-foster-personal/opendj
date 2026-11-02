@@ -6,7 +6,7 @@
  * ratio, a seek, a play. Loaded only with the mode (see `rust-mode.svelte.ts`).
  */
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
-import { BeatSyncPhaseLockError, effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert, unlockedFollowerNotice } from '$lib/player/grid-features';
+import { BeatSyncPhaseLockError, effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert, unlockedFollowerNotice, unsyncedStartSyncError } from '$lib/player/grid-features';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import {
 	assertPausedMasterSelectionAllowed,
@@ -14,7 +14,7 @@ import {
 	pausedMasterSelectionBlockers
 } from '$lib/rb/audio-engine-guards';
 import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
-import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
+import { resolveArmAtPosition, TempoOutOfSyncRangeError } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster, masterHandoffMessage, runAutomaticRejoin } from '$lib/rb/master-election';
@@ -162,7 +162,7 @@ async function _join(
 		// the loading and superseded aborts above and below stay plain and loud.
 		const message = e instanceof Error ? e.message : String(e);
 		const notice = unlockedFollowerNotice(follower, st, masterState, pitchRanges[follower], message);
-		throw new BeatSyncPhaseLockError(`Beat Sync: no followers could phase-lock (deck ${follower}: ${message})`, [{ deck: follower, message, notice }]);
+		throw new BeatSyncPhaseLockError(`Beat Sync: no followers could phase-lock (deck ${follower}: ${message})`, [{ deck: follower, message, notice, outOfRange: e instanceof TempoOutOfSyncRangeError }]);
 	}
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
@@ -256,6 +256,7 @@ export function phaseLockTick(): void {
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
 				pitchRangePct: pitchRanges[deck],
+				keyLocked: st.master_tempo_enabled,
 				sinceJoinSec: _nowSec() - lock.joinedAtSec,
 				overLineTicks: lock.overLineTicks,
 				userOffsetMs: lock.userOffsetMs
@@ -373,6 +374,8 @@ async function _play(deck: DeckId): Promise<void> {
 	const stableId = st.stable_id;
 	const syncClock = _syncMaster();
 	const syncActive = effectiveBeatSync(st);
+	// DECKGAP-7691c: why this deck starts unsynced, kept on it so its Play button glows.
+	let unsyncedReason: string | null = null;
 	if (syncClock !== null && syncClock !== deck && syncActive) {
 		try {
 			await _join(syncClock, deck, { play: true });
@@ -391,11 +394,12 @@ async function _play(deck: DeckId): Promise<void> {
 			// PLAY-27: the planner refused; play on unsynced, say so in red.
 			console.info(`[beat-sync] deck ${deck} starts unsynced: ${detail}`);
 			_notifyUnlocked(e);
+			unsyncedReason = unsyncedStartSyncError(e, deck);
 		}
 	}
 	await send({ type: 'play', deck, playing: true });
 	_setPlaying(deck, true);
-	st.sync_error = null;
+	st.sync_error = unsyncedReason;
 	if (rustMaster.mode === 'auto' && syncClock === null) {
 		electIfAuto();
 		const elected = _syncMaster();
@@ -403,6 +407,7 @@ async function _play(deck: DeckId): Promise<void> {
 			await _join(elected, deck, { reanchor: true }).catch((e: unknown) => {
 				if (!(e instanceof BeatSyncPhaseLockError)) throw e;
 				_notifyUnlocked(e); // PLAY-27: already playing on plain transport
+				if (st.load_generation === generation && st.stable_id === stableId) st.sync_error = unsyncedStartSyncError(e, deck);
 			});
 		}
 	}

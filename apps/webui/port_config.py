@@ -65,6 +65,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.shared.dotenv_read import read_dotenv as _read_dotenv
+
 BACKEND_ENV = "MUSIC_DJ_BACKEND_PORT"
 FRONTEND_ENV = "MUSIC_DJ_FRONTEND_PORT"
 OBSOLETE_PROXY_ENV = "MUSIC_DJ_API_PROXY_TARGET"
@@ -127,6 +129,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
         5334,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_FRONTEND_PORT
         5336,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_FRONTEND_PORT
+        5332,  # tests/e2e/vite.pairing-arrow.config.ts PAIRING_ARROW_FRONTEND_PORT
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
         8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
         8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
@@ -136,6 +139,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
         8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
         8716,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_API_PORT
+        8715,  # tests/e2e/vite.pairing-arrow.config.ts PAIRING_ARROW_API_PORT
         8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
         8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
         8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
@@ -218,23 +222,6 @@ def _parse_port(name: str, raw_value: str | int | None) -> int:
     if not value_text.isascii() or not value_text.isdecimal():
         raise PortConfigError(f"{name} must be an integer, got {value_text!r}")
     return _validate_port(name, int(value_text))
-
-
-def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
-    if not dotenv_path.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, raw_value = line.split("=", 1)
-        name = name.removeprefix("export ").strip()
-        value = raw_value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        values[name] = value
-    return values
 
 
 def _resolved_raw_value(

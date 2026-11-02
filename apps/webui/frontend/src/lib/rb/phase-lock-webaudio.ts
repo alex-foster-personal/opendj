@@ -72,6 +72,8 @@ export interface WebAudioPhaseLockPorts {
 	/** Projected transport position on the audio clock at `contextTime`. */
 	positionSec(deck: PhaseLockDeckId, contextTime: number): number;
 	pitchRangePct(deck: PhaseLockDeckId): number;
+	/** Master Tempo is on (or heading on): the tempo does not move the pitch. */
+	keyLocked(deck: PhaseLockDeckId): boolean;
 	loopEngaged(deck: PhaseLockDeckId): boolean;
 	/** Tempo-only revision through the engine's schedule path. */
 	scheduleTempo(deck: PhaseLockDeckId, ratio: number): Promise<unknown>;
@@ -282,6 +284,7 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 					followerBaseTempo: lock.base,
 					normalization: lock.normalization,
 					pitchRangePct: ports.pitchRangePct(deck),
+					keyLocked: ports.keyLocked(deck),
 					sinceJoinSec: contextTime - lock.joinedAtContextTime,
 					overLineTicks: lock.overLineTicks,
 					userOffsetMs: lock.userOffsetMs

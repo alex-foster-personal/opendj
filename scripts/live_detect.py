@@ -18,7 +18,9 @@ Requirements
      [if] YAMNet class map lacks a crowd class [then ⛔️ raise at startup]
   ✔︎ R2 verdict live | likely | studio from thresholds in CFG, with the scores that drove it
      [if] edge crowd share >= CFG.LIVE_EDGE [then ⛔️ verdict is live]
-  ✔︎ R3 resumable: rows already in the JSONL cache (by path) are skipped
+  ✔︎ R3 resumable: ok rows are skipped; missing/decode_error rows retry; an incomplete
+     final fragment is reported on stderr and repaired; any other malformed record aborts
+     without altering the cache file
   ✔︎ R4 --paths for ingest (explicit files) or --db for backfill (one path per distinct audio_hash,
      preferring a copy on disk; duplicates share one verdict, matching the deduped clean list)
 
@@ -205,26 +207,65 @@ def _paths_from_db(db: str) -> list[str]:
     return list(chosen.values())
 
 
+_KNOWN_CACHE_STATUSES = frozenset({"ok", "missing", "decode_error"})
+
+
+def _validate_cache_row(row: object, cache_path: Path, line_num: int) -> None:
+    if not isinstance(row, dict):
+        raise TypeError(f"{cache_path}:{line_num}: cache row must be a JSON object")
+    path = row.get("path")
+    if not isinstance(path, str):
+        raise TypeError(f"{cache_path}:{line_num}: cache row missing string path")
+    status = row.get("status")
+    if not isinstance(status, str):
+        raise TypeError(f"{cache_path}:{line_num}: cache row missing string status")
+    if status not in _KNOWN_CACHE_STATUSES:
+        raise ValueError(f"{cache_path}:{line_num}: unknown status {status!r}")
+
+
 def _compact_cache(out: Path) -> set[str]:
     """Keep only successfully scored rows, rewrite the cache, return their paths.
 
-    Dropping missing/decode_error rows makes them retry on the next run; dropping
-    unparseable rows repairs a truncated tail so appends start on a clean line.
+    Dropping missing/decode_error rows makes them retry on the next run. An incomplete
+    unterminated final fragment (no trailing newline) is dropped with a stderr notice.
+    Any other malformed record raises before the cache file is modified.
     """
     if not out.exists():
         return set()
-    kept: dict[str, str] = {}
-    for line in out.read_text().splitlines():
+    text = out.read_text(encoding="utf-8")
+    ends_with_newline = text.endswith("\n")
+    parts = text.split("\n")
+    if ends_with_newline and parts and parts[-1] == "":
+        parts = parts[:-1]
+
+    kept_lines: dict[str, str] = {}
+    for index, line in enumerate(parts):
+        line_num = index + 1
+        is_final = index == len(parts) - 1
+        interrupted_tail = is_final and not ends_with_newline
         try:
             row = json.loads(line)
-        except json.JSONDecodeError:  # truncated tail from an interrupted run
-            continue
-        if row.get("status") == "ok":
-            kept[row["path"]] = line
+        except json.JSONDecodeError as exc:
+            if interrupted_tail:
+                preview = line if len(line) <= 120 else f"{line[:117]}..."
+                print(
+                    f"{out}:{line_num}: discarding incomplete cache fragment (will rescore): "
+                    f"{preview!r}",
+                    file=sys.stderr,
+                )
+                continue
+            raise ValueError(f"{out}:{line_num}: malformed cache JSON: {exc}") from exc
+        _validate_cache_row(row, out, line_num)
+        if row["status"] == "ok":
+            kept_lines[row["path"]] = json.dumps(row, separators=(",", ":"))
     tmp = out.with_suffix(out.suffix + ".tmp")
-    tmp.write_text("".join(f"{line}\n" for line in kept.values()))
+    tmp.write_text(
+        "".join(f"{line}\n" for line in kept_lines.values()),
+        encoding="utf-8",
+        newline="\n",
+    )
     tmp.replace(out)
-    return set(kept)
+    return set(kept_lines)
 
 
 def main() -> None:
@@ -241,7 +282,7 @@ def main() -> None:
     print(f"[live_detect] {len(paths)} paths, {len(todo)} to score -> {args.out}", flush=True)
     model = Model()
     t0 = time.time()
-    with args.out.open("a") as fh:
+    with args.out.open("a", encoding="utf-8", newline="\n") as fh:
         for i, p in enumerate(todo, 1):
             r = score_file(model, p)
             fh.write(json.dumps(asdict(r)) + "\n")

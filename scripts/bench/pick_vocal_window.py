@@ -64,7 +64,7 @@ SILENCE_DBFS: float = -60.0
 # window, mono, against each round's own mixture:
 #
 #   zeno-signs   vocals   -5.49 dB   round WORKED (the maintainer gave discriminating labels)
-#   am-contra    vocals   -5.50 dB   round WORKED (the maintainer gave discriminating labels)
+#   failure-edge vocals   -5.50 dB   round WORKED (the maintainer gave discriminating labels)
 #   timboz-pony  bass    -11.30 dB   round FAILED ("would rarely be used")
 #
 # -8.0 dB is the midpoint of that gap: it clears both productive rounds by ~2.5 dB

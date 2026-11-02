@@ -16,7 +16,7 @@ id-window and once when the daily cap trips, so a quiet Sentry is never
 mistaken for a healthy app.
 
 The limits come from replaying a real sink (``scripts/sentry_budget_replay.py``);
-change them only with a new round in ``specs/sentry-quota-spec.md``.
+change them only with a new round in ``(private path)``.
 
 Stdlib only, like the sink, so it imports without sentry-sdk.
 """
@@ -24,6 +24,7 @@ Stdlib only, like the sink, so it imports without sentry-sdk.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -57,6 +58,16 @@ _TRANSIENT_NETWORK_PREFIXES: tuple[str, ...] = (
     "NetworkError: ",
     "AbortError: ",
     "DOMException: ",
+)
+#: uvicorn ERROR when SIGTERM hits still-open HTTP/WS tasks after
+#: timeout_graceful_shutdown (INSTALL-33). The cancel is the bound working;
+#: Sentry OPEN-DJ-BE-8X treated it as a crash.
+UVICORN_GRACEFUL_SHUTDOWN_MARKER: str = "timeout graceful shutdown exceeded"
+#: The only site and exact shape that is suppressed: uvicorn's own
+#: ``logger.error("Cancel %s running task(s), timeout graceful shutdown exceeded")``.
+UVICORN_GRACEFUL_SHUTDOWN_SOURCE_SITE: str = "engine:uvicorn.error"
+_UVICORN_GRACEFUL_SHUTDOWN_MESSAGE = re.compile(
+    r"Cancel [0-9]+ running task\(s\), " + re.escape(UVICORN_GRACEFUL_SHUTDOWN_MARKER)
 )
 
 _WINDOW_S: float = 3600.0
@@ -96,6 +107,19 @@ def is_local_only_browser_error(kind: str, name: str | None, message: str) -> bo
         is_perf_console_mirror(kind, message)
         or is_dev_tooling_console(kind, message)
         or is_transient_network_error(name, message)
+    )
+
+
+def is_uvicorn_graceful_shutdown_timeout(kind: str, source_site: str, message: str) -> bool:
+    """uvicorn ERROR after the INSTALL-33 graceful window: local sink only.
+
+    Matches only the engine's ``uvicorn.error`` logger and uvicorn's complete
+    message, so another error that merely mentions the phrase still ships.
+    """
+    return (
+        kind == "engine"
+        and source_site == UVICORN_GRACEFUL_SHUTDOWN_SOURCE_SITE
+        and _UVICORN_GRACEFUL_SHUTDOWN_MESSAGE.fullmatch(message) is not None
     )
 
 

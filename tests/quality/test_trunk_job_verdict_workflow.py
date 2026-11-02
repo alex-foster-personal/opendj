@@ -22,6 +22,8 @@ def test_trunk_job_verdict_watches_every_trunk_check_workflow() -> None:
     """A planted E2E failure reaches the independent verdict classifier."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     assert workflow[True]["workflow_run"]["workflows"] == ["CI", "E2E"]
+    # S2 round 7: PR runs create no verdict run; the job admits only the default branch.
+    assert workflow[True]["workflow_run"]["branches"] == ["main"]
 
     job = workflow["jobs"]["verdict"]
     # Pin the invariants the condition must uphold, not the exact expression

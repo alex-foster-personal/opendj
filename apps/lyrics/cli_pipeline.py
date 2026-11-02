@@ -36,7 +36,7 @@ def add_pipeline_commands(subcommands: argparse._SubParsersAction) -> None:
             "--state-dir",
             type=Path,
             default=STATE_DIR,
-            help="directory holding state.db (default: repo data/state)",
+            help="directory holding state.db (default: repo (private path))",
         )
         if name == "run":
             p.add_argument("--live", action="store_true", help="execute stages")
@@ -49,7 +49,7 @@ def add_pipeline_commands(subcommands: argparse._SubParsersAction) -> None:
         "--state-dir",
         type=Path,
         default=STATE_DIR,
-        help="directory holding state.db (default: repo data/state)",
+        help="directory holding state.db (default: repo (private path))",
     )
 
     reg = subcommands.add_parser(
@@ -174,3 +174,9 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
 
 
 __all__ = ["PIPELINE_COMMANDS", "add_pipeline_commands", "cmd_pipeline"]
+
+
+if __name__ == "__main__":
+    from apps.lyrics.cli_guard import refuse_direct_run
+
+    refuse_direct_run(__spec__.name if __spec__ is not None else __file__)

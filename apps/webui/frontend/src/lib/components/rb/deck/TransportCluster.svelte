@@ -6,6 +6,7 @@
 	// by pretending to play).
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { QUANTIZED_LAUNCH } from '$lib/player/transport/quantized-launch';
+	import { unsyncedPlayWarning } from '$lib/rb/beat-sync-math';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
@@ -62,14 +63,19 @@
 		'While paused: jump to the cue, or set it if none exists yet.',
 		'Separate from hot cues A-H. Click only - no hold-to-preview.'
 	];
+	// DECKGAP-7691c: the deck started (or runs) without its phase-lock. Red glow
+	// plus a red hover warning; never a refusal (PLAY-27 starts it unsynced).
+	const syncWarning: string | null = $derived(
+		hasTrack && deck.sync_error !== null ? unsyncedPlayWarning(deck.sync_error) : null
+	);
 	const playTitle: string = $derived(
 		!hasTrack
 			? 'no track loaded'
 			: armed
 				? `${QUANTIZED_LAUNCH} in ${armedCountdownLabel}`
-				: deck.playing
-					? 'Pause - also stores the memory cue here'
-					: 'Play from current playhead'
+				: `${syncWarning === null ? '' : `${syncWarning} - `}${
+						deck.playing ? 'Pause - also stores the memory cue here' : 'Play from current playhead'
+					}`
 	);
 </script>
 
@@ -92,9 +98,11 @@
 		class="round play"
 		class:playing={deck.playing}
 		class:armed
+		class:sync-warning={syncWarning !== null}
 		disabled={!hasTrack}
 		aria-busy={pending}
 		title={playTitle}
+		data-sync-warning={syncWarning ?? undefined}
 		aria-label={armed ? `${QUANTIZED_LAUNCH} deck ${deck.deck_id} in ${armedCountdownLabel}` : `play deck ${deck.deck_id}`}
 		aria-pressed={deck.playing}
 		data-testid={`play-deck-${deck.deck_id}`}
@@ -115,6 +123,9 @@
 			{#if armed}
 				<span class="countdown" title="Remaining time until QUANTIZED LAUNCH">{armedCountdownLabel}</span>
 			{/if}
+		{/if}
+		{#if syncWarning !== null}
+			<span class="sync-warning-tip" role="tooltip">{syncWarning}</span>
 		{/if}
 	</button>
 </div>
@@ -173,5 +184,32 @@
 	}
 	.round.play {
 		position: relative;
+	}
+	.round.play.sync-warning {
+		border-color: var(--rb-danger, #ff4d4f);
+		box-shadow: 0 0 0 1px var(--rb-danger, #ff4d4f), 0 0 10px 2px color-mix(in srgb, var(--rb-danger, #ff4d4f) 70%, transparent);
+	}
+	.sync-warning-tip {
+		display: none;
+		position: absolute;
+		left: 50%;
+		bottom: calc(100% + 6px);
+		transform: translateX(-50%);
+		z-index: 80;
+		width: max-content;
+		max-width: 220px;
+		padding: 4px 7px;
+		background: #0a0c0f;
+		border: 1px solid var(--rb-danger, #ff4d4f);
+		border-radius: 3px;
+		color: var(--rb-danger, #ff4d4f);
+		font-size: 10px;
+		font-weight: 600;
+		line-height: 1.3;
+		pointer-events: none;
+	}
+	.round.play.sync-warning:hover .sync-warning-tip,
+	.round.play.sync-warning:focus-visible .sync-warning-tip {
+		display: block;
 	}
 </style>

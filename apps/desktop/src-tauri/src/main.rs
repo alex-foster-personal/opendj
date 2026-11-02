@@ -36,9 +36,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{
-    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
-};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Test seam, mirroring the repo's ENGINE_CMD seam: point a packaged build
 /// at an engine that is already running, on any loopback port, without
@@ -106,7 +104,10 @@ fn parse_diagnostic_flag<'a>(args: impl Iterator<Item = &'a str>) -> Option<Diag
 /// not `CARGO_PKG_VERSION`: INSTALL-07 defines `app_version` as the semver the
 /// updater compares, and `Cargo.toml`'s version is a separate, driftable
 /// number (0.1.0 there vs. 0.1.1 in `tauri.conf.json` at time of writing).
-fn handle_diagnostic_flags<'a>(args: impl Iterator<Item = &'a str>, app_version: &str) -> Option<i32> {
+fn handle_diagnostic_flags<'a>(
+    args: impl Iterator<Item = &'a str>,
+    app_version: &str,
+) -> Option<i32> {
     match parse_diagnostic_flag(args)? {
         DiagnosticFlag::Help => {
             print!("{USAGE}");
@@ -283,17 +284,121 @@ fn write_parent_file(data_dir: &Path) -> Result<(), engine::EngineError> {
 /// never a real rekordbox library: the engine only creates what it owns
 /// (state/, jobs.db, the lock) and imports happen through the setup flow.
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
-    app.path().app_data_dir().map_err(|err| engine::EngineError {
-        headline: "Open DJ could not find its data folder.".into(),
-        detail: format!("Resolving Application Support failed: {err}"),
-    })
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| engine::EngineError {
+            headline: "Open DJ could not find its data folder.".into(),
+            detail: format!("Resolving Application Support failed: {err}"),
+        })?;
+    #[cfg(target_os = "macos")]
+    validate_data_dir_contained_in_home(
+        &data_dir,
+        std::env::var_os("HOME").as_deref().map(Path::new),
+    )?;
+    Ok(data_dir)
+}
+
+/// Refuse a data dir outside the launch `HOME` before shell logging or the store.
+///
+/// The installed-app acceptance redirects HOME to a per-run root; a build that
+/// resolved its data dir some other way would boot against the real library
+/// before the harness could read `data_dir` (issue #6068). macOS/LaunchServices
+/// only: Linux may place XDG data outside HOME and Windows does not promise HOME.
+fn validate_data_dir_contained_in_home(
+    data_dir: &Path,
+    home: Option<&Path>,
+) -> Result<(), engine::EngineError> {
+    let refuse = |why: String| {
+        Err(engine::EngineError::new(
+            "Open DJ refused its data folder.",
+            why,
+        ))
+    };
+    let has_parent_component = |path: &Path| {
+        path.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    };
+    let Some(home) = home.filter(|h| h.is_absolute()) else {
+        return refuse("HOME is unset or not an absolute path".into());
+    };
+    if has_parent_component(home) {
+        return refuse("HOME contains a parent (..) path component".into());
+    }
+    if !data_dir.is_absolute() {
+        return refuse(format!(
+            "data directory {} is not an absolute path",
+            data_dir.display()
+        ));
+    }
+    if has_parent_component(data_dir) {
+        return refuse(format!(
+            "data directory {} contains a parent (..) path component",
+            data_dir.display()
+        ));
+    }
+    if !data_dir.starts_with(home) {
+        return refuse(format!(
+            "{} is not inside HOME {}",
+            data_dir.display(),
+            home.display()
+        ));
+    }
+    // Lexical containment is not enough: a symlink under HOME (the data dir
+    // or any ancestor) can point at the real library outside it. Resolve the
+    // components that exist, without creating any, and compare again.
+    let resolved_home = resolve_existing_components(home)
+        .map_err(|e| engine::EngineError::new("Open DJ refused its data folder.", e))?;
+    let resolved_data = resolve_existing_components(data_dir)
+        .map_err(|e| engine::EngineError::new("Open DJ refused its data folder.", e))?;
+    if !resolved_data.starts_with(&resolved_home) {
+        return refuse(format!(
+            "{} resolves to {}, which is not inside HOME {}",
+            data_dir.display(),
+            resolved_data.display(),
+            resolved_home.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Canonicalize the longest existing ancestor of `path` (following every
+/// symlink in it) and re-append the components that do not exist yet. Creates
+/// nothing. `path` must be absolute and free of `..`, which the caller checks.
+fn resolve_existing_components(path: &Path) -> Result<PathBuf, String> {
+    let mut missing: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut existing = path;
+    loop {
+        match std::fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = existing.file_name() else {
+                    return Err(format!("no existing ancestor of {}", path.display()));
+                };
+                missing.push(name);
+                existing = existing
+                    .parent()
+                    .ok_or_else(|| format!("no existing ancestor of {}", path.display()))?;
+            }
+            Err(e) => return Err(format!("cannot read {}: {e}", existing.display())),
+        }
+    }
+    let mut resolved = std::fs::canonicalize(existing)
+        .map_err(|e| format!("cannot resolve {}: {e}", existing.display()))?;
+    for name in missing.into_iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
 }
 
 fn payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
-    let resources = app.path().resource_dir().map_err(|err| engine::EngineError {
-        headline: "Open DJ could not find its own resources.".into(),
-        detail: format!("Resolving the bundle resource directory failed: {err}"),
-    })?;
+    let resources = app
+        .path()
+        .resource_dir()
+        .map_err(|err| engine::EngineError {
+            headline: "Open DJ could not find its own resources.".into(),
+            detail: format!("Resolving the bundle resource directory failed: {err}"),
+        })?;
     Ok(resources.join(engine::PAYLOAD_DIR))
 }
 
@@ -391,15 +496,13 @@ fn spawn_fresh_engine(
                         launch::stop_holder_pid(pid);
                         return spawn_fresh_engine(payload, data_dir, log_path);
                     }
-                    return Err(engine::EngineError::new(
-                        "Open DJ could not start.",
-                        detail,
-                    ));
+                    return Err(engine::EngineError::new("Open DJ could not start.", detail));
                 }
                 LaunchPlan::Spawn => {
                     let tail = engine::log_tail(log_path, 20);
                     if !tail.is_empty() {
-                        failure.detail = format!("{}\n\nLast engine output:\n{tail}", failure.detail);
+                        failure.detail =
+                            format!("{}\n\nLast engine output:\n{tail}", failure.detail);
                     }
                     running.shutdown();
                     Err(failure)
@@ -678,7 +781,10 @@ fn main() {
                     api.prevent_exit();
                     request_quit_from_webview(handle);
                 } else {
-                    engine::append_shell_log("shutdown", "exit confirmed by the quit gate: exiting");
+                    engine::append_shell_log(
+                        "shutdown",
+                        "exit confirmed by the quit gate: exiting",
+                    );
                 }
             }
             RunEvent::Exit => {
@@ -701,6 +807,70 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // - if a data dir outside the redirected HOME is accepted then the
+    //   acceptance boots against the real library before HTTP exists -> broken
+    //   (issue #6068)
+
+    fn isolated_acceptance_home() -> PathBuf {
+        std::env::temp_dir().join("opendj-6068-isolated-home")
+    }
+
+    #[test]
+    fn a_data_dir_nested_under_home_is_accepted() {
+        let home = isolated_acceptance_home();
+        let data = home.join("Library/Application Support/com.opendj.app");
+        assert!(validate_data_dir_contained_in_home(&data, Some(&home)).is_ok());
+    }
+
+    #[test]
+    fn a_data_dir_outside_home_fails_closed() {
+        let home = isolated_acceptance_home();
+        let outside = std::env::temp_dir().join("opendj-6068-outside-real-store");
+        let err = validate_data_dir_contained_in_home(&outside, Some(&home)).unwrap_err();
+        assert!(err.detail.contains("not inside HOME"), "{}", err.detail);
+        let sibling = home
+            .with_file_name("opendj-6068-isolated-home2")
+            .join("Library");
+        assert!(validate_data_dir_contained_in_home(&sibling, Some(&home)).is_err());
+    }
+
+    #[test]
+    fn a_lexical_escape_under_home_fails_closed() {
+        let home = isolated_acceptance_home();
+        let escape = home.join("../../opendj-6068-escape/Library");
+        assert!(validate_data_dir_contained_in_home(&escape, Some(&home)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_under_home_to_an_outside_store_fails_closed() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let home = root.path().join("home");
+        let outside = root.path().join("real-library");
+        std::fs::create_dir_all(home.join("Library")).expect("home");
+        std::fs::create_dir_all(&outside).expect("outside");
+        let link = home.join("Library/Application Support");
+        std::os::unix::fs::symlink(&outside, &link).expect("symlink");
+        let data = link.join("com.opendj.app");
+        let err = validate_data_dir_contained_in_home(&data, Some(&home)).unwrap_err();
+        assert!(err.detail.contains("resolves to"), "{}", err.detail);
+        let real = home.join("Library/Real Support/com.opendj.app");
+        assert!(validate_data_dir_contained_in_home(&real, Some(&home)).is_ok());
+    }
+
+    #[test]
+    fn missing_relative_home_or_relative_data_dir_fails_closed() {
+        let home = isolated_acceptance_home();
+        let nested = home.join("Library");
+        assert!(validate_data_dir_contained_in_home(&nested, None).is_err());
+        assert!(
+            validate_data_dir_contained_in_home(Path::new("Library/App"), Some(&home)).is_err()
+        );
+        assert!(
+            validate_data_dir_contained_in_home(&nested, Some(Path::new("relative-home"))).is_err()
+        );
+    }
 
     // - if the clamp stops shrinking then the window opens taller than the
     //   screen and its own title bar is off the top -> broken
@@ -787,12 +957,18 @@ mod tests {
 
     #[test]
     fn handle_diagnostic_flags_reports_exit_zero_for_help() {
-        assert_eq!(handle_diagnostic_flags(["--help"].into_iter(), "0.1.1"), Some(0));
+        assert_eq!(
+            handle_diagnostic_flags(["--help"].into_iter(), "0.1.1"),
+            Some(0)
+        );
     }
 
     #[test]
     fn handle_diagnostic_flags_reports_exit_zero_for_version() {
-        assert_eq!(handle_diagnostic_flags(["--version"].into_iter(), "0.1.1"), Some(0));
+        assert_eq!(
+            handle_diagnostic_flags(["--version"].into_iter(), "0.1.1"),
+            Some(0)
+        );
     }
 
     #[test]

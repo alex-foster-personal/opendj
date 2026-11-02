@@ -16,6 +16,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
+from apps.shared.dotenv_read import read_dotenv as _read_dotenv
+
 LibraryMode = Literal["local", "remote"]
 
 MODE_ENV: str = "MDT_LIBRARY_MODE"
@@ -23,23 +25,6 @@ CRATE_ROOT_ENV: str = "MDT_CRATE_ROOT"
 _PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 _ENV_FILE: Path = _PROJECT_ROOT / ".env"
 _MODE_KEYS: tuple[str, ...] = (MODE_ENV, CRATE_ROOT_ENV)
-
-
-def _read_dotenv(dotenv_path: Path) -> dict[str, str]:
-    if not dotenv_path.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, raw_value = line.split("=", 1)
-        name = name.removeprefix("export ").strip()
-        value = raw_value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        values[name] = value
-    return values
 
 
 def apply_library_env(

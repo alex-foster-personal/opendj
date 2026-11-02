@@ -670,4 +670,10 @@
 		font-size: 7px;
 		padding: 1px;
 	}
+	/* Same row as the chips. Fills the spare grid cell instead of adding a row. */
+	.stem-slot :global(.reset-cfg) {
+		font-size: 7px;
+		padding: 1px 2px;
+		min-width: 0;
+	}
 </style>

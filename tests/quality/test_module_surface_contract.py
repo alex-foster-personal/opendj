@@ -62,11 +62,10 @@ PREDATES_ADR = frozenset(
     }
 )  # fmt: skip
 
-# Trunk repair #7658, Wed 28 Oct 2026: packages that landed after the ADR WITHOUT a contract, each
-# named with the tech-debt issue that owes it. This is not PREDATES_ADR (never add there). A name
-# here must leave in the PR that adds it to `enforced`; test_owed_contracts_are_not_enforced_yet
-# refuses the overlap. apps/autodj came in with #7594 through a selected-test bundle merge.
-# apps/transition_score came in with #7597 (try-er bundle) on the same terms.
+# Packages that landed after the ADR WITHOUT a contract, each named with the tech-debt issue that
+# owes it. This is not PREDATES_ADR (never add there). A name here must leave in the PR that adds it
+# to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj (#7681)
+# cannot be enforced until apps/transition_score (#7708) stops reaching its planner modules.
 OWED_CONTRACT = {"autodj": "#7681", "transition_score": "#7708"}
 
 

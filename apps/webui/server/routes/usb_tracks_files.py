@@ -18,7 +18,7 @@ from apps.sync.usb.stick_library import (
     stick_audio_file,
 )
 
-from .rb_assets_audio import _BLOCKED_ACCESS_ERRNOS
+from .rb_assets_audio import _BLOCKED_ACCESS_ERRNOS, AudioFileResponse
 from .usb_tracks import (
     _CACHE_ARTWORK,
     _CACHE_AUDIO,
@@ -30,7 +30,7 @@ from .usb_tracks import (
 )
 
 
-class _PinnedFileResponse(FileResponse):
+class _PinnedFileResponse(AudioFileResponse):
     """A FileResponse that always releases its pinned descriptor.
 
     A background task is not enough: Starlette returns early for a 416 or a

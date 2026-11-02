@@ -26,6 +26,7 @@ import httpx
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
+    ORDER_TIMEOUT_S,
     EngineClient,
     MalformedResult,
     NoPerformancePage,
@@ -320,7 +321,7 @@ def _library_do_request(
         raise _tool_error({"error": "usage", "message": str(error)}) from error
 
 
-def create_server() -> MCPServer:
+def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
     server = MCPServer(name=SERVER_NAME, version=SERVER_VERSION)
 
     @server.tool(annotations=_READ_ONLY)
@@ -389,7 +390,7 @@ def create_server() -> MCPServer:
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
 
-        client = EngineClient(origin=origin)
+        client = EngineClient(origin=origin, timeout_s=command_timeout_s)
         try:
             result = client.post_order(guarded_order)
         except NoPerformancePage as error:
@@ -574,7 +575,11 @@ def create_server() -> MCPServer:
     return server
 
 
-def run_stdio(lock_path: Path | None = None) -> None:
+def run_stdio(
+    lock_path: Path | None = None,
+    *,
+    command_timeout_s: float = ORDER_TIMEOUT_S,
+) -> None:
     """Start the stdio MCP server until stdin closes."""
     _state.lock_path = lock_path
-    create_server().run(transport="stdio")
+    create_server(command_timeout_s=command_timeout_s).run(transport="stdio")

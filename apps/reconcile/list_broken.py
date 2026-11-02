@@ -22,6 +22,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apps.shared import fs_residency, paths, rekordbox_db
+from apps.shared.numeric_coerce import coerce_optional
 
 console = Console(width=120)
 
@@ -78,20 +79,11 @@ class BrokenRow:
         ]
 
 
-def _duration_s_from_rb_length(length: object) -> int | None:
-    """Parse rekordbox ``Length`` (seconds) for CSV export; invalid -> None."""
-    if length is None:
-        return None
-    try:
-        return int(length)
-    except (TypeError, ValueError):
-        return None
-
-
 def _broken_row_from(raw, rb) -> BrokenRow:
     """Marry the lean RBTrack view with the raw ORM row's extra fields."""
     key = getattr(raw, "KeyName", None) or ""
-    duration_s = _duration_s_from_rb_length(getattr(raw, "Length", None))
+    # Rekordbox DjmdContent.Length is stored in whole seconds.
+    duration_s = coerce_optional(getattr(raw, "Length", None), int)
 
     original = rb.folder_path or ""
     basename = Path(original).name if original else ""

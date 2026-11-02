@@ -1,20 +1,15 @@
 /** Partner stable_ids for the reference master deck (PAIR-04 library chrome). */
 import { listPairingsFor } from '$lib/api';
-import { subscribeKind } from '$lib/api/events-bus';
-
-export interface PairingIndexOptions {
-	/** Called once when a lookup FAILS after a success (or at first failure),
-	 * so the panel can say so. A failed lookup is never published as an empty
-	 * partner set without this firing; repeated failures do not re-notify
-	 * until a lookup succeeds again. */
-	onError?: (message: string) => void;
-}
+import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 
 export class PairingIndex {
 	partnerIds = $state<ReadonlySet<string>>(new Set());
 	/** Non-null while the latest lookup FAILED: the partner set is then
-	 * unknown, not empty, and the panel has been told via onError. */
+	 * unknown, not empty. pairingOutageToaster turns it into the one toast. */
 	error = $state<string | null>(null);
+	/** True while the latest lookup is in flight, so a failure-then-recovery
+	 * outage latch can wait for the other store before it re-arms. */
+	pending = $state(false);
 	private _masterStableId: string | null = null;
 	/** The master whose partners `partnerIds` currently shows, so a lookup
 	 * for a different master clears them instead of leaving the previous
@@ -25,12 +20,6 @@ export class PairingIndex {
 	 * its own generation is still the latest, so a slow answer for a previous
 	 * master can never overwrite the current master's partners. */
 	private _generation = 0;
-	private readonly _onError: ((message: string) => void) | undefined;
-
-	constructor(options: PairingIndexOptions = {}) {
-		this._onError = options.onError;
-	}
-
 	start(getMasterStableId: () => string | null): void {
 		this.stop();
 		this._unsubs.push(
@@ -39,6 +28,8 @@ export class PairingIndex {
 		this._unsubs.push(
 			subscribeKind('tracks', () => void this.refresh(getMasterStableId))
 		);
+		// A pairing change missed while the socket was down arrives as a resync.
+		this._unsubs.push(subscribeResync(() => void this.bump(getMasterStableId)));
 		void this.refresh(getMasterStableId);
 	}
 
@@ -50,6 +41,7 @@ export class PairingIndex {
 		this._publishedFor = null;
 		this._masterStableId = null;
 		this.error = null;
+		this.pending = false;
 	}
 
 	async refresh(getMasterStableId: () => string | null): Promise<void> {
@@ -61,6 +53,7 @@ export class PairingIndex {
 			this._publishedFor = null;
 			this.partnerIds = new Set();
 			this.error = null;
+			this.pending = false;
 			return;
 		}
 		this._masterStableId = sid;
@@ -68,6 +61,7 @@ export class PairingIndex {
 			this._publishedFor = null;
 			this.partnerIds = new Set();
 		}
+		this.pending = true;
 		try {
 			const pairings = await listPairingsFor(sid);
 			if (generation !== this._generation) return;
@@ -79,16 +73,15 @@ export class PairingIndex {
 			this.partnerIds = ids;
 			this._publishedFor = sid;
 			this.error = null;
+			this.pending = false;
 		} catch (exc) {
 			if (generation !== this._generation) return;
+			this.pending = false;
 			// Unknown, not empty: clear the underlines (they would be stale or
 			// wrong) and SAY the lookup failed, so it cannot read as "no pairings".
 			this.partnerIds = new Set();
 			this._publishedFor = null;
-			const message = `pairing lookup failed: ${exc instanceof Error ? exc.message : String(exc)}`;
-			const firstFailure = this.error === null;
-			this.error = message;
-			if (firstFailure) this._onError?.(message);
+			this.error = `pairing lookup failed: ${exc instanceof Error ? exc.message : String(exc)}`;
 		}
 	}
 

@@ -90,7 +90,8 @@ export type MenuTargetKind = keyof MenuContextByKind;
 
 /** What was right-clicked. Only the fields labels need; ids stay in the host. */
 export type MenuTarget =
-	| { kind: 'track'; count: number }
+	/** `count` is the distinct tracks an action acts on; `rows` is the selected rows (duplicates included). */
+	| { kind: 'track'; count: number; rows: number }
 	| { kind: 'track-chip' }
 	| { kind: 'playlists-root' }
 	| { kind: 'playlist' }
@@ -236,6 +237,22 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		command: 'track.library_job',
 		when: startsWorker,
 		disabledWhen: (ctx) => NO_LOCAL_AUDIO[ctx.audio]
+	},
+	{
+		// PAIR-10 (the maintainer, Thu 8 Oct 2026): "Selecting 2 songs should have pair
+		// these 2 tracks as right click option." It makes a LOOSE pair, with no
+		// alignment; aligned pairs come from the top-bar Create pairing sheet,
+		// which captures them from two loaded decks.
+		id: 'pair',
+		label: (target) => (target.rows === 2 && target.count === 2 ? 'Pair these 2 tracks' : 'Pair tracks'),
+		command: 'track.pair',
+		when: (ctx) => writable(ctx) && ctx.selection === 'many',
+		disabledWhen: (_ctx, target) => {
+			if (target.rows !== 2) return 'pairs exactly 2 tracks - select two rows';
+			// Two rows of one track cannot pair: runPairTracks needs two distinct ids.
+			return target.count === 2 ? null : 'pairs 2 different tracks - the selected rows are duplicates';
+		},
+		testId: () => 'context-menu-pair'
 	},
 	{
 		id: 'remove-playlist',

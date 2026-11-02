@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- TEMPLATE, rendered with com.opendj.hub.plist by `just cloudsync-hub-start`.
      Nightly online, verified hub backup (apps/sync_hub/hub_backup.py).
-     launchd has no time zone field: this fires at __HOUR__:__MINUTE__ HOST-LOCAL
-     time, where the systemd timer fires in UTC.
-     Runbook: docs/cloudsync/hub-runbook.md -->
+     launchd has no time zone field: this fires at the StartCalendarInterval
+     Hour:Minute rendered below in HOST-LOCAL time, where the systemd timer
+     fires in UTC.
+     Runbook: (private path) -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>

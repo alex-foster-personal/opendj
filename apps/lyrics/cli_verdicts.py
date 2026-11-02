@@ -87,3 +87,9 @@ def cmd_verdicts(args: argparse.Namespace) -> int:
 
 
 __all__ = ["VERDICTS_COMMANDS", "add_verdicts_commands", "cmd_verdicts"]
+
+
+if __name__ == "__main__":
+    from apps.lyrics.cli_guard import refuse_direct_run
+
+    refuse_direct_run(__spec__.name if __spec__ is not None else __file__)

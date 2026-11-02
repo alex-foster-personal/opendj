@@ -716,7 +716,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_CONFIRMED
         from apps.opendj_cli import mcp_cli
 
-        return mcp_cli.run(mcp_tokens, lock=args.lock)
+        return mcp_cli.run(mcp_tokens, lock=args.lock, command_timeout_s=args.timeout)
     update_split = _split_subcommand(tokens, _UPDATE_COMMAND)
     if update_split is not None:
         global_tokens, update_tokens = update_split

@@ -149,6 +149,51 @@ export function renderedContrastAudit(): RenderedContrastReport {
 		 * a `position: relative` host gives it), so an edge bar that does not
 		 * reach the text is not counted.
 		 */
+		/**
+		 * The thickness of the edge band a pseudo's mask confines its fill to,
+		 * or null when the mask is absent or not made only of strips tiled along
+		 * one axis (a repeat-x layer is a horizontal strip as tall as its tile,
+		 * a repeat-y layer a vertical one as wide as its tile).
+		 */
+		const maskEdgeBand = (ps: CSSStyleDeclaration): number | null => {
+			const image = ps.getPropertyValue('mask-image') || ps.getPropertyValue('-webkit-mask-image');
+			if (!image || image === 'none') return null;
+			const repeats = (ps.getPropertyValue('mask-repeat') || ps.getPropertyValue('-webkit-mask-repeat'))
+				.split(',')
+				.map((v) => v.trim());
+			const sizes = (ps.getPropertyValue('mask-size') || ps.getPropertyValue('-webkit-mask-size'))
+				.split(',')
+				.map((v) => v.trim().split(/\s+/).map((d) => (d.endsWith('px') ? parseFloat(d) : NaN)));
+			const positions = (ps.getPropertyValue('mask-position') || ps.getPropertyValue('-webkit-mask-position'))
+				.split(',')
+				.map((v) => v.trim().split(/\s+/));
+			// A strip counts as an edge band only when it is anchored to the
+			// matching edge; one positioned mid-box could sit under the text.
+			// Chromium computes `left 0 top 0` as `left 0px top 0px` (4 tokens);
+			// the 2-token form is `0% 100%` or plain keywords.
+			const edgeAxis = (tokens: string[], axis: 'x' | 'y'): boolean => {
+				const keys = axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];
+				if (tokens.length === 4) {
+					const [k, o] = axis === 'x' ? [tokens[0], tokens[1]] : [tokens[2], tokens[3]];
+					return keys.includes(k ?? '') && o === '0px';
+				}
+				const v = axis === 'x' ? tokens[0] : tokens[1];
+				return v === '0%' || v === '0px' || v === '100%' || keys.includes(v ?? '');
+			};
+			const layers = image.split(/,\s*(?=url\(|(?:repeating-)?(?:linear|radial|conic)-gradient\(|none)/).length;
+			let band = 0;
+			for (let i = 0; i < layers; i++) {
+				const rep = repeats[i % repeats.length];
+				const [w, h] = sizes[i % sizes.length] ?? [];
+				const pos = positions[i % positions.length] ?? [];
+				const anchored = rep === 'repeat-x' ? edgeAxis(pos, 'y') : rep === 'repeat-y' ? edgeAxis(pos, 'x') : false;
+				if (!anchored) return null;
+				const thick = rep === 'repeat-x' ? h : rep === 'repeat-y' ? w : NaN;
+				if (!Number.isFinite(thick)) return null;
+				band = Math.max(band, thick);
+			}
+			return band;
+		};
 		const pseudoFill = (e: Element) => {
 			for (const pseudo of ['::before', '::after'] as const) {
 				const ps = getComputedStyle(e, pseudo);
@@ -161,6 +206,15 @@ export function renderedContrastAudit(): RenderedContrastReport {
 					const x0 = r.left + l;
 					const y0 = r.top + t;
 					if (pt.x < x0 || pt.x > x0 + w || pt.y < y0 || pt.y > y0 + h) continue;
+					// An edge ring (PAIR-09's paired-row zigzag): every mask layer is
+					// a strip tiled along one axis, so the fill paints only within
+					// that strip's thickness of the box edges. A point deeper inside
+					// sees no fill from this pseudo.
+					const band = maskEdgeBand(ps);
+					if (band !== null) {
+						const inset = Math.min(pt.x - x0, x0 + w - pt.x, pt.y - y0, y0 + h - pt.y);
+						if (inset > band) continue;
+					}
 				}
 				const c = parse(ps.backgroundColor);
 				if ((c && c[3] > 0) || ps.backgroundImage !== 'none') {

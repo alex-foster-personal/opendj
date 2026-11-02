@@ -89,6 +89,14 @@ def test_a_planted_failed_trunk_workflow_push_can_reach_the_trunk_red_alarm() ->
     )
 
 
+def test_the_alarm_is_created_only_for_default_branch_runs() -> None:
+    """S2 round 7: a PR run of CI or E2E creates no alarm run at all, since the job admits none.
+
+    [if] the trigger lists every branch again [then] ~90 skipped runs a day come back, so fail, [else stop].
+    """
+    assert _workflow()[True]["workflow_run"]["branches"] == ["main"]
+
+
 def test_removing_e2e_from_the_alarm_trigger_fails_the_mutation_check() -> None:
     """A red E2E cannot silently fall out of the alarm's subscription."""
     mutated = deepcopy(_workflow())

@@ -10449,6 +10449,25 @@
         "title": "FolderScanOut",
         "type": "object"
       },
+      "FolderWatchIn": {
+        "description": "The durable folder-rescan targets edited after onboarding.",
+        "properties": {
+          "folders": {
+            "description": "absolute paths to rescan; at least one",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "FolderWatchIn",
+        "type": "object"
+      },
       "FolderWatchOut": {
         "description": "LIBM-128: the continuous folder-rescan scheduler's own status.\n\n``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not\nrun in this process (no lifespan, or not yet its first cycle) -- a\ngenuinely different fact from a scheduler that ran and found nothing,\nwhich is ``warning=None`` with a real ``last_cycle_at``.",
         "properties": {
@@ -22779,6 +22798,155 @@
           "proposal_ids"
         ],
         "title": "SelectionIn",
+        "type": "object"
+      },
+      "SetNoteOut": {
+        "properties": {
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "rev": {
+            "title": "Rev",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "required": [
+          "scope",
+          "body_md",
+          "x",
+          "y",
+          "w",
+          "h",
+          "visible",
+          "rev",
+          "updated_at"
+        ],
+        "title": "SetNoteOut",
+        "type": "object"
+      },
+      "SetNotePutIn": {
+        "properties": {
+          "base_rev": {
+            "minimum": 0.0,
+            "title": "Base Rev",
+            "type": "integer"
+          },
+          "body_md": {
+            "title": "Body Md",
+            "type": "string"
+          },
+          "h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          },
+          "w": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "W"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          }
+        },
+        "required": [
+          "body_md",
+          "visible",
+          "base_rev"
+        ],
+        "title": "SetNotePutIn",
         "type": "object"
       },
       "SettingItem": {
@@ -46681,6 +46849,101 @@
         ]
       }
     },
+    "/api/v1/set-notes/{scope}": {
+      "get": {
+        "operationId": "get_set_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Set Note",
+        "tags": [
+          "set-notes"
+        ]
+      },
+      "put": {
+        "operationId": "put_set_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetNotePutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "base_rev is stale; body carries current_rev"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Set Note",
+        "tags": [
+          "set-notes"
+        ]
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "operationId": "get_settings_api_v1_settings_get",
@@ -46914,6 +47177,82 @@
           }
         },
         "summary": "Dismiss",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/folders": {
+      "get": {
+        "description": "Return the folder roots used by the live rescan scheduler.",
+        "operationId": "configured_folders_api_v1_setup_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Configured Folders Api V1 Setup Folders Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Configured Folders",
+        "tags": [
+          "setup"
+        ]
+      },
+      "put": {
+        "description": "Replace rescan roots without re-running the setup wizard.",
+        "operationId": "replace_configured_folders_api_v1_setup_folders_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderWatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Replace Configured Folders Api V1 Setup Folders Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Configured Folders",
         "tags": [
           "setup"
         ]

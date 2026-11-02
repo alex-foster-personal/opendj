@@ -87,8 +87,9 @@ export interface AudioEngine {
 	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Arm or disarm SLIP. Disarming active slip resumes through the normal schedule first. */
 	setSlip(deck: DeckId, enabled: boolean): Promise<void>;
-	/** Shift the loaded deck by exactly one semitone. */
-	nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void>;
+	/** Shift the loaded deck by an integer number of semitones (non-zero, -12..12).
+	 * The resulting manual shift must still land inside -12..12. */
+	nudgeKey(deck: DeckId, semitones: number): Promise<void>;
 	/** Arm KEY SYNC on/off. While armed and a loaded keyed master exists, the
 	 * deck follows that master's audible key through every master change
 	 * (keySyncStatus 'following'); otherwise it waits, unlit. A manual key

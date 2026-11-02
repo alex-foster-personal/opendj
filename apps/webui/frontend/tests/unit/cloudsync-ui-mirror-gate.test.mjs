@@ -62,3 +62,11 @@ test('a 2xx response returns the decks payload', async () => {
 
 	assert.deepEqual(result, { decks: { 1: { playing: true } } });
 });
+
+test('a mirror the engine calls stale no longer reads as a playing deck', () => {
+	const decks = { 1: { playing: true } };
+	assert.equal(view.anyDeckPlaying({ decks, mirror_stale: false }), true);
+	assert.equal(view.anyDeckPlaying({ decks, mirror_stale: true }), false);
+	assert.equal(view.syncRuntimeGateReason('prep', { decks, mirror_stale: true }), null);
+	assert.equal(view.syncRuntimeGateReason('gig', { decks, mirror_stale: true }), view.SYNC_DEFER_GIG);
+});

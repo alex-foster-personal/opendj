@@ -43,6 +43,7 @@ from apps.analysis_beatgrid.grid_quality import (
     grid_quality_message,
     unknown_quality,
 )
+from apps.webui.server.sqlite_sidecar_store import upsert_many_sidecar
 
 STORE_FILENAME = "grid-quality.db"
 _SQL_CHUNK = 500
@@ -159,19 +160,13 @@ def upsert_many(rows: Sequence[StoredGridQuality]) -> None:
     """Replace the stored verdict for each row's track, in one transaction."""
     if not rows:
         return
-    path = store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    try:
-        with conn:
-            conn.execute(_SCHEMA)
-            conn.executemany(
-                f"INSERT OR REPLACE INTO grid_quality ({', '.join(_COLUMNS)}) "
-                f"VALUES ({', '.join('?' * len(_COLUMNS))})",
-                [astuple(row) for row in rows],
-            )
-    finally:
-        conn.close()
+    upsert_many_sidecar(
+        store_path(),
+        _SCHEMA,
+        "grid_quality",
+        _COLUMNS,
+        [astuple(row) for row in rows],
+    )
 
 
 def row_payload(stored: StoredGridQuality | None, *, dismissed: bool) -> dict[str, Any]:

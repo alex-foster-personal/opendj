@@ -32,44 +32,20 @@ from apps.feature_flags import (
     FLAGS,
     FLAGS_FILE_ENV,
     FLAGS_FILENAME,
-    FlagDef,
     FlagFileError,
     flags_path,
     load_flags,
 )
-
-#: A registry that exists only here. Production declares no flags (there is no
-#: real one to declare), and inventing one so the tests have something to read
-#: would be exactly the fabricated state the house rules ban.
-TEST_DEFS: tuple[FlagDef, ...] = (
-    FlagDef(
-        flag_id="example.off_by_default",
-        default=False,
-        owner="tests",
-        note="exists only inside this module",
-        retire_by="never - test fixture",
-        sandbox_gated=False,
-    ),
-    FlagDef(
-        flag_id="example.on_by_default",
-        default=True,
-        owner="tests",
-        note="exists only inside this module",
-        retire_by="never - test fixture",
-        sandbox_gated=False,
-    ),
+from tests.feature_flags.support import (
+    TEST_DEFS,
+    clear_flag_selection_env,
+    write_flags_file,
 )
 
 
 @pytest.fixture(autouse=True)
 def _no_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(FLAGS_FILE_ENV, raising=False)
-
-
-def _write(data_dir: Path, payload: object) -> Path:
-    path = data_dir / FLAGS_FILENAME
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
+    clear_flag_selection_env(monkeypatch)
 
 
 # ----- FLAG-01: a separate store from entitlements ------------------------
@@ -123,7 +99,7 @@ def test_missing_file_means_every_flag_at_its_default(tmp_path: Path) -> None:
 
 
 def test_an_override_wins_and_says_it_did(tmp_path: Path) -> None:
-    _write(tmp_path, {"example.off_by_default": True})
+    write_flags_file(tmp_path, {"example.off_by_default": True})
     store = load_flags(tmp_path, defs=TEST_DEFS)
     assert store.file_present is True
     assert store.enabled("example.off_by_default") is True
@@ -156,13 +132,13 @@ def test_invalid_json_raises_rather_than_reading_as_absent(
 
 @pytest.mark.parametrize("payload", [[], "on", 3])
 def test_a_non_object_file_is_refused(tmp_path: Path, payload: object) -> None:
-    _write(tmp_path, payload)
+    write_flags_file(tmp_path, payload)
     with pytest.raises(FlagFileError):
         load_flags(tmp_path, defs=TEST_DEFS)
 
 
 def test_an_undeclared_key_in_the_file_is_refused(tmp_path: Path) -> None:
-    _write(tmp_path, {"example.typoo": True})
+    write_flags_file(tmp_path, {"example.typoo": True})
     with pytest.raises(FlagFileError) as excinfo:
         load_flags(tmp_path, defs=TEST_DEFS)
     assert "example.typoo" in str(excinfo.value)
@@ -170,7 +146,7 @@ def test_an_undeclared_key_in_the_file_is_refused(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("value", ["true", 1, 0, None, "yes"])
 def test_a_non_boolean_value_is_refused(tmp_path: Path, value: object) -> None:
-    _write(tmp_path, {"example.off_by_default": value})
+    write_flags_file(tmp_path, {"example.off_by_default": value})
     with pytest.raises(FlagFileError):
         load_flags(tmp_path, defs=TEST_DEFS)
 
@@ -203,7 +179,7 @@ def test_flag_resolution_performs_no_network_call(
     monkeypatch.setattr(socket, "socket", _no_sockets)
     monkeypatch.setattr(socket, "create_connection", _no_sockets)
 
-    _write(tmp_path, {"example.on_by_default": False})
+    write_flags_file(tmp_path, {"example.on_by_default": False})
     store = load_flags(tmp_path, defs=TEST_DEFS)
     assert store.enabled("example.on_by_default") is False
     assert store.snapshot()[0].flag_id == "example.off_by_default"

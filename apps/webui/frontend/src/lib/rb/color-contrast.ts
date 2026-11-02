@@ -305,6 +305,12 @@ export const PAIRINGS: ContrastPairing[] = [
     level: "body",
     label: "master library-row title/artist text",
   },
+  {
+    fg: "rb-pair",
+    bg: "rb-bg",
+    level: "non-text",
+    label: "PAIR fold arrow, opaque --rb-pair (PAIR-09); the subdued row ring is not covered here, see (private path)",
+  },
 ];
 
 /**

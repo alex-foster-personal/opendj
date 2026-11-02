@@ -12,30 +12,14 @@ import re
 import subprocess
 from pathlib import Path
 
-DEFAULT_REPO = "private_owner/music-dj-tools"
+from scripts.gh_pr_view import DEFAULT_REPO
+from scripts.gh_pr_view import pr_view as _shared_pr_view
+
+_ADR_PR_VIEW_FIELDS = "number,title,body,headRefName,author,isCrossRepository"
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
-    proc = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "view",
-            str(pr),
-            "--repo",
-            repo,
-            "--json",
-            "number,title,body,headRefName,author,isCrossRepository",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"gh pr view failed rc={proc.returncode}: {proc.stderr.strip()}")
-    return json.loads(proc.stdout)
-
+    return _shared_pr_view(pr, repo, fields=_ADR_PR_VIEW_FIELDS)
 
 # Trunk Merge Queue tests a batch on a PR it opens itself, head ``trunk-merge/pr-<N>/<uuid>``
 # (``-bisection`` suffix when splitting a failed batch). Its body is Trunk's banner, never an

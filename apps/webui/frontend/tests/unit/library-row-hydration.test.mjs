@@ -66,6 +66,14 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 	['routes/mockups/blocks-variance/+page.svelte', 'dev mockup route: one track per page view'],
 	['routes/mockups/lyric-rows/+page.svelte', 'dev mockup route: at most two tracks per page view'],
 	[
+		'lib/player/preview-beat-snap-start.ts',
+		'CUEOUT-6060: the grid fetch preview-cue.svelte.ts hands it, once per track'
+	],
+	[
+		'lib/player/preview-cue.svelte.ts',
+		'CUEOUT-6060: hands fetchAnlz to the snap chunk for one grid fetch per preview click or 500 ms hover dwell, cached per track, never per rendered row'
+	],
+	[
 		'lib/components/rb/deck/strip-anlz-prefetch.ts',
 		"StripWaveform's untracked warm-up; itself an entry point, so its callers are listed too"
 	]

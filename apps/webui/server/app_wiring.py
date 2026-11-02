@@ -28,6 +28,7 @@ from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.http import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
+from apps.set_notes.http import create_router as create_set_notes_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.shutdown_bound import StopStep, run_stop_steps, stop_window_deadline
 from apps.shared.state.db import StateStoreBusyError
@@ -55,6 +56,7 @@ from .backend import (
     StateBackend,
 )
 from .cloudsync_scheduler import CloudSyncScheduler
+from .deps import get_write_state
 from .errors import (
     handle_already_exists,
     handle_backend_error,
@@ -68,12 +70,9 @@ from .errors import (
     handle_state_store_busy,
     handle_target_inside_slice,
 )
+from .http_guards import HttpGuardMiddleware
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
-from .request_guard import (
-    host_allowlist_middleware,
-    origin_guard_middleware,
-)
 from .routes import ahead_analysis as ahead_analysis_routes
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
@@ -186,7 +185,7 @@ from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .sets_master_tap import OrderBusMasterTap
-from .share_gate import ShareConfig, share_gate_middleware
+from .share_gate import ShareConfig
 from .stem_cache_enforcer import StemCacheEnforcer
 from .usage_telemetry import UsageStore
 
@@ -610,30 +609,11 @@ def _configure_cors(app: FastAPI) -> None:
 
 
 def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
-    app.middleware("http")(host_allowlist_middleware)
-    app.middleware("http")(origin_guard_middleware)
-    app.middleware("http")(share_gate_middleware)
-
-    @app.middleware("http")
-    async def record_passive_usage(request: Request, call_next):
-        # Backstop for the heartbeat: ordinary traffic from a real webview or
-        # browser is evidence someone has the app open. The store drops
-        # telemetry/health paths and non-app user agents, so agents polling
-        # this API cannot manufacture the activity they are asking about.
-        app.state.usage_store.record_request(
-            path=request.url.path,
-            user_agent=request.headers.get("user-agent", ""),
-        )
-        return await call_next(request)
-
-    @app.middleware("http")
-    async def add_bind_warning(request: Request, call_next):
-        response = await call_next(request)
-        if bind_host and bind_host not in {"127.0.0.1", "localhost"}:
-            response.headers["X-Bind-Warning"] = (
-                f"server is bound to {bind_host}; do not expose without Tailscale"
-            )
-        return response
+    # One pure-ASGI layer replaces five BaseHTTPMiddleware decorators (bind
+    # warning, passive usage, share gate, origin guard, host allowlist, in
+    # that outer-to-inner order) so response bodies are not re-streamed per
+    # layer. See http_guards.py for the order contract.
+    app.add_middleware(HttpGuardMiddleware, bind_host=bind_host)
 
 
 def _mount_api_routers(app: FastAPI) -> None:
@@ -661,6 +641,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         playlist_write_routes.router,
         playlist_tree_routes.router,
         playlist_sets_routes.router,
+        create_set_notes_router(get_write_state),
         playlist_history_routes.router,
         play_it_routes.router,
         playlist_writeback_routes.router,

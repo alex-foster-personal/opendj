@@ -10,6 +10,8 @@ Regression one-liners:
   - if the configure line ever asks for --enable-gpl or --enable-nonfree then broken
   - if a filter a lane command line names is missing from the build then broken
   - if changing the configure line does not change the cache artifact name then broken
+  - if the preflight passes with no cache and no cmake then broken (silver, Mon 2 Nov
+    2026: the build died minutes in, at payload staging)
 """
 
 from __future__ import annotations
@@ -144,3 +146,34 @@ def test_configure_change_changes_the_cache_name() -> None:
     assert lgpl.artifact_name(base) == lgpl.artifact_name(list(base))
     assert lgpl.artifact_name(base) != lgpl.artifact_name([*base, "--enable-filter=astats"])
     assert lgpl.ARTIFACT_NAME == lgpl.artifact_name(lgpl.configure_args(lgpl._PREFIX_PLACEHOLDER))
+
+
+def _cache_with_artifact(root: Path) -> None:
+    prefix = root / lgpl.ARTIFACT_NAME
+    for name in lgpl.ARTIFACT_FILES:
+        (prefix / name).parent.mkdir(parents=True, exist_ok=True)
+        (prefix / name).write_text("x")
+
+
+def test_preflight_refuses_no_cache_and_no_cmake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] there is no cache for the key and cmake is missing [then] the preflight names cmake, [else stop]."""
+    monkeypatch.setattr(lgpl, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(lgpl.shutil, "which", lambda tool: None if tool == "cmake" else f"/usr/bin/{tool}")
+    with pytest.raises(lgpl.FfmpegBuildError, match="cmake"):
+        lgpl.build_readiness()
+    assert lgpl.main(["--preflight"]) == 1
+
+
+def test_preflight_passes_with_a_cache_even_without_cmake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the cache for the key exists [then] no cold-build tool is required, [else stop]."""
+    monkeypatch.setattr(lgpl, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(lgpl.shutil, "which", lambda _tool: None)
+    _cache_with_artifact(tmp_path)
+    assert lgpl.build_readiness().startswith("cached path=")
+
+
+def test_preflight_passes_with_no_cache_when_the_tools_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Control: a cold build is fine when cmake and make are on PATH."""
+    monkeypatch.setattr(lgpl, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(lgpl.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    assert lgpl.build_readiness() == "cold-build tools=cmake,make"

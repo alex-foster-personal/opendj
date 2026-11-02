@@ -189,10 +189,7 @@ def get_library_wheel(
 def get_library_wheel_axes() -> list[dict[str, object]]:
     """Axis catalog alone, so a picker can render enabled/disabled without
     paying for a full tree fetch."""
-    return [
-        {"key": a.key, "label": a.label, "enabled": a.enabled, "reason": a.reason}
-        for a in AXES
-    ]
+    return [a.model_dump() for a in AXES]
 
 
 @router.get("/readiness", response_model=LibraryReadinessOut)

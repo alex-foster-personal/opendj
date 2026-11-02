@@ -1,8 +1,19 @@
+<script lang="ts" module>
+	import { readKeyNudgeStep, subscribeKeyNudgeStep, type KeyNudgeStep } from '$lib/player/key/camelot';
+
+	// DECKGAP-7691b: one step size for every deck, owned by camelot.ts and set
+	// only through the `key_nudge_step` command; this mirror redraws the row.
+	let keyNudgeStep: KeyNudgeStep = $state(readKeyNudgeStep());
+	subscribeKeyNudgeStep((step) => {
+		keyNudgeStep = step;
+	});
+</script>
+
 <script lang="ts">
 	import { shownKey } from '$lib/rb/key-notation';
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
-	// key badge + semitone nudge arrows, KEY SYNC,
+	// KEY SYNC with the key readout and nudge arrows stacked under it,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
@@ -18,13 +29,13 @@
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
-	import { beatSyncGridWarning } from '$lib/rb/beat-sync-math';
+	import { beatSyncGridWarning, playbackBpm } from '$lib/rb/beat-sync-math';
 	import { deckGridWarningText, gridAudioFitFor, requestGridAudioFit } from '$lib/rb/grid-audio-fit.svelte';
-	import { queryMasterMode } from '$lib/rb/performance-ipc.svelte';
+	import { queryMasterMode, runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { MASTER_LOCK_LONG_PRESS_MS } from '$lib/rb/master-election';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
-	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/camelot';
+	import { keyNudgeSemitones, keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/camelot';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -50,7 +61,7 @@
 		onMaster: (lockGesture: boolean) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
 		onKeySync: () => Promise<void>;
-		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
+		onKeyNudge: (semitones: number) => Promise<void>;
 		onResetTempo: (ratio: number) => Promise<void>;
 		onUnload: () => Promise<void>;
 		keySyncAvailable: boolean;
@@ -67,7 +78,19 @@
 		artworkFailed = false;
 	});
 
-	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
+	// DECKGAP-7691d (Preview pin 65b1138bd823): the large figure is the jog wheel's live BPM
+	// (grid interval x pitch). deck.bpm is the analysed original and stays
+	// in the "(from N bpm)" line, so a pitched deck does not read 122 from 122.
+	const liveBpm: number | null = $derived(
+		playbackBpm({
+			beats: deck.anlz?.beatgrid.beats,
+			positionSec: Math.max(0, deck.position_ms / 1000),
+			tempoRatio: deck.pitch,
+			tagBpm: deck.bpm
+		})
+	);
+	const bpmText: string = $derived(liveBpm === null ? '--.--' : liveBpm.toFixed(2));
+	const bpmTitle = 'Live BPM: the beat grid tempo at the playhead times this deck\'s pitch, the same figure the jog wheel shows';
 	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
 	// Beat Sync is inert when gridFeaturesInert is true (missing / failed /
 	// static_grid_untrusted: true). A trusted multi-anchor own map is not
@@ -274,6 +297,61 @@
 			: String(deck.key_shift_semitones)
 	);
 
+	// Pin 783ce03c0dbd. Standard DJ key shift is one semitone, so that stays
+	// the selected step. Tone, scale, and one Camelot (a fifth) are the other
+	// sizes, picked here and applied as one nudge, not a run of semitones.
+	const KEY_NUDGE_STEPS: readonly { id: KeyNudgeStep; label: string; title: string }[] = [
+		{
+			id: 'semitone',
+			label: 'semi',
+			title: 'One semitone. Standard DJ key shift (CDJ, rekordbox, Serato, Traktor).'
+		},
+		{ id: 'tone', label: 'tone', title: 'One whole tone (two semitones).' },
+		{ id: 'scale', label: 'scale', title: "Next note in this track's scale." },
+		{ id: 'camelot', label: '5th', title: 'One Camelot step: a perfect fifth, one number around the wheel.' }
+	];
+
+	function nudgeDelta(direction: -1 | 1): number | null {
+		return keyNudgeSemitones(keyNudgeStep, direction, deck.key, deck.key_shift_semitones);
+	}
+
+	function nudgeFits(direction: -1 | 1): boolean {
+		const delta = nudgeDelta(direction);
+		if (delta === null) return false;
+		const next = deck.key_shift_semitones + delta;
+		return next >= -12 && next <= 12;
+	}
+
+	function nudgeTitle(direction: -1 | 1): string {
+		if (keyNudgeStep === 'scale' && nudgeDelta(direction) === null) {
+			return 'Scale step needs a Camelot or musical key on this track';
+		}
+		if (keyNudgeStep === 'semitone') {
+			return direction < 0 ? 'lower key by one semitone' : 'raise key by one semitone';
+		}
+		if (keyNudgeStep === 'tone') {
+			return direction < 0 ? 'lower key by one whole tone' : 'raise key by one whole tone';
+		}
+		if (keyNudgeStep === 'scale') {
+			return direction < 0
+				? "lower key to the previous note in this track's scale"
+				: "raise key to the next note in this track's scale";
+		}
+		return direction < 0
+			? 'lower key by one Camelot step, a perfect fifth'
+			: 'raise key by one Camelot step, a perfect fifth';
+	}
+
+	function nudgeAria(direction: -1 | 1): string {
+		return `${nudgeTitle(direction)} deck ${deckId}`;
+	}
+
+	async function nudge(direction: -1 | 1): Promise<void> {
+		const delta = nudgeDelta(direction);
+		if (delta === null || !nudgeFits(direction)) return;
+		await onKeyNudge(delta);
+	}
+
 	// --------------------------------------- tempo/key readout (pin 815937c87bc1)
 	// Original-key colour is deck.key's OWN camelot colour, distinct from
 	// keyColor above which tracks the shifted (current) key.
@@ -441,6 +519,7 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<span
 					class="bpm"
+					title={bpmTitle}
 					data-testid={`tempo-readout-deck-${deckId}`}
 					aria-label={`tempo readout deck ${deckId}`}
 					ondblclick={onTempoReadoutDblClick}
@@ -471,60 +550,81 @@
 					Enable MT
 				</button>
 			{/snippet}
-			<div class="key-badge">
-				<button
-					class="nudge"
-					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
-					data-performance-control="key-nudge-down"
-					aria-label={`lower key by one semitone deck ${deckId}`}
-					data-testid={`key-nudge-down-deck-${deckId}`}
-					title="lower key by one semitone"
-					onclick={async () => await onKeyNudge(-1)}
-				>
-					&lt;
-				</button>
-				<span
-					class="key-val"
-					style={keyColor !== null ? `color:${keyColor}` : undefined}
-					title={keyHover ?? undefined}>{keyShown}</span
-				>
-				<span class="key-off" title={keyOffTitle}>{keyShiftText}</span>
-				<button
-					class="nudge"
-					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
-					data-performance-control="key-nudge-up"
-					aria-label={`raise key by one semitone deck ${deckId}`}
-					data-testid={`key-nudge-up-deck-${deckId}`}
-					title="raise key by one semitone"
-					onclick={async () => await onKeyNudge(1)}
-				>
-					&gt;
-				</button>
+			<div class="key-stack" data-key-nudge-step={keyNudgeStep}>
+				<!-- Pin 59178f89e6f1: the key value and the shift sit in one
+				     block directly under KEY SYNC. The step row stays below
+				     that pair so it cannot stretch the value out from under
+				     the button. -->
+				<div class="key-pair">
+					<ControlExplainer
+						title={keySyncTitle}
+						bullets={keySyncBullets}
+						warning={keySyncWarning}
+						action={keySyncWarning === null ? null : masterTempoAction}
+					>
+						<button
+							class="rb-lit-button keysync"
+							class:lit={keySyncState === 'following'}
+							class:armed={keySyncState !== 'off' && keySyncState !== 'following'}
+							disabled={pending || (!keySyncAvailable && !deck.key_sync_enabled)}
+							aria-pressed={keySyncState === 'following'}
+							data-performance-control="key-sync"
+							data-testid={`key-sync-deck-${deckId}`}
+							aria-label={`key sync deck ${deckId}`}
+							data-state={keySyncState === 'following' ? 'on' : keySyncState === 'off' ? 'off' : 'armed'}
+							data-key-sync-status={keySyncState}
+							title={keySyncTitle}
+							onclick={async () => await onKeySync()}
+						>
+							KEY SYNC
+						</button>
+					</ControlExplainer>
+					<div class="key-badge">
+						<button
+							class="nudge"
+							disabled={pending || deck.stable_id === null || !nudgeFits(-1)}
+							data-performance-control="key-nudge-down"
+							aria-label={nudgeAria(-1)}
+							data-testid={`key-nudge-down-deck-${deckId}`}
+							title={nudgeTitle(-1)}
+							onclick={async () => await nudge(-1)}
+						>
+							&lt;
+						</button>
+						<span
+							class="key-val"
+							style={keyColor !== null ? `color:${keyColor}` : undefined}
+							title={keyHover ?? undefined}>{keyShown}</span
+						>
+						<span class="key-off" title={keyOffTitle}>{keyShiftText}</span>
+						<button
+							class="nudge"
+							disabled={pending || deck.stable_id === null || !nudgeFits(1)}
+							data-performance-control="key-nudge-up"
+							aria-label={nudgeAria(1)}
+							data-testid={`key-nudge-up-deck-${deckId}`}
+							title={nudgeTitle(1)}
+							onclick={async () => await nudge(1)}
+						>
+							&gt;
+						</button>
+					</div>
+				</div>
+				<div class="key-steps" role="group" aria-label={`key nudge step deck ${deckId}`}>
+					{#each KEY_NUDGE_STEPS as step (step.id)}
+						<button
+							type="button"
+							class="step"
+							aria-pressed={keyNudgeStep === step.id}
+							title={step.title}
+							data-testid={`key-nudge-step-${step.id}-deck-${deckId}`}
+							onclick={() => void runPerformanceCommandFromUi({ type: 'key_nudge_step', step: step.id })}
+						>
+							{step.label}
+						</button>
+					{/each}
+				</div>
 			</div>
-
-			<ControlExplainer
-				title={keySyncTitle}
-				bullets={keySyncBullets}
-				warning={keySyncWarning}
-				action={keySyncWarning === null ? null : masterTempoAction}
-			>
-				<button
-					class="rb-lit-button keysync"
-					class:lit={keySyncState === 'following'}
-					class:armed={keySyncState !== 'off' && keySyncState !== 'following'}
-					disabled={pending || (!keySyncAvailable && !deck.key_sync_enabled)}
-					aria-pressed={keySyncState === 'following'}
-					data-performance-control="key-sync"
-					data-testid={`key-sync-deck-${deckId}`}
-					aria-label={`key sync deck ${deckId}`}
-					data-state={keySyncState === 'following' ? 'on' : keySyncState === 'off' ? 'off' : 'armed'}
-					data-key-sync-status={keySyncState}
-					title={keySyncTitle}
-					onclick={async () => await onKeySync()}
-				>
-					KEY SYNC
-				</button>
-			</ControlExplainer>
 
 			<div class="sync-col">
 				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets} warning={gridWarning}>
@@ -785,6 +885,44 @@
 	}
 	.keysync {
 		flex: 0 0 auto;
+		width: 100%;
+	}
+	.key-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		flex: 0 0 auto;
+	}
+	/* Same width as the button, so the key value and shift land under the
+	   KEY SYNC label instead of centering in the wider step row. */
+	.key-pair {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 2px;
+		flex: 0 0 auto;
+	}
+	.key-steps {
+		display: flex;
+		gap: 2px;
+	}
+	.key-steps .step {
+		flex: 1 1 auto;
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font: inherit;
+		font-size: 9px;
+		line-height: 1.3;
+		padding: 0 3px;
+		cursor: pointer;
+	}
+	.key-steps .step[aria-pressed='true'] {
+		color: var(--rb-text);
+		border-color: var(--rb-text-dim);
+		background: var(--rb-panel-raised);
 	}
 	.keysync.armed {
 		outline: 1px dashed var(--rb-text-dim);
@@ -815,6 +953,7 @@
 	.key-badge {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: 2px;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);

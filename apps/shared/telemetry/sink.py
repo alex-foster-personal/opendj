@@ -283,6 +283,10 @@ def sentry_payload(event: ErrorEvent) -> dict[str, Any]:
 
 def maybe_send_sentry(event: ErrorEvent) -> str | None:
     """Forward to Sentry only when the SDK is already active. Never imports it."""
+    from apps.shared.telemetry.budget import is_uvicorn_graceful_shutdown_timeout
+
+    if is_uvicorn_graceful_shutdown_timeout(event.kind, event.source_site, event.message):
+        return None
     if "sentry_sdk" not in sys.modules:
         return None
     try:

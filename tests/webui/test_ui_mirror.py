@@ -13,6 +13,7 @@ import time
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.shared.telemetry import MIRROR_RECEIVED_MONOTONIC_KEY
 from apps.webui.server.routes.state import router
 
 _RECEIVED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
@@ -104,3 +105,24 @@ def test_ui_mirror_published_at_round_trips_from_the_page() -> None:
     assert body["published_at"] == "2026-09-11T18:50:03.000Z"
     _assert_received_at(body["received_at"])
     assert body["received_at"] != body["published_at"]
+
+
+def test_ui_mirror_monotonic_arrival_stamp_is_kept_in_process_and_not_served() -> None:
+    """The engine ages the mirror on its own monotonic clock; that number means
+    nothing to another process, so it is stamped on every ingest, cannot be
+    supplied by the client, and never leaves on GET."""
+    spoofed = {"client_open": True, "decks": {}, MIRROR_RECEIVED_MONOTONIC_KEY: -1.0}
+    with _client() as client:
+        before = time.monotonic()
+        client.put("/api/v1/state/ui-mirror", json=spoofed)
+        after = time.monotonic()
+        stored = client.app.state.ui_mirror  # type: ignore[attr-defined]
+        served = client.get("/api/v1/state/ui-mirror").json()
+        client.put("/api/v1/state/ui-mirror", json=spoofed)
+        restamped = client.app.state.ui_mirror[MIRROR_RECEIVED_MONOTONIC_KEY]  # type: ignore[attr-defined]
+
+    assert before <= stored[MIRROR_RECEIVED_MONOTONIC_KEY] <= after
+    assert restamped >= stored[MIRROR_RECEIVED_MONOTONIC_KEY]
+    assert MIRROR_RECEIVED_MONOTONIC_KEY not in served
+    assert served["client_open"] is True  # control: the rest of the document is served
+    _assert_received_at(served["received_at"])

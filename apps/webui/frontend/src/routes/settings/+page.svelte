@@ -9,6 +9,7 @@
 		runSetupBlocked
 	} from '$lib/setup/run-setup';
 	import { catalogLinkSettings } from '$lib/settings/catalog';
+	import ConfiguredMusicFolders from '$lib/components/settings/ConfiguredMusicFolders.svelte';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { pushToast } from '$lib/stores.svelte';
 	import OpenInBrowserAction from '$lib/components/settings/OpenInBrowserAction.svelte';
@@ -73,6 +74,11 @@
 	>
 		{RUN_SETUP_LABEL}
 	</button>
+</section>
+
+<section class="settings-group" aria-label="Configured music folders">
+	<h3>Music folders</h3>
+	<ConfiguredMusicFolders />
 </section>
 
 <section class="settings-group" aria-label="Open in browser">

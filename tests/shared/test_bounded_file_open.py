@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import psutil
 import pytest
 
 from apps.shared.bounded_file_open import (
+    _parse_worker_stderr,
     _process_kwargs,
     _terminate_probe_worker,
     _worker_command,
@@ -124,3 +126,49 @@ def test_second_probe_after_fifo_timeout_still_fast(tmp_path: Path) -> None:
     elapsed = time.monotonic() - start
     assert second.outcome == "ok"
     assert elapsed < PROBE_TIMEOUT_S + 0.5
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _run_worker(command: list[str]) -> tuple[int, int | None]:
+    env = dict(os.environ, PYTHONPATH=str(_REPO_ROOT))
+    done = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=30, env=env, check=False)
+    errno_value, _message = _parse_worker_stderr(done.stderr)
+    return done.returncode, errno_value
+
+
+@pytest.mark.parametrize("case", ["readable", "missing", "directory"])
+def test_inline_probe_child_answers_exactly_like_the_module_worker(tmp_path: Path, case: str) -> None:
+    """[if] the inline probe child and bounded_file_open_worker disagree on exit code or errno [then] the 503 mapping changed, [else stop].
+
+    _worker_command runs an inline ``-I -S -c`` program (no ``apps`` import, so
+    a cheaper child start) in place of ``-m apps.shared.bounded_file_open_worker``.
+    The route maps the child's errno to 503 / 404, so the two must agree on
+    every outcome. The ``readable`` row is the control: both must exit 0.
+    """
+    target = tmp_path / "subject.mp3"
+    if case == "readable":
+        target.write_bytes(b"ID3")
+    elif case == "directory":
+        target.mkdir()
+    inline = _run_worker(_worker_command(target))
+    module = _run_worker([sys.executable, "-m", "apps.shared.bounded_file_open_worker", str(target)])
+    assert inline == module
+    if case == "readable":
+        assert inline == (0, None)
+    else:
+        assert inline[0] == 1 and inline[1] is not None
+
+
+def test_probe_child_is_isolated_and_still_named_for_process_listings(tmp_path: Path) -> None:
+    """[if] the probe child imports the apps package or loses the worker name in its cmdline [then] broken, [else stop].
+
+    ``-I -S`` is the saving (bare interpreter start). The worker name in the
+    cmdline is what ``_probe_workers_alive`` and operators grep for.
+    """
+    command = _worker_command(tmp_path / "x.mp3")
+    assert command[0] == sys.executable
+    assert command[1:4] == ["-I", "-S", "-c"]
+    assert "bounded_file_open_worker" in command[4]
+    assert "import apps" not in command[4] and "from apps" not in command[4]

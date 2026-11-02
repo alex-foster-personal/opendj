@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { expect, test, type Page } from '@playwright/test';
 
 import { waitForPerformanceIpc } from './support/performance-ready';
@@ -14,6 +16,10 @@ import { waitForPerformanceIpc } from './support/performance-ready';
 // Capture wrote nothing else, so a recapture changed nothing on the server
 // while the toast said "Pairing captured", and Reload sync never had a
 // snapshot to replay.
+// [if] the test ends, pass or fail [then] the pairings it created are deleted,
+// so later specs in the same run (pairing-library-edge needs two unpaired
+// rows in this small fixture) see the library as seeded [else stop: the run's
+// later pairing specs fail on a fixture this spec paired].
 
 const SHEET = '[role=dialog][aria-label="Create pairing"]';
 
@@ -32,6 +38,32 @@ async function _api<T>(page: Page, path: string): Promise<T> {
 	}, path);
 }
 
+interface PairingRow {
+	pairing_id: string;
+	from_stable_id: string;
+	to_stable_id: string;
+	updated_at: string;
+}
+
+/** The server's strong validator for a pairing (apps/webui/server/etag.py). */
+function _etag(row: PairingRow): string {
+	return `"${createHash('sha1').update(`${row.pairing_id}:${row.updated_at}`).digest('hex')}"`;
+}
+
+/** Delete the pairings that exist now but did not before the test. */
+async function _deletePairingsCreatedSince(page: Page, before: ReadonlySet<string>): Promise<void> {
+	for (const row of await _api<PairingRow[]>(page, '/api/v1/pairings')) {
+		if (before.has(row.pairing_id)) continue;
+		await page.evaluate(
+			async ([url, etag]) => {
+				const res = await fetch(url, { method: 'DELETE', headers: { 'if-match': etag } });
+				if (!res.ok) throw new Error(`DELETE ${url} -> ${res.status}`);
+			},
+			[`/api/v1/pairings/${row.pairing_id}`, _etag(row)] as const
+		);
+	}
+}
+
 async function _capture(page: Page, positions: [number, number]): Promise<void> {
 	for (const [index, position_ms] of positions.entries()) {
 		await page.evaluate(
@@ -46,7 +78,8 @@ async function _capture(page: Page, positions: [number, number]): Promise<void> 
 	await expect(sheet).toBeVisible();
 	await expect(sheet.locator('input[type=checkbox]:checked')).toHaveCount(2);
 	await sheet.getByRole('button', { name: 'Capture', exact: true }).click();
-	// The sheet closes only on success (PAIR-06).
+	// The sheet closes only on success (PAIR-06), after the durable writes land.
+	await expect(page.getByText('Pairing captured', { exact: true })).toBeVisible();
 	await expect(sheet).toBeHidden();
 }
 
@@ -72,24 +105,29 @@ test('Capture with 2 checked decks creates the pairing and records a sync snapsh
 	if ((await bsm.getAttribute('aria-pressed')) === 'true') await bsm.click();
 	await expect(bsm).toHaveAttribute('aria-pressed', 'false');
 
-	const snapshots = (): Promise<SyncSnapshotRow[]> =>
-		_api<SyncSnapshotRow[]>(page, `/api/v1/pairings/sync-snapshots?stable_a=${a}&stable_b=${b}&limit=50`);
-	expect(await snapshots()).toHaveLength(0);
+	const before = new Set((await _api<PairingRow[]>(page, '/api/v1/pairings')).map((row) => row.pairing_id));
+	try {
+		const snapshots = (): Promise<SyncSnapshotRow[]> =>
+			_api<SyncSnapshotRow[]>(page, `/api/v1/pairings/sync-snapshots?stable_a=${a}&stable_b=${b}&limit=50`);
+		expect(await snapshots()).toHaveLength(0);
 
-	await _capture(page, [30_000, 45_000]);
-	const pairings = await _api<Array<{ from_stable_id: string; to_stable_id: string }>>(
-		page,
-		`/api/v1/pairings?from_stable_id=${a}`
-	);
-	expect(pairings.some((row) => row.to_stable_id === b), 'Capture created the pairing').toBe(true);
-	await expect.poll(async () => (await snapshots()).length).toBe(1);
-	const first = (await snapshots())[0];
-	expect(first.a_position_ms).toBeCloseTo(30_000, -2);
-	expect(first.b_position_ms).toBeCloseTo(45_000, -2);
+		await _capture(page, [30_000, 45_000]);
+		const pairings = await _api<Array<{ from_stable_id: string; to_stable_id: string }>>(
+			page,
+			`/api/v1/pairings?from_stable_id=${a}`
+		);
+		expect(pairings.some((row) => row.to_stable_id === b), 'Capture created the pairing').toBe(true);
+		await expect.poll(async () => (await snapshots()).length).toBe(1);
+		const first = (await snapshots())[0];
+		expect(first.a_position_ms).toBeCloseTo(30_000, -2);
+		expect(first.b_position_ms).toBeCloseTo(45_000, -2);
 
-	// A recapture of the now-saved pair is not a no-op.
-	await _capture(page, [10_000, 20_000]);
-	await expect.poll(async () => (await snapshots()).length).toBe(2);
-	const positions = (await snapshots()).map((row) => Math.round(row.a_position_ms / 1000));
-	expect(positions.sort((x, y) => x - y)).toEqual([10, 30]);
+		// A recapture of the now-saved pair is not a no-op.
+		await _capture(page, [10_000, 20_000]);
+		await expect.poll(async () => (await snapshots()).length).toBe(2);
+		const positions = (await snapshots()).map((row) => Math.round(row.a_position_ms / 1000));
+		expect(positions.sort((x, y) => x - y)).toEqual([10, 30]);
+	} finally {
+		await _deletePairingsCreatedSince(page, before);
+	}
 });

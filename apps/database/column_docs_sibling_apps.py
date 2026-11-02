@@ -34,6 +34,23 @@ descriptions are in :mod:`apps.database.table_docs`.
 from __future__ import annotations
 
 SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
+    "set_notes": {
+        "scope": (
+            "Primary key. 'scratch', 'playlist:<id>' or 'playlist_set:<int>'."
+        ),
+        "body_md": "The note as markdown; track links are track:<stable_id> URIs.",
+        "x": "Saved pad left edge in CSS pixels, NULL until first moved.",
+        "y": "Saved pad top edge in CSS pixels, NULL until first moved.",
+        "w": "Saved pad width in CSS pixels, NULL until first resized.",
+        "h": "Saved pad height in CSS pixels, NULL until first resized.",
+        "visible": "1 when the pad is open, 0 when hidden.",
+        "rev": "Increments on each save; a stale base_rev write is refused.",
+        "updated_at": "RFC 3339 UTC timestamp of the last save.",
+    },
+    "set_notes_schema_meta": {
+        "version": "Primary key. Applied migration version number.",
+        "applied_at": "RFC 3339 UTC timestamp this version was applied.",
+    },
     "http_pairings": {
         "pairing_id": (
             "Primary key. Client- or server-minted UUID for the PAIR-04 HTTP "

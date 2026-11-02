@@ -13,6 +13,13 @@ reports a failed exit itself via the client-error pipeline (quit-gate.ts's
 confirmQuit), and the ship-flow caller (ship_dmg.sh's _m_quit_one_app) treats
 a still-running app after its deadline as this route having failed, since
 that is the only reliable place the outcome is observable.
+
+When no desktop-shell ``/api/v1/events`` client is connected yet (the shell
+webview attaches with ``?consumer=shell``; browser tabs do not count),
+``WsHub`` holds the latest ``shell.quit`` frame and replays it immediately
+after the hello on the next shell attach (issue #6262). Live delivery clears
+that retention only after the desktop shell posts ``shell.quit.ack`` on the
+events socket; other topics are still drop-on-no-subscriber.
 """
 
 from __future__ import annotations

@@ -434,25 +434,15 @@ def state_db_path(data_dir: Path) -> Path:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    from apps.shared.state.normalize_cli import build_data_dir_dry_live_parser
+
+    return build_data_dir_dry_live_parser(
         prog="python -m apps.shared.state.normalize_stamps",
         description=(
             "Repair stored timestamps the sync protocol cannot order "
             "(round 2 finding N3b)."
         ),
-    )
-    parser.add_argument(
-        "--data-dir",
-        required=True,
-        type=Path,
-        help="data dir holding state/state.db",
-    )
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--dry-run", action="store_true", help="report repairs, write nothing"
-    )
-    mode.add_argument("--live", action="store_true", help="apply the repairs")
-    return parser.parse_args(argv)
+    ).parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:

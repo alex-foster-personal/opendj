@@ -162,6 +162,17 @@ test('page-level preference toggles are not refused in rust mode (Codex 42869011
 	assert.ok(m.WEB_AUDIO_ONLY.has('auto_play_next_arm'));
 });
 
+test('pairing capture is not refused in rust mode (#7146, pairings in the Electron shell)', () => {
+	// Open, EQ-adjuster removal and Capture read the frozen snapshot, live tempo
+	// and master, and write over the pairings HTTP routes; none touches the Web
+	// Audio clock, buffers or devices. Refusing Capture alone left the Create
+	// pairing sheet unable to save under the Rust engine.
+	for (const t of ['pairing_snapshot_open', 'pairing_snapshot_remove_eq_adjuster', 'pairing_snapshot_save']) {
+		assert.equal(m.WEB_AUDIO_ONLY.has(t), false, t);
+		assert.equal(m.ENGINE_COMMANDS.has(t), false, t);
+	}
+});
+
 test('off: every command stays with the page', async () => {
 	assert.equal(await m.executeInRustEngine({ type: 'play', deck: 1, playing: true }), false);
 });

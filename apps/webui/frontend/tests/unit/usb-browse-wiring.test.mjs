@@ -200,5 +200,5 @@ test('TrackContextMenu builds every row menu through the stick filter', () => {
 	assert.equal(returns.length, 1, 'one return, so no path can skip the filter');
 	assert.match(build, /return menuItemsForTrack\(row\.stable_id, bindMenuItems\(resolved, runners\)\);/);
 	// ...and the registry itself is told the row is a stick row.
-	assert.match(build, /source: isUsbTrackId\(row\.stable_id\) \? 'usb'/);
+	assert.match(build, /source: isUsbTrackId\(row\.stable_id\)\s*\?\s*'usb'/);
 });

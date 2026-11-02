@@ -55,5 +55,5 @@ on that checklist means the item is underspecified and the dimension does not sh
 ## Role-model evidence
 
 Every dimension cites a role-model repo and the artefact that earns full marks.
-The shortlist source is `afmac/code-quality-role-models/README.md`; evidence is
+The shortlist source is a private research note outside this repo; evidence is
 copied into `v1.yaml` so this repo is self-contained.

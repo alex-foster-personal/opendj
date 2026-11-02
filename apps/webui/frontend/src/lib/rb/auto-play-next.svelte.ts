@@ -367,7 +367,8 @@ export async function armAutoPlayNext(
 }
 
 /**
- * The fixed featurette: find the outgoing deck's last repetitive 8-beat window and loop it on a downbeat via
+ * The fixed featurette: loop the outgoing deck about 16 bars before the end (a nearby bar whose 4 beats before and
+ * after match, else exactly there; shorter grids keep the last repetitive 8-beat window) on a downbeat via
  * beat_loop. Refuses (returns false, toasts why) when either deck lacks the analysis this needs.
  */
 async function _armFeaturette(pair: NextPair, config: AutoPlayNextConfig): Promise<boolean> {

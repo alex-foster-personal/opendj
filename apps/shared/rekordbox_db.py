@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import paths, platform_paths
+from .numeric_coerce import coerce_optional
 
 if TYPE_CHECKING:
     from pyrekordbox import Rekordbox6Database
@@ -273,15 +274,6 @@ def _to_path(folder_path: str, streaming: bool) -> Path | None:
     return Path(folder_path).expanduser()
 
 
-def _coerce_int(value) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _date_to_str(value) -> str | None:
     if value is None:
         return None
@@ -299,7 +291,7 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
         streaming = is_streaming_path(folder_path)
 
         # BPM is stored as BPM*100 integer. Anything else -> None.
-        bpm_raw = _coerce_int(t.BPM)
+        bpm_raw = coerce_optional(t.BPM, int)
         bpm = bpm_raw / 100.0 if bpm_raw else None
 
         # DjmdContent.Length is stored in WHOLE SECONDS (verified against live
@@ -308,7 +300,7 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
         # 1000 (treating it as ms), making every duration 1000x too small and
         # silently killing the matcher/relocator ``duration_match`` signal.
         # Fall back to None when missing.
-        length_s = _coerce_int(getattr(t, "Length", None))
+        length_s = coerce_optional(getattr(t, "Length", None), int)
         duration_s = float(length_s) if length_s is not None else None
 
         isrc_raw = getattr(t, "ISRC", None)
@@ -324,8 +316,8 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
             file_path=_to_path(folder_path, streaming),
             is_streaming=streaming,
             bpm=bpm,
-            rating=_coerce_int(t.Rating),
-            file_size=_coerce_int(t.FileSize),
+            rating=coerce_optional(t.Rating, int),
+            file_size=coerce_optional(t.FileSize, int),
             date_added=_date_to_str(t.DateCreated),
             isrc=isrc,
             duration_s=duration_s,
@@ -377,7 +369,7 @@ def _rb_kind_to_normalised(kind: int | None, index_hint: int | None) -> tuple[st
       * Some builds use 3 for load cue and 4 for loop; treat 4 as loop
         when ``ActiveLoop`` is true, otherwise fold into hot.
     """
-    k = _coerce_int(kind)
+    k = coerce_optional(kind, int)
     if k is None or k == 0:
         return "memory", None
     if 1 <= k <= 8:
@@ -403,13 +395,13 @@ def iter_cues(db: Rekordbox6Database, content_id: str) -> list:
         except Exception:
             rows = []
     for row in rows:
-        in_msec = _coerce_int(getattr(row, "InMsec", None))
+        in_msec = coerce_optional(getattr(row, "InMsec", None), int)
         if in_msec is None:
             continue
         kind = getattr(row, "Kind", None)
-        color_idx = _coerce_int(getattr(row, "Color", None))
+        color_idx = coerce_optional(getattr(row, "Color", None), int)
         active_loop = bool(getattr(row, "ActiveLoop", False))
-        out_msec = _coerce_int(getattr(row, "OutMsec", None))
+        out_msec = coerce_optional(getattr(row, "OutMsec", None), int)
         comment = getattr(row, "Comment", None) or None
         # pyrekordbox doesn't expose an explicit hot-cue slot column; some
         # builds use ``Kind - 1`` as the slot. Fall back to enumeration order.
@@ -456,9 +448,9 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
     from .normalised import NormalisedAnalysis
 
     for t in db.get_content():
-        bpm_raw = _coerce_int(t.BPM)
+        bpm_raw = coerce_optional(t.BPM, int)
         bpm = bpm_raw / 100.0 if bpm_raw else None
-        color_id = _coerce_int(getattr(t, "ColorID", None))
+        color_id = coerce_optional(getattr(t, "ColorID", None), int)
         key_name = _safe_name(getattr(t, "Key", None))
         camelot = None
         if key_name:

@@ -44,6 +44,7 @@ const CHROMIUM_GRANTED = [
 const WEBKIT_GRANTED = [{ kind: 'audioinput', deviceId: 'mic-1', label: 'Built-in Microphone' }];
 
 const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+const savedOpendjShell = globalThis.opendjShell;
 
 function installNavigator({ enumerateDevices, permission = null }) {
 	const listeners = [];
@@ -76,6 +77,8 @@ afterEach(() => {
 	headphones.disposeHeadphoneMonitor();
 	if (savedNavigator === undefined) delete globalThis.navigator;
 	else Object.defineProperty(globalThis, 'navigator', savedNavigator);
+	if (savedOpendjShell === undefined) delete globalThis.opendjShell;
+	else globalThis.opendjShell = savedOpendjShell;
 	const state = hp();
 	state.outputs = [];
 	state.inputs = [];
@@ -193,6 +196,69 @@ test('if Chromium withholds names then refresh lists the system default and name
 	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
 	assert.equal(hp().device_access.status, 'permission_needed');
 	assert.equal(hp().device_access.action, 'grant');
+});
+
+// CUEOUT-26 / PRRT_kwDOSEvNd86y2ORW: Electron must not join CoreAudio while labels are withheld.
+const ELECTRON_COREAUDIO_WITHHELD = [
+	{
+		uid: 'BuiltInSpeakerDevice',
+		name: 'MacBook Pro Speakers',
+		channels: 2,
+		transport: 'builtin',
+		is_default: false,
+		muted_by_jack: true,
+		physical_uid: 'BuiltInHeadphoneOutputDevice'
+	},
+	{
+		uid: 'BuiltInHeadphoneOutputDevice',
+		name: 'External Headphones',
+		channels: 2,
+		transport: 'builtin',
+		is_default: true,
+		muted_by_jack: false,
+		physical_uid: 'BuiltInHeadphoneOutputDevice'
+	}
+];
+const ELECTRON_NAMED_OUTPUTS = [
+	{ kind: 'audioinput', deviceId: 'mic-1', label: 'Built-in Microphone' },
+	{ kind: 'audiooutput', deviceId: 'default', label: 'Default - External Headphones', groupId: 'grp-hp' },
+	{ kind: 'audiooutput', deviceId: 'spk-1', label: 'MacBook Pro Speakers', groupId: 'grp-spk' },
+	{ kind: 'audiooutput', deviceId: 'hp-1', label: 'External Headphones', groupId: 'grp-hp' }
+];
+
+test('if Electron withholds Chromium labels then refresh stays grant and defers CoreAudio until names appear', async () => {
+	const coreAudioCalls = [];
+	globalThis.opendjShell = {
+		kind: 'electron',
+		version: 1,
+		listCoreAudioOutputs: async () => {
+			coreAudioCalls.push('list');
+			return ELECTRON_COREAUDIO_WITHHELD;
+		}
+	};
+	let pass = 0;
+	installNavigator({
+		enumerateDevices: async () => {
+			pass += 1;
+			return pass === 1 ? CHROMIUM_WITHHELD : ELECTRON_NAMED_OUTPUTS;
+		},
+		permission: 'prompt'
+	});
+	await headphones.refreshHeadphoneOutputs();
+	assert.deepEqual(coreAudioCalls, [], 'withheld pass must not list CoreAudio');
+	assert.equal(hp().device_access.status, 'permission_needed');
+	assert.equal(hp().device_access.action, 'grant');
+	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+
+	await headphones.refreshHeadphoneOutputs();
+	assert.deepEqual(coreAudioCalls, ['list']);
+	const spkRow = hp().outputs.find((row) => row.id === 'spk-1');
+	const hpRow = hp().outputs.find((row) => row.id === 'hp-1');
+	assert.equal(spkRow?.physical_id, 'coreaudio:BuiltInHeadphoneOutputDevice');
+	assert.equal(hpRow?.physical_id, 'coreaudio:BuiltInHeadphoneOutputDevice');
+	assert.equal(spkRow?.muted_by_jack, true);
+	assert.equal(hpRow?.muted_by_jack, false);
+	assert.equal(hp().device_access.status, 'listed');
 });
 
 test('if access is denied then refresh says so and offers a retry', async () => {

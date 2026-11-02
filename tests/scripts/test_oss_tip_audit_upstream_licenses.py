@@ -13,6 +13,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import subprocess
 from pathlib import Path
@@ -30,6 +31,7 @@ from scripts.oss_tip_audit import (
     is_exempt,
     published_blobs,
 )
+from tests.scripts.oss_tip_audit_support import tracked_tree_audit
 
 pytestmark = pytest.mark.requirement("OSSPUB-01")
 
@@ -49,8 +51,23 @@ _CGNAT = "100." + "64.3.9"
 _MAILBOX = "someone" + "@" + "not-a-real-provider" + ".com"
 
 
+@functools.cache
+def _published_matches() -> dict[str, tuple[bytes, ...]]:
+    """Every published blob at a pinned path, from ONE pass over the published tree.
+
+    Each call of `_published_blob` used to walk every published blob (~3 s) to find one
+    path, 37 times in this module. The walk, and the exactly-one check per path, are
+    unchanged; only the walk is shared.
+    """
+    found: dict[str, list[bytes]] = {rel: [] for rel in UPSTREAM_LICENSE_MAILBOX_BLOBS}
+    for path, _mode, raw in published_blobs(REPO_ROOT):
+        if path in found:
+            found[path].append(raw)
+    return {rel: tuple(raws) for rel, raws in found.items()}
+
+
 def _published_blob(rel: str) -> bytes:
-    matches = [raw for path, _mode, raw in published_blobs(REPO_ROOT) if path == rel]
+    matches = _published_matches()[rel]
     assert len(matches) == 1, f"{rel}: expected one published blob, got {len(matches)}"
     return matches[0]
 
@@ -90,7 +107,8 @@ def test_published_blob_sha256_matches_the_reviewed_pin(rel: str) -> None:
 
 
 def test_reviewed_license_mailboxes_are_counted_exempt_on_the_published_tree() -> None:
-    result = audit_index(REPO_ROOT)
+    # `audit_index(REPO_ROOT)`, shared with test_oss_tip_audit.py's clean-tree test.
+    result = tracked_tree_audit()
     for rel, lines in _EXPECTED_MAILBOX_LINES.items():
         hits = _mailbox_hits(rel, _published_blob(rel))
         assert tuple(f.line for f in hits) == lines

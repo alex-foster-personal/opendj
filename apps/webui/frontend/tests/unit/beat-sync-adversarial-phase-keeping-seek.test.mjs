@@ -117,7 +117,7 @@ test('source pin: quantizedSeek lands at the effective instant on both schedule 
 	// _synchronizeFollowers evaluates it at syncAt, not at decision time.
 	assert.match(source, /options\.masterSchedule\?\.positionSec\?\.\(syncAt\) \?\? projectedMasterSec/);
 	// A beat jump hands its beat count through on both its paths (loop and plain).
-	const start = source.indexOf('async beatJump(deck: DeckId, beats: number): Promise<void> {');
+	const start = source.indexOf('private async _beatJumpFrom(');
 	const body = source.slice(start, source.indexOf('\n\t}\n', start));
 	assert.equal((body.match(/, undefined, beats\);/g) ?? []).length, 2);
 });

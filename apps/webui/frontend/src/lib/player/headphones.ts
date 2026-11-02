@@ -55,11 +55,13 @@ import {
 	listNativeShellDevices,
 	ioDeviceAccessRequestWasNotGranted,
 	ioOperationTimedOut,
+	joinElectronCoreAudioOutputs,
 	listIoDevices,
 	savedIoDeviceNotices,
 	systemDefaultOutputOnly,
 	type SavedIoDevice
 } from '$lib/player/io-device-access';
+import { listCoreAudioOutputs } from '$lib/shell/native-shell';
 import type { NativeCueSinkClient } from '$lib/player/cue-native-sink-client';
 import {
 	nativeCueSinkConfig,
@@ -2883,6 +2885,22 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 			_assertCurrentHeadphoneOperation(generation, null);
 			permission = await _microphonePermissionState();
 			listing = listIoDevices(devices);
+			// CUEOUT-26 / PRRT_kwDOSEvNd86y2ORW: Chromium withholds labels until the
+			// user grants device access. CoreAudio still names the jack-muted speaker,
+			// but joining before labels exist throws and surfaces enumeration_failed
+			// instead of permission_needed. Defer classification until names are listed.
+			if (!listing.names_withheld) {
+				const coreAudio = await withHeadphoneOperationTimeout(
+					'CoreAudio output listing',
+					listCoreAudioOutputs()
+				);
+				if (coreAudio !== null) {
+					listing = {
+						...listing,
+						outputs: joinElectronCoreAudioOutputs(listing.outputs, coreAudio)
+					};
+				}
+			}
 		}
 		_assertCurrentHeadphoneOperation(generation, null);
 	} catch (error) {

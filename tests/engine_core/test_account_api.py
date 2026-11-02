@@ -44,11 +44,16 @@ from apps.entitlements import (
     PROVIDER_ENV,
     UI_REFUSAL_TITLE,
 )
-from apps.feature_flags import FLAGS_FILENAME, FlagDef, load_flags
+from apps.feature_flags import FLAGS_FILENAME, load_flags
 from apps.feature_flags.profiles import (
     BUILD_PROFILE_ENV,
     DEFAULT_PROFILE,
     STORE_PROFILE,
+)
+from tests.feature_flags.support import (
+    TEST_DEFS,
+    clear_flag_selection_env,
+    write_flags_file,
 )
 from apps.shared.sandbox import (
     STORE_BUILD_REFUSAL_CODE,
@@ -72,17 +77,6 @@ COMMITTED_OPENAPI: Path = (
     Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
 )
 
-TEST_DEFS: tuple[FlagDef, ...] = (
-    FlagDef(
-        flag_id="example.off_by_default",
-        default=False,
-        owner="tests",
-        note="declared only inside this module",
-        retire_by="never - test fixture",
-        sandbox_gated=False,
-    ),
-)
-
 IDENTITY = GoogleIdentity(
     google_sub="115551234567890",
     email="dj@example.com",
@@ -98,10 +92,7 @@ IDENTITY = GoogleIdentity(
 def _inert_seam(monkeypatch: pytest.MonkeyPatch) -> None:
     """The shipped state: no payment provider, asserted not inherited."""
     monkeypatch.delenv(PROVIDER_ENV, raising=False)
-    monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
-    # A build profile leaking in from the ambient environment would silently
-    # change which file every flag test reads.
-    monkeypatch.delenv(BUILD_PROFILE_ENV, raising=False)
+    clear_flag_selection_env(monkeypatch)
 
 
 @pytest.fixture
@@ -325,11 +316,13 @@ def test_flags_report_the_file_and_the_source_of_each_value(
     body = client.get("/api/v1/flags").json()
     assert body["path"].endswith(FLAGS_FILENAME)
     assert body["file_present"] is False
-    assert [flag["flag_id"] for flag in body["flags"]] == [
-        "example.off_by_default"
-    ]
-    assert body["flags"][0]["enabled"] is False
-    assert body["flags"][0]["overridden"] is False
+    assert {flag["flag_id"] for flag in body["flags"]} == {
+        "example.off_by_default",
+        "example.on_by_default",
+    }
+    off = next(f for f in body["flags"] if f["flag_id"] == "example.off_by_default")
+    assert off["enabled"] is False
+    assert off["overridden"] is False
 
 
 def test_flags_are_read_at_startup_not_per_request(
@@ -341,9 +334,7 @@ def test_flags_are_read_at_startup_not_per_request(
     runtime one and let a half-written file change behaviour mid-request.
     """
     before = client.get("/api/v1/flags").json()
-    (data_dir / FLAGS_FILENAME).write_text(
-        json.dumps({"example.off_by_default": True}), encoding="utf-8"
-    )
+    write_flags_file(data_dir, {"example.off_by_default": True})
     assert client.get("/api/v1/flags").json() == before
 
 

@@ -51,6 +51,7 @@ from apps.engine_core.setup.schemas import (
     FolderImportIn,
     FolderLastImportOut,
     FolderScanOut,
+    FolderWatchIn,
     FolderWatchOut,
     LastImportOut,
     PermissionsOut,
@@ -361,6 +362,21 @@ def music_folder_candidates() -> FolderCandidatesOut:
             for probe in detect.music_folder_candidates()
         ]
     )
+
+
+@router.get("/folders", response_model=dict[str, list[str]])
+def configured_folders(request: Request) -> dict[str, list[str]]:
+    """Return the folder roots used by the live rescan scheduler."""
+    return {"folders": record.read(_data_dir(request)).folder_watch_roots}
+
+
+@router.put("/folders", response_model=dict[str, list[str]])
+def replace_configured_folders(
+    request: Request, body: FolderWatchIn
+) -> dict[str, list[str]]:
+    """Replace rescan roots without re-running the setup wizard."""
+    saved = record.set_folder_watch_roots(_data_dir(request), body.folders)
+    return {"folders": saved.folder_watch_roots}
 
 
 @router.get("/detect/folder", response_model=FolderScanOut)

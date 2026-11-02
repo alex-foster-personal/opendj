@@ -613,8 +613,12 @@ test('key controls validate through IPC and round-trip serializable shift state'
 		assert.equal(initial.key, null);
 		assert.equal(initial.key_shift_semitones, 0);
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'key_nudge', deck: 1, semitones: 2 }),
-			/semitones must be -1 or 1/i
+			window.musicDjToolsPerformance.dispatch({ type: 'key_nudge', deck: 1, semitones: 0 }),
+			/non-zero integer from -12 to 12/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'key_nudge', deck: 1, semitones: 13 }),
+			/non-zero integer from -12 to 12/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, enabled: true, extra: true }),
@@ -976,8 +980,11 @@ test('deck header key controls dispatch only through the typed performance dispa
 	assert.match(deckSource, /type: 'key_nudge', deck: deckId, semitones/);
 	assert.match(headerSource, /onKeySync/);
 	assert.match(headerSource, /onKeyNudge/);
-	assert.match(headerSource, /aria-label=\{`lower key by one semitone deck \$\{deckId\}`\}/);
-	assert.match(headerSource, /aria-label=\{`raise key by one semitone deck \$\{deckId\}`\}/);
+	assert.match(headerSource, /lower key by one semitone/);
+	assert.match(headerSource, /raise key by one semitone/);
+	assert.match(headerSource, /aria-label=\{nudgeAria\(-1\)\}/);
+	assert.match(headerSource, /aria-label=\{nudgeAria\(1\)\}/);
+	assert.match(headerSource, /onKeyNudge\(delta\)/);
 	assert.match(deckSource, /candidate !== deckId/);
 });
 

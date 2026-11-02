@@ -35,6 +35,21 @@ _as_root() {
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
 
+# Keep a copy of every run: an environment-level setup script's output is not
+# shown in the session, so without this a later session cannot tell whether
+# the step it depends on (Doppler, the tailnet join) ran, skipped or failed.
+SETUP_LOG_DIR="$HOME/.cloud-env"
+mkdir -p "$SETUP_LOG_DIR"
+exec > >(tee -a "$SETUP_LOG_DIR/setup.log") 2>&1
+# tee runs in the background, so on any exit (a _die, set -e) close the
+# script's end of the pipe and wait for tee to drain it; otherwise bash can
+# exit before tee writes the last lines, and a fast failure leaves no
+# run-start line for the doctor test to find.
+_SETUP_TEE_PID=$!
+_flush_setup_log() { exec >&- 2>&-; wait "$_SETUP_TEE_PID" 2>/dev/null || true; }
+trap _flush_setup_log EXIT
+_log "run start $(date -u +%Y-%m-%dT%H:%M:%S%Z) mode=$([ "$CHECK_ONLY" -eq 1 ] && echo check || echo install) DOPPLER_TOKEN=$([ -n "${DOPPLER_TOKEN:-}" ] && echo set || echo unset)"
+
 PNPM_PIN="$(sed -n 's/.*"packageManager": *"pnpm@\([^"]*\)".*/\1/p' apps/webui/frontend/package.json)"
 [ -n "$PNPM_PIN" ] || _die "could not read the pnpm pin from apps/webui/frontend/package.json packageManager"
 export PATH="$HOME/.local/bin:$PATH"

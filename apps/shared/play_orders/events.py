@@ -28,8 +28,9 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import threading
 from typing import Literal
+
+from apps.shared.lazy_event_bus import LazyModuleEventBus
 
 from ._time import _now_iso
 
@@ -39,8 +40,7 @@ _logged_bus_missing = False
 Action = Literal["created", "updated", "deleted"]
 
 
-_BUS_LOCK = threading.Lock()
-_SHARED_BUS = None  # type: ignore[var-annotated]
+_MODULE_BUS = LazyModuleEventBus()
 
 
 def _get_shared_bus():
@@ -49,19 +49,12 @@ def _get_shared_bus():
     Imported lazily so this module stays importable in environments
     that don't have the Phase 5 state package (e.g. minimal tests).
     """
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        if _SHARED_BUS is None:
-            from apps.shared.state.events import EventBus
-            _SHARED_BUS = EventBus()
-        return _SHARED_BUS
+    return _MODULE_BUS.get()
 
 
 def set_event_bus(bus) -> None:  # type: ignore[no-untyped-def]
     """Inject a custom bus (primarily for tests using FakeEventBus)."""
-    global _SHARED_BUS
-    with _BUS_LOCK:
-        _SHARED_BUS = bus
+    _MODULE_BUS.set(bus)
 
 
 def emit_play_order_changed(
@@ -79,7 +72,7 @@ def emit_play_order_changed(
     so the dev is aware. In that case the bus fanout is still skipped
     to avoid emitting without a durable row backing it.
     """
-    global _logged_bus_missing
+    global _logged_bus_missing  # noqa: PLW0603
     payload = {"playlist_id": playlist_id, "name": name, "action": action}
     ts = _now_iso()
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)

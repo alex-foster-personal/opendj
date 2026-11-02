@@ -28,8 +28,11 @@
 		loadHotkeysOverlay,
 		prefetchHotkeysOverlay
 	} from '$lib/components/rb/hotkeys/install-hotkeys-overlay';
+	import { deferSetNotesHost } from '$lib/set-notes/loader';
 	import QuitConfirmOverlay from '$lib/components/shell/QuitConfirmOverlay.svelte';
-	import { installQuitGate } from '$lib/shell/quit-gate';
+	import { ensureEarlyShellQuitGate, installQuitGate } from '$lib/shell/quit-gate';
+
+	ensureEarlyShellQuitGate();
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
 		LIBRARY_ATTACHED_CHECK_ID,
@@ -159,7 +162,7 @@
 	function retrySetupOverlay(): void {
 		window.location.assign(SETUP_ROUTE);
 	}
-	// The hotkeys cheatsheet and the stage view are lazy chunks with one
+	// The hotkeys cheatsheet, the stage view and Set notes are lazy chunks with one
 	// failure shape: an error toast naming the overlay, raised again on every
 	// open that fails (each loader forgets a failed attempt).
 	function overlayLoadFailureReporter(overlay: string): (error: unknown) => void {
@@ -315,6 +318,8 @@
 				pushToast(`Comment pins failed to load: ${pinShellError}`, 'error', TOAST_DEFAULT_MS, error);
 			}
 		);
+		// Set notes (SETNOTE-6340/6340b): mounts itself after boot, see set-notes/loader.ts.
+		const stopSetNotes = deferSetNotesHost(overlayLoadFailureReporter('Set notes'));
 		const id = setInterval(refreshHealth, 30_000);
 		const uninstallHoverTooltip = installSingleHoverTooltip();
 		return () => {
@@ -327,6 +332,7 @@
 			uninstallShellCommands();
 			unmounted = true;
 			uninstallCommentPinHotkeys?.();
+			stopSetNotes();
 			clearInterval(id);
 		};
 	});
@@ -411,6 +417,8 @@
 					<span class="readout">Connecting to configured worktree daemon...</span>
 				{/if}
 			</div>
+			<!-- SETNOTE-6340g: upgraded by the set-notes app once it loads (lib/set-notes/toggle-element.ts). -->
+			<set-notes-toggle></set-notes-toggle>
 			<CloudSyncStatusChip />
 			<FeedbackPinTopbarControls />
 			{#if FeedbackPinShellButton}
@@ -630,5 +638,11 @@
 	}
 	.setup-load-retry {
 		justify-self: start;
+	}
+	/* SETNOTE-6340g: holds the toggle's size so the bar does not shift when it is upgraded. */
+	set-notes-toggle {
+		display: inline-flex;
+		flex: 0 0 22px;
+		height: 20px;
 	}
 </style>

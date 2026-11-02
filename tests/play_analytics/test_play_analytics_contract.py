@@ -9,12 +9,22 @@ from pydantic import ValidationError
 
 from apps.play_analytics.contract import (
     CONTRACT_VERSION,
+    AnalyticsSchemaError,
+    MISSING_EVENT_STORE_DETAIL_PREFIX,
     PlayAnalyticsFilters,
     PlayAnalyticsReadModel,
     PlayAnalyticsService,
 )
 from apps.play_analytics.http import build_service
 from apps.play_analytics.query import query_play_analytics
+
+
+def test_missing_store_error_uses_contract_detail_prefix(tmp_path: Path) -> None:
+    with pytest.raises(AnalyticsSchemaError) as exc_info:
+        query_play_analytics(tmp_path / "missing.db")
+
+    assert MISSING_EVENT_STORE_DETAIL_PREFIX == "event store does not exist:"
+    assert str(exc_info.value).startswith("event store does not exist: ")
 
 
 def test_service_satisfies_protocol_and_matches_query(analytics_db: Path) -> None:

@@ -116,7 +116,13 @@ describe('DeckHeader dblclick wiring', () => {
 		assert.match(header, /clientX/);
 		assert.match(header, /clientY/);
 		assert.match(header, /tempoEditAt/);
-		assert.doesNotMatch(header, /ondblclick[\s\S]*runPerformanceCommandFromUi/);
+		// The handler itself must not dispatch: scoped to the dblclick handler, since the
+		// header dispatches other commands (the key nudge step row, DECKGAP-7691b) elsewhere.
+		const start = header.indexOf('function onTempoReadoutDblClick(');
+		assert.notEqual(start, -1, 'no onTempoReadoutDblClick handler');
+		const handler = header.slice(start, header.indexOf('\n\t}\n', start));
+		assert.doesNotMatch(handler, /runPerformanceCommandFromUi|onResetTempo|type: 'tempo'/);
+		assert.doesNotMatch(header, /ondblclick=\{[^}]*runPerformanceCommandFromUi/);
 	});
 
 	test('dblclick no-ops when unloaded and uses preventDefault/stopPropagation', () => {

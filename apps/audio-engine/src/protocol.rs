@@ -581,10 +581,11 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "master_tempo" => apply(EngineCmd::MasterTempo { deck: deck_of(o, ty)?, enabled: boolean(o, ty, "enabled")? }),
         "key_nudge" => {
             let deck = deck_of(o, ty)?;
+            // The page's step chooser (semitone, tone, scale, fifth) sends one
+            // nudge of up to 12 semitones; the deck keeps the -12..12 total.
             let semitones = match num(o, ty, "semitones")? {
-                1.0 => 1,
-                -1.0 => -1,
-                v => return Err(invalid(format!("key_nudge.semitones must be -1 or 1, got {v}"))),
+                v if v.fract() == 0.0 && v != 0.0 && (-12.0..=12.0).contains(&v) => v as i32,
+                v => return Err(invalid(format!("key_nudge.semitones must be a non-zero integer from -12 to 12, got {v}"))),
             };
             apply(EngineCmd::KeyNudge { deck, semitones })
         }
@@ -941,7 +942,7 @@ mod tests {
             json!({"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true}),
             json!({"type": "stem_mute", "deck": 1, "stem": "vocal"}),
             json!({"type": "stem_gain", "deck": 1, "stem": "drums", "value": 1.5}),
-            json!({"type": "key_nudge", "deck": 1, "semitones": 2}),
+            json!({"type": "key_nudge", "deck": 1, "semitones": 13}),
             json!({"type": "key_sync", "deck": 5, "enabled": true}),
             json!({"type": "slip", "deck": 1, "enabled": "yes"}),
             json!({"type": "sync_mode", "deck": 1, "mode": "phase"}),
@@ -968,9 +969,15 @@ mod tests {
         let e = cmd(json!({"type": "eq", "deck": 1, "band": "low", "value": 1.2})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
         assert!(e.message.contains("eq.value"), "{}", e.message);
-        // The page sends key nudges one semitone at a time.
-        let e = cmd(json!({"type": "key_nudge", "deck": 1, "semitones": 2})).unwrap_err();
-        assert_eq!(e.code, ErrorCode::Invalid);
+        // A key nudge is one step of up to 12 semitones (semitone, tone, scale, fifth).
+        assert!(matches!(
+            cmd(json!({"type": "key_nudge", "deck": 1, "semitones": 7})),
+            Ok(Command::Apply(EngineCmd::KeyNudge { deck: 1, semitones: 7 }))
+        ));
+        for bad in [json!(0), json!(13), json!(-13), json!(1.5)] {
+            let e = cmd(json!({"type": "key_nudge", "deck": 1, "semitones": bad})).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid);
+        }
         let e = cmd(json!({"type": "key_sync", "deck": 1, "enabled": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
         let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": true})).unwrap_err();

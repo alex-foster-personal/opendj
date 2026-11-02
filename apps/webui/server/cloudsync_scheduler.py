@@ -31,6 +31,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from apps.shared.events import publish
+from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.scheduler import next_delay_s
 from apps.sync_hub.transport import classify_transport_failure
@@ -43,6 +44,7 @@ from .routes.feedback_sync import (
     SchedulerState,
     store_for_app,
     sync_feedback_pins,
+    ui_mirror_for_app,
 )
 
 log = logging.getLogger(__name__)
@@ -160,8 +162,26 @@ class CloudSyncScheduler:
         """One tick. Returns the result, or None after logging and recording why not."""
         self._ticks += 1
         try:
-            result = sync_feedback_pins(store_for_app(self._app))
+            result = sync_feedback_pins(
+                store_for_app(self._app), ui_mirror=ui_mirror_for_app(self._app)
+            )
         except FeedbackSyncError as exc:
+            if exc.code == "FEEDBACK_SYNC_DEFERRED":
+                reason = (
+                    exc.__cause__.reason
+                    if isinstance(exc.__cause__, SyncDeferredError)
+                    else str(exc)
+                )
+                # INFO: a Gig/playing/in-flight skip is expected (CLOUDSYNC-14).
+                # ERROR would page Sentry every tick via warning_log.
+                log.info("CloudSync scheduled sync deferred [%s]: %s", exc.code, exc)
+                try:
+                    sync_status.journal_deferred(self._data_dir, reason)
+                except sync_status.CloudSyncStatusError:
+                    log.exception(
+                        "could not journal the CloudSync scheduler deferral: %s", reason
+                    )
+                return None
             # maintenance.sync has already journaled a failed round trip.
             log.error("CloudSync scheduled sync failed [%s]: %s", exc.code, exc)
             self._record_error(f"[{exc.code}] {exc}")
