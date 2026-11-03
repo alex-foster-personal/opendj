@@ -30,9 +30,14 @@ from apps.shared.platform_paths import normalise_path_prefix
 
 
 def normalize_setup_folder_path(raw: str) -> str:
-    """Canonical folder path for setup detect/import: expanduser + strip trailing slash."""
-    trimmed = raw.strip()
-    expanded = str(Path(trimmed).expanduser())
+    """Canonical folder path for setup detect/import: expanduser + strip trailing slash.
+
+    Whitespace is NOT trimmed: it is a legal path character, and macOS mounts a
+    volume named 'SSK Drive ' at '/Volumes/SSK Drive ', so trimming points the
+    import at a folder that does not exist. Clients trim what a person TYPED
+    before sending it; a path that came from the volume list arrives verbatim.
+    """
+    expanded = str(Path(raw).expanduser())
     return normalise_path_prefix(expanded)
 
 

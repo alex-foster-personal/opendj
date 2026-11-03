@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -17,11 +17,7 @@ class Debouncer:
 
     window_seconds: float = 5.0
     clock: Callable[[], float] = time.monotonic
-    _armed_at: dict[str, float] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self._armed_at is None:
-            self._armed_at = {}
+    _armed_at: dict[str, float] = field(default_factory=dict)
 
     def arm(self, key: str, *, now: float | None = None) -> None:
         self._armed_at[key] = self.clock() if now is None else now

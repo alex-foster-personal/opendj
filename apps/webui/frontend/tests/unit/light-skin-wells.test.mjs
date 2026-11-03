@@ -1,6 +1,7 @@
-// requirement: CHROME-19, CHROME-20
+// requirement: CHROME-19, CHROME-20, UICONTRAST-6037
 // [if] the Light skin or light theme is on [then] the jog readout, CUE/Play, the sunken wells (search, voice command, loop readout, strip waveform, explainer popovers), the posture button and the Camelot key text all clear AA on the surface they are drawn on, [else stop].
 // [if] Default or Gothic is on [then] every one of those hooks resolves to the value it rendered before (the use-site fallback), so those skins do not change, [else stop].
+// [if] the light theme or the Light skin is on [then] the stem tag letters, stem chips and stems status take --rb-stem-ink and clear AA on every row and deck surface, [else stop].
 // [if] the Light skin is on [then] the app shell (footer build stamp, sync chip, JOBS, Settings) uses the light shell tokens, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -36,9 +37,11 @@ const HOOKS = {
 			'lib/components/rb/browser/AutoPlayExplainer.svelte',
 			'lib/components/rb/browser/AddTrackSearch.svelte',
 			'lib/components/rb/AnalysisSourceMenu.svelte',
-			'lib/components/rb/FeedbackPanel.svelte',
-			'lib/components/rb/FeedbackPinCard.svelte',
-			'lib/components/rb/FeedbackPinDraftBubble.svelte'
+			'lib/components/rb/FeedbackPanel.svelte'
+			// FeedbackPinCard and FeedbackPinDraftBubble are mounted by the root
+			// layout, outside .perf-root, where no --rb-* hook resolves. They
+			// read the app shell tokens instead (PGMIX-7692d,
+			// pgmix-04-feedback-pin-shell-tokens.test.mjs).
 		]
 	},
 	'rb-strip-pos': { fallback: '#ff2d2d', files: ['lib/components/rb/deck/StripWaveform.svelte'] },
@@ -51,7 +54,12 @@ const HOOKS = {
 	'rb-knob-cap-edge': { fallback: '#101318', files: ['lib/components/rb/mixer/Knob.svelte'] },
 	'rb-knob-indicator-white': { fallback: '#f0f2f5', files: ['lib/components/rb/mixer/Knob.svelte'] },
 	'rb-knob-takeover': { fallback: '#f2b84b', files: ['lib/components/rb/mixer/Knob.svelte'] },
-	'rb-knob-stem-tint': { fallback: '42%', files: ['lib/components/rb/mixer/Knob.svelte'] }
+	'rb-knob-stem-tint': { fallback: '42%', files: ['lib/components/rb/mixer/Knob.svelte'] },
+	// UICONTRAST-6037: ink on the stem tags, stem chips and the stems status.
+	'rb-stem-ink': {
+		fallback: /^(#cfefff|#e4f5d8|#ffe7c8|var\(--chip-color\)|var\(--rb-blue, #4aa3ff\))$/,
+		files: ['lib/components/rb/browser/StemTags.svelte', 'lib/components/rb/deck/StemRow.svelte']
+	}
 };
 
 /** sRGB color-mix(in srgb, fg p, bg) as the browser computes it, for a pair measured on its real fill. */
@@ -88,6 +96,19 @@ test('if a hook use site lost its fallback then Default and Gothic would change 
 	// Default (base .perf-root) defines none of them, so every read takes its fallback.
 	const base = block(THEME, '\n.perf-root');
 	assert.deepEqual(Object.keys(HOOKS).filter((h) => h in base), []);
+});
+
+test('if a stem tag, chip or status ignores --rb-stem-ink then the light faces paint the dark-skin ink', () => {
+	const rule = (src, sel) => src.slice(src.indexOf(`${sel} {`), src.indexOf('}', src.indexOf(`${sel} {`)));
+	const tags = read('lib/components/rb/browser/StemTags.svelte');
+	for (const [g, ink] of [['V', '#cfefff'], ['I', '#e4f5d8'], ['D', '#ffe7c8']]) {
+		assert.match(rule(tags, `.tag.on[data-g='${g}']`), new RegExp(`color: var\\(--rb-stem-ink, ${ink}\\);`), `tag ${g}`);
+	}
+	assert.match(rule(tags, '.meta'), /color: var\(--rb-text, #c8cdd2\);/);
+	const row = read('lib/components/rb/deck/StemRow.svelte');
+	assert.match(rule(row, '.chip'), /color: var\(--rb-stem-ink, var\(--chip-color\)\);/);
+	assert.match(rule(row, '.status.busy'), /color: var\(--rb-stem-ink, var\(--rb-blue, #4aa3ff\)\);/);
+	assert.match(rule(row, '.status.action'), /color: var\(--rb-stem-ink, var\(--rb-blue, #4aa3ff\)\);/);
 });
 
 test('if Gothic does not reset the hooks then Gothic on the light theme gets light wells under light ink', () => {
@@ -141,6 +162,19 @@ for (const selector of [LIGHT_SKIN, LIGHT_THEME]) {
 			const accent = t[`rb-stem-${stem}`];
 			pair(accent, mixHex(accent, t['rb-knob-cap'], tint), 3, `${stem} stem knob indicator on its tinted cap`);
 			pair(t[`rb-stem-${stem}`], t['rb-panel'], 4.5, `${stem} stem knob label`);
+		}
+		// UICONTRAST-6037: stem tag letters on their 25% fill (StemTags.svelte), the
+		// stem chips on their 15% fill (StemRow.svelte) and the stems status, on
+		// every row and deck surface they sit on.
+		const ink = decl['rb-stem-ink'] === 'var(--rb-text)' ? t['rb-text'] : t['rb-stem-ink'];
+		assert.ok(ink, `${selector} --rb-stem-ink is ${decl['rb-stem-ink']}`);
+		for (const surface of ['rb-bg', 'rb-panel', 'rb-panel-raised', 'rb-select']) {
+			pair(ink, t[surface], 4.5, `stems status on --${surface}`);
+			for (const stem of ['vocal', 'instrumental', 'drums', 'bass', 'other']) {
+				const accent = t[`rb-stem-${stem}`];
+				pair(ink, mixHex(accent, t[surface], 0.25), 4.5, `${stem} stem tag on --${surface}`);
+				pair(ink, mixHex(accent, t[surface], 0.15), 4.5, `${stem} stem chip on --${surface}`);
+			}
 		}
 	});
 }

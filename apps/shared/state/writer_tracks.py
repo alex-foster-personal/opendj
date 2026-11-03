@@ -257,12 +257,14 @@ class _TrackWriterMixin:
         remote_url: str | None = None,
         role: _locations.Role = "alternate",
         content_hash: str | None = None,
+        revive: bool = False,
     ) -> str:
         """Record an extra playable copy on THIS machine.
 
         Does not change ``tracks.file_path``. Returns the ``location_id``
         (uuid4 hex): schema v6 dropped the INTEGER rowid key because it
-        collided across machines.
+        collided across machines. ``revive`` lifts a soft-deleted row with the
+        same key (see :func:`apps.shared.state.locations.upsert_location`).
         """
         now = self._now_iso()
         with self._tx() as conn:
@@ -276,6 +278,7 @@ class _TrackWriterMixin:
                 content_hash=content_hash,
                 now=now,
                 machine_id=self.machine_id(),
+                revive=revive,
             )
             ev = self._append_event(
                 kind="track.location.upsert",
@@ -285,6 +288,30 @@ class _TrackWriterMixin:
             )
             self.bus.publish(ev)
         return loc_id
+
+    def remove_track_location(
+        self: _WriterHost,
+        *,
+        stable_id: str,
+        location_id: str,
+    ) -> None:
+        """Soft-delete one of THIS machine's location rows (the relink undo)."""
+        now = self._now_iso()
+        with self._tx() as conn:
+            _locations.remove_location(
+                conn,
+                stable_id=stable_id,
+                location_id=location_id,
+                now=now,
+                machine_id=self.machine_id(),
+            )
+            ev = self._append_event(
+                kind="track.location.remove",
+                stable_id=stable_id,
+                payload={"location_id": location_id},
+                ts=now,
+            )
+            self.bus.publish(ev)
 
     # --- vendor ids -----------------------------------------------------
 

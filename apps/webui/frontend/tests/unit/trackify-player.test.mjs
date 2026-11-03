@@ -46,3 +46,36 @@ describe('TrackifyPlayer with no track loaded', () => {
 		assert.match(source, /const loaded = \$derived\(deck\.stable_id !== null\);/);
 	});
 });
+
+describe('TrackifyPlayer now-playing view (PERFMODE-6635)', () => {
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/TrackifyPlayer.svelte', import.meta.url),
+		'utf8'
+	);
+
+	it('draws in the Gig palette, not unstyled defaults', () => {
+		assert.match(source, /import '\$lib\/rb\/theme\.css';/);
+		assert.match(source, /class="perf-root trackify-player"/);
+		// the old look: a bare 40rem column with no palette at all
+		assert.doesNotMatch(source, /max-width: 40rem/);
+	});
+
+	it('shows time as minutes:seconds, never a raw ms count, each with a hover title', () => {
+		assert.match(source, /formatMsAsClock\(positionMs\)/);
+		assert.match(source, /formatMsAsClock\(deck\.duration_ms\)/);
+		assert.doesNotMatch(source, /\} ms\b/);
+		assert.match(source, /title="Playback position \(minutes:seconds\)"/);
+		assert.match(source, /title="Track duration \(minutes:seconds\)"/);
+	});
+
+	it('shows real artwork or the gray slate, never a fabricated cover', () => {
+		assert.match(source, /artworkUrl\(deck\.stable_id, 'm'\)/);
+		assert.match(source, /onerror=\{\(\) => \(artFailed = true\)\}/);
+		assert.match(source, /data-testid="trackify-artwork-slate"/);
+	});
+
+	it('titles the BPM and key chips', () => {
+		assert.match(source, /title="Track tempo in beats per minute, from the library"/);
+		assert.match(source, /title="Track key in Camelot notation, from the library"/);
+	});
+});

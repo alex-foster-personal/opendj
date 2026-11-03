@@ -220,3 +220,23 @@ def test_remove_all_cues_via_empty_patch():
     assert len(parse_cues_from_blob(blob)) == 1
     blob = patch_cue_points(blob, [])
     assert parse_cues_from_blob(blob) == []
+
+
+def test_truncated_last_cue_does_not_read_across_into_next_field():
+    """A cue array that ends inside its last element, with a later field after it, is unreadable.
+
+    The parser must not accept the next field's bytes as the tail of the cue. The whole first cue
+    still reads, and the array is counted as unreadable rather than as a clean read.
+    """
+    from apps.shared.djay_db import parse_cues_with_loss
+
+    first = encode_cue_point(NormalisedCue(position_msec=1000, kind="memory"))
+    second = encode_cue_point(NormalisedCue(position_msec=2000, kind="memory"))[:-1]  # no element terminator
+    later_field = b"\x08bpm\x00" + b"\x13\x00\x00\x00" + struct.pack("<f", 120.0) + b"\x00"
+    body = b"\x08cuePoints\x00" + b"\x0b" + struct.pack("<I", 2) + first + second + later_field
+    blob = _wrap_in_tsaf_envelope(body)
+
+    cues, unreadable = parse_cues_with_loss(blob)
+
+    assert [c.position_msec for c in cues] == [1000]
+    assert unreadable == 1

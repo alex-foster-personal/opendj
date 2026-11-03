@@ -104,7 +104,7 @@ test('source pin: quantizedSeek lands at the effective instant on both schedule 
 	// and for a click only when quantize applies.
 	assert.match(
 		source,
-		/const grid = !rt\.desiredActive \? null : jumpBeats != null \? \(st\.anlz\?\.beatgrid\.beats \?\? null\) : skipGridQuantize \? null : seekBeats;/
+		/const grid = !rt\.desiredActive \? null : jumpBeats != null \? \(st\.anlz\?\.beatgrid\?\.beats \?\? null\) : skipGridQuantize \? null : seekBeats;/
 	);
 	// The landing is a function of the instant it lands, re-projected there.
 	assert.match(

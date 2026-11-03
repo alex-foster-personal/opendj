@@ -42,7 +42,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from apps.shared.state import migrations_v21
+from apps.shared.state import migrations_v21, migrations_v26
 from apps.sync_hub import sync_set
 
 if TYPE_CHECKING:
@@ -99,7 +99,7 @@ def _schema(conn: sqlite3.Connection) -> tuple[tuple[str | None, ...], ...]:
 def _trigger_fault(schema: tuple[tuple[str | None, ...], ...]) -> str | None:
     """Why the write-token triggers cannot be trusted, or None when intact."""
     stored = {name: sql for kind, name, _, sql in schema if kind == "trigger"}
-    for name, sql in migrations_v21.EXPECTED_TRIGGERS.items():
+    for name, sql in migrations_v26.EXPECTED_TRIGGERS.items():
         if stored.get(name) != sql:
             return f"trigger {name} is missing or altered"
     return None

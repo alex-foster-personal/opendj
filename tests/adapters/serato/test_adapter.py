@@ -341,6 +341,20 @@ def test_geob_write_skips_missing_audio_with_warning(tmp_path) -> None:
     )
 
 
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_an_absolute_path_already_under_the_audio_root_is_not_rebased(tmp_path) -> None:
+    """[if] a Serato row's absolute path already lies under the volume root [then] it resolves to itself, not under the
+    root twice, while a path outside the root still rebases for the conformance harness, [else stop]."""
+    root = tmp_path / "Volumes" / "USB"
+    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=root))
+    inside = root / "Music" / "a.mp3"
+    assert adapter._resolve_audio_path(str(inside)) == inside
+    assert adapter._resolve_audio_path("/fixture/a.mp3") == root / "fixture" / "a.mp3"
+    production = SeratoAdapter(options=SeratoAdapterOptions(audio_root=root, absolute_paths_are_logical=False))
+    elsewhere = "/Users/dj/Music/a.mp3"  # an absolute path on another volume is taken as it is in production
+    assert production._resolve_audio_path(elsewhere) == Path(elsewhere)
+
+
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_write_skips_non_mp3_with_warning(tmp_path) -> None:
     """Non-MP3 audio file -> structured warning, crate DB still written."""

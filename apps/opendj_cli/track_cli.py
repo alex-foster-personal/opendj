@@ -56,6 +56,9 @@ _AUTO_GAIN_PATH = "/api/v1/auto-gain/tracks"
 #: AGENT-51: the CLI twin of `/api/v1/tracks/{id}/transition-in` (the deck
 #: waveform's "Transition in around here"). The engine snaps to its own grid.
 TRANSITION_IN_VERB = "transition-in"
+#: Issue #8339: the CLI twin of `/api/v1/tracks/{id}/tempo-stability` (the deck
+#: strip's tempo lane and the waveform's tempo-change marks).
+TEMPO_VERB = "tempo"
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 #: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
 #: letter). Same rule as the grid verbs: the engine owns the scan, so these
@@ -81,7 +84,8 @@ _USAGE = (
     "       opendj track quality-scan [limit N] | quality-scan status | quality-scan stop\n"
     "       opendj track quality-of <stable_id>\n"
     "       opendj track auto-gain <stable_id> [set <dB>|clear]\n"
-    "       opendj track transition-in <stable_id> [set <ms>|clear]"
+    "       opendj track transition-in <stable_id> [set <ms>|clear]\n"
+    "       opendj track tempo <stable_id>"
 )
 
 
@@ -325,6 +329,13 @@ def _transition_in(args: Sequence[str]) -> int:
     return _usage_error()
 
 
+def _tempo(args: Sequence[str]) -> int:
+    """`GET /api/v1/tracks/{id}/tempo-stability`: verdict and tempo segments."""
+    if len(args) != 1:
+        return _usage_error()
+    return api_cli.run(["GET", f"/api/v1/tracks/{args[0]}/tempo-stability"], as_json=True)
+
+
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
 
 #: ``MDT_DATA_DIR`` is the repo-wide explicit override (apps/adapters/
@@ -452,14 +463,15 @@ def _key_segments(
 
 
 __all__ = [
-    "GRID_EDIT_VERB",
     "AUTO_GAIN_VERB",
+    "GRID_EDIT_VERB",
     "GRID_FIT_SCAN_VERB",
     "GRID_FIT_VERB",
     "GRID_FLAGS_VERB",
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",
     "KEY_SEGMENTS_VERB",
+    "TEMPO_VERB",
     "TRANSITION_IN_VERB",
     "run",
 ]
@@ -479,4 +491,5 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     AUTO_GAIN_VERB: _auto_gain,
     GRID_EDIT_VERB: _grid_edit,
     TRANSITION_IN_VERB: _transition_in,
+    TEMPO_VERB: _tempo,
 }

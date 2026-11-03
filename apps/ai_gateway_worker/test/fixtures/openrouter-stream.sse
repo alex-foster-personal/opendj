@@ -1,0 +1,12 @@
+: OPENROUTER PROCESSING
+
+data: {"id":"gen-1760104800-a1b2c3d4e5f6","provider":"Google","model":"google/gemini-3.7-flash","object":"chat.completion.chunk","created":1760104800,"choices":[{"index":0,"delta":{"role":"assistant","content":"Open "},"finish_reason":null,"native_finish_reason":null,"logprobs":null}]}
+
+data: {"id":"gen-1760104800-a1b2c3d4e5f6","provider":"Google","model":"google/gemini-3.7-flash","object":"chat.completion.chunk","created":1760104800,"choices":[{"index":0,"delta":{"role":"assistant","content":"DJ is "},"finish_reason":null,"native_finish_reason":null,"logprobs":null}]}
+
+data: {"id":"gen-1760104800-a1b2c3d4e5f6","provider":"Google","model":"google/gemini-3.7-flash","object":"chat.completion.chunk","created":1760104800,"choices":[{"index":0,"delta":{"role":"assistant","content":"importing"},"finish_reason":"stop","native_finish_reason":"STOP","logprobs":null}]}
+
+data: {"id":"gen-1760104800-a1b2c3d4e5f6","provider":"Google","model":"google/gemini-3.7-flash","object":"chat.completion.chunk","created":1760104800,"choices":[],"usage":{"prompt_tokens":412,"completion_tokens":6,"total_tokens":418,"cost":0.0042,"is_byok":false,"prompt_tokens_details":{"cached_tokens":0},"cost_details":{"upstream_inference_cost":null},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+

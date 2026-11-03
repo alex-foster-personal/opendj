@@ -168,7 +168,7 @@ GATE_STEPS: dict[str, tuple[str, bool]] = {
     "master12": ("Hermetic gate - master12-cue34 output topology", False),
     "comment-hotkey": ("Comment-hotkey gate - real backend, fixture library", False),
     "autoplay": ("AutoPlay stall-banner gate - real backend, fixture library", False),
-    "headphone": ("Headphone device probe gate - performance config", False),
+    "headphone": ("Targeted performance-config gate - headphone probe and library panels", False),
     "library-jobs": ("Library jobs ordering (chromium, dry runner)", False),
     "preflight": ("Preflight boot gate + fresh-install onboarding (real backends)", False),
     "onboarding": ("Onboarding gauntlet (packaged engine, production build)", True),

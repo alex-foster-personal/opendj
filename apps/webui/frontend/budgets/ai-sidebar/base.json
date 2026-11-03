@@ -1,0 +1,14 @@
+{
+  "note": "assistant sidebar, lazy on first open",
+  "order": 40,
+  "attribution": {
+    "markers": [
+      "/api/v1/assistant/agent",
+      "Open the assistant"
+    ]
+  },
+  "limit": 36864,
+  "measured": 34265,
+  "measured_on": "Mon 2 Nov 2026",
+  "baseline_sha": "782be5e0de"
+}

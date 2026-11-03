@@ -19,7 +19,7 @@
     "start": "tsc -p tsconfig.json && electron .",
     "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap --test-concurrency=1 'dist-test/e2e/*.e2e.js'",
     "live-proof": "node scripts/live-proof.mjs",
-    "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64 && node scripts/verify-pack.mjs",
+    "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64 && node scripts/verify-pack.mjs && node scripts/read-fuses.mjs \"out/mac-arm64/Open DJ.app/Contents/Frameworks/Electron Framework.framework/Electron Framework\"",
     "pack:dir:linux": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --linux --publish never"
   },
   "build": {
@@ -32,6 +32,14 @@
       "assets/**/*",
       "package.json"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "resetAdHocDarwinSignature": true
+    },
     "extraResources": [
       {
         "from": "payload",
@@ -45,6 +53,13 @@
     "mac": {
       "icon": "assets/icon.png",
       "identity": null,
+      "minimumSystemVersion": "13.0",
+      "category": "public.app-category.music",
+      "bundleShortVersion": "1.0.0",
+      "bundleVersion": "1.0.0",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Open DJ lists your audio devices, briefly listens to auto-calibrate headphone cue latency, and records your set from the input you pick when you press Record. Audio stays on this Mac and is never sent anywhere."
+      },
       "target": [
         {
           "target": "dir",

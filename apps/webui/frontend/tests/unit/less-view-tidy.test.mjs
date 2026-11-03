@@ -15,7 +15,10 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 const topbar = read('../../src/lib/components/rb/TopBar.svelte');
 const page = read('../../src/routes/performance/+page.svelte');
 const editMenu = read('../../src/lib/components/rb/browser/LibraryEditMenu.svelte');
-const chip = read('../../src/lib/components/CloudSyncStatusChip.svelte');
+// The chip is a container plus a props-only view; the pair is the component.
+const chip =
+	read('../../src/lib/components/CloudSyncStatusChip.svelte') +
+	read('../../src/lib/components/CloudSyncStatusChipView.svelte');
 
 function lessViewTopbarRule() {
 	const m = topbar.match(/((?:\t\.rb-topbar\.less-view [^\n]*,\n)+\t\.rb-topbar\.less-view [^\n]*\{ display: none; \})/);

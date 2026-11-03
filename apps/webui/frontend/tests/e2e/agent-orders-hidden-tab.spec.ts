@@ -129,6 +129,9 @@ async function launchPlainChromium(): Promise<{ browser: ChildProcess; profile: 
 			`--user-data-dir=${profile}`,
 			'--no-first-run',
 			'--no-default-browser-check',
+			// A killed run leaves exit_type Crashed; without this the next launch on a reused
+			// profile waits on a "Restore pages?" click (tests/scripts/test_browser_no_restore_flag.py).
+			'--hide-crash-restore-bubble',
 			'--autoplay-policy=no-user-gesture-required',
 			`--enable-features=IntensiveWakeUpThrottling:grace_period_seconds/${INTENSIVE_GRACE_S}`,
 			'about:blank'

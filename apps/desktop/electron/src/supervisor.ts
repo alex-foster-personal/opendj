@@ -46,6 +46,25 @@ export type SupervisorPhase =
 	| 'fatal'
 	| 'awaiting-relaunch';
 
+/** Whether a shell-health relaunch should start a fresh engine in this phase. */
+export function relaunchApplies(phase: SupervisorPhase): boolean {
+	switch (phase) {
+		case 'running':
+		case 'reaping':
+			return false;
+		case 'dead':
+		case 'restarting':
+		case 'awaiting-disk-space':
+		case 'fatal':
+		case 'awaiting-relaunch':
+			return true;
+		default: {
+			const _exhaustive: never = phase;
+			throw new Error(`Unhandled supervisor phase: ${_exhaustive}`);
+		}
+	}
+}
+
 export type Supervised =
 	| { kind: 'spawned'; engine: Engine }
 	| { kind: 'adopted'; pid: number; host: string; port: number };
@@ -184,13 +203,30 @@ export interface DeathInfo {
 	signal: string | null;
 	lockPid: number | null;
 	lockPort: number | null;
+	/** The pid was still alive: the engine stopped answering health, it did not exit. Never logged as an exit code. */
+	unresponsive: boolean;
 }
 
-/** `engine-exited(signal N)` / `engine-exited(code N)`; a signal wins over a stray code. */
-export function exitReason(death: Pick<DeathInfo, 'exitCode' | 'signal'>): string {
+/**
+ * `engine-exited(signal N)` / `engine-exited(code N)`; a signal wins over a stray code.
+ * `engine-unresponsive(...)` when the process was still alive, as in the Tauri shell.
+ */
+export function exitReason(death: Pick<DeathInfo, 'exitCode' | 'signal' | 'unresponsive'>): string {
+	if (death.unresponsive) return `engine-unresponsive(pid alive, ${UNRESPONSIVE_AFTER_MISSES} health checks missed)`;
 	if (death.signal !== null) return `engine-exited(signal ${death.signal})`;
 	if (death.exitCode !== null) return `engine-exited(code ${death.exitCode})`;
 	return 'engine-exited(unknown)';
+}
+
+/** What happened to the engine, for the restart log. Mirrors the Tauri shell's `death_reason`. */
+export function deathReason(unresponsive: boolean, exitCode: number | null): string {
+	return unresponsive ? 'it stopped answering health checks' : `exit code ${exitCode ?? -1}`;
+}
+
+/** The first sentence of the native fatal dialog. Mirrors the Tauri shell's `show_fatal_dialog`. */
+export function fatalDialogDetail(unresponsive: boolean, exitCode: number | null, pid: number | null, port: number | null): string {
+	const what = unresponsive ? 'The engine stopped answering' : `The engine exited with code ${exitCode ?? -1}`;
+	return `${what} (pid ${pid ?? 0}, port ${port ?? 0}).\n\nRelaunch starts a fresh engine, or quit the app.`;
 }
 
 export function writeParentFile(dataDir: string): void {
@@ -229,6 +265,7 @@ export class EngineSupervisor {
 	private supervised: Supervised | null;
 	private deadAt: number | null = null;
 	private exitCode: number | null = null;
+	private unresponsive = false;
 	private lockPid: number | null = null;
 	private lockPort: number | null = null;
 	private autoRestartAttempted = false;
@@ -258,7 +295,15 @@ export class EngineSupervisor {
 		const loop = async (): Promise<void> => {
 			while (!this.stopped) {
 				await this.serialized(() => this.tick());
-				if (this.shellHealth.takeRelaunchRequest()) await this.requestRelaunch();
+				if (this.shellHealth.takeRelaunchRequest()) {
+					const phase = this.phase;
+					if (relaunchApplies(phase)) {
+						appendShellLog('INFO', `relaunch requested over shell health (phase ${phase})`);
+						await this.requestRelaunch();
+					} else {
+						appendShellLog('INFO', `relaunch request ignored: engine is ${phase}`);
+					}
+				}
 				await new Promise((resolve) => setTimeout(resolve, pollMs));
 			}
 		};
@@ -299,6 +344,7 @@ export class EngineSupervisor {
 				this.phase = 'dead';
 				this.deadAt = this.now();
 				this.exitCode = dead.exitCode;
+				this.unresponsive = dead.unresponsive;
 				this.lockPid = dead.lockPid;
 				this.lockPort = dead.lockPort;
 				appendShellLog('WARN', `${exitReason(dead)} pid=${dead.lockPid ?? 0} port=${dead.lockPort ?? 0}`);
@@ -364,31 +410,41 @@ export class EngineSupervisor {
 			const exit: ExitInfo | null = engine.tryReap();
 			const lockPid = holder?.pid ?? engine.pid;
 			const lockPort = holder?.port ?? engine.port;
-			if (exit !== null) return { exitCode: exit.code, signal: exit.signal, lockPid, lockPort };
-			if (engine.isLogFailed()) return { exitCode: 1, signal: null, lockPid, lockPort };
+			if (exit !== null) return { exitCode: exit.code, signal: exit.signal, lockPid, lockPort, unresponsive: false };
+			if (engine.isLogFailed()) return { exitCode: 1, signal: null, lockPid, lockPort, unresponsive: false };
 			if (!(await this.deps.health(engine.port))) {
 				if (!this.deps.pidCanAct(engine.pid)) {
-					return { exitCode: 1, signal: null, lockPid: engine.pid, lockPort: engine.port };
+					return { exitCode: 1, signal: null, lockPid: engine.pid, lockPort: engine.port, unresponsive: false };
 				}
-				return this.missedHealth({ exitCode: 1, signal: null, lockPid, lockPort: engine.port });
+				return this.missedHealth(lockPid, engine.port);
 			}
 			this.missedProbes = 0;
 			return null;
 		}
 		if (!this.deps.pidCanAct(running.pid)) {
-			return { exitCode: 1, signal: null, lockPid: running.pid, lockPort: running.port };
+			return { exitCode: 1, signal: null, lockPid: running.pid, lockPort: running.port, unresponsive: false };
 		}
 		if (!(await this.deps.health(running.port))) {
-			return this.missedHealth({ exitCode: 1, signal: null, lockPid: running.pid, lockPort: running.port });
+			return this.missedHealth(running.pid, running.port);
 		}
 		this.missedProbes = 0;
 		return null;
 	}
 
-	/** A live pid that stops answering is dead only after several misses in a row, as in the Tauri shell. */
-	private missedHealth(death: DeathInfo): DeathInfo | null {
+	/**
+	 * A live pid that stops answering is dead only after several misses in a row, as in the Tauri shell.
+	 * It has no exit code: it is reported as unresponsive, never as an exit it never had.
+	 */
+	private missedHealth(lockPid: number, lockPort: number): DeathInfo | null {
 		this.missedProbes += 1;
-		return this.missedProbes >= UNRESPONSIVE_AFTER_MISSES ? death : null;
+		if (this.missedProbes < UNRESPONSIVE_AFTER_MISSES) {
+			appendShellLog(
+				'WARN',
+				`engine health check missed (${this.missedProbes}/${UNRESPONSIVE_AFTER_MISSES}) pid=${lockPid} port=${lockPort}; pid alive, not restarting yet`
+			);
+			return null;
+		}
+		return { exitCode: null, signal: null, lockPid, lockPort, unresponsive: true };
 	}
 
 	private async reapChild(): Promise<void> {
@@ -403,7 +459,7 @@ export class EngineSupervisor {
 
 	private async attemptRestart(): Promise<boolean> {
 		if (this.stopped) return false;
-		const exitCode = this.exitCode ?? -1;
+		const reason = deathReason(this.unresponsive, this.exitCode);
 		const { payload, dataDir, logPath } = this.paths;
 		if (this.stopped) return false;
 		const old = this.supervised;
@@ -429,7 +485,7 @@ export class EngineSupervisor {
 			}
 			parentWatchClaim.keep();
 			this.supervised = { kind: 'adopted', pid: plan.pid, host: plan.host, port: plan.port };
-			return this.restarted(exitCode);
+			return this.restarted(reason);
 		}
 		if (plan.kind === 'stop-or-quit') {
 			parentWatchClaim.release();
@@ -470,15 +526,15 @@ export class EngineSupervisor {
 		}
 		parentWatchClaim.keep();
 		this.supervised = { kind: 'spawned', engine };
-		return this.restarted(exitCode);
+		return this.restarted(reason);
 	}
 
-	private restarted(exitCode: number): boolean {
+	private restarted(reason: string): boolean {
 		this.phase = 'running';
 		this.deadAt = null;
 		this.autoRestartAttempted = false;
 		this.missedProbes = 0;
-		appendShellLog('INFO', `${utcTimestampIso()} engine restarted after exit code ${exitCode}`);
+		appendShellLog('INFO', `${utcTimestampIso()} engine restarted after ${reason}`);
 		this.updateSurfaces();
 		const running = this.supervised;
 		if (running !== null) this.surface.navigateToOrigin(supervisedOrigin(running));
@@ -595,9 +651,7 @@ export class EngineSupervisor {
 	}
 
 	private async showFatalDialog(): Promise<void> {
-		const detail =
-			`The engine exited with code ${this.exitCode ?? -1} (pid ${this.lockPid ?? 0}, port ${this.lockPort ?? 0}).\n\n` +
-			'Relaunch starts a fresh engine, or quit the app.';
+		const detail = fatalDialogDetail(this.unresponsive, this.exitCode, this.lockPid, this.lockPort);
 		const choice = await this.surface.showFatalDialog(detail);
 		if (choice === 'relaunch') {
 			appendShellLog('INFO', 'user chose relaunch from native dialog');

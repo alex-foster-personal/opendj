@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.lyrics.json_parse import non_empty_string
 from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 LYRICS_CACHE_SCHEMA = 1
@@ -80,16 +81,10 @@ def _parse(value: Any, path: Path) -> Lyrics:
         raise TypeError(f"lyrics-cache entry {path} must be a JSON object")
     if value.get("schema") != LYRICS_CACHE_SCHEMA:
         raise ValueError(f"lyrics-cache entry {path} has unsupported schema")
-    stable_id = _non_empty_string(value, "stable_id", path)
-    source = _non_empty_string(value, "source", path)
+    label = "lyrics-cache entry"
+    stable_id = non_empty_string(value, "stable_id", path, entry_label=label)
+    source = non_empty_string(value, "source", path, entry_label=label)
     return Lyrics(stable_id=stable_id, source=source, lines=_parse_lines(value.get("lines"), path))
-
-
-def _non_empty_string(entry: dict[str, Any], field: str, path: Path) -> str:
-    value = entry.get(field)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"lyrics-cache entry {path} has invalid {field}")
-    return value
 
 
 def _parse_lines(value: Any, path: Path) -> tuple[LyricLine, ...]:

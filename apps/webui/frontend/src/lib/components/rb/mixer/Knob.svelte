@@ -21,6 +21,7 @@
 		KNOB_CFG,
 		altClickKnob,
 		beginSelectionDrag,
+		clamp01,
 		isKnobLinked,
 		isKnobSelected,
 		linkedPartnerId,
@@ -113,6 +114,12 @@
 	let dragPartnerId: string | null = null;
 	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
+	/**
+	 * Needle position while a drag is down. The committed `value` can lag a
+	 * frame (stem EQ commits through stem_gain), and without this the dial
+	 * looks stuck under the pointer.
+	 */
+	let dragShown = $state<number | null>(null);
 	/** Non-null while a drag on a selected dial moves the whole 2+ selection. */
 	let selectionDrag: SelectionDragStart | null = null;
 	let pointerMoved = false;
@@ -144,11 +151,12 @@
 	const takeoverGhost = $derived(takeoverFunction === null ? null : midiTakeoverGhost(takeoverFunction));
 	const ghostAngleDeg = $derived(takeoverGhost === null ? 0 : (takeoverGhost.value - 0.5) * SWEEP_DEG);
 
-	const angleDeg = $derived((value - 0.5) * SWEEP_DEG);
+	const displayValue = $derived(dragShown ?? value);
+	const angleDeg = $derived((displayValue - 0.5) * SWEEP_DEG);
 	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
 	const warn = $derived.by((): 'none' | 'orange' | 'red' => {
 		if (accentColor) return 'none';
-		const d = Math.abs(value - 0.5);
+		const d = Math.abs(displayValue - 0.5);
 		if (d > 0.25) return 'red';
 		if (d > 0.15) return 'orange';
 		return 'none';
@@ -198,6 +206,10 @@
 		selectionDrag = beginSelectionDrag(knobId);
 		dragPartnerId = linkedPartnerId(knobId);
 		dragStartPartnerValue = dragPartnerId === null ? null : readKnobValue(dragPartnerId);
+		// A linked or grouped drag commits through the registry (stagger / the
+		// other dials). Only a lone dial previews the pointer, or the preview
+		// would hide that commit and stick.
+		dragShown = selectionDrag === null && dragPartnerId === null ? value : null;
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
@@ -225,7 +237,10 @@
 		// One dial: horizontal is the fine-adjust axis.
 		dragSumDx += step.dx;
 		dragSumDy += step.dy;
-		const target = dragStartValue + singleDragDelta(dragSumDx, dragSumDy);
+		const target = clamp01(dragStartValue + singleDragDelta(dragSumDx, dragSumDy));
+		// A linked drag commits with the stagger added, so it shows the
+		// committed value, never the bare pointer target.
+		if (dragPartnerId === null) dragShown = target;
 		setKnobFromDrag(knobId, dragStartValue, target, dragPartnerId, dragStartPartnerValue);
 	}
 
@@ -233,6 +248,7 @@
 		if (!dragging) return;
 		const wasDrag = pointerMoved;
 		dragging = false;
+		dragShown = null;
 		selectionDrag = null;
 		dragTracker = null;
 		dragPartnerId = null;
@@ -283,7 +299,7 @@
 	aria-label={accessibleLabel ?? label}
 	aria-valuemin={0}
 	aria-valuemax={1}
-	aria-valuenow={value}
+	aria-valuenow={displayValue}
 	aria-disabled={inert}
 	tabindex={inert ? -1 : 0}
 	style={visualStyle}
@@ -293,6 +309,7 @@
 	onpointerdown={handlePointerDown}
 	onpointermove={handlePointerMove}
 	onpointerup={handlePointerUp}
+	onpointercancel={handlePointerUp}
 	ondblclick={handleDblClick}
 	onkeydown={handleKeyDown}
 	use:wheelAdjust={{

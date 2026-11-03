@@ -117,9 +117,15 @@ def data_dir_from_state_db(state_db_path: Path) -> Path:
     return state_db_path.parent
 
 
+def lyric_index_data_dir_from_state_db(state_db_path: Path) -> Path:
+    """Root passed to ``apps.lyrics`` cache/index helpers for this app binding."""
+    return state_db_path.parent.parent
+
+
 __all__ = [
     "SHELL_HEALTH_TIMEOUT_REASON",
     "ShellHealthTimeout",
     "ShellOutputHealthClient",
     "data_dir_from_state_db",
+    "lyric_index_data_dir_from_state_db",
 ]

@@ -52,7 +52,9 @@ const CARD_HOSTS = new Set([
 	'lib/components/rb/browser/LyricColumn.svelte#c-lyrics',
 	// KEYSHIFT-04: the Key column's lettered/Camelot hover card (KeyHoverCard).
 	'lib/components/rb/browser/TrackTable.svelte#c-key',
-	'lib/components/rb/browser/LibrarySourceTabs.svelte#icon-btn'
+	'lib/components/rb/browser/LibrarySourceTabs.svelte#icon-btn',
+	// LIBPG-7694b: the Last Played cell's "Where it played" card.
+	'lib/components/rb/browser/LastPlayedCell.svelte#cell'
 ]);
 
 /** Card bodies that keep the card open while hovered: not hosts themselves. */
@@ -268,7 +270,7 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		'lib/components/rb/QuickDrawMenu.svelte#qd',
 		'lib/components/rb/QuickDrawMenu.svelte#qd-item',
 		'lib/components/rb/browser/RatingStars.svelte#rb-star',
-		'lib/components/rb/browser/PlaylistTree.svelte#row',
+		'lib/components/rb/browser/PlaylistTreeView.svelte#row',
 		'lib/components/rb/browser/TrackTable.svelte#c-bpm',
 		// QLTSCAN-05: loads the badge's own title text on first hover, no card.
 		'lib/components/rb/QualityBadge.svelte#onmouseenter={_requestHover}',

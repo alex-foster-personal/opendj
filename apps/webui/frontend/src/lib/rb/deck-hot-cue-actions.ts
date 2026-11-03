@@ -40,7 +40,7 @@ export function createDeckHotCueActions(
 		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		let ms = fixedPositionMs ?? deck.position_ms;
 		const validPosition = Number.isFinite(ms) && ms >= 0;
-		const beats = deck.anlz?.beatgrid.beats;
+		const beats = deck.anlz?.beatgrid?.beats;
 		if (validPosition && (fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
 			ms = Math.round(quantizeToNearestGridBeat(beats, ms / 1000, 1) * 1000); // off-grid positions are kept (SEEK-GRID-01)
 		}

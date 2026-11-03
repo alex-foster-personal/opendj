@@ -484,7 +484,7 @@ def _startup_workers(
     may widen and a tighter host may shrink. Logs the chosen number and why.
     Raises when even one worker will not fit.
     """
-    from .admission import duration_band_cap
+    from .admission import BAND_EMPTY
 
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
@@ -492,15 +492,22 @@ def _startup_workers(
     # Same item set as resume: deferred and cancelled items count, because a
     # resume can hand them to this pool while it is still draining.
     inputs = runnable_sizing_inputs(conn, batch)
-    predicted: float | None
-    if inputs is not None:
-        cap, band_name, predicted = inputs
-    else:
-        predicted = None
-        try:
-            cap, band_name = duration_band_cap([], band)
-        except ValueError as exc:
-            raise QueueError(str(exc)) from exc
+    if inputs is None:
+        # True-empty contract: nothing runnable means workers=0, band=empty.
+        # Persist that plan and start no pool; the stored band is stale.
+        log.info(
+            "analysis pool startup: no runnable items for batch %s; "
+            "0 worker(s), band %s (planned %d)",
+            batch_id,
+            BAND_EMPTY,
+            planned,
+        )
+        if planned != 0 or band != BAND_EMPTY:
+            queue_store.set_batch_workers(
+                conn, batch_id, workers=0, band=BAND_EMPTY
+            )
+        return 0
+    cap, band_name, predicted = inputs
     try:
         sizing = size_workers_for_host(
             duration_cap=cap,
@@ -607,7 +614,7 @@ def run_batch(
             host=host,
         )
         summary.workers = workers
-        pool = spawn_pool(workers)
+        pool = spawn_pool(workers) if workers > 0 else None
     except Exception:
         # take_batch_runner already marked this batch running under this
         # pid. A memory refusal, a cache or JIT failure, or pool creation
@@ -626,7 +633,8 @@ def run_batch(
         summary=summary,
         on_item=on_item,
     )
-    _drain_pool(ctx, pool)
+    if pool is not None:
+        _drain_pool(ctx, pool)
 
     if summary.cancelled_midway:
         queue_store.clear_batch_runner(conn, batch_id)

@@ -42,8 +42,11 @@ Source = Literal[
     "open-dj-tool", "manual", "inferred", "webui",
 ]
 
-# Whether a field's value is real, measured-and-failed, or not yet measured.
-FieldStatus = Literal["ok", "failed", "missing"]
+# Whether a field's value is real, measured-and-failed, or not yet measured;
+# ``too_short`` / ``no_pulse`` name an analyzed track with no tempo (#5986).
+FieldStatus = Literal[
+    "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
+]
 
 DEFAULT_LIMIT: int = 200
 MAX_LIMIT: int = 1000

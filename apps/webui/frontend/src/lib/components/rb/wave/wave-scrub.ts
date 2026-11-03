@@ -23,6 +23,7 @@ import {
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
+import { playheadCenterX } from './wave-playhead-render';
 
 /** 'downbeat' (default): nearest bar downbeat. 'beat': nearest real beat
  * (Cmd+Shift). 'exact': the raw, unsnapped position (Shift alone). */
@@ -76,6 +77,8 @@ interface WaveClickTarget {
 	pointerX: number;
 	widthPx: number;
 	windowSeconds: number;
+	/** Where the playhead sits across the row, 0..1 (WAVEZOOM-6802c). Required: the centered place is 0.5. */
+	playheadFrac: number;
 }
 
 interface WaveDragTarget {
@@ -117,7 +120,13 @@ export function waveClickTargetMs(target: WaveClickTarget): number {
 	_assertFinite('centerPositionMs', target.centerPositionMs);
 	_assertFinite('pointerX', target.pointerX);
 	const pixelsPerSecond = target.widthPx / target.windowSeconds;
-	const offsetMs = ((target.pointerX - target.widthPx / 2) / pixelsPerSecond) * 1000;
+	// The same drawable column the playhead core is painted on, so a click on the
+	// visible core seeks to the place it shows, including the exact end.
+	if (!Number.isFinite(target.playheadFrac) || target.playheadFrac < 0 || target.playheadFrac > 1) {
+		throw new RangeError(`waveClickTargetMs: playheadFrac must be within 0..1, got ${target.playheadFrac}`);
+	}
+	const playheadX = playheadCenterX(target.widthPx, target.playheadFrac);
+	const offsetMs = ((target.pointerX - playheadX) / pixelsPerSecond) * 1000;
 	return _clampToTrack(target.centerPositionMs + offsetMs, target.durationMs);
 }
 

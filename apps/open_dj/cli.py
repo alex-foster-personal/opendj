@@ -434,6 +434,14 @@ def _unwrap_prov(value: Any) -> Any:
     return value
 
 
+def _cue_color_rgb_from_wire(c: dict[str, Any]) -> int | None:
+    if "color" in c:
+        return color_hex_to_int(c["color"])
+    if "color_rgb" in c:
+        return color_hex_to_int(c["color_rgb"])
+    return None
+
+
 def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
     """Rehydrate wire-format cue list into typed ``CuePoint`` tuples.
 
@@ -492,7 +500,7 @@ def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
                 position_ms=int(c.get("position_ms", 0)),
                 type=emit_type,
                 name=c.get("name", ""),
-                color_rgb=color_hex_to_int(c.get("color") or c.get("color_rgb")),
+                color_rgb=_cue_color_rgb_from_wire(c),
                 length_ms=int(length_ms) if length_ms is not None else None,
             )
         )

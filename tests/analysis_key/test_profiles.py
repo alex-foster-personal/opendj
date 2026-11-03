@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from apps.analysis_key.canon import Key
-from apps.analysis_key.profiles import estimate_key_krumhansl
+from apps.analysis_key.profiles import estimate_key_krumhansl, profile_correlations
 
 _CANDIDATES = [estimate_key_krumhansl]
 
@@ -49,10 +49,30 @@ def test_f_sharp_major_triad_chroma_scores_as_f_sharp_major(estimate_key) -> Non
     assert result.key == Key(pitch_class=6, is_minor=False)
 
 
-def test_rejects_chroma_without_twelve_rows() -> None:
+_CHROMA_SHAPE_REJECTORS = [
+    profile_correlations,
+    estimate_key_krumhansl,
+]
+
+
+@pytest.mark.parametrize("reject_chroma", _CHROMA_SHAPE_REJECTORS)
+def test_rejects_chroma_without_twelve_rows(reject_chroma) -> None:
     bad_chroma = np.zeros((10, 8))
-    with pytest.raises(ValueError):
-        estimate_key_krumhansl(bad_chroma)
+    with pytest.raises(
+        ValueError,
+        match=r"chroma must have 12 pitch-class rows, got shape \(10, 8\)",
+    ):
+        reject_chroma(bad_chroma)
+
+
+@pytest.mark.parametrize("reject_chroma", _CHROMA_SHAPE_REJECTORS)
+def test_rejects_one_dimensional_chroma(reject_chroma) -> None:
+    bad_chroma = np.zeros(12)
+    with pytest.raises(
+        ValueError,
+        match=r"chroma must have 12 pitch-class rows, got shape \(12,\)",
+    ):
+        reject_chroma(bad_chroma)
 
 
 def test_silence_still_returns_a_key_with_zero_confidence() -> None:

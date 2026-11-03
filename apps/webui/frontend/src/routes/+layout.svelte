@@ -76,6 +76,8 @@
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import { deferLoad } from '$lib/assistant/sidebar-toggle';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
 	import { installSingleHoverTooltip } from '$lib/ui/single-hover-tooltip';
 
@@ -118,6 +120,10 @@
 	// browser chrome as Gig.
 	const isLibraryWorkspace = $derived(isLibraryWorkspaceRoutePath($page.url.pathname));
 	const isFullBleedRoute = $derived(isPerformance || isTrackify || isLibraryWorkspace);
+
+	/** The assistant's door, loaded by a deferred boot task; see the template note. */
+	let AgentSidebarMount: typeof import('$lib/components/assistant/AgentSidebarMount.svelte').default | null =
+		$state(null);
 
 	const setupOpen = $derived(setupOverlay.open);
 	// The wizard component also draws the "Setup incomplete" note, which lives
@@ -317,6 +323,19 @@
 				pinShellError = error instanceof Error ? error.message : String(error);
 				pushToast(`Comment pins failed to load: ${pinShellError}`, 'error', TOAST_DEFAULT_MS, error);
 			}
+		);
+		deferLoad(
+			'assistant-mount:load',
+			() => import('$lib/components/assistant/AgentSidebarMount.svelte'),
+			(mount) => {
+				if (!unmounted) AgentSidebarMount = mount.default;
+			},
+			(error) => {
+				if (unmounted) return;
+				const message = error instanceof Error ? error.message : String(error);
+				pushToast(`Assistant failed to load: ${message}`, 'error', TOAST_DEFAULT_MS, error);
+			},
+			bootScheduler
 		);
 		// Set notes (SETNOTE-6340/6340b): mounts itself after boot, see set-notes/loader.ts.
 		const stopSetNotes = deferSetNotesHost(overlayLoadFailureReporter('Set notes'));
@@ -530,6 +549,12 @@
 	{/await}
 {/if}
 <QuitConfirmOverlay />
+<!-- The assistant (Cmd+I, AISIDE-7892j): at the root so full-bleed routes get it
+     too. Imported by a deferred boot task, so it and its flag read cost first
+     paint nothing; the mount shows nothing unless `assistant.sidebar` is on. -->
+{#if AgentSidebarMount}
+	<AgentSidebarMount />
+{/if}
 <!-- The diagnostics consent dialog (OBS-05) is mounted by $lib/telemetry-consent
      from a deferred boot task, so neither it nor its module is on the
      first-paint path or in the library page's bundle budget. -->

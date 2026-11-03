@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from apps.shared.state import sync_stamp
+from apps.shared.state.migrations_v26 import is_untouched_seed
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol, sync_set
 from apps.sync_hub.engine_common import (
@@ -211,6 +212,8 @@ def _rows_for_table(
     rows: list[RowChange] = []
     held_rows: list[HeldRow] = []
     for row in cursor:
+        if is_untouched_seed(spec.name, dict(zip(columns, row, strict=True))):
+            continue
         change = _row_change(conn, spec.name, columns, spec, row, held)
         if isinstance(change, HeldRow):
             held_rows.append(change)

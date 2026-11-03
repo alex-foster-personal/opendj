@@ -123,6 +123,8 @@ function deckPalette(c) {
  * same frame paints with no analysis (background and playhead). */
 function deckColors(design, c) {
 	const frame = (anlz) => ({
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: W,
 		heightCss: H,
 		// The whole 24s window shows the whole sample: tLeft = 0, the row spans it.

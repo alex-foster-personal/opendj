@@ -14,20 +14,25 @@ import './LyricsLane.react.css';
 // held to the same contract (LyricsLane.contract.ts). positionMs arrives as a
 // prop exactly as in the original; no per-frame state lives here.
 //
-// WAVE_WINDOW_S is restated, not imported: render.ts reaches api-rb.ts, whose
-// type imports pull job-progress.svelte.ts into `tsc -p tsconfig.react.json`.
-// It must equal render.ts WAVE_WINDOW_S; the contract pins the window (one
-// percent of the lane = 240 ms at pitch 1), so a drift fails both stories.
-const WAVE_WINDOW_S = 24;
 
 export type LyricsLaneProps = {
 	lyrics: { lines: LyricLine[] } | null;
 	loadError: Error | null;
 	positionMs: number;
 	pitch: number;
+	/** The row's wall-clock window and playhead place, as the Svelte twin takes them (WAVEZOOM-6802). */
+	windowSeconds: number;
+	playheadFrac: number;
 };
 
-export default function LyricsLane({ lyrics, loadError, positionMs, pitch }: LyricsLaneProps) {
+export default function LyricsLane({
+	lyrics,
+	loadError,
+	positionMs,
+	pitch,
+	windowSeconds,
+	playheadFrac
+}: LyricsLaneProps) {
 	if (loadError !== null) {
 		return (
 			<span className="lyrics-error" title={loadError.message}>
@@ -39,7 +44,7 @@ export default function LyricsLane({ lyrics, loadError, positionMs, pitch }: Lyr
 
 	const activeIndex = activeLyricLineIndex(lyrics.lines, positionMs);
 	const groups = lyricLaneGroups(lyrics.lines);
-	const slots = lyricLaneSlots(groups, pitch, WAVE_WINDOW_S);
+	const slots = lyricLaneSlots(groups, pitch, windowSeconds);
 
 	return (
 		<div className="lyrics-lane" aria-label="Synced lyrics">
@@ -50,7 +55,8 @@ export default function LyricsLane({ lyrics, loadError, positionMs, pitch }: Lyr
 					lineStartMs: group.start_ms,
 					positionMs,
 					pitch,
-					windowSeconds: WAVE_WINDOW_S
+					windowSeconds,
+					playheadFrac
 				});
 				// Two-row slots clamp each entry to the next entry on ITS row
 				// (i + 2), which subsumes the adjacent-entry clamp.

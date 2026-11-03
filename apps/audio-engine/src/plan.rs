@@ -20,8 +20,7 @@
 use serde_json::{Map, Value};
 
 use crate::engine::{DeckId, KnobTarget};
-use crate::protocol::{self, deck_of, exact_keys, Command, ProtoError};
-use crate::engine::ErrorCode;
+use crate::protocol::{self, deck_of, exact_keys, invalid, Command, ProtoError};
 
 pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
 pub const DEFAULT_BLOCK_FRAMES: usize = 256;
@@ -80,10 +79,6 @@ pub struct Plan {
     pub max_ms: f64,
     pub end: At,
     pub events: Vec<Event>,
-}
-
-fn invalid(msg: String) -> ProtoError {
-    ProtoError::new(ErrorCode::Invalid, msg)
 }
 
 fn obj<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>, ProtoError> {
@@ -271,6 +266,7 @@ fn check_ramp_to(target: KnobTarget, to: f64) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::ErrorCode;
     use serde_json::json;
 
     #[test]

@@ -365,7 +365,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # own per_authority dict going stale the day playlist_sets was added.
         "apps/shared/playlist_sets/schema.py": "playlist_sets",
         "apps/spotify/state_aux.py": "spotify_playlist_links",
-        "apps/launcher/scripts/bootstrap_db.py": "tracks_frecency",
+        "apps/launcher/scripts/db_schema.py": "tracks_frecency",
         # The one authority that is NOT PYTHON. Every derivation of this list
         # had been done by reading *.py, so launcher_meta was created in the
         # live state.db on every launcher start while no inventory, no test

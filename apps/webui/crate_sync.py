@@ -884,7 +884,7 @@ def owner_manifest(
         raise TypeError("owner plan JSON must be an object")
     _manifest_files(payload)
     if "library" in payload:
-        from apps.agentbox.crate_state import normalise_manifest
+        from apps.shared.crate_state import normalise_manifest
 
         normalise_manifest(payload)
     return payload
@@ -901,7 +901,7 @@ def audit_payload(
     if "library" in manifest:
         if state_db is None:
             raise RuntimeError("library ledger audit requires state.db")
-        from apps.agentbox.crate_state import audit_snapshot, snapshot_from_manifest
+        from apps.shared.crate_state import audit_snapshot, snapshot_from_manifest
 
         library = audit_snapshot(state_db, snapshot_from_manifest(manifest))
         payload["library"] = library
@@ -934,7 +934,7 @@ def reconcile_library_manifest(
         raise RuntimeError(
             "crate library reconciliation requires MDT_LIBRARY_MODE=remote"
         )
-    from apps.agentbox.crate_state import (
+    from apps.shared.crate_state import (
         normalise_manifest,
         reconcile_snapshot,
         snapshot_from_manifest,
@@ -1091,7 +1091,7 @@ def manifest_payload(
                     f"stable_id {stable_id} maps to two crate audio files: "
                     f"{prior} and {item.dest}"
                 )
-    from apps.agentbox.crate_state import snapshot_digest
+    from apps.shared.crate_state import snapshot_digest
 
     return {
         "bytes": plan_bytes(plan),
@@ -1354,12 +1354,12 @@ def build_parser() -> argparse.ArgumentParser:
     side.add_argument(
         "--local",
         action="store_true",
-        help="run on the owner Mac; live mode pushes to agentbox",
+        help=f"run on the owner Mac; live mode pushes to {AGENTBOX_HOSTNAME}",
     )
     side.add_argument(
         "--remote",
         action="store_true",
-        help="run on agentbox; dry/live modes obtain the owner plan over SSH and pull",
+        help=f"run on {AGENTBOX_HOSTNAME}; dry/live modes obtain the owner plan over SSH and pull",
     )
     parser.add_argument(
         "--full",
@@ -1389,7 +1389,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dest",
         choices=("ssh", "local"),
         default=None,
-        help="ssh (Air -> agentbox) or local copy into --crate-root (tests)",
+        help=f"ssh (owner Mac -> {AGENTBOX_HOSTNAME}) or local copy into --crate-root (tests)",
     )
     parser.add_argument("--crate-root", default=None, help="replica crate root")
     parser.add_argument(
@@ -1434,7 +1434,7 @@ def _owner_library_snapshot(
     stable_ids: Sequence[str] | None,
     preload1: bool,
 ) -> dict[str, object]:
-    from apps.agentbox.crate_state import build_snapshot
+    from apps.shared.crate_state import build_snapshot
 
     selected = preload1_stable_ids() if preload1 else stable_ids
     return build_snapshot(

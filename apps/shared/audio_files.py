@@ -9,6 +9,7 @@ from typing import cast
 
 from . import _tagreader, paths
 from ._tagreader import HAS_TAG_READER
+from .text import as_text
 
 
 @dataclass(slots=True)
@@ -61,13 +62,6 @@ def scan_music_files(roots: list[Path] | None = None) -> Iterator[AudioFile]:
                 yield AudioFile(path=full, size_bytes=st.st_size, mtime=st.st_mtime, ext=ext)
 
 
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
 def read_metadata(path: Path) -> AudioMetadata | None:
     """Read audio metadata via tinytag. ``None`` on failure.
 
@@ -86,14 +80,14 @@ def read_metadata(path: Path) -> AudioMetadata | None:
 
     bitrate = tag.bitrate
     return AudioMetadata(
-        title=_text(tag.title),
-        artist=_text(tag.artist),
-        album=_text(tag.album),
-        genre=_text(tag.genre),
-        comment=_text(tag.comment),
+        title=as_text(tag.title),
+        artist=as_text(tag.artist),
+        album=as_text(tag.album),
+        genre=as_text(tag.genre),
+        comment=as_text(tag.comment),
         bpm=_parse_bpm(_tagreader.first_other(tag, "bpm")),
-        key=_text(_tagreader.first_other(tag, "initial_key")),
-        isrc=_text(_tagreader.first_other(tag, "isrc")),
+        key=as_text(_tagreader.first_other(tag, "initial_key")),
+        isrc=as_text(_tagreader.first_other(tag, "isrc")),
         duration_s=float(tag.duration) if tag.duration else None,
         bitrate_kbps=int(bitrate) if bitrate else None,
         sample_rate=int(tag.samplerate) if tag.samplerate else None,

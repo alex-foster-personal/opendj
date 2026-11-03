@@ -18,8 +18,6 @@
 //   if a non-ok response resolves instead of throwing then broken
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
 import { after, before, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -27,11 +25,10 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+import { startMidiMapsTestServer } from './midi-maps-test-server.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
-// Cold import of apps.webui.server.app_wiring can exceed 20s on a loaded host;
-// this budget is startup tolerance only, not a product latency contract.
-const START_TIMEOUT_MS = 60_000;
 
 let vite;
 let webmidi;
@@ -40,39 +37,13 @@ let backendProc;
 let apiOrigin;
 let realFetch;
 
-/** Boot the throwaway real backend and wait for its LISTENING line. Never
- * fabricates a port: reads back whatever uvicorn actually bound. */
-function _startBackend() {
-	return new Promise((resolvePort, reject) => {
-		const proc = spawn('uv', ['run', '--no-sync', 'python', '-m', 'scripts.testing.midi_maps_test_server', '--port', '0'], {
-			cwd: REPO_ROOT,
-			stdio: ['ignore', 'pipe', 'pipe']
-		});
-		const timer = setTimeout(() => {
-			proc.kill();
-			reject(new Error(`midi_maps_test_server did not report LISTENING within ${START_TIMEOUT_MS}ms`));
-		}, START_TIMEOUT_MS);
-		let stderr = '';
-		proc.stderr.on('data', (chunk) => {
-			stderr += String(chunk);
-		});
-		proc.on('exit', (code) => {
-			if (code !== null && code !== 0) {
-				clearTimeout(timer);
-				reject(new Error(`midi_maps_test_server exited ${code}:\n${stderr}`));
-			}
-		});
-		const lines = createInterface({ input: proc.stdout });
-		lines.on('line', (line) => {
-			const match = /^LISTENING (\d+)$/.exec(line);
-			if (match) {
-				clearTimeout(timer);
-				lines.close();
-				backendProc = proc;
-				resolvePort(Number(match[1]));
-			}
-		});
-	});
+/** Boot the throwaway real backend and wait for real readiness (staged boot
+ * progress, then a real GET of the maps route); see midi-maps-test-server.mjs.
+ * Never fabricates a port: reads back whatever uvicorn actually bound. */
+async function _startBackend() {
+	const server = await startMidiMapsTestServer({ cwd: REPO_ROOT });
+	backendProc = server.proc;
+	return server.port;
 }
 
 /** Route any '/api/...' path at the real backend origin, exactly what the
@@ -123,8 +94,8 @@ before(async () => {
 });
 
 after(async () => {
-	await vite.close();
-	globalThis.fetch = realFetch;
+	await vite?.close();
+	if (realFetch) globalThis.fetch = realFetch;
 	backendProc?.kill();
 });
 

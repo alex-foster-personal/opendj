@@ -370,6 +370,18 @@ test('an unknown kind is reported as contract drift and reaches no kind subscrib
 	assert.match(errors[0], /unknown kind 'sparklines'/);
 });
 
+test('transition_in is an accepted library.changed kind', () => {
+	assert.ok(bus.LIBRARY_KINDS.includes('transition_in'));
+	const transitionIds = [];
+	bus.subscribeKind('transition_in', (ids) => transitionIds.push(...ids));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	socket.deliver('library.changed', 1, { kind: 'transition_in', ids: ['t1'] });
+
+	assert.deepEqual(transitionIds, ['t1']);
+	assert.equal(errors.length, 0);
+});
+
 test('a library.changed with malformed ids is an error, not a crash', () => {
 	const trackIds = [];
 	bus.subscribeKind('tracks', (ids) => trackIds.push(...ids));

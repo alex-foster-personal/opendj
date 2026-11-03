@@ -124,7 +124,7 @@ export interface TrackRow {
 	key: string | null;
 	/** Own-lane key read model for failed/missing tooltips (NATIVE-04). */
 	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
-	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected' | 'too_short' | 'no_pulse';
 	bpm_reason?: string | null;
 	key_reason?: string | null;
 	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';

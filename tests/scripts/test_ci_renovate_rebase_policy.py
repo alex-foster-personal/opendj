@@ -92,3 +92,15 @@ def test_renovate_prs_land_through_the_merge_queue() -> None:
     queue = json.loads(TRUNK_QUEUE.read_text(encoding="utf-8"))
     assert "renovate[bot]" in queue["allowedBotSubmitters"]
     assert "ci gate" in queue["requiredStatuses"]
+
+
+def test_existing_renovate_branches_update_only_inside_the_schedule() -> None:
+    """S2 round 8, Tue 3 Nov 2026: `schedule` alone stops new branches only; with the default
+    `updateNotScheduled: true` Renovate pushed `renovate/pip_requirements-non-major` 20 times
+    between 06:43Z and 14:57Z on a Tuesday, and 22 of 31 PR CI runs on Renovate branches that
+    day were cancelled by the next push.
+    [if] updateNotScheduled is not false [then] out-of-schedule pushes come back, [else stop].
+    [if] vulnerability alerts lose `at any time` [then] security fixes wait a week, [else stop]."""
+    config = _config()
+    assert config["updateNotScheduled"] is False
+    assert config["vulnerabilityAlerts"]["schedule"] == ["at any time"]

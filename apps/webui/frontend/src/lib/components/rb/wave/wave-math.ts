@@ -6,7 +6,7 @@ import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 
 /** Index of the FIRST beat with t >= tSec (== beats.length when none).
  * beats MUST be ordered by t (contract: AnlzBeatgrid.beats is ordered). */
-export function firstBeatAtOrAfter(beats: AnlzBeat[], tSec: number): number {
+export function firstBeatAtOrAfter(beats: readonly AnlzBeat[], tSec: number): number {
 	let lo = 0;
 	let hi = beats.length;
 	while (lo < hi) {
@@ -56,8 +56,8 @@ export function beatLineStride(beatSpacingPx: number): number {
 
 /** Bar number of every beat (count of downbeats at or before it, from 0),
  * so thinned bar lines stay on the same bars as the window scrolls. */
-const _barIndexMemo = new WeakMap<AnlzBeat[], { length: number; bars: Int32Array }>();
-function _barIndexes(beats: AnlzBeat[]): Int32Array {
+const _barIndexMemo = new WeakMap<readonly AnlzBeat[], { length: number; bars: Int32Array }>();
+function _barIndexes(beats: readonly AnlzBeat[]): Int32Array {
 	const memo = _barIndexMemo.get(beats);
 	if (memo !== undefined && memo.length === beats.length) return memo.bars;
 	const bars = new Int32Array(beats.length);
@@ -73,7 +73,7 @@ function _barIndexes(beats: AnlzBeat[]): Int32Array {
 /** Closest two consecutive beats sit anywhere in the window, in px. The
  * stride is picked from this, not the first interval, so a faster tempo
  * section later in the same window still keeps BEAT_LINE_MIN_GAP_PX. */
-function _minVisibleBeatSpacingPx(beats: AnlzBeat[], start: number, tRightSec: number, pxPerSec: number): number {
+function _minVisibleBeatSpacingPx(beats: readonly AnlzBeat[], start: number, tRightSec: number, pxPerSec: number): number {
 	let minS = Infinity;
 	const from = Math.max(0, Math.min(start, beats.length - 2));
 	for (let i = from; i + 1 < beats.length; i++) {
@@ -95,7 +95,7 @@ function _minVisibleBeatSpacingPx(beats: AnlzBeat[], start: number, tRightSec: n
  * at: each line then sits at its rounded track pixel minus that offset, the
  * same pixel as a Gothic block edge snapped to it (DECKUX-42). */
 export function visibleBeatLines(
-	beats: AnlzBeat[],
+	beats: readonly AnlzBeat[],
 	tLeftSec: number,
 	pxPerSec: number,
 	widthCss: number,

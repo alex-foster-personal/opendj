@@ -87,6 +87,17 @@ test('[if] a track is not on this computer [then] the deck says so in plain word
 	);
 });
 
+test('[if] a load fails with CLOUD_ASSET_UNAVAILABLE [then] the deck names the title and the plain sentence, [else stop].', () => {
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(
+			"Calling Out (feat. Dames Brown) - 7' Edit",
+			'3ef4ffbdca201c67c899e1058711778b',
+			"CLOUD_ASSET_UNAVAILABLE: track_locations row '3ef4ffbdca201c67c899e1058711778b' marked unavailable (available=0) at '<path.mp3>'"
+		),
+		"Calling Out (feat. Dames Brown) - 7' Edit: This track's audio is not on this machine and could not be fetched."
+	);
+});
+
 test('[if] a load fails before its metadata is read [then] the title still comes from that request, [else stop].', async () => {
 	// CLOUDSYNC-33 Air check: the toast showed the stable id because the audio
 	// fetch rejected before getTrack was read.

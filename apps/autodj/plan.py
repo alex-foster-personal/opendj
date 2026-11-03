@@ -1562,8 +1562,8 @@ def _beatmatched(plan: TransitionPlan) -> bool:
     return (style_doc.needs_beatmatch if style_doc is not None else True) and plan.bars > 1
 
 
-def sync_tempo_ratio(out_state: Mapping[str, Any], in_profile: TrackProfile, range_pct: float) -> float | None:
-    """The incoming deck's tempo ratio that Beat Sync would pick to match the outgoing deck.
+def sync_tempo_fold(out_state: Mapping[str, Any], in_profile: TrackProfile, range_pct: float) -> float | None:
+    """The fold Beat Sync would pick to match the incoming deck to the outgoing one (1, 0.5 or 2).
 
     Beat Sync tries the raw ratio, then half and double time, and takes the first inside
     the deck's +-``range_pct`` pitch range; ``None`` when none fits or a tempo is unknown.
@@ -1574,8 +1574,16 @@ def sync_tempo_ratio(out_state: Mapping[str, Any], in_profile: TrackProfile, ran
     raw = float(out_bpm) / in_profile.bpm
     for fold in TEMPO_FOLDS:
         if abs(raw * fold - 1.0) * 100.0 <= range_pct + 1e-9:
-            return raw * fold
+            return fold
     return None
+
+
+def sync_tempo_ratio(out_state: Mapping[str, Any], in_profile: TrackProfile, range_pct: float) -> float | None:
+    """The incoming deck's tempo ratio that Beat Sync would pick to match the outgoing deck (see :func:`sync_tempo_fold`)."""
+    fold = sync_tempo_fold(out_state, in_profile, range_pct)
+    if fold is None:
+        return None
+    return float(out_state["effective_bpm"]) / in_profile.bpm * fold
 
 
 def _check_authored_tempo(

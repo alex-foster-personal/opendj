@@ -17,7 +17,12 @@ test('All Tracks BPM hover names why an empty cell is empty', async ({ page }) =
 	await expect(cells.first()).toBeVisible({ timeout: 30_000 });
 	const titles = await cells.evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
 	expect(titles.length).toBeGreaterThan(0);
-	for (const title of titles) expect(title).toBe('no own analysis record for this lane yet');
+	// LIBPG-7694: the cell is now editable, so its hover adds the edit hint after the reason.
+	for (const title of titles) {
+		expect(title).toBe(
+			'no own analysis record for this lane yet Double-click, or right-click and choose Edit, to change it.'
+		);
+	}
 	const labels = await cells.evaluateAll((els) => els.map((el) => (el.textContent ?? '').trim()));
 	for (const label of labels) expect(label).toBe('missing');
 });

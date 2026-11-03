@@ -33,7 +33,13 @@ const BAUBLE_PATH = fileURLToPath(
 	new URL('../../src/lib/components/UserBauble.svelte', import.meta.url)
 );
 const topbar = readFileSync(TOPBAR_PATH, 'utf8');
-const bauble = readFileSync(BAUBLE_PATH, 'utf8');
+const BAUBLE_VIEW_PATH = fileURLToPath(
+	new URL('../../src/lib/components/UserBaubleView.svelte', import.meta.url)
+);
+// UserBauble is a container plus a props-only view; source pins read both.
+const baubleContainer = readFileSync(BAUBLE_PATH, 'utf8');
+const baubleView = readFileSync(BAUBLE_VIEW_PATH, 'utf8');
+const bauble = `${baubleContainer}\n${baubleView}`;
 
 /** The declaration block of one `@media` rule, brace-matched. */
 function mediaBlock(source, query) {
@@ -61,7 +67,8 @@ test('TopBar.svelte still compiles', () => {
 });
 
 test('UserBauble.svelte still compiles', () => {
-	compile(bauble, { filename: BAUBLE_PATH, generate: 'client' });
+	compile(baubleContainer, { filename: BAUBLE_PATH, generate: 'client' });
+	compile(baubleView, { filename: BAUBLE_VIEW_PATH, generate: 'client' });
 });
 
 // ------------------------------------------------------ defect 1: hidden

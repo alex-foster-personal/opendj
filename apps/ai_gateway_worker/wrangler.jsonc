@@ -1,0 +1,34 @@
+// Placeholder ids only. Secrets (never in this file):
+//   wrangler secret put CF_AIG_TOKEN   -- AI Gateway auth token (sent as cf-aig-authorization)
+//   wrangler secret put ADMIN_TOKEN    -- bearer for /admin/* (apps/ai_gateway_admin CLI)
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opendj-ai-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opendj-ai-gateway",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "UPSTREAM_BASE_URL": "https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_ID/openrouter",
+    "PLANS": {
+      "free": {
+        "daily_cap_usd": 0.05,
+        "models": ["google/gemini-3.7-flash"],
+        "max_output_tokens": 2048
+      },
+      "pro": {
+        "daily_cap_usd": 1.0,
+        "models": ["google/gemini-3.7-flash", "google/gemini-3.7-pro", "anthropic/claude-sonnet-4.6"],
+        "max_output_tokens": 8192
+      }
+    }
+  },
+  "observability": { "enabled": true }
+}

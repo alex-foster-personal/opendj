@@ -125,7 +125,7 @@ def test_this_platform_is_routed_to_the_branch_its_capability_names(tmp_path):
     stat-only path, which is the failure the digest branch exists to prevent.
 
     This case makes no choice. It calls ``_content_token`` exactly as
-    ``_first_playable`` does and asserts that the token really carries what
+    ``_pending_item`` does and asserts that the token really carries what
     the capability claims - so on a Windows runner it is the digest assertion
     that has to hold, and the misrouting above is what fails here. The
     capability itself is checked against ``os.name`` rather than against

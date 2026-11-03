@@ -62,3 +62,26 @@ export function masterDownbeatOverlayForDeck(input: {
 		followerPitch: input.deckPitch
 	};
 }
+
+/** Master's beat grid projected onto a non-master row. Same trust rules as
+ * the Beat Sync Max downbeat overlay, but it is not gated on that mode: the
+ * faint lines are the master's click track across the other lanes. The
+ * master row itself returns null (it already paints its own grid). */
+export function masterGridGhostForDeck(input: {
+	isMaster: boolean;
+	masterState: { position_ms: number; pitch: number } | null;
+	masterAnlz: AnlzData | null;
+	deckPositionMs: number;
+	deckPitch: number;
+	hasTrustedBeatGrid: (anlz: AnlzData) => boolean;
+}): MasterDownbeatOverlay | null {
+	if (input.isMaster || input.masterState === null || input.masterAnlz === null) return null;
+	if (!input.hasTrustedBeatGrid(input.masterAnlz)) return null;
+	return {
+		masterBeats: input.masterAnlz.beatgrid.beats,
+		masterPositionSec: input.masterState.position_ms / 1000,
+		followerPositionSec: input.deckPositionMs / 1000,
+		masterPitch: input.masterState.pitch,
+		followerPitch: input.deckPitch
+	};
+}

@@ -197,9 +197,11 @@ test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable
 	// notation, including a match on another notation (find-highlight.ts).
 	assert.match(
 		source,
-		/#each keyCellSpans\(row\.key, uiPrefs\.key_notation, findQuery\) as part/,
+		/#each keyCellSpans\(cellKey, uiPrefs\.key_notation, findQuery\) as part/,
 		'compact key cells must retain active search highlighting'
 	);
+	// cellKey is the row's key with a session edit applied (LIBPG-7694).
+	assert.match(source, /\{@const cellKey = editedKey\(row\.stable_id, row\.key\)\}/);
 });
 
 test('key hover reserves only honest optional musical-mode and chord-progression detail', () => {

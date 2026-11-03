@@ -35,7 +35,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from scripts.review_gh import TriageError, _gh, _paginated_json_list
+from scripts.review_gh import TriageError, _gh, _paginated_json_list, pr_view_json
 from scripts.review_pr_diff import pr_diff, pr_diff_at
 from scripts.review_prompt import ALL_FENCES, RUN_ID_PLACEHOLDER, Fence
 
@@ -193,9 +193,8 @@ def _branch(pr: str) -> str:
     #1224 (Fri 5 Sep 2026), which merged between being picked as a review
     target and the lane running.
     """
-    query = '.state + " " + .headRefName'
-    args = ["pr", "view", pr, "--repo", REPO, "--json", "state,headRefName", "-q", query]
-    state, branch = _gh(args).split()
+    view = pr_view_json(pr, ("state", "headRefName"), repo=REPO)
+    state, branch = str(view["state"]), str(view["headRefName"])
     if state != "OPEN":
         raise TriageError(f"PR #{pr} is {state}, not OPEN; there is nothing left to review")
     return branch
@@ -223,8 +222,7 @@ def _ref_sha(branch: str) -> str:
 
 
 def _pr_head(pr: str) -> str:
-    args = ["pr", "view", pr, "--repo", REPO, "--json", "headRefOid", "-q", ".headRefOid"]
-    return _gh(args).strip()
+    return str(pr_view_json(pr, ("headRefOid",), repo=REPO)["headRefOid"]).strip()
 
 
 def pinned_head(pr: str) -> str:
@@ -286,7 +284,7 @@ def pr_commit_shas(pr: str) -> frozenset[str]:
 
 def pr_title_and_body(pr: str) -> tuple[str, str]:
     """What the author claims the PR does: the rubric's intent check reads both."""
-    view = json.loads(_gh(["pr", "view", pr, "--repo", REPO, "--json", "title,body"]))
+    view = pr_view_json(pr, ("title", "body"), repo=REPO)
     title, body = view.get("title"), view.get("body")
     if not isinstance(title, str) or not title or not isinstance(body, str):
         raise TriageError(f"PR #{pr} reported no usable title and body: {view}")

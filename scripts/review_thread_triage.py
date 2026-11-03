@@ -534,7 +534,9 @@ def main(argv: list[str] | None = None) -> int:
     # from a reviewer that never ran is indistinguishable from a clean review:
     # zero threads makes "every thread reached a terminal state" vacuously
     # true. #682 printed exactly that while Devin had left nothing at all. So
-    # ask whether anyone looked BEFORE reporting on what they found.
+    # ask whether anyone looked BEFORE reporting on what they found. Since
+    # REVIEW-8220 (Mon 2 Nov 2026) the answer is printed as a reminder and
+    # never fails the run.
     if args.json:
         # Machine consumers read the thread payload; keep its shape stable and
         # let them call review_coverage directly rather than nesting schemas.
@@ -572,7 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             follow_up_url = review_followups.file_follow_ups(args.owner, args.repo, pr.number, pr.follow_ups)
         except review_coverage.TriageError as exc:
-            if not (pr.failing or coverage or debt_error):
+            if not (pr.failing or debt_error):
                 raise
             follow_up_url = f"nowhere: filing failed ({exc})"
     except review_coverage.TriageError as exc:
@@ -591,9 +593,12 @@ def main(argv: list[str] | None = None) -> int:
     if debt_report:
         print(f"\n{debt_report}")
     # OPS-41: over a declared issue scope is a failure (1); unmeasurable is 3.
+    if coverage:
+        # REVIEW-8220 (the maintainer, 19:30Z Mon 2 Nov 2026): a missing review is a reminder, never a hold.
+        print("\nNOTE: no review is recognized for this PR; consider one where it helps (`just review <PR>`). Advisory.")
     scope_rc = pr_scope_check.main([str(args.pr), "--owner", args.owner, "--repo", args.repo])
-    rc = max(scope_rc, 1 if (pr.failing or coverage or debt_error) else 0)
-    return review_blocker.report(rc, coverage, pr.failing, debt_error, scope_rc)
+    rc = max(scope_rc, 1 if (pr.failing or debt_error) else 0)
+    return review_blocker.report(rc, pr.failing, debt_error, scope_rc)
 
 
 if __name__ == "__main__":

@@ -218,6 +218,109 @@
         "title": "AdoptOut",
         "type": "object"
       },
+      "AgentIn": {
+        "properties": {
+          "approved_tool_call_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved Tool Call Ids",
+            "type": "array"
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/ContextRef"
+            },
+            "maxItems": 10,
+            "title": "Context",
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/AgentMessage"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "instant",
+                  "fast",
+                  "think"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "AgentIn",
+        "type": "object"
+      },
+      "AgentMessage": {
+        "description": "One history turn, OpenAI-shaped minus the ``system`` role.\n\n``system`` is absent on purpose: the engine owns the system prompt so\ncurl and the sidebar get the same assistant.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "AgentMessage",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1115,9 +1218,35 @@
       "AssistantStatusOut": {
         "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "configured": {
             "title": "Configured",
             "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "byok",
+                  "gateway"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
           },
           "model": {
             "title": "Model",
@@ -1158,6 +1287,34 @@
           "url"
         ],
         "title": "AttachmentOut",
+        "type": "object"
+      },
+      "AudioDeviceOut": {
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "nominal_sample_rate_hz": {
+            "title": "Nominal Sample Rate Hz",
+            "type": "number"
+          },
+          "transport": {
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "transport",
+          "nominal_sample_rate_hz"
+        ],
+        "title": "AudioDeviceOut",
         "type": "object"
       },
       "AudioEngineLoadIn": {
@@ -1612,6 +1769,57 @@
           "items"
         ],
         "title": "AudioFitListOut",
+        "type": "object"
+      },
+      "AudioHeadsetModeOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioDeviceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioDeviceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "supported",
+          "verdict",
+          "output",
+          "input"
+        ],
+        "title": "AudioHeadsetModeOut",
         "type": "object"
       },
       "AudioInterferenceItemOut": {
@@ -4812,6 +5020,46 @@
         "title": "CatalogOut",
         "type": "object"
       },
+      "ChangeOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "restart_required": {
+            "title": "Restart Required",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "version",
+          "enabled",
+          "restart_required",
+          "message"
+        ],
+        "title": "ChangeOut",
+        "type": "object"
+      },
       "ChannelCue": {
         "additionalProperties": false,
         "properties": {
@@ -4836,6 +5084,81 @@
           "deck"
         ],
         "title": "ChannelCue",
+        "type": "object"
+      },
+      "ChannelOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "fault": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FaultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "url",
+          "key_id",
+          "generated_at",
+          "fetched_at",
+          "stale",
+          "fault",
+          "visible"
+        ],
+        "title": "ChannelOut",
         "type": "object"
       },
       "ChatIn": {
@@ -5660,7 +5983,7 @@
         "type": "object"
       },
       "CloudSyncSchedulerOut": {
-        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``dead``: it was started and its thread is gone without ``stop()``.",
+        "description": "The engine's CloudSync scheduler: is its thread alive, and what last failed.\n\n``not_armed``: this app never builds one (tests, non-daemon boots).\n``off``: armed, switch not on. ``misconfigured``: switched on but it could\nnot start (``reason`` says why); the engine booted regardless.\n``halted``: a settled ``SyncDigestMismatch`` (ADR 04 c6); the thread stays\nparked and does not tick again until the engine is restarted.\n``dead``: it was started and its thread is gone without ``stop()``.",
         "properties": {
           "alive": {
             "title": "Alive",
@@ -5716,6 +6039,7 @@
               "off",
               "misconfigured",
               "running",
+              "halted",
               "stopped",
               "dead"
             ],
@@ -7088,6 +7412,40 @@
         "title": "ConsentOut",
         "type": "object"
       },
+      "ContextRef": {
+        "description": "Something the user pointed the assistant at (a chip in the composer).",
+        "properties": {
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "deck",
+              "playlist",
+              "usb",
+              "track"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "label"
+        ],
+        "title": "ContextRef",
+        "type": "object"
+      },
       "CopilotTrackOut": {
         "properties": {
           "artist": {
@@ -8362,6 +8720,26 @@
         "title": "DeckStemEqToggle",
         "type": "object"
       },
+      "DeleteOut": {
+        "properties": {
+          "undo_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Id"
+          }
+        },
+        "required": [
+          "undo_id"
+        ],
+        "title": "DeleteOut",
+        "type": "object"
+      },
       "DeletedPlaylistOut": {
         "properties": {
           "deleted_at": {
@@ -9483,6 +9861,24 @@
           "beats"
         ],
         "title": "FallbackBeatgridOut",
+        "type": "object"
+      },
+      "FaultOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "FaultOut",
         "type": "object"
       },
       "FeatureEntitlementOut": {
@@ -12337,6 +12733,87 @@
         "title": "InferIn",
         "type": "object"
       },
+      "InstallIn": {
+        "properties": {
+          "accept_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accept Permissions",
+            "type": "array"
+          },
+          "acknowledge_notice": {
+            "default": false,
+            "title": "Acknowledge Notice",
+            "type": "boolean"
+          },
+          "archive_sha256": {
+            "title": "Archive Sha256",
+            "type": "string"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          }
+        },
+        "required": [
+          "channel",
+          "accept_permissions",
+          "archive_sha256"
+        ],
+        "title": "InstallIn",
+        "type": "object"
+      },
+      "InstantPreviewIn": {
+        "properties": {
+          "text": {
+            "maxLength": 2000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "InstantPreviewIn",
+        "type": "object"
+      },
+      "InstantPreviewOut": {
+        "description": "Whether ``text`` is an instant command, which /agent answers with no model or key.",
+        "properties": {
+          "instant": {
+            "title": "Instant",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "instant"
+        ],
+        "title": "InstantPreviewOut",
+        "type": "object"
+      },
       "IoDeviceAccessOut": {
         "description": "IOPIN-14: whether the device lists could be read, and what to do if not.\n\n`status` is one of not_checked, listed, permission_needed, permission_denied,\napi_missing, enumeration_failed, timeout. Only `listed` means `outputs` and\n`inputs` are the machine's real device names; an agent must read this before\ntreating a short list as a machine with few devices.",
         "properties": {
@@ -12871,6 +13348,20 @@
         "title": "KaraokeWordOut",
         "type": "object"
       },
+      "KeyBody": {
+        "properties": {
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "KeyBody",
+        "type": "object"
+      },
       "KeyIn": {
         "additionalProperties": false,
         "properties": {
@@ -12961,6 +13452,19 @@
           "class"
         ],
         "title": "LabelRequest",
+        "type": "object"
+      },
+      "LabsIn": {
+        "properties": {
+          "opt_in": {
+            "title": "Opt In",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "opt_in"
+        ],
+        "title": "LabsIn",
         "type": "object"
       },
       "LaneSourceOut": {
@@ -13802,6 +14306,59 @@
           }
         },
         "title": "LinksPatchIn",
+        "type": "object"
+      },
+      "ListingOut": {
+        "description": "Problem first (PLUG-6522k): why you want it, what you can do, how, and the limits.",
+        "properties": {
+          "how_it_works": {
+            "title": "How It Works",
+            "type": "string"
+          },
+          "limits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limits",
+            "type": "array"
+          },
+          "problem": {
+            "title": "Problem",
+            "type": "string"
+          },
+          "screenshots": {
+            "items": {
+              "$ref": "#/components/schemas/ScreenshotOut"
+            },
+            "title": "Screenshots",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tagline": {
+            "title": "Tagline",
+            "type": "string"
+          },
+          "you_can": {
+            "items": {
+              "type": "string"
+            },
+            "title": "You Can",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tagline",
+          "problem",
+          "you_can",
+          "how_it_works",
+          "limits",
+          "status",
+          "screenshots"
+        ],
+        "title": "ListingOut",
         "type": "object"
       },
       "LocalDataOut": {
@@ -18539,6 +19096,85 @@
         "title": "PlaylistModel",
         "type": "object"
       },
+      "PlaylistOrganizationIn": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "folder",
+                  "playlist",
+                  "set"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "set_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "ready",
+                  "performed",
+                  "background"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Status"
+          },
+          "sort_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Index"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inbox",
+                  "sorting",
+                  "ready",
+                  "archive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          }
+        },
+        "title": "PlaylistOrganizationIn",
+        "type": "object"
+      },
       "PlaylistPinOut": {
         "properties": {
           "machine_id": {
@@ -19155,6 +19791,235 @@
           "plugins"
         ],
         "title": "PluginIndexResponse",
+        "type": "object"
+      },
+      "PluginRowOut": {
+        "properties": {
+          "available_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Sha256"
+          },
+          "available_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Version"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "homepage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homepage"
+          },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Version"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "license": {
+            "title": "License",
+            "type": "string"
+          },
+          "listing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "load_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Detail"
+          },
+          "load_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Status"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "publisher": {
+            "title": "Publisher",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "integer"
+          },
+          "trust": {
+            "title": "Trust",
+            "type": "string"
+          },
+          "update_available": {
+            "title": "Update Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "name",
+          "summary",
+          "publisher",
+          "trust",
+          "kind",
+          "tier",
+          "channel",
+          "license",
+          "permissions",
+          "notice",
+          "homepage",
+          "available_version",
+          "available_sha256",
+          "installed_version",
+          "source",
+          "enabled",
+          "load_status",
+          "load_detail",
+          "pending",
+          "update_available",
+          "listing"
+        ],
+        "title": "PluginRowOut",
+        "type": "object"
+      },
+      "PluginsOut": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelOut"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "dev_mode": {
+            "title": "Dev Mode",
+            "type": "boolean"
+          },
+          "labs_opt_in": {
+            "title": "Labs Opt In",
+            "type": "boolean"
+          },
+          "plugins": {
+            "items": {
+              "$ref": "#/components/schemas/PluginRowOut"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "restart_required": {
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dev_mode",
+          "labs_opt_in",
+          "restart_required",
+          "channels",
+          "plugins"
+        ],
+        "title": "PluginsOut",
         "type": "object"
       },
       "PolicyApplyIn": {
@@ -19780,7 +20645,9 @@
               "ok",
               "failed",
               "missing",
-              "available-not-selected"
+              "available-not-selected",
+              "too_short",
+              "no_pulse"
             ],
             "title": "Status",
             "type": "string"
@@ -21983,6 +22850,23 @@
         "title": "RowModel",
         "type": "object"
       },
+      "RowsOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "RowsOut",
+        "type": "object"
+      },
       "RowsResponse": {
         "properties": {
           "next_cursor": {
@@ -22254,6 +23138,39 @@
         "title": "SchedulerResumeOut",
         "type": "object"
       },
+      "ScreenshotOut": {
+        "properties": {
+          "alt": {
+            "title": "Alt",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height",
+          "alt",
+          "theme"
+        ],
+        "title": "ScreenshotOut",
+        "type": "object"
+      },
       "SearchHit": {
         "description": "One hydrated result row + the FTS match excerpt.",
         "properties": {
@@ -22360,7 +23277,9 @@
               "ok",
               "failed",
               "missing",
-              "available-not-selected"
+              "available-not-selected",
+              "too_short",
+              "no_pulse"
             ],
             "title": "Bpm Status",
             "type": "string"
@@ -22779,6 +23698,100 @@
           "total"
         ],
         "title": "SearchResults",
+        "type": "object"
+      },
+      "SectionCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "before_position": {
+            "minimum": 0.0,
+            "title": "Before Position",
+            "type": "integer"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "owner_id": {
+            "minLength": 1,
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "owner_kind": {
+            "enum": [
+              "playlist",
+              "set"
+            ],
+            "title": "Owner Kind",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "owner_kind",
+          "owner_id",
+          "before_position"
+        ],
+        "title": "SectionCreateIn",
+        "type": "object"
+      },
+      "SectionUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "before_position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Position"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SectionUpdateIn",
         "type": "object"
       },
       "SelectionIn": {
@@ -23231,6 +24244,102 @@
           "type"
         ],
         "title": "ShiftModifier",
+        "type": "object"
+      },
+      "SideloadIn": {
+        "properties": {
+          "accept_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accept Permissions",
+            "type": "array"
+          },
+          "acknowledge_notice": {
+            "default": false,
+            "title": "Acknowledge Notice",
+            "type": "boolean"
+          },
+          "manifest_sha256": {
+            "title": "Manifest Sha256",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "manifest_sha256"
+        ],
+        "title": "SideloadIn",
+        "type": "object"
+      },
+      "SideloadPreviewIn": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SideloadPreviewIn",
+        "type": "object"
+      },
+      "SideloadPreviewOut": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "manifest_sha256": {
+            "title": "Manifest Sha256",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "name",
+          "version",
+          "channel",
+          "permissions",
+          "notice",
+          "manifest_sha256"
+        ],
+        "title": "SideloadPreviewOut",
         "type": "object"
       },
       "SkippedOut": {
@@ -26075,6 +27184,261 @@
         "title": "SyncSnapshotOut",
         "type": "object"
       },
+      "SystemVolumeErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "reason"
+        ],
+        "title": "SystemVolumeErrorDetail",
+        "type": "object"
+      },
+      "SystemVolumeErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/SystemVolumeErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SystemVolumeErrorOut",
+        "type": "object"
+      },
+      "SystemVolumeIn": {
+        "properties": {
+          "volume": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "volume"
+        ],
+        "title": "SystemVolumeIn",
+        "type": "object"
+      },
+      "SystemVolumeOut": {
+        "properties": {
+          "backend": {
+            "description": "Which platform arm answered: osascript, wpctl, pactl, core_audio.",
+            "title": "Backend",
+            "type": "string"
+          },
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "volume": {
+            "description": "Master output volume, integer percent.",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "volume",
+          "muted",
+          "backend"
+        ],
+        "title": "SystemVolumeOut",
+        "type": "object"
+      },
+      "TagMetaIn": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "source_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Category"
+          },
+          "type": {
+            "default": "general",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "TagMetaIn",
+        "type": "object"
+      },
+      "TagSynonymIn": {
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "minLength": 1,
+            "title": "Tag",
+            "type": "string"
+          },
+          "term": {
+            "minLength": 1,
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "tag"
+        ],
+        "title": "TagSynonymIn",
+        "type": "object"
+      },
+      "TagTypeCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "column_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column Width"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "show_as_column": {
+            "default": false,
+            "title": "Show As Column",
+            "type": "boolean"
+          },
+          "show_in_tags": {
+            "default": true,
+            "title": "Show In Tags",
+            "type": "boolean"
+          },
+          "singular": {
+            "minLength": 1,
+            "title": "Singular",
+            "type": "string"
+          },
+          "sort_index": {
+            "default": 0,
+            "title": "Sort Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "singular"
+        ],
+        "title": "TagTypeCreateIn",
+        "type": "object"
+      },
+      "TagTypeUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "column_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column Width"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "show_as_column": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show As Column"
+          },
+          "show_in_tags": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show In Tags"
+          },
+          "singular": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Singular"
+          },
+          "sort_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Index"
+          }
+        },
+        "title": "TagTypeUpdateIn",
+        "type": "object"
+      },
       "TagUndoIn": {
         "properties": {
           "write_id": {
@@ -26178,6 +27542,210 @@
           }
         },
         "title": "TempoPrefPatch",
+        "type": "object"
+      },
+      "TempoSegmentOut": {
+        "properties": {
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "bpm_end": {
+            "title": "Bpm End",
+            "type": "number"
+          },
+          "bpm_start": {
+            "title": "Bpm Start",
+            "type": "number"
+          },
+          "delta_pct": {
+            "title": "Delta Pct",
+            "type": "number"
+          },
+          "direction": {
+            "enum": [
+              "faster",
+              "slower",
+              "none"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "steady",
+              "ramp",
+              "jump",
+              "unstable"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "severity": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Severity",
+            "type": "number"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "bpm",
+          "bpm_start",
+          "bpm_end",
+          "delta_pct",
+          "kind",
+          "severity",
+          "direction"
+        ],
+        "title": "TempoSegmentOut",
+        "type": "object"
+      },
+      "TempoStabilityOut": {
+        "properties": {
+          "beatgrid_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatgrid Source"
+          },
+          "change_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Count"
+          },
+          "grid_class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "suspect",
+                  "variable_tempo",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Class"
+          },
+          "grid_quality_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Quality Message"
+          },
+          "largest_change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Change Pct"
+          },
+          "nominal_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nominal Bpm"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TempoSegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "not_analyzed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "steady",
+                  "drift",
+                  "free_intro",
+                  "changes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status",
+          "reason",
+          "beatgrid_source",
+          "nominal_bpm",
+          "verdict",
+          "largest_change_pct",
+          "change_count",
+          "grid_class",
+          "grid_quality_message",
+          "segments"
+        ],
+        "title": "TempoStabilityOut",
         "type": "object"
       },
       "TierEstimateOut": {
@@ -26676,6 +28244,32 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "ToolCall": {
+        "description": "One call the model asked for. ``id`` is the provider's call id.",
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ToolCall",
+        "type": "object"
+      },
       "TrackIndexItemOut": {
         "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions, cover verdict and stem bundle summary are\nread off disk per row, which was 7.8 s of a cold 9,713-row index (stems\nanother 1.2 s). They are never sent here (excluded and absent from the\nschema); the browser asks ``POST /library/row-assets`` for the rows in view.\n\nAlso left out, because no library view reads them off an index row:\n``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,\n``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``\nserves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,\nclassifying every lyric file for ASR hallucinations.",
         "properties": {
@@ -26774,7 +28368,9 @@
                   "ok",
                   "failed",
                   "missing",
-                  "available-not-selected"
+                  "available-not-selected",
+                  "too_short",
+                  "no_pulse"
                 ],
                 "type": "string"
               },
@@ -27317,7 +28913,9 @@
                   "ok",
                   "failed",
                   "missing",
-                  "available-not-selected"
+                  "available-not-selected",
+                  "too_short",
+                  "no_pulse"
                 ],
                 "type": "string"
               },
@@ -28373,7 +29971,9 @@
               "ok",
               "failed",
               "missing",
-              "available-not-selected"
+              "available-not-selected",
+              "too_short",
+              "no_pulse"
             ],
             "title": "Bpm Status",
             "type": "string"
@@ -29681,6 +31281,11 @@
             "title": "Deck Default Quantize",
             "type": "boolean"
           },
+          "deck_hover_link": {
+            "default": true,
+            "title": "Deck Hover Link",
+            "type": "boolean"
+          },
           "deck_right_mirror": {
             "default": false,
             "title": "Deck Right Mirror",
@@ -29876,10 +31481,24 @@
             "title": "Show Stems",
             "type": "boolean"
           },
+          "show_tempo_lane": {
+            "default": true,
+            "title": "Show Tempo Lane",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
             "type": "boolean"
+          },
+          "tempo_lane_scale": {
+            "default": "fixed_10",
+            "enum": [
+              "fixed_10",
+              "relative"
+            ],
+            "title": "Tempo Lane Scale",
+            "type": "string"
           },
           "theme": {
             "default": "dark",
@@ -30044,6 +31663,17 @@
               }
             ],
             "title": "Deck Default Quantize"
+          },
+          "deck_hover_link": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Hover Link"
           },
           "deck_right_mirror": {
             "anyOf": [
@@ -30398,6 +32028,17 @@
             ],
             "title": "Show Stems"
           },
+          "show_tempo_lane": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Tempo Lane"
+          },
           "technically_working_animate": {
             "anyOf": [
               {
@@ -30408,6 +32049,21 @@
               }
             ],
             "title": "Technically Working Animate"
+          },
+          "tempo_lane_scale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed_10",
+                  "relative"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Lane Scale"
           },
           "theme": {
             "anyOf": [
@@ -30447,6 +32103,34 @@
           }
         },
         "title": "UiPrefsPatch",
+        "type": "object"
+      },
+      "UiSlotOut": {
+        "properties": {
+          "plugin_id": {
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "version",
+          "slot",
+          "url"
+        ],
+        "title": "UiSlotOut",
         "type": "object"
       },
       "UiUrlOut": {
@@ -30496,6 +32180,24 @@
           }
         },
         "title": "UndoIn",
+        "type": "object"
+      },
+      "UndoOut": {
+        "properties": {
+          "op": {
+            "title": "Op",
+            "type": "string"
+          },
+          "undo_id": {
+            "title": "Undo Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "undo_id",
+          "op"
+        ],
+        "title": "UndoOut",
         "type": "object"
       },
       "UndoRecordOut": {
@@ -32101,6 +33803,290 @@
         "title": "WheelSensitivityOut",
         "type": "object"
       },
+      "WorkCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "catalogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalogue"
+          },
+          "composer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composer"
+          },
+          "iswc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iswc"
+          },
+          "kind": {
+            "enum": [
+              "classical",
+              "song"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "movement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement"
+          },
+          "musicbrainz_work_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Musicbrainz Work Id"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "WorkCreateIn",
+        "type": "object"
+      },
+      "WorkDismissalIn": {
+        "additionalProperties": false,
+        "properties": {
+          "a_member": {
+            "minLength": 1,
+            "title": "A Member",
+            "type": "string"
+          },
+          "b_member": {
+            "minLength": 1,
+            "title": "B Member",
+            "type": "string"
+          },
+          "work_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Id"
+          }
+        },
+        "required": [
+          "a_member",
+          "b_member"
+        ],
+        "title": "WorkDismissalIn",
+        "type": "object"
+      },
+      "WorkMemberIn": {
+        "additionalProperties": false,
+        "properties": {
+          "is_primary": {
+            "default": false,
+            "title": "Is Primary",
+            "type": "boolean"
+          },
+          "member_id": {
+            "minLength": 1,
+            "title": "Member Id",
+            "type": "string"
+          },
+          "member_kind": {
+            "enum": [
+              "track",
+              "edit"
+            ],
+            "title": "Member Kind",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "original",
+              "recording",
+              "remix",
+              "cover",
+              "edit",
+              "live",
+              "mashup"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "sort_index": {
+            "default": 0,
+            "title": "Sort Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "member_kind",
+          "member_id",
+          "role"
+        ],
+        "title": "WorkMemberIn",
+        "type": "object"
+      },
+      "WorkPrefIn": {
+        "additionalProperties": false,
+        "properties": {
+          "top_member_id": {
+            "minLength": 1,
+            "title": "Top Member Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "top_member_id"
+        ],
+        "title": "WorkPrefIn",
+        "type": "object"
+      },
+      "WorkUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
+          "catalogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalogue"
+          },
+          "composer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composer"
+          },
+          "iswc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iswc"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "classical",
+                  "song"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "movement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement"
+          },
+          "musicbrainz_work_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Musicbrainz Work Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "WorkUpdateIn",
+        "type": "object"
+      },
       "WorktreePortsOut": {
         "properties": {
           "api_proxy_target": {
@@ -32122,6 +34108,32 @@
           "api_proxy_target"
         ],
         "title": "WorktreePortsOut",
+        "type": "object"
+      },
+      "WriteOut": {
+        "properties": {
+          "row": {
+            "additionalProperties": true,
+            "title": "Row",
+            "type": "object"
+          },
+          "undo_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Id"
+          }
+        },
+        "required": [
+          "row",
+          "undo_id"
+        ],
+        "title": "WriteOut",
         "type": "object"
       },
       "WriteSurfaceOut": {
@@ -34289,9 +36301,46 @@
         ]
       }
     },
+    "/api/v1/assistant/agent": {
+      "post": {
+        "description": "Run the tool-using loop, streaming NDJSON events.\n\nEverything that can refuse without a model call refuses here, before the\nstream opens, in the same envelope /chat uses. Once the stream is open an\nupstream failure is a terminal ``error`` event instead.",
+        "operationId": "assistant_agent_api_v1_assistant_agent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-ndjson": {}
+            },
+            "description": "One AgentEvent JSON object per line (agent_contract.py)."
+          },
+          "409": {
+            "description": "No upstream is configured, or it is ambiguous (detail.code)."
+          },
+          "422": {
+            "description": "The history is not one this endpoint streamed (assistant_bad_history)."
+          },
+          "502": {
+            "description": "The engine could not read its own performance state."
+          }
+        },
+        "summary": "Assistant Agent",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/assistant/chat": {
       "post": {
-        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
+        "description": "Stream one completion from the upstream, or explain why there is none.\n\nA missing or ambiguous upstream is refused BEFORE the response starts, as\na real 409 with a code. Anything the upstream itself does wrong arrives\nafter the 200 and breaks the stream (see ``_stream_text``).",
         "operationId": "assistant_chat_api_v1_assistant_chat_post",
         "requestBody": {
           "content": {
@@ -34311,7 +36360,7 @@
             "description": "The completion, streamed as plain UTF-8 text."
           },
           "409": {
-            "description": "No OPENROUTER_API_KEY is configured."
+            "description": "No upstream is configured, or it is ambiguous (detail.code)."
           },
           "422": {
             "content": {
@@ -34322,12 +36371,51 @@
               }
             },
             "description": "Validation Error"
-          },
-          "502": {
-            "description": "OpenRouter refused or could not be reached."
           }
         },
         "summary": "Assistant Chat",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/instant/preview": {
+      "post": {
+        "description": "Whether a draft would run as an instant command, asked before Send.\n\nThe same rules /agent applies, so a keyless composer can say up front\nwhich drafts work without a model, and the grammar lives only in tiers.py.",
+        "operationId": "assistant_instant_preview_api_v1_assistant_instant_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstantPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstantPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assistant Instant Preview",
         "tags": [
           "assistant"
         ]
@@ -34482,6 +36570,27 @@
         "summary": "Audio Engine Stop",
         "tags": [
           "audio-engine"
+        ]
+      }
+    },
+    "/api/v1/audio-headset-mode": {
+      "get": {
+        "operationId": "audio_headset_mode_api_v1_audio_headset_mode_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioHeadsetModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Headset Mode",
+        "tags": [
+          "health"
         ]
       }
     },
@@ -37301,7 +39410,7 @@
                 }
               }
             },
-            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error); journaled as error."
+            "description": "CLOUDSYNC_SYNC_IN_PROGRESS: a sync is already running in this process; refused before syncing, so NOT journaled (force=true does not bypass this). CLOUDSYNC_SYNC_DEFERRED: Gig posture or a playing deck blocked sync before any hub I/O when force=false; NOT journaled. CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared refusals (digest mismatch, still moving, schema version mismatch, apply or protocol error) or the hub answered HTTP 409 SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION; journaled as error."
           },
           "422": {
             "content": {
@@ -40392,6 +42501,60 @@
           }
         },
         "summary": "Infer Now",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/keys/{name}": {
+      "put": {
+        "operationId": "put_key_api_v1_genres_keys__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Key Api V1 Genres Keys  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Key",
         "tags": [
           "genres"
         ]
@@ -44445,6 +46608,27 @@
         ]
       }
     },
+    "/api/v1/playlist-tree/organization": {
+      "get": {
+        "operationId": "list_organization_api_v1_playlist_tree_organization_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Organization",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
     "/api/v1/playlists": {
       "get": {
         "operationId": "list_playlists_api_v1_playlists_get",
@@ -45031,6 +47215,68 @@
         "summary": "Remove Playlist Items",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/organization": {
+      "put": {
+        "operationId": "organize_playlist_api_v1_playlists__playlist_id__organization_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistOrganizationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Organize Playlist",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -45825,6 +48071,476 @@
         "summary": "Undelete Playlist",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/plugins": {
+      "get": {
+        "description": "The store page in one read. ``refresh=true`` re-fetches both catalogs.",
+        "operationId": "list_plugins_api_v1_plugins_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Plugins",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/labs": {
+      "post": {
+        "operationId": "set_labs_api_v1_plugins_labs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Labs",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/sideload": {
+      "post": {
+        "operationId": "sideload_api_v1_plugins_sideload_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SideloadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sideload",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/sideload/preview": {
+      "post": {
+        "description": "Show what a sideload asks consent for (permissions, terms) before it can be accepted.",
+        "operationId": "sideload_preview_api_v1_plugins_sideload_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SideloadPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SideloadPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sideload Preview",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/ui-slots": {
+      "get": {
+        "operationId": "ui_slots_api_v1_plugins_ui_slots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UiSlotOut"
+                  },
+                  "title": "Response Ui Slots Api V1 Plugins Ui Slots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ui Slots",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}": {
+      "delete": {
+        "operationId": "uninstall_api_v1_plugins__plugin_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Uninstall",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/disable": {
+      "post": {
+        "operationId": "disable_api_v1_plugins__plugin_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/enable": {
+      "post": {
+        "operationId": "enable_api_v1_plugins__plugin_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/install": {
+      "post": {
+        "operationId": "install_api_v1_plugins__plugin_id__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/media/{sha256}": {
+      "get": {
+        "description": "A screenshot pinned by a visible signed listing, re-verified on every read.",
+        "operationId": "listing_media_api_v1_plugins__plugin_id__media__sha256__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listing Media",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
+    "/api/v1/plugins/{plugin_id}/ui/{path}": {
+      "get": {
+        "operationId": "ui_file_api_v1_plugins__plugin_id__ui__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plugin_id",
+            "required": true,
+            "schema": {
+              "title": "Plugin Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ui File",
+        "tags": [
+          "plugins"
         ]
       }
     },
@@ -46846,6 +49562,225 @@
         "summary": "Search Collection",
         "tags": [
           "search"
+        ]
+      }
+    },
+    "/api/v1/sections": {
+      "get": {
+        "operationId": "list_sections_api_v1_sections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner_kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "playlist",
+                "set"
+              ],
+              "title": "Owner Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Owner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sections",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "operationId": "add_section_api_v1_sections_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Section",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/sections/{section_id}": {
+      "delete": {
+        "operationId": "delete_section_api_v1_sections__section_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "title": "Section Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Section",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "patch": {
+        "operationId": "update_section_api_v1_sections__section_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section_id",
+            "required": true,
+            "schema": {
+              "title": "Section Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Section",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -50205,6 +53140,375 @@
         ]
       }
     },
+    "/api/v1/system/audio/volume": {
+      "get": {
+        "operationId": "get_system_volume_api_v1_system_audio_volume_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemVolumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemVolumeErrorOut"
+                }
+              }
+            },
+            "description": "This host cannot read or set its output volume."
+          }
+        },
+        "summary": "Get System Volume",
+        "tags": [
+          "system"
+        ]
+      },
+      "put": {
+        "operationId": "put_system_volume_api_v1_system_audio_volume_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemVolumeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemVolumeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemVolumeErrorOut"
+                }
+              }
+            },
+            "description": "This host cannot read or set its output volume."
+          }
+        },
+        "summary": "Put System Volume",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/tag-meta": {
+      "get": {
+        "operationId": "list_tag_meta_api_v1_tag_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tag Meta",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/tag-meta/{name}": {
+      "put": {
+        "operationId": "put_tag_meta_api_v1_tag_meta__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagMetaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Tag Meta",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/tag-synonyms": {
+      "get": {
+        "operationId": "list_tag_synonyms_api_v1_tag_synonyms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tag Synonyms",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "operationId": "put_tag_synonym_api_v1_tag_synonyms_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagSynonymIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Tag Synonym",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/tag-types": {
+      "get": {
+        "operationId": "list_tag_types_api_v1_tag_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tag Types",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "operationId": "create_tag_type_api_v1_tag_types_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagTypeCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tag Type",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/tag-types/{type_id}": {
+      "patch": {
+        "operationId": "update_tag_type_api_v1_tag_types__type_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_id",
+            "required": true,
+            "schema": {
+              "title": "Type Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagTypeUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Tag Type",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
     "/api/v1/telemetry/clients": {
       "get": {
         "description": "Every client seen since engine boot, plus the one-glance summary.",
@@ -53118,6 +56422,48 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/tempo-stability": {
+      "get": {
+        "operationId": "get_track_tempo_stability_api_v1_tracks__stable_id__tempo_stability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TempoStabilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Tempo Stability",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/transition-in": {
       "delete": {
         "operationId": "clear_transition_in_api_v1_tracks__stable_id__transition_in_delete",
@@ -53588,6 +56934,49 @@
         "summary": "Ui Url",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/undo": {
+      "post": {
+        "operationId": "undo_api_v1_undo_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo",
+        "tags": [
+          "library-organization"
         ]
       }
     },
@@ -54721,6 +58110,477 @@
         "summary": "Probe",
         "tags": [
           "voice"
+        ]
+      }
+    },
+    "/api/v1/works": {
+      "get": {
+        "operationId": "list_works_api_v1_works_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Works",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "operationId": "create_work_api_v1_works_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Work",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/dismissals": {
+      "post": {
+        "operationId": "dismiss_pair_api_v1_works_dismissals_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkDismissalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Pair",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}": {
+      "delete": {
+        "operationId": "delete_work_api_v1_works__work_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Work",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "patch": {
+        "operationId": "update_work_api_v1_works__work_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Work",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}/members": {
+      "get": {
+        "operationId": "list_members_api_v1_works__work_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Members",
+        "tags": [
+          "library-organization"
+        ]
+      },
+      "post": {
+        "operationId": "link_member_api_v1_works__work_id__members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkMemberIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Member",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}/members/{member_kind}/{member_id}": {
+      "delete": {
+        "operationId": "unlink_member_api_v1_works__work_id__members__member_kind___member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_kind",
+            "required": true,
+            "schema": {
+              "title": "Member Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlink Member",
+        "tags": [
+          "library-organization"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}/pref": {
+      "put": {
+        "operationId": "set_work_pref_api_v1_works__work_id__pref_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkPrefIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Work Pref",
+        "tags": [
+          "library-organization"
         ]
       }
     }

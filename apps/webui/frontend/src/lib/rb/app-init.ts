@@ -48,7 +48,10 @@ import {
 	deckStates,
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
+import { deckStemEnvelopes } from '$lib/rb/audio-engine-silence-probes';
+import { silenceSourceDeckSnap } from '$lib/rb/silence-source-snap';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
+import { mixerState } from '$lib/player/state.svelte';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -80,26 +83,31 @@ function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 	});
 }
 
-/** Linear gain from a deck to the master analyser tap: the commanded mixer
- * chain to the internal master bus (0 for a deck routed out by ?extroute=,
- * scaled by the calibrated master ceiling), or 0 when a ready stem bundle has
- * every part gained to zero. EQ is left out because a full cut is a dB
- * threshold, not a zero, so an EQ-killed deck still reads as open. */
-function _silenceMasterPathGain(id: DeckId): number {
-	if (everyStemPartSilent(deckStates[id])) return 0;
-	return deckMasterBusGain(id);
-}
-
-/** Source PCM at each deck's audio-clock playhead and its gain to the master
- * bus, for the master silence watchdog's source gate (issue #4030). Called only
- * on master-quiet samples. */
+/** Source PCM (or, for a stem graph, per-part envelopes) at each deck's
+ * audio-clock playhead and its gain to the master bus, for the master silence
+ * watchdog's source gate (issue #4030, AUDIOLIVE-17). Called only on
+ * master-quiet samples. A ready stem bundle with every part gained to zero
+ * reads as zero master-path gain even when the fader is up. */
 function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
-	return DECK_IDS.map((id: DeckId) => ({
-		claims_live: deckStates[id].playing || deckStates[id].audible,
-		buffer: deckMixBuffer(id),
-		position_sec: deckAudioClockPositionMs(id) / 1000,
-		master_path_gain: _silenceMasterPathGain(id)
-	}));
+	return DECK_IDS.map((id: DeckId) => {
+		const snap = silenceSourceDeckSnap({
+			id,
+			deck: deckStates[id],
+			channel: mixerState.channels[id],
+			crossfader: mixerState.crossfader,
+			master: mixerState.master,
+			buffer: deckMixBuffer(id),
+			position_sec: deckAudioClockPositionMs(id) / 1000,
+			stem_envelopes: deckStemEnvelopes(id)
+		});
+		if (everyStemPartSilent(deckStates[id])) {
+			return { ...snap, master_path_gain: 0 };
+		}
+		// The engine's own commanded path gain: auto gain for THIS deck, the
+		// calibrated master ceiling and any ?extroute= routing, which the mixer
+		// state alone does not carry, so the predictor expects what the bus plays.
+		return { ...snap, master_path_gain: deckMasterBusGain(id) };
+	});
 }
 
 function _hasPlayableAutoPlayNext(): boolean {

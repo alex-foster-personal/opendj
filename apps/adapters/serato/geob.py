@@ -69,6 +69,14 @@ class Markers2:
     bpm_locked: bool = False
     # Unknown sub-tags, preserved verbatim (name -> payload).
     unknown_tags: tuple[tuple[str, bytes], ...] = ()
+    # True when an entry's declared length ran past the decoded body, so the
+    # entries from there on could not be read. Not written back by the encoder.
+    truncated: bool = False
+    # Why the frame is incomplete, as the words after "Serato Markers2 frame "; empty when complete.
+    truncation: str = ""
+    # LOOP entries whose end does not come after their start. Such a loop has no length to import, so it is
+    # counted as lost rather than kept as a zero-length loop; not written back by the encoder.
+    backwards_loops: int = 0
 
 
 def _read_null_terminated(buf: bytes, offset: int) -> tuple[str, int]:
@@ -84,7 +92,11 @@ def _decode_markers2_base64(encoded: bytes) -> bytes:
     writes it: NUL padding after the text, a linefeed every 72 characters, no
     ``=`` padding, and sometimes one character past a multiple of four, which
     serato-tags documents fixing by appending ``A``."""
-    text = encoded.split(b"\x00", 1)[0].replace(b"\n", b"").replace(b"\r", b"")
+    text, _, padding = encoded.partition(b"\x00")
+    if padding.strip(b"\x00"):
+        # Only NUL padding may follow the text; anything else after the first NUL is corruption, not padding.
+        raise ValueError("Markers2 base64 text has non-NUL bytes after its NUL padding")
+    text = text.replace(b"\n", b"").replace(b"\r", b"")
     text = text.rstrip(b"=")
     if len(text) % 4 == 1:
         text += b"A"
@@ -101,7 +113,71 @@ def _markers2_entries(geob_payload: bytes) -> bytes | None:
         body = _decode_markers2_base64(geob_payload[2:])
     except (ValueError, binascii.Error):
         return None
-    return body[2:] if body.startswith(b"\x01\x01") else body
+    if body[:2] == b"\x01\x01":
+        return body[2:]
+    # An empty body is an entry list cut off before it began, which the caller reports as truncated.
+    # A non-empty body without its inner 01 01 header is not an entry list, so it is not read as one.
+    return b"" if not body else None
+
+
+def _truncation_reason(*, truncated: bool, ended: bool, body: bytes) -> str:
+    """Why a decoded entry list is incomplete, or "" when it is complete. Even an empty entry list ends
+    in its NUL; a body that runs out first is incomplete. Each kind loses a different thing to the reader."""
+    if truncated:
+        return "ends inside an entry"
+    if ended:
+        return ""
+    return "has no entry list" if not body else "is missing its entry-list terminator"
+
+
+class _Markers2Error(Exception):
+    """A Markers2 frame that cannot be carried over intact, so it is kept whole as raw."""
+
+
+def _markers2_name(raw: bytes) -> str:
+    """The NUL-terminated UTF-8 name at the start of ``raw``. Raises when it has no terminator, is not UTF-8,
+    or is followed by anything but NUL padding, since the name is the last field and those bytes would be lost."""
+    name, terminator, rest = raw.partition(b"\x00")
+    if not terminator or rest.strip(b"\x00"):
+        raise _Markers2Error
+    try:
+        return name.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _Markers2Error from exc
+
+
+def _require_entry_list_padding(body: bytes, pos: int) -> None:
+    """Only NUL padding may follow the entry-list NUL; other bytes would hide entries from the reader."""
+    if body[pos:].strip(b"\x00"):
+        raise _Markers2Error
+
+
+def _entry_payload(body: bytes, pos: int) -> tuple[bytes, int] | None:
+    """The length-prefixed entry at ``pos``: its payload and the position after it, or None when it runs past ``body``."""
+    if pos + 4 > len(body):
+        return None
+    (length,) = struct.unpack_from(">I", body, pos)
+    end = pos + 4 + length
+    if end > len(body):
+        return None
+    return body[pos + 4 : end], end
+
+
+def _decode_markers2_loop(payload: bytes) -> Markers2Loop:
+    """A LOOP entry's payload as a loop. An end at or before its start is returned as read, for the caller to count."""
+    idx = payload[1]
+    (start,) = struct.unpack_from(">I", payload, 2)
+    (end,) = struct.unpack_from(">I", payload, 6)
+    color = int.from_bytes(payload[14:18], "big") & 0xFFFFFF
+    locked = payload[19] == 0x01
+    return Markers2Loop(
+        index=idx,
+        start_ms=start,
+        end_ms=end,
+        color_rgb=color,
+        name=_markers2_name(payload[20:]),
+        locked=locked,
+    )
 
 
 def parse_markers2(geob_payload: bytes) -> Markers2:
@@ -118,7 +194,9 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
     Known names: ``CUE``, ``LOOP``, ``COLOR``, ``BPMLOCK``.
     """
     if not geob_payload:
-        return Markers2()
+        # A frame with no bytes at all lacks even the 01 01 header a valid
+        # empty frame carries, so whatever it held is lost.
+        return Markers2(truncated=True, truncation="is empty")
     body = _markers2_entries(geob_payload)
     if body is None:
         # Unrecognised version or undecodable base64 -- preserve as unknown
@@ -127,70 +205,68 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
 
     cues: list[Markers2Cue] = []
     loops: list[Markers2Loop] = []
+    backwards_loops = 0
     track_color: int | None = None
     bpm_locked = False
     unknown: list[tuple[str, bytes]] = []
 
+    truncated = False
+    ended = False
     pos = 0
-    while pos < len(body):
-        name, name_len = _read_null_terminated(body, pos)
-        pos += name_len
-        if not name:
-            break  # the single NUL that ends the entry list
-        if pos + 4 > len(body):
-            break
-        (length,) = struct.unpack_from(">I", body, pos)
-        pos += 4
-        if pos + length > len(body):
-            break
-        payload = body[pos : pos + length]
-        pos += length
+    try:
+        while pos < len(body):
+            name, name_len = _read_null_terminated(body, pos)
+            pos += name_len
+            if not name:
+                _require_entry_list_padding(body, pos)
+                ended = True
+                break  # the single NUL that ends the entry list
+            entry = _entry_payload(body, pos)
+            if entry is None:
+                truncated = True
+                break
+            payload, pos = entry
 
-        if name == "CUE" and len(payload) >= 13:
-            # reserved (1) + index (1) + position (4) + reserved (1) + RGB (3) + reserved (2) + UTF-8 name C-string
-            idx = payload[1]
-            (position,) = struct.unpack_from(">I", payload, 2)
-            color = int.from_bytes(payload[7:10], "big")
-            tail_name = payload[12:].split(b"\x00", 1)[0].decode("utf-8", "replace")
-            cues.append(
-                Markers2Cue(
-                    index=idx,
-                    position_ms=position,
-                    color_rgb=color,
-                    name=tail_name,
-                    kind="hot",
+            if name == "CUE" and len(payload) >= 13:
+                # reserved (1) + index (1) + position (4) + reserved (1) + RGB (3) + reserved (2) + UTF-8 name C-string
+                idx = payload[1]
+                (position,) = struct.unpack_from(">I", payload, 2)
+                color = int.from_bytes(payload[7:10], "big")
+                cues.append(
+                    Markers2Cue(
+                        index=idx,
+                        position_ms=position,
+                        color_rgb=color,
+                        name=_markers2_name(payload[12:]),
+                        kind="hot",
+                    )
                 )
-            )
-        elif name == "LOOP" and len(payload) >= 21:
-            idx = payload[1]
-            (start,) = struct.unpack_from(">I", payload, 2)
-            (end,) = struct.unpack_from(">I", payload, 6)
-            color = int.from_bytes(payload[14:18], "big") & 0xFFFFFF
-            locked = payload[19] == 0x01
-            tail_name = payload[20:].split(b"\x00", 1)[0].decode("utf-8", "replace")
-            loops.append(
-                Markers2Loop(
-                    index=idx,
-                    start_ms=start,
-                    end_ms=end,
-                    color_rgb=color,
-                    name=tail_name,
-                    locked=locked,
-                )
-            )
-        elif name == "COLOR" and len(payload) >= 4:
-            track_color = int.from_bytes(payload[1:4], "big") & 0xFFFFFF
-        elif name == "BPMLOCK" and len(payload) >= 1:
-            bpm_locked = payload[0] == 0x01
-        else:
-            unknown.append((name, bytes(payload)))
+            elif name == "LOOP" and len(payload) >= 21:
+                loop = _decode_markers2_loop(payload)
+                if loop.end_ms <= loop.start_ms:
+                    backwards_loops += 1
+                else:
+                    loops.append(loop)
+            elif name == "COLOR" and len(payload) >= 4:
+                track_color = int.from_bytes(payload[1:4], "big") & 0xFFFFFF
+            elif name == "BPMLOCK" and len(payload) >= 1:
+                bpm_locked = payload[0] == 0x01
+            else:
+                unknown.append((name, bytes(payload)))
+    except _Markers2Error:
+        # A name without its NUL, a name that is not UTF-8, or bytes after the entry list cannot be carried over intact.
+        return Markers2(unknown_tags=(("__raw__", bytes(geob_payload)),))
 
+    truncation = _truncation_reason(truncated=truncated, ended=ended, body=body)
     return Markers2(
         cues=tuple(cues),
         loops=tuple(loops),
         track_color_rgb=track_color,
         bpm_locked=bpm_locked,
         unknown_tags=tuple(unknown),
+        truncated=bool(truncation),
+        truncation=truncation,
+        backwards_loops=backwards_loops,
     )
 
 
@@ -532,6 +608,12 @@ class SeratoGEOB:
     # Unparsed frames kept bytes-for-bytes. Keys are the GEOB description
     # (e.g. "Serato Overview"); values are the raw GEOB payload bytes.
     opaque_frames: dict[str, bytes] = field(default_factory=dict)
+    # GEOB frames that are compressed or encrypted, so neither their
+    # description nor their payload could be read. One may be Markers2.
+    sealed_geob_frames: int = 0
+    # Earlier Markers2 frames in a tag that repeats it. Only the last one is
+    # ``markers2``, but a loss in any of them is still a loss to report.
+    shadowed_markers2: tuple[Markers2, ...] = ()
 
 
 # ========================================================= mutagen I/O ===
@@ -590,11 +672,15 @@ def write_geob_frames(
     )
 
 
-def read_geob_frames(audio_path) -> SeratoGEOB:
+def read_geob_frames(audio_path, *, strict: bool = True) -> SeratoGEOB:
     """Read Serato GEOB frames from an MP3 with the in-house ID3 parser.
 
     A missing file, a non-MP3 path, or a file with no ID3 tag returns an
-    empty bundle. This does not import mutagen.
+    empty bundle. A tag that is present but cannot be read also returns an
+    raises :class:`Id3Error` (or the ``OSError``) by default, so a caller that
+    counts losses cannot mistake "unreadable" for "no tag". Only a caller that
+    accepts an empty bundle for a broken tag passes ``strict=False``. This does
+    not import mutagen.
     """
     from pathlib import Path as _Path
 
@@ -605,26 +691,50 @@ def read_geob_frames(audio_path) -> SeratoGEOB:
         return SeratoGEOB()
     try:
         tag = read_tag(path)
+        if tag is None:
+            return SeratoGEOB()
+        _require_tag_frames(tag, path)
+        # Frame bodies are decoded here, so a malformed GEOB is an Id3Error too.
+        return _bundle_from_tag(tag)
     except (Id3Error, OSError):
+        if strict:
+            raise
         return SeratoGEOB()
-    if tag is None:
-        return SeratoGEOB()
-    markers2 = Markers2()
+
+
+def _require_tag_frames(tag, path) -> None:
+    """An ID3 tag with no frames is malformed under the spec, not a clean tag with no Serato data."""
+    from apps.shared.id3v2 import Id3Error
+
+    if not tag.frames:
+        raise Id3Error(f"{path}: ID3 tag holds no frames, which the spec does not allow")
+
+
+def _bundle_from_tag(tag) -> SeratoGEOB:
+    """The Serato frames of a read tag, plus a count of GEOB frames sealed
+    by compression or encryption, which are never decoded."""
+    markers2s: list[Markers2] = []
     beatgrid = BeatGrid(markers=())
     opaque: dict[str, bytes] = {}
     legacy: MarkersLegacy | None = None
     for mime, _filename, desc, payload in tag.geob():
         del mime
         if desc == GEOB_MARKERS2_DESC:
-            markers2 = parse_markers2(payload)
+            markers2s.append(parse_markers2(payload))
         elif desc == GEOB_BEATGRID_DESC:
             beatgrid = parse_beatgrid(payload)
         elif desc.startswith("Serato "):
             opaque[desc] = payload
             if desc == GEOB_MARKERS_LEGACY_DESC:
                 legacy = parse_markers_legacy(payload)
+    sealed = sum(1 for frame in tag.frames if frame.frame_id == "GEOB" and frame.opaque)
     return SeratoGEOB(
-        markers2=markers2, beatgrid=beatgrid, opaque_frames=opaque, markers_legacy=legacy
+        markers2=markers2s[-1] if markers2s else Markers2(),
+        beatgrid=beatgrid,
+        opaque_frames=opaque,
+        markers_legacy=legacy,
+        sealed_geob_frames=sealed,
+        shadowed_markers2=tuple(markers2s[:-1]),
     )
 
 

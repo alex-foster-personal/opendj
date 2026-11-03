@@ -25,6 +25,10 @@
  * - if a late decode failure heard while a load is in flight is dropped then
  *   broken: the load publishes a track the engine already unloaded; if one
  *   that ended the earlier load is applied to the new one then broken too
+ * - if the engine's master level never reaches the page meter then broken:
+ *   with no AudioContext the ui-mirror meter stays stale for a whole set
+ *   (Electron acceptance on the Air, Tue 3 Nov 2026); if a frame with no
+ *   level keeps an earlier reading or reads as silence then broken too
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -58,9 +62,35 @@ function frame(n, deck) {
 			}
 		],
 		mixer: { crossfader: 0.5, master_volume: 1 },
-		master: { muted: false }
+		master: { muted: false, rms: 0 }
 	};
 }
+
+test('each state frame hands the engine master level to the page meter, stamped on arrival', () => {
+	m.resetMasterSilenceWatch();
+	const playing = { ...frame(200, { playing: true, rate: 1 }), master: { muted: false, rms: 0.21 } };
+	const before = Date.now();
+	m.mirrorEngineState(playing);
+	const live = m.masterSilenceState();
+	assert.equal(live.rms, 0.21, 'the reading is the engine level, untouched');
+	assert.ok(live.at_ms !== null && live.at_ms >= before && live.at_ms <= Date.now(), `stamp ${live.at_ms}`);
+	// Silence measured is still a measurement: rms 0 with a fresh stamp.
+	m.mirrorEngineState(frame(201, {}));
+	assert.equal(m.masterSilenceState().rms, 0);
+	assert.ok(m.masterSilenceState().at_ms !== null);
+});
+
+test('a state frame with no master level clears the reading instead of keeping or zeroing it', () => {
+	m.resetMasterSilenceWatch();
+	m.mirrorEngineState({ ...frame(300, {}), master: { muted: false, rms: 0.3 } });
+	assert.equal(m.masterSilenceState().rms, 0.3);
+	for (const master of [{ muted: false }, { muted: false, rms: Number.NaN }, { muted: false, rms: -1 }]) {
+		m.mirrorEngineState({ ...frame(301, {}), master });
+		const state = m.masterSilenceState();
+		assert.equal(state.rms, null, `no level in ${JSON.stringify(master)} is no reading`);
+		assert.equal(state.at_ms, null, 'an unmeasured frame carries no measurement stamp');
+	}
+});
 
 test('Web Audio stays the default; ?engine= chooses and outranks the stored choice', () => {
 	assert.equal(m.readEngineChoice('', null), 'webaudio');

@@ -112,7 +112,7 @@ def _enforce(
     monkeypatch.setattr(review_coverage, "CHECKOUT_ROOT", repo)
     buf = StringIO()
     with patch("sys.stdout", buf):
-        rc = review_control_plane.enforce(_PR, head, _CONTROL_PLANE_FILES)
+        rc = 0 if review_control_plane.enforce(_PR, head, _CONTROL_PLANE_FILES) else 1  # 1: advisory NOTE
     return rc, buf.getvalue()
 
 
@@ -168,7 +168,7 @@ def test_a_dismissed_or_pending_review_is_never_carried(
     rc, out = _enforce(monkeypatch, repo, head, [_grok(reviewed), _codex(reviewed, state)])
     assert rc == 1, out
     assert "Grok (carried from" in out
-    assert "Codex" not in out.split("independent submitted reviews at head:", 1)[1].split("(need", 1)[0]
+    assert "Codex" not in out.split("independent submitted reviews at head:", 1)[1].split("(REVIEW-13 asked for", 1)[0]
 
 
 @pytest.mark.requirement("REVIEW-13")
@@ -198,7 +198,7 @@ def test_a_carried_review_cannot_be_the_authors_own_family(repo: Path, monkeypat
 
 def _assert_fresh_reviews_needed(rc: int, out: str) -> None:
     assert rc == 1, out
-    assert "FAIL: control-plane dual review (REVIEW-13)" in out
+    assert "NOTE: control-plane review is advisory (REVIEW-8220)" in out
     assert "independent submitted reviews at head: (none)" in out
     assert "carried from" not in out
 

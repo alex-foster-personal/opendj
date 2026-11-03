@@ -110,20 +110,20 @@ ORDER BY t.stable_id
 
 @dataclass(frozen=True)
 class BacklogItem:
-    """One queued track. ``file_path`` is what the runner decodes.
+    """One queued track. ``file_path`` is the playback winner the runner tries first.
 
-    ``content_token`` is ``"<size>:<mtime_ns>:<ctime_ns>"`` of that file. It
-    exists for the change signature: a track repaired IN PLACE keeps both its
-    stable_id and its path, so identity alone cannot tell the auto-drain that
-    the bytes it failed on are no longer the bytes on disk. See
-    :func:`_content_token` for why ctime is in there and what it does not
-    cover.
+    ``candidate_paths`` and ``candidate_tokens`` carry every materialized local
+    copy in playback order for decode fallback and for the change signature.
+    ``content_token`` is the token for ``file_path`` alone, kept for callers
+    that only read the winner.
     """
 
     stable_id: str
     file_path: str
     title: str | None
     content_token: str
+    candidate_paths: tuple[str, ...] = ()
+    candidate_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,22 +195,17 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
     rows = conn.execute(_UNMAPPED_SQL, {"anlz_vendor": ANLZ_VENDOR}).fetchall()
     locations = _local_location_paths(conn, [sid for sid, _, _ in rows])
     for stable_id, file_path, title in rows:
-        mapped = [
-            platform_paths.resolve_library_path(candidate, path_map=path_map)
-            for candidate in _candidate_paths(
-                file_path, locations.get(stable_id, ())
-            )
-        ]
-        local = [m for m in mapped if m.reason != STREAMING_REASON]
-        if not local:
-            # Streaming-only, or no stored path at all. Neither is a local
-            # file the analyzer could ever decode, so neither is a backlog.
+        if not _has_local_non_streaming_candidate(
+            file_path, locations.get(stable_id, ()), path_map=path_map
+        ):
             continue
         unmapped += 1
         if stable_id in done:
             analyzed += 1
             continue
-        item = _first_playable(stable_id, local, title)
+        item = _pending_item(
+            conn, stable_id, title, path_map=path_map,
+        )
         if item is None:
             unreachable += 1
         else:
@@ -241,18 +236,62 @@ def _local_location_paths(
     return track_locations.list_location_paths(conn, stable_ids)
 
 
+def _has_local_non_streaming_candidate(
+    legacy: str | None,
+    location_paths: Sequence[str],
+    *,
+    path_map: platform_paths.PathMap | None,
+) -> bool:
+    """True when the track names at least one non-streaming local path."""
+    for raw in (legacy, *location_paths):
+        if not raw:
+            continue
+        mapped = platform_paths.resolve_library_path(raw, path_map=path_map)
+        if mapped.reason != STREAMING_REASON:
+            return True
+    return False
+
+
+def _pending_item(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    title: str | None,
+    *,
+    path_map: platform_paths.PathMap | None,
+) -> BacklogItem | None:
+    """Build a pending item from the playback-ordered materialized candidates."""
+    picks = track_locations.ordered_playable_candidates(
+        conn,
+        stable_id,
+        path_map=path_map,
+        for_analysis=True,
+    )
+    if not picks:
+        return None
+    paths: list[str] = []
+    tokens: list[str] = []
+    for pick in picks:
+        token = _content_token(pick.path)
+        if token is None:
+            continue
+        paths.append(str(pick.path))
+        tokens.append(token)
+    if not paths:
+        return None
+    return BacklogItem(
+        stable_id=stable_id,
+        file_path=paths[0],
+        title=title,
+        content_token=tokens[0],
+        candidate_paths=tuple(paths),
+        candidate_tokens=tuple(tokens),
+    )
+
+
 def _candidate_paths(
     legacy: str | None, location_paths: Sequence[str]
 ) -> list[str]:
-    """Every path this track might be decodable from, best guess first.
-
-    ``tracks.file_path`` leads because it is the ingest path and is right for
-    most rows, but it is not authoritative: ``upsert_track_location`` writes a
-    real local copy WITHOUT touching that column, so after a hydrate or a sync
-    the legacy value can be null or stale while the file is really here.
-    Empties are dropped rather than probed, which is what keeps an empty
-    column from being resolved against the current directory.
-    """
+    """Legacy-first path list retained for tests and explicit backfill resolution."""
     seen: set[str] = set()
     out: list[str] = []
     for path in (legacy, *location_paths):
@@ -265,13 +304,7 @@ def _candidate_paths(
 def _first_playable(
     stable_id: str, mapped: Sequence[platform_paths.MappedPath], title: str | None
 ) -> BacklogItem | None:
-    """The first candidate that is really here and really readable.
-
-    A candidate with ``resolved is None`` ("unmapped:remote",
-    "unmapped:<platform>", "unsafe:share-path") is a real library state with a
-    real repair - add a path-map entry - so exhausting every candidate is
-    reported as unreachable by the caller rather than dropped.
-    """
+    """First materialized candidate from a legacy-ordered mapped list."""
     for candidate in mapped:
         if candidate.resolved is None:
             continue
@@ -279,9 +312,14 @@ def _first_playable(
             continue
         token = _content_token(candidate.resolved)
         if token is not None:
+            path = str(candidate.resolved)
             return BacklogItem(
-                stable_id=stable_id, file_path=str(candidate.resolved),
-                title=title, content_token=token,
+                stable_id=stable_id,
+                file_path=path,
+                title=title,
+                content_token=token,
+                candidate_paths=(path,),
+                candidate_tokens=(token,),
             )
     return None
 
@@ -380,9 +418,12 @@ def _signature(pending: list[BacklogItem]) -> str:
         return ""
     digest = hashlib.sha256()
     for item in pending:
-        for part in (item.stable_id, item.file_path, item.content_token):
-            digest.update(part.encode("utf-8"))
-            digest.update(b"\x00")
+        paths = item.candidate_paths or (item.file_path,)
+        tokens = item.candidate_tokens or (item.content_token,)
+        for path, token in zip(paths, tokens, strict=True):
+            for part in (item.stable_id, path, token):
+                digest.update(part.encode("utf-8"))
+                digest.update(b"\x00")
     return digest.hexdigest()
 
 

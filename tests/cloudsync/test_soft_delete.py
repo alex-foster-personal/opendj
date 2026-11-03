@@ -57,6 +57,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from apps.shared.state import library_org
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.sync_hub import client, service
@@ -578,3 +579,46 @@ def test_no_hard_delete_on_a_synced_table_outside_the_allowlist() -> None:
 # tests/cloudsync/test_soft_delete_readers.py (round 4 quality-gate
 # file_size ratchet: this file crossed 600 lines). They import
 # _apps_py_files back from this module.
+
+
+def test_library_organization_rows_converge_through_a_real_hub(
+    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path,
+) -> None:
+    """[if] a section, a work and a parent link reach the hub [then] spoke B reads them,
+    [else stop]. Also proves a seeded tag_type does not make the digests disagree."""
+    conn_a = _open(spoke_a)
+    try:
+        writer = StateWriter(conn_a, FakeEventBus(), actor="test")
+        try:
+            for playlist_id in ("folder", "list"):
+                writer.insert_playlist(
+                    playlist_id=playlist_id, name=playlist_id,
+                    vendor="webui", vendor_pl_id=playlist_id,
+                )
+            library_org.organize_playlist(writer, "s", "folder", {"kind": "folder"})
+            library_org.organize_playlist(writer, "s", "list", {"parent_id": "folder"})
+            library_org.add_section(
+                writer, "s", owner_kind="playlist", owner_id="list", before_position=0
+            )
+            work = library_org.create_work(writer, "s", {"kind": "song", "title": "A"}).row
+            library_org.link_member(
+                writer, "s", work["id"], member_kind="track", member_id="t", role="remix"
+            )
+        finally:
+            writer.close()
+    finally:
+        conn_a.close()
+
+    _sync(spoke_a, hub, "spoke-a")
+    _sync(spoke_b, hub, "spoke-b")
+
+    conn_b = _open(spoke_b)
+    try:
+        assert conn_b.execute(
+            "SELECT parent_id FROM playlists WHERE playlist_id = ?", ("list",)
+        ).fetchone()[0] == "folder"
+        assert len(library_org.list_rows(conn_b, "playlist_section")) == 1
+        assert len(library_org.list_rows(conn_b, "work_member")) == 1
+        assert conn_b.execute("SELECT COUNT(*) FROM undo_journal").fetchone()[0] == 0
+    finally:
+        conn_b.close()

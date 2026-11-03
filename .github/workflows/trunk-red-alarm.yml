@@ -35,10 +35,16 @@ concurrency:
 jobs:
   trunk_red:
     name: Alarm a failed trunk-watched CI/E2E run
+    # DISABLED Tue 3 Nov 2026: the leading `false &&` stops every run (a skipped job takes no
+    # runner). Its issue (#4046) had 252 bot comments and no human or agent reply since Tue 29 Sep
+    # 2026; the fleet-af red-main tripwire now posts red main to the launch board (#5638). To
+    # re-enable, delete `false && (` and the matching `)`, or revert the PR that added them.
     if: >-
+      false && (
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
       && github.event.workflow_run.head_branch == github.event.repository.default_branch
       && github.event.workflow_run.conclusion == 'failure'
+      )
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
 

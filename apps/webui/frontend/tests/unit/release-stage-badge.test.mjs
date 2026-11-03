@@ -38,7 +38,8 @@ test('OSSPUB-04 if the badge hard-codes its word instead of reading the constant
 });
 
 test('OSSPUB-04 if the first-run screen shows the name without the badge then broken', () => {
-	const screen = read('lib/components/preflight/PreflightScreen.svelte');
+	// The screen's markup lives in its props-only view.
+	const screen = read('lib/components/preflight/PreflightScreenView.svelte');
 	assert.match(screen, /<span class="preflight-name">Open DJ<AlphaBadge \/><\/span>/);
 	assert.match(screen, /import AlphaBadge from '\$lib\/components\/AlphaBadge\.svelte';/);
 });

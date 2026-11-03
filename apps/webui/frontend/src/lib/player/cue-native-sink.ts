@@ -86,6 +86,13 @@ export function nativeCueSinkConfig(globalObject: unknown = globalThis): NativeC
 	return { url, token };
 }
 
+/** AUDIO-DEVICE-07: in the Mac app (the shell announced a native sink) MAIN is
+ * the macOS default output itself, so anything that would set MAIN without the
+ * operator asking (a relaunch replay, a launch restore) must leave it alone. */
+export function mainFollowsSystemOutput(globalObject: unknown = globalThis): boolean {
+	return nativeCueSinkConfig(globalObject) !== null;
+}
+
 export function nativeDeviceId(uid: string): string {
 	return `${NATIVE_DEVICE_ID_PREFIX}${uid}`;
 }

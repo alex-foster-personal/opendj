@@ -16,13 +16,18 @@
 		lyrics,
 		loadError,
 		positionMs,
-		pitch
+		pitch,
+		windowSeconds,
+		playheadFrac
 	}: {
 		stableId: string | null;
 		lyrics: { lines: LyricLine[] } | null;
 		loadError: Error | null;
 		positionMs: number;
 		pitch: number;
+		/** The row's zoom window and playhead place (WAVEZOOM-6802/05). Required. */
+		windowSeconds: number;
+		playheadFrac: number;
 	} = $props();
 
 	const lane = createWordLaneState(() => stableId);
@@ -32,9 +37,9 @@
 	<span class="words-error" title={lane.error}>WORDS ERROR</span>
 {/if}
 {#if lane.on && lane.words !== null}
-	<WordLane words={lane.words} {positionMs} {pitch} />
+	<WordLane words={lane.words} {positionMs} {pitch} {windowSeconds} {playheadFrac} />
 {:else}
-	<LyricsLane {lyrics} {loadError} {positionMs} {pitch} />
+	<LyricsLane {lyrics} {loadError} {positionMs} {pitch} {windowSeconds} {playheadFrac} />
 {/if}
 
 <style>

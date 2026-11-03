@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to music-dj-tools are documented in this file.
+All notable changes to Open DJ are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Milestone-level detail lives under [`(private path)/`]((private path)/); this file is the user-facing summary.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Milestone-level detail lives under `(private path)/`; this file is the user-facing summary.
 
 ## [Unreleased]
 
@@ -53,7 +53,7 @@ an internal test build and was never public.
 
 Patch release capturing post-v1.0 safety rails, robustness fixes, refactors,
 hygiene, and documentation. ~30 PRs merged since v1.0 (tag `ecbd31d`). See
-[`RELEASE-NOTES-v1.0.1.md`](RELEASE-NOTES-v1.0.1.md) for the full ledger.
+[`RELEASE-NOTES-v1.0.1.md`](docs/releases/RELEASE-NOTES-v1.0.1.md) for the full ledger.
 
 ### Added
 - P1-A `apply_plan` self-guard against in-place writes (#110).
@@ -88,17 +88,17 @@ remediation: 17 codex / GPT-5.4 phase-by-phase fixes (phases 02–18), the
 launcher drag-core fan-out v2 sweep, the rc3-deferred resource-leak fixes
 (#23, #25), three security red-team fixes (#59), and a license isolation that
 moves GPL `mutagen` to an opt-in extra (#60). See
-[`RELEASE-NOTES-v1.0.md`](RELEASE-NOTES-v1.0.md) for the full ledger.
+[`RELEASE-NOTES-v1.0.md`](docs/releases/RELEASE-NOTES-v1.0.md) for the full ledger.
 
 Metrics (authoritative; measured on `master` at v1.0 cut):
 
 - Tests: 2251 passing, 45 skipped, 0 failing on `make test`.
 - Requirements: 53 v1 requirements, **51 shipped**, 2 deferred to v1.1
-  (`LAUNCH-03`, `SMART-04`). Source: [`reqs.json`](reqs.json).
+  (`LAUNCH-03`, `SMART-04`). Source: `reqs.json`.
 - Phases: 1–18 all delivered.
 
 ### Added
-- `RELEASE-NOTES-v1.0.md` ship-state document.
+- `RELEASE-NOTES-v1.0.md` ship-state document (now `docs/releases/RELEASE-NOTES-v1.0.md`).
 
 ### Changed
 - Version bumped from `1.0.0rc3` to `1.0.0`.
@@ -144,7 +144,7 @@ Follow-up release candidate on top of `v1.0-rc1`. Fixes the wheel / sdist build,
 Metrics (authoritative; measured on `master` at commit `ddc5ebc` via `pytest --collect-only -q`):
 
 - Tests: 2238 collected.
-- Requirements: 53 v1 requirements, 50 shipped, 3 pending (CAT-06, SMART-04, LAUNCH-03). Source: [`reqs.json`](reqs.json).
+- Requirements: 53 v1 requirements, 50 shipped, 3 pending (CAT-06, SMART-04, LAUNCH-03). Source: `reqs.json`.
 
 ### Added
 - OPEN-01 + OPEN-03: `open-dj-tool` CLI gains `export`, `import`, and `conformance` subcommands (Phase 15).
@@ -179,7 +179,7 @@ Metrics (authoritative; measured on `master` at commit `ddc5ebc` via `pytest --c
 
 ## [1.0.0-rc1] - 2026-04-17
 
-First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`. CI green at the rc1 tag. The authoritative, live pytest count is published in the rc2 entry below and in `README.md`; earlier historical counts for rc1 (1834) are superseded by the rc2 measurement to avoid drift between docs.
+First release candidate of Open DJ v1 (then named music-dj-tools). Tag target: `v1.0-rc1` on `master`. CI green at the rc1 tag. The authoritative, live pytest count is published in the rc2 entry below and in `README.md`; earlier historical counts for rc1 (1834) are superseded by the rc2 measurement to avoid drift between docs.
 
 ### Milestone 1 - Reconciliation baseline
 
@@ -304,7 +304,7 @@ First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`
 
 ### Credits
 
-music-dj-tools is only possible because of the open reverse-engineering and open-source work surveyed in [`(private path)`]((private path)). Particular thanks to:
+Open DJ is only possible because of the open reverse-engineering and open-source work surveyed in `(private path)`. Particular thanks to:
 
 - pyrekordbox (Dylan Jones) for Rekordbox 6 / 7 master.db access.
 - rekordcrate, crate-digger, dysentery, beat-link, and djl-analysis.deepsymmetry.org (Holzhaus and Deep-Symmetry / James Elliott) for pdb + ANLZ + ProDJ Link format documentation.

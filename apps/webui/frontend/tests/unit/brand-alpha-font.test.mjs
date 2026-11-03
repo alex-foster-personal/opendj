@@ -42,7 +42,7 @@ function svelteFiles(dir) {
 }
 
 const BRAND_SURFACES = [
-	['lib/components/preflight/PreflightScreen.svelte', '.preflight-name'],
+	['lib/components/preflight/PreflightScreenView.svelte', '.preflight-name'],
 	['lib/components/rb/EditSuiteModal.svelte', '.es-header h2'],
 	['lib/components/rb/MidiPanel.svelte', '.drawer-title'],
 	['lib/components/rb/FeedbackPanel.svelte', '.fb-panel-title'],
@@ -83,7 +83,7 @@ test('OSSPUB-07 if the bottom tray still shows the alpha badge then broken', () 
 });
 
 test('OSSPUB-07 if the welcome screen loses its badge then broken', () => {
-	assert.match(read('lib/components/preflight/PreflightScreen.svelte'), /<span class="preflight-name">Open DJ<AlphaBadge \/><\/span>/);
+	assert.match(read('lib/components/preflight/PreflightScreenView.svelte'), /<span class="preflight-name">Open DJ<AlphaBadge \/><\/span>/);
 });
 
 test('OSSPUB-07 if --rb-font-brand does not name the shipped, licensed Anybody face then broken', () => {
@@ -120,7 +120,7 @@ test('OSSPUB-07 if the tray wordmark is bold or uses the 800-only brand face, or
 	const wordmark = cssRule(read('lib/components/rb/BrowserPanel.svelte'), '.wordmark');
 	assert.match(wordmark, /font-weight:\s*400;/);
 	assert.doesNotMatch(wordmark, /--rb-font-brand|Anybody/);
-	const welcome = cssRule(read('lib/components/preflight/PreflightScreen.svelte'), '.preflight-name');
+	const welcome = cssRule(read('lib/components/preflight/PreflightScreenView.svelte'), '.preflight-name');
 	assert.match(welcome, /font-family:\s*var\(--rb-font-brand\);/);
 	assert.match(welcome, /font-weight:\s*700;/);
 });

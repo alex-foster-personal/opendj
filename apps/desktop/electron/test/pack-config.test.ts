@@ -1,12 +1,21 @@
 import * as assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { scratchDir } from './helpers';
+
 const packageRoot = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
 	scripts: { 'pack:dir': string };
-	build: { files: string[]; extraResources: { from: string; to: string }[]; mac: { icon?: unknown } };
+	version: string;
+	build: {
+		files: string[];
+		extraResources: { from: string; to: string }[];
+		electronFuses?: Record<string, boolean>;
+		mac: { icon?: unknown; minimumSystemVersion?: string; category?: string; bundleShortVersion?: string; bundleVersion?: string };
+	};
 };
 
 /** electron-builder refuses a mac icon below this edge, and would otherwise ship its stock one. */
@@ -52,4 +61,65 @@ test('the packaged app ships the assets the runtime dock icon reads', () => {
 	const icon = pkg.build.mac.icon as string;
 	const dir = path.dirname(icon);
 	assert.ok(pkg.build.files.includes(`${dir}/**/*`), `build.files does not pack ${dir}/, so main.ts cannot load ${icon}`);
+});
+
+// ----- parity rows 63, 64: fuses and Info.plist ---------------------------------------
+// The Tauri binary cannot be run as Node; an Electron one can unless these fuses are flipped.
+test('if a Node entry-point fuse is left on or asar integrity is off then the packed app is not hardened (row 63)', () => {
+	const fuses = pkg.build.electronFuses;
+	assert.ok(fuses !== undefined, 'build.electronFuses is missing');
+	assert.equal(fuses.runAsNode, false, 'ELECTRON_RUN_AS_NODE would turn the app into a Node runtime');
+	assert.equal(fuses.enableNodeOptionsEnvironmentVariable, false, 'NODE_OPTIONS would inject code');
+	assert.equal(fuses.enableNodeCliInspectArguments, false, '--inspect would open a debugger');
+	assert.equal(fuses.enableEmbeddedAsarIntegrityValidation, true);
+	assert.equal(fuses.onlyLoadAppFromAsar, true);
+});
+
+test('if fuses are flipped on an unsigned mac build without re-signing then arm64 kills the app at launch (row 63)', () => {
+	// identity: null skips signing, and flipping a fuse breaks the stock ad-hoc signature.
+	assert.equal(pkg.build.electronFuses?.resetAdHocDarwinSignature, true);
+});
+
+test('if cookie encryption is switched on then every unsigned local rebuild raises a Keychain prompt (row 63)', () => {
+	// Safe Storage's Keychain item is bound to the code signature, which an ad-hoc rebuild changes. Not a Tauri feature either.
+	assert.notEqual(pkg.build.electronFuses?.enableCookieEncryption, true);
+});
+
+test('if the mac minimum, category or numeric bundle versions are missing then Info.plist differs from Tauri (row 64)', () => {
+	const mac = pkg.build.mac;
+	assert.equal(mac.minimumSystemVersion, '13.0', 'ADR-NEW-electron-is-the-desktop-shell sets the macOS minimum at 13');
+	assert.equal(mac.category, 'public.app-category.music', 'Tauri ships category Music');
+	// electron-builder would otherwise write the semver string (1.0.0-alpha.1), which is not a valid CFBundleShortVersionString.
+	const numericCore = pkg.version.split('-')[0];
+	assert.match(numericCore ?? '', /^\d+\.\d+\.\d+$/);
+	assert.equal(mac.bundleShortVersion, numericCore, `bump build.mac.bundleShortVersion with package.json version ${pkg.version}`);
+	assert.equal(mac.bundleVersion, numericCore, `bump build.mac.bundleVersion with package.json version ${pkg.version}`);
+});
+
+test('if pack:dir does not read the fuses back from the packed Electron Framework then a config that never applied passes', () => {
+	const script = (pkg.scripts as Record<string, string>)['pack:dir'] ?? '';
+	const builderAt = script.indexOf('electron-builder');
+	const readAt = script.indexOf('node scripts/read-fuses.mjs');
+	assert.ok(builderAt !== -1 && readAt > builderAt, script);
+	assert.match(script, /Electron Framework\.framework\/Electron Framework/);
+});
+
+const SENTINEL = 'dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX';
+/** A binary-like buffer: filler, the sentinel, wire version 1, then one state byte per fuse ('0' off, '1' on). */
+function fakeFuseBinary(states: string): Buffer {
+	return Buffer.concat([Buffer.from('filler'), Buffer.from(SENTINEL), Buffer.from([1, states.length]), Buffer.from(states, 'latin1'), Buffer.from('tail')]);
+}
+
+test('if read-fuses meets a hardened wire it passes, and if runAsNode is on it fails naming it (non-fuse options ignored)', () => {
+	const verifier = path.join(packageRoot, 'scripts', 'read-fuses.mjs');
+	const binary = path.join(scratchDir('mac-fuses'), 'Electron Framework');
+	// Wire order: runAsNode, cookie, nodeOptions, inspect, asarIntegrity, onlyAsar, v8snapshot, fileProtocol, wasmTrap.
+	fs.writeFileSync(binary, fakeFuseBinary('000011001'));
+	const ok = spawnSync(process.execPath, [verifier, binary], { encoding: 'utf8' });
+	assert.equal(ok.status, 0, ok.stderr);
+	fs.writeFileSync(binary, fakeFuseBinary('100011001'));
+	const bad = spawnSync(process.execPath, [verifier, binary], { encoding: 'utf8' });
+	assert.notEqual(bad.status, 0);
+	assert.match(bad.stderr, /runAsNode is enabled, expected disabled/);
+	assert.doesNotMatch(bad.stderr, /resetAdHocDarwinSignature/);
 });

@@ -19,11 +19,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from apps.engine_core.refusal import unavailable_response
-from apps.shared.perf_tier import HostInfoUnavailable, read_host_facts
+from apps.shared.perf_tier import HOST_INFO_STATE_ATTR, HostInfoUnavailable, read_host_facts
 
 HOST_INFO_PATH: str = "/api/v1/host-info"
 CODE_HOST_INFO_UNAVAILABLE: str = "host_info_unavailable"
-HOST_INFO_STATE_ATTR: str = "host_info"
 
 CANARY_SCHEMA: int = 1
 CANARY_ITERATIONS: int = 5_000

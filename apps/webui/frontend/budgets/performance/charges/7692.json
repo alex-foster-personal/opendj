@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 323484,
+  "measured_with_pr": 325991,
+  "sha": "ec9073046f96895bbe24a9c3317a3ed19a71dba3",
+  "date": "Mon 2 Nov 2026",
+  "reason": "Preview gap wave and mixer pins (PGWAVE-7692): one clean vite build each, main 7837e09617 measured 323,484 and main plus #7692 325,991 (+2,507). Raised on main by #7692 from 324,608 to 327,680 in bundle-budget.mjs; moved here as that PR's charge when #8310 merged main.",
+  "payback": "none planned"
+}

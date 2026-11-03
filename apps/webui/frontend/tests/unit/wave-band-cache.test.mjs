@@ -1,3 +1,4 @@
+// requirement: PGWAVE-7692b
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -10,6 +11,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let render;
 let createdCanvases = 0;
+/** Every band tile canvas built, with the block rects painted into it. */
+let tiles = [];
 
 class RecordingPath {
 	constructor() {
@@ -20,16 +23,18 @@ class RecordingPath {
 	}
 }
 
-function context(calls) {
+function context(calls, smoothLog = null) {
 	return {
 		fillStyle: '',
 		strokeStyle: '',
 		lineWidth: 1,
 		globalAlpha: 1,
+		imageSmoothingEnabled: true,
 		fillRect() {},
 		fill() {},
 		drawImage(...args) {
 			calls.push(args);
+			if (smoothLog !== null) smoothLog.push(this.imageSmoothingEnabled);
 		},
 		beginPath() {},
 		moveTo() {},
@@ -46,10 +51,24 @@ before(async () => {
 			assert.equal(tag, 'canvas');
 			createdCanvases += 1;
 			const calls = [];
-			return { width: 0, height: 0, getContext: () => context(calls) };
+			const canvas = { width: 0, height: 0, rects: [] };
+			const ctx = context(calls);
+			ctx.fill = (path) => canvas.rects.push(...path.rects);
+			// Block bars paint with fillRect (render.ts _drawBands; WebKit
+			// antialiases a Path2D fill of 2px bars), not Path2D. Record them too
+			// so paintedEdges() sees the real layout. Only full-alpha fills are
+			// bars; the upper band and beat lines paint at other alphas.
+			ctx.fillRect = (x, y, w, h) => {
+				if (ctx.globalAlpha === 1) canvas.rects.push({ x, y, w, h });
+			};
+			canvas.getContext = () => ctx;
+			tiles.push(canvas);
+			return canvas;
 		}
 	};
 	render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
+	// The snapper is a lazy chunk; load it so snapped rows paint snapped bars.
+	await render.__test_loadBlockSnap();
 });
 
 const PALETTE = {
@@ -64,7 +83,10 @@ const anlz = {
 };
 
 function frame(positionMs, widthCss = 240, pitch = 1) {
-	return { widthCss, heightCss: 60, positionMs, durationMs: 120_000, anlz, palette: PALETTE, pitch, loop: null };
+	return {
+		widthCss, heightCss: 60, positionMs, durationMs: 120_000, anlz, palette: PALETTE, pitch, loop: null,
+		windowS: 24, playheadFrac: 0.5
+	};
 }
 
 test('sub-pixel advances blit the cached band image without rebuilding its buckets', () => {
@@ -118,7 +140,9 @@ test('a scaled band image still puts the playhead track time at the row centre',
 	const builtPxPerS = 240 / render.WAVE_WINDOW_S; // the image was built at pitch 1.0
 	const sourceX = 30 * builtPxPerS;
 	const destX = dx + ((sourceX - sx) * dw) / sw;
-	assert.ok(Math.abs(destX - 120) < 1e-6, `playhead maps to x=${destX}, expected 120`);
+	// The blit snaps to a device pixel so scrolling bars are not resampled.
+	// Half a CSS pixel is the most that snap may move the playhead sample.
+	assert.ok(Math.abs(destX - 120) < 0.5, `playhead maps to x=${destX}, expected 120`);
 	const liveScale = dw / sw;
 	assert.ok(Math.abs(liveScale - 1 / 1.02) < 1e-9, 'drawn at the live px-per-second');
 });
@@ -130,6 +154,25 @@ test('a tempo move beyond the tolerance rebuilds the band image', () => {
 	render.drawWaveRow(ctx, frame(30_000, 240, 1.0));
 	render.drawWaveRow(ctx, frame(30_000, 240, 1.05));
 	assert.equal(createdCanvases, 2);
+});
+
+test('blocks scroll lands on whole pixels and does not filter the bars', () => {
+	render.resetWaveBandCacheForTest();
+	const calls = [];
+	const smooth = [];
+	const ctx = context(calls, smooth);
+	const blocks = (positionMs) => ({ ...frame(positionMs), waveformDesign: 'blocks' });
+	render.drawWaveRow(ctx, blocks(30_000));
+	render.drawWaveRow(ctx, blocks(30_010)); // 0.1 CSS px at 10px/s
+	assert.deepEqual(smooth, [false, false], 'the bar blit is nearest-neighbor');
+	assert.equal(ctx.imageSmoothingEnabled, true, 'smoothing is restored for the overlays');
+	// Main blits the band image as tiles: an unscaled tile is the 3-argument
+	// drawImage form (dest x at args[1]), a scaled one the 9-argument form
+	// (dest x at args[5]).
+	const dx = (args) => (args.length === 3 ? args[1] : args[5]);
+	assert.equal(calls.length, 2, 'one tile blit per frame at this width');
+	assert.equal(dx(calls[0]), dx(calls[1]), 'a sub-pixel advance stays on the snapped pixel');
+	assert.equal(Number.isInteger(dx(calls[0])), true, 'the snapped dest x is a whole CSS pixel at dpr 1');
 });
 
 test('the reuse tolerance is PITCH_TOLERANCE on either side', () => {
@@ -163,6 +206,13 @@ function gridFrame(positionMs, design) {
 	};
 }
 
+/** Left edges, in image px, of the block bars painted into tile 0 since the
+ * last reset: the real painted layout, not a recomputed one. */
+function paintedEdges() {
+	assert.equal(tiles.length, 1, 'CONTROL: the window paints from one band tile');
+	return new Set(tiles[0].rects.map((r) => r.x));
+}
+
 function recordingContext() {
 	const blits = [];
 	const lines = [];
@@ -174,12 +224,12 @@ function recordingContext() {
 	return { ctx, blits, lines };
 }
 
-test('a snapped Gothic row keeps every beat edge on its grid line while scrolling', async () => {
-	const layout = await loadTypeScriptModule('src/lib/components/rb/wave/block-layout.ts');
+test('a snapped Gothic row keeps every beat edge on its grid line while scrolling', () => {
 	const pxPerS = GRID_W / render.WAVE_WINDOW_S;
 	let fractionalSeen = 0;
 	for (let ms = 30_000; ms < 30_400; ms += 7) {
 		render.resetWaveBandCacheForTest();
+		tiles = [];
 		const f = gridFrame(ms, 'blocks');
 		const { ctx, blits, lines } = recordingContext();
 		render.drawWaveRow(ctx, f);
@@ -188,9 +238,9 @@ test('a snapped Gothic row keeps every beat edge on its grid line while scrollin
 		const tLeft = ms / 1000 - render.WAVE_WINDOW_S / 2;
 		if (!Number.isInteger(tLeft * pxPerS)) fractionalSeen += 1;
 		const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + render.WAVE_WINDOW_S);
-		const edges = Array.from(layout.beatAnchorsPx(visible, pxPerS), (x) => x + dx);
-		assert.ok(edges.length > 0, 'CONTROL: the window holds beats');
-		assert.deepEqual(lines, edges, `beat lines sit on their block edges at ${ms} ms`);
+		assert.equal(lines.length, visible.length, 'CONTROL: every visible beat paints a line');
+		const edges = paintedEdges();
+		for (const x of lines) assert.ok(edges.has(x - dx), `a painted bar starts on the line at ${x} px, ${ms} ms`);
 	}
 	assert.ok(fractionalSeen > 0, 'CONTROL: the sweep crosses fractional scroll offsets');
 });
@@ -211,14 +261,14 @@ test('designs without snapped edges keep the tile blit rounding', () => {
 // reuses an image built at another scale, the edge is rounded at the built
 // scale and drawn scaled, the line rounded at the live one. Three half-pixel
 // roundings, scaled by at most PITCH_TOLERANCE: under 1.52 px, never more.
-test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px of its line', async () => {
-	const layout = await loadTypeScriptModule('src/lib/components/rb/wave/block-layout.ts');
+test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px of its line', () => {
 	const bound = 1 + 0.5 * (1 + render.BAND_CACHE_CFG.PITCH_TOLERANCE);
 	assert.ok(bound < 1.52);
 	let worst = 0;
 	for (const pitch of [0.975, 0.99, 1.01, 1.025]) {
 		for (let ms = 30_000; ms < 30_400; ms += 13) {
 			render.resetWaveBandCacheForTest();
+			tiles = [];
 			const built = recordingContext();
 			render.drawWaveRow(built.ctx, { ...gridFrame(ms, 'blocks'), pitch: 1 });
 			const { ctx, blits, lines } = recordingContext();
@@ -231,9 +281,14 @@ test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px 
 			const trackWindowS = render.WAVE_WINDOW_S * pitch;
 			const tLeft = ms / 1000 - trackWindowS / 2;
 			const visible = f.anlz.beatgrid.beats.filter((b) => b.t >= tLeft && b.t <= tLeft + trackWindowS);
-			const edges = Array.from(layout.beatAnchorsPx(visible, builtPxPerS), (x) => dx + ((x - sx) * dw) / sw);
-			assert.equal(lines.length, edges.length, 'CONTROL: one line per visible beat');
-			for (let i = 0; i < edges.length; i++) worst = Math.max(worst, Math.abs(lines[i] - edges[i]));
+			assert.equal(lines.length, visible.length, 'CONTROL: one line per visible beat');
+			const painted = paintedEdges();
+			for (let i = 0; i < visible.length; i++) {
+				// The bar the image painted for this beat, then where the scaled blit puts it.
+				const edge = Math.round(visible[i].t * builtPxPerS);
+				assert.ok(painted.has(edge), `a painted bar starts at the beat's image px ${edge}`);
+				worst = Math.max(worst, Math.abs(lines[i] - (dx + ((edge - sx) * dw) / sw)));
+			}
 		}
 	}
 	assert.ok(worst > 0.5, `CONTROL: the sweep reaches the rounding error (worst ${worst})`);

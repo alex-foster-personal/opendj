@@ -9,6 +9,7 @@
 	import LibraryPreviewBar from './LibraryPreviewBar.svelte';
 	import LibraryTopBar from './LibraryTopBar.svelte';
 	import TrackInspector from './TrackInspector.svelte';
+	import CrateDeskView from './CrateDeskView.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { libraryWorkspace, publishLibrarySelection } from '$lib/library/library-workspace.svelte';
@@ -62,32 +63,9 @@
 	onDestroy(stopLibraryPreview);
 </script>
 
-<div class="perf-root library-root" data-testid="library-workspace">
-	<LibraryTopBar />
-	<LibraryPreviewBar />
-	<div class="desk">
-		<BrowserPanel {library} />
-		<TrackInspector />
-	</div>
-</div>
-
-<style>
-	.library-root {
-		position: fixed;
-		inset: 0;
-		display: grid;
-		grid-template-areas:
-			'topbar'
-			'preview'
-			'desk';
-		grid-template-rows: var(--rb-topbar-h) 48px minmax(0, 1fr);
-		background: var(--rb-bg);
-	}
-	.desk {
-		grid-area: desk;
-		display: grid;
-		grid-template-areas: 'browser inspector';
-		grid-template-columns: minmax(0, 1fr) 300px;
-		min-height: 0;
-	}
-</style>
+<CrateDeskView>
+	{#snippet topbar()}<LibraryTopBar />{/snippet}
+	{#snippet preview()}<LibraryPreviewBar />{/snippet}
+	{#snippet browser()}<BrowserPanel {library} />{/snippet}
+	{#snippet inspector()}<TrackInspector />{/snippet}
+</CrateDeskView>

@@ -121,8 +121,9 @@ test('each popover load-error box is placed by pointFloatingAction at its own an
 	assert.match(boxes[0], /use:pointFloatingAction=\{\{ x: playlistsMenu\.x, y: playlistsMenu\.y \}\}/);
 	assert.match(boxes[1], /use:pointFloatingAction=\{\{ x: relocateMenu\.x, y: relocateMenu\.y \}\}/);
 	for (const box of boxes) assert.doesNotMatch(box, /style=/, 'raw left/top would bypass the clamp');
-	// The loaded popovers use the same action, so both paths clamp alike.
-	for (const loaded of ['TrackPlaylistsPopover.svelte', 'RelocatePopover.svelte']) {
+	// The loaded popovers use the same action, so both paths clamp alike
+	// (in each popover's props-only view, which owns its placement).
+	for (const loaded of ['TrackPlaylistsPopoverView.svelte', 'RelocatePopoverView.svelte']) {
 		assert.match(read(`src/lib/components/rb/browser/${loaded}`), /use:pointFloatingAction=\{\{ x, y \}\}/);
 	}
 });
@@ -137,7 +138,9 @@ test('the quick-draw module is fetched by a .perf-root right-click, and a failur
 	assert.doesNotMatch(quickDrawLoader, staticImportOf('QuickDrawMenu\\.svelte'));
 	assert.match(quickDrawLoader, dynamicImportOf('QuickDrawMenu\\.svelte'));
 	assert.match(quickDrawLoader, /<svelte:window oncontextmenu=\{onContextMenu\} \/>/);
-	assert.match(quickDrawLoader, /closest\('\.perf-root'\)/);
+	// The .perf-root scope lives in quickDrawClaimsContextMenu (tests/unit/quick-draw-target.test.mjs).
+	assert.match(quickDrawLoader, /quickDrawClaimsContextMenu\(t\)/);
+	assert.match(quickDrawMenu, /!quickDrawClaimsContextMenu\(t\)\) return;/, 'the loaded menu applies the same text-field exemption');
 	assert.match(quickDrawLoader, /\.catch\(/);
 	assert.equal((quickDrawLoader.match(/role="alert"/g) ?? []).length, 1);
 	assert.match(quickDrawLoader, /Quick-draw menu failed to load: \{loadError\}/);

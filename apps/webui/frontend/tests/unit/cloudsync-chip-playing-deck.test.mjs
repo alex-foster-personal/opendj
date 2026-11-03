@@ -18,8 +18,12 @@ function source(relative) {
 	return readFileSync(fileURLToPath(new URL(`../../src/${relative}`, import.meta.url)), 'utf8');
 }
 
-const CHIP = source('lib/components/CloudSyncStatusChip.svelte');
-const QUICK = source('lib/components/cloudsync/CloudSyncQuickActions.svelte');
+// The chip is a container plus a props-only view; the pair is the component.
+const CHIP =
+	source('lib/components/CloudSyncStatusChip.svelte') + source('lib/components/CloudSyncStatusChipView.svelte');
+const QUICK =
+	source('lib/components/cloudsync/CloudSyncQuickActions.svelte') +
+	source('lib/components/cloudsync/CloudSyncQuickActionsView.svelte');
 
 let view;
 

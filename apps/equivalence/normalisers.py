@@ -135,6 +135,12 @@ class Key:
         number = ((self.camelot_number - 1 - _OPEN_KEY_TO_CAMELOT_OFFSET) % 12) + 1
         return f"{number}{letter}"
 
+    def display(self, *, detailed: bool = False) -> str:
+        """Stable string for a normalised key in reports and CSV dumps."""
+        if detailed:
+            return f"{self.camelot} (pc={self.pitch_class},{self.mode})"
+        return self.camelot
+
     @property
     def relative(self) -> Key:
         """The relative major of a minor key, or relative minor of a major.
@@ -537,6 +543,13 @@ KIND_CANONICAL: Final[dict[str, str]] = {
 }
 
 
+def format_canonical(value: Key | float, *, detailed_key: bool = False) -> str:
+    """Human-readable form of a value already passed through a normaliser."""
+    if isinstance(value, Key):
+        return value.display(detailed=detailed_key)
+    return f"{float(value):g}"
+
+
 def normalise(value: Any, kind: str, unit: str) -> Any:
     """Front door. Dispatches on ``kind``; raises for an unknown kind."""
     if kind == "key":
@@ -617,6 +630,7 @@ __all__ = [
     "UNIT_INPUT_RANGE",
     "Key",
     "NormaliseError",
+    "format_canonical",
     "is_comparable_unit",
     "normalise",
     "normalise_key",

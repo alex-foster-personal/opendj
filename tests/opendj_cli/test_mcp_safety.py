@@ -8,6 +8,7 @@ from apps.opendj_cli.mcp_safety import (
     _DESTRUCTIVE_PATH_PATTERNS,
     SafetyRefusal,
     agent_audio_mode,
+    canonical_api_path,
     guard_library_request,
     guard_order,
     order_starts_audible_play,
@@ -117,10 +118,95 @@ def test_validate_api_path_rejects_traversal() -> None:
     assert error.value.code == "invalid_path"
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/%2e%2e/health", "/api/v1/%2E%2E/health", "%2Fapi/v1/tracks"]
+)
+def test_validate_api_path_checks_the_decoded_path(path: str) -> None:
+    """[if] only the raw path is checked [then] %2e%2e walks out of /api/v1, [else stop]."""
+    with pytest.raises(SafetyRefusal) as error:
+        validate_api_path(path)
+    assert error.value.code == "invalid_path"
+
+
 def test_guard_library_writeback() -> None:
     with pytest.raises(SafetyRefusal) as error:
         guard_library_request("POST", "/api/v1/playlists/x/writeback/apply")
     assert error.value.code == "writeback_blocked"
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("/api/v1/tracks", "/api/v1/tracks"),
+        ("/api/v1/tracks/", "/api/v1/tracks/"),
+        ("/api/v1/tracks?limit=5&q=a/../b", "/api/v1/tracks"),
+        ("/api/v1/tracks#top", "/api/v1/tracks"),
+        ("/api/v1/%74racks", "/api/v1/tracks"),
+        ("/api/v1/a%3Fb", "/api/v1/a?b"),
+        ("/api/v1//tracks", "/api/v1/tracks"),
+        ("/api/v1/./tracks", "/api/v1/tracks"),
+        ("/api/v1/x/../tracks", "/api/v1/tracks"),
+        ("/api/v1/x/%2e%2e/tracks", "/api/v1/tracks"),
+        ("/api/v1/%2561", "/api/v1/%61"),
+        ("/api/v1/x/.", "/api/v1/x/"),
+    ],
+)
+def test_canonical_api_path_is_the_route_the_engine_sees(raw: str, canonical: str) -> None:
+    """[if] a rail reads anything else [then] encoding the path walks around that rail."""
+    assert canonical_api_path(raw) == canonical
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/playlists/x/%77riteback/apply",
+        "/api/v1/playlists/x%2Fwriteback%2Fapply",
+        "/api/v1/playlists/x//writeback//apply",
+        "/api/v1/playlists/x/./writeback/apply",
+        "/api/v1/tracks/../playlists/x/writeback/apply",
+    ],
+)
+def test_the_writeback_rail_reads_the_canonical_path(path: str) -> None:
+    """[if] the marker is matched on the raw path [then] one encoded letter reaches rekordbox."""
+    with pytest.raises(SafetyRefusal) as error:
+        guard_library_request("POST", path)
+    assert error.value.code == "writeback_blocked"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/%69ngest/run",
+        "/api//v1/ingest/run",
+        "/api/v1/tracks/../ingest/run",
+        "/api/v1/playlists/p1/%74racks",
+        "/api/v1/playlists//p1//tracks",
+        "/api/v1/playlists/p1/tracks?position=0",
+        "/api/v1/playlists/p1/tracks#x",
+    ],
+)
+def test_the_destructive_rail_reads_the_canonical_path(path: str) -> None:
+    """[if] a pattern is matched on the raw path [then] a query string alone opens the gate."""
+    with pytest.raises(SafetyRefusal) as error:
+        guard_library_request("POST", path, environ={})
+    assert error.value.code == "destructive_blocked"
+    # Control: the destructive gate is still the only thing refusing these.
+    guard_library_request("POST", path, environ={"OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"})
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/v1/playlists/p1/tracks?position=0"),
+        ("POST", "/api/v1/playlists"),
+        ("POST", "/api/v1/tracks/a%20b/tags"),
+        ("PUT", "/api/v1/ui-prefs"),
+    ],
+)
+def test_the_rails_still_pass_ordinary_calls(method: str, path: str) -> None:
+    """[if] canonicalizing over-refuses [then] an ordinary library call stops working."""
+    guard_library_request(method, path, environ={})
+    assert validate_api_path(path).startswith("/api/v1/")
 
 
 def test_a_refusal_named_error_keeps_its_code() -> None:

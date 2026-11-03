@@ -33,7 +33,7 @@
 		position: fixed;
 		/* Clear of the window edge and of the bottom tray, where the version
 		   number and age sit (about 18-20px). */
-		right: 20px;
+		right: calc(20px + var(--assistant-dock-width, 0px));
 		bottom: 36px;
 		display: flex;
 		flex-direction: column;

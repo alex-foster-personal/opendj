@@ -24,6 +24,9 @@ Requirements:
   REMEMBERED registry pair already is, so a config reload cannot evict a
   worktree from ports its own running engine is serving (issue observed on
   the Air's preview worktree, 8728/9448 -> 8700/9420, Fri 11 Sep 2026).
+- ✔︎ A port holding only TIME_WAIT sockets from a stopped server counts as
+  free, while any live listener (127.0.0.1 or wildcard) keeps it taken, so a
+  restart keeps its pair instead of alternating (INFRA-6578).
 
 Acceptance tests:
 
@@ -44,6 +47,8 @@ Acceptance tests:
   to a fresh pair instead of keeping the configured one.
 - [if] a genuinely foreign process holds the configured pair [then ⛔️] the
   claim keeps that pair rather than moving off it.
+- [if] a restart leaves only TIME_WAIT on the pair [then ⛔️] the claim moves.
+- [if] a leaked server listens on 0.0.0.0 on the pair [then ⛔️] the claim keeps it.
 """
 
 from __future__ import annotations
@@ -124,6 +129,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
         5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
         5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
+        5327,  # tests/e2e/vite.silence-expected-audible.config.ts SILENCE_EXPECTED_AUDIBLE_FRONTEND_PORT
         5328,  # tests/e2e/vite.lyrics-words.config.ts frontend port
         5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_FRONTEND_PORT
         5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
@@ -136,6 +142,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8690,  # tests/e2e/playwright.webkit-deckload.config.ts WEBKIT_DECKLOAD_PORT
         8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
         8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
+        8694,  # tests/e2e/playwright.electron-shell.config.ts ELECTRON_SHELL_PORT
         8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
         8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
         8716,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_API_PORT
@@ -149,6 +156,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8704,  # tests/e2e/library-jobs-e2e-endpoints.ts LIBRARY_JOBS_E2E_BACKEND_PORT
         8705,  # tests/e2e/vocals-demucs-overlay-endpoints.ts default backend port
         8706,  # tests/e2e/vite.lyrics-words.config.ts API port
+        8707,  # tests/e2e/vite.silence-expected-audible.config.ts SILENCE_EXPECTED_AUDIBLE_API_PORT
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
         8714,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_API_PORT
@@ -237,11 +245,12 @@ def _resolved_raw_value(
 def resolve_ports(
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path = WEBUI_ENV_FILE,
+    dotenv_path: Path | None = None,
 ) -> WebuiPorts:
     """Resolve both ports with process environment above root ``.env``."""
     effective_environ = os.environ if environ is None else environ
-    dotenv_values = _read_dotenv(dotenv_path)
+    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
+    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
     return WebuiPorts(
         backend=_parse_port(
             BACKEND_ENV,
@@ -258,13 +267,14 @@ def resolve_backend_port(
     explicit_port: int | str | None,
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path = WEBUI_ENV_FILE,
+    dotenv_path: Path | None = None,
 ) -> int:
     """Resolve CLI > process environment > root ``.env`` for the daemon."""
     if explicit_port is not None:
         return _parse_port("--port", explicit_port)
     effective_environ = os.environ if environ is None else environ
-    dotenv_values = _read_dotenv(dotenv_path)
+    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
+    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
     return _parse_port(
         BACKEND_ENV,
         _resolved_raw_value(BACKEND_ENV, effective_environ, dotenv_values),
@@ -274,11 +284,12 @@ def resolve_backend_port(
 def resolve_frontend_port(
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path = WEBUI_ENV_FILE,
+    dotenv_path: Path | None = None,
 ) -> int:
     """Resolve the frontend port from process environment or root ``.env``."""
     effective_environ = os.environ if environ is None else environ
-    dotenv_values = _read_dotenv(dotenv_path)
+    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
+    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
     return _parse_port(
         FRONTEND_ENV,
         _resolved_raw_value(FRONTEND_ENV, effective_environ, dotenv_values),
@@ -548,12 +559,9 @@ def _prune_missing_worktrees(
     return {path: ports for path, ports in reservations.items() if Path(path).is_dir()}
 
 
-def _port_is_available(port: int) -> bool:
+def _bind_succeeds(port: int, *, reuse_address: bool) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        # A claim is only valid when a fresh listener can bind the socket.
-        # SO_REUSEADDR must remain off: enabling it lets a probe accept a
-        # port which an incompatible leaked server still owns.
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, int(reuse_address))
         try:
             probe.bind(("127.0.0.1", port))
         except OSError:
@@ -561,22 +569,34 @@ def _port_is_available(port: int) -> bool:
     return True
 
 
+def _something_listens_on(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _port_is_available(port: int) -> bool:
+    """Return whether a fresh server (uvicorn, Vite: both SO_REUSEADDR) can bind ``port``.
+
+    The strict probe (SO_REUSEADDR off) is tried first. It also refuses a port
+    that only holds TIME_WAIT sockets, which every stopped server leaves for
+    about 30 s while a browser was connected, and treating that as taken made
+    each restart alternate between two pairs (INFRA-6578, Mon 12 Oct 2026). So a
+    strict refusal is re-checked: the port counts as free only when nothing
+    answers a connect on it AND a reuse bind succeeds. A leaked listener, on
+    127.0.0.1 or on the wildcard address, answers the connect and keeps the
+    port taken; SO_REUSEADDR alone would have let the probe bind beside a
+    wildcard listener.
+    """
+    if _bind_succeeds(port, reuse_address=False):
+        return True
+    return not _something_listens_on(port) and _bind_succeeds(port, reuse_address=True)
+
+
 def _pair_is_available(ports: WebuiPorts) -> bool:
-    """Bind-test both candidate sockets together with address reuse disabled."""
-    try:
-        with (
-            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as backend_probe,
-            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as frontend_probe,
-        ):
-            for probe, port in (
-                (backend_probe, ports.backend),
-                (frontend_probe, ports.frontend),
-            ):
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
-                probe.bind(("127.0.0.1", port))
-    except OSError:
-        return False
-    return True
+    return ports.backend != ports.frontend and all(
+        _port_is_available(port) for port in (ports.backend, ports.frontend)
+    )
 
 
 def _backend_listener_matches_pair(ports: WebuiPorts) -> bool:

@@ -8,7 +8,7 @@
 	import { page } from '$app/state';
 	import { fetchAnlz, fetchTrackBypassingHttpCache, fetchTrackLyrics } from '$lib/rb/api-rb';
 	import { getTrackLyricsWords, type KaraokeWord } from '$lib/api-karaoke';
-	import { drawWaveRow, readPalette } from '$lib/components/rb/wave/render';
+	import { drawWaveRow, readPalette, WAVE_WINDOW_S } from '$lib/components/rb/wave/render';
 	import LyricsLane from '$lib/components/rb/wave/LyricsLane.svelte';
 	import WordLane from '$lib/components/rb/wave/WordLane.svelte';
 	import type { LyricLine } from '$lib/components/rb/wave/lyrics-lane';
@@ -48,7 +48,9 @@
 			palette: readPalette(root),
 			pitch: 1,
 			loop: null,
-			waveformDesign: 'blocks'
+			waveformDesign: 'blocks',
+			windowS: WAVE_WINDOW_S,
+			playheadFrac: 0.5
 		});
 	}
 
@@ -80,12 +82,12 @@
 	{#if error !== null}<p class="err">{error}</p>{/if}
 	<div class="row" style="width:{WIDTH}px;height:{rowH}px" data-lane="lines">
 		<canvas bind:this={lineCanvas} style="width:{WIDTH}px;height:{rowH}px"></canvas>
-		<LyricsLane lyrics={lines} loadError={null} positionMs={tS * 1000} pitch={1} />
+		<LyricsLane lyrics={lines} loadError={null} positionMs={tS * 1000} pitch={1} windowSeconds={WAVE_WINDOW_S} playheadFrac={0.5} />
 	</div>
 	{#if wsid !== null}
 		<div class="row" style="width:{WIDTH}px;height:{rowH}px" data-lane="words">
 			<canvas bind:this={wordCanvas} style="width:{WIDTH}px;height:{rowH}px"></canvas>
-			{#if words !== null}<WordLane {words} positionMs={wtS * 1000} pitch={1} />{/if}
+			{#if words !== null}<WordLane {words} positionMs={wtS * 1000} pitch={1} windowSeconds={WAVE_WINDOW_S} playheadFrac={0.5} />{/if}
 		</div>
 	{/if}
 </div>

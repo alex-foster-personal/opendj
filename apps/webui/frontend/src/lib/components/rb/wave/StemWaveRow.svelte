@@ -18,13 +18,18 @@
 		stem,
 		showStems,
 		scrollPx,
-		canvasWidth
+		canvasWidth,
+		windowS,
+		playheadFrac
 	}: {
 		deck: DeckState;
 		stem: StemControl;
 		showStems: boolean;
 		scrollPx: number;
 		canvasWidth: number;
+		/** The main row's zoom window and playhead place (WAVEZOOM-6802/05). */
+		windowS: number;
+		playheadFrac: number;
 	} = $props();
 
 	const unavailableTip = $derived(stemWaveRowUnavailableTip(deck, stem));
@@ -72,6 +77,8 @@
 		drawStemWaveRow(ctx, {
 			envelope,
 			scrollPx,
+			windowS,
+			playheadFrac,
 			durationMs: deck.duration_ms,
 			pitch: deck.pitch,
 			width: canvasWidth,

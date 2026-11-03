@@ -150,12 +150,15 @@ test('the stick tree opens its own menu and stops the event before Quick Draw se
 
 test('every listed stick row opens the stick menu, collapsed or unreadable (Codex P2 4302000930)', () => {
 	const list = source('src/lib/components/rb/browser/UsbSourceList.svelte');
+	const view = source('src/lib/components/rb/browser/UsbSourceListView.svelte');
 	// The handlers sit on the row itself, outside the access and expanded
 	// branches that decide whether the tree mounts.
-	const row = list.slice(list.indexOf('data-testid="usb-source-row"'), list.indexOf('<svg', list.indexOf('data-testid="usb-source-row"')));
-	assert.match(row, /oncontextmenu=\{\(e\) => _openRowMenu\(e, vol\)\}/);
-	assert.match(row, /onkeydown=\{\(e\) => _rowKeydown\(e, vol\)\}/);
-	assert.ok(list.indexOf('data-testid="usb-source-row"') < list.indexOf("{#if vol.access === 'pending'}"), 'the row is drawn before the access branches');
+	const row = view.slice(view.indexOf('data-testid="usb-source-row"'), view.indexOf('<svg', view.indexOf('data-testid="usb-source-row"')));
+	assert.match(row, /oncontextmenu=\{\(e\) => onrowcontextmenu\(e, vol\)\}/);
+	assert.match(row, /onkeydown=\{\(e\) => onrowkeydown\(e, vol\)\}/);
+	assert.ok(view.indexOf('data-testid="usb-source-row"') < view.indexOf("{#if vol.access === 'pending'}"), 'the row is drawn before the access branches');
+	assert.match(list, /onrowcontextmenu=\{\(e, vol\) => _openRowMenu\(e, vol\)\}/);
+	assert.match(list, /onrowkeydown=\{\(e, vol\) => _rowKeydown\(e, vol\)\}/);
 	const open = list.slice(list.indexOf('function _openRowMenu('), list.indexOf('function _rowKeydown('));
 	assert.match(open, /event\.preventDefault\(\);/);
 	assert.match(open, /event\.stopPropagation\(\);/);

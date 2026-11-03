@@ -53,6 +53,7 @@ from apps.open_dj import (
     Playlist,
     Track,
 )
+from apps.shared.id3v2 import Id3Error
 
 # --------------------------------------------------------------- options
 
@@ -87,6 +88,9 @@ class SeratoAdapterOptions:
     # used verbatim; missing or non-MP3 files downgrade to a structured
     # warning rather than raising.
     audio_root: Path | None = None
+    # The conformance harness treats an absolute file_path as logical, rebasing it under audio_root. Production reads
+    # set this False, so an absolute path is taken as it is, as ingestion takes it.
+    absolute_paths_are_logical: bool = True
 
 
 # --------------------------------------------------------------- helpers
@@ -311,6 +315,10 @@ class SeratoAdapter:
 
         tracks: list[Track] = []
         for row in db.tracks:
+            if not row.file_path.strip():
+                # No file to match on: a blank path would resolve to the volume root, a directory, not a track.
+                report.warn(field="location", track_id="", action="dropped", reason="database row has no file path")
+                continue
             track_id = _stable_track_id(row.file_path, row.title)
             try:
                 bpm = float(row.bpm) if row.bpm else None
@@ -460,6 +468,8 @@ class SeratoAdapter:
             return raw
         root = Path(self.options.audio_root)
         if raw.is_absolute():
+            if not self.options.absolute_paths_are_logical or raw.is_relative_to(root):
+                return raw  # already under the root, or not logical, so rebasing would double or misplace it
             # Still allow the root to override absolute paths: this is what
             # the conformance harness wants (fixture paths look absolute but
             # are actually logical). We treat any leading slash as meaning
@@ -561,15 +571,38 @@ class SeratoAdapter:
         """Return (cues, beats) read from the track's GEOB frames.
 
         Missing files or non-MP3 formats yield empty tuples without warning
-        (the write path already warns; read is symmetric and lenient).
+        (the write path already warns). A tag that is there but cannot be
+        read yields empty tuples WITH a ``cues dropped`` warning, so the
+        import counts the loss instead of reporting a track with no cues.
         """
         audio_path = self._resolve_audio_path(file_path)
         if not audio_path.exists() or not is_mp3_like_path(audio_path):
             return (), ()
         try:
-            bundle = read_geob_frames(audio_path)
-        except Exception:  # noqa: BLE001 -- silent on read, symmetric with write warning
+            bundle = read_geob_frames(audio_path, strict=True)
+        except Id3Error as exc:
+            # The import goes on without this track's cues and grid, but
+            # says so: a file whose tags do not parse is not one with none.
+            # A filesystem or programmer error is not a malformed tag and propagates.
+            report.warn(
+                field="cues",
+                track_id=_track_id,
+                action="dropped",
+                reason=f"Serato GEOB frames could not be read ({type(exc).__name__})",
+            )
             return (), ()
+        for _ in range(bundle.sealed_geob_frames):
+            # A compressed or encrypted GEOB frame is never decoded, so if it
+            # held Markers2 its cues are lost without the parser seeing it.
+            # Each such frame is one loss, so the warning repeats per frame.
+            report.warn(
+                field="cues",
+                track_id=_track_id,
+                action="dropped",
+                reason="ID3 GEOB frame is compressed or encrypted",
+            )
+        for markers2 in (*bundle.shadowed_markers2, bundle.markers2):
+            _warn_markers2_losses(markers2, _track_id, report)
         cues = _markers2_to_opendj_cues(overlay_markers_legacy(bundle.markers2, bundle.markers_legacy))
         beats = _beatgrid_to_opendj_beats(bundle.beatgrid)
         if cues or beats:
@@ -603,3 +636,43 @@ def _infer_file_type(file_path: str) -> str:
     return {"mp3": "mp3", "flac": "flac", "wav": "wav", "aiff": "aiff", "m4a": "m4a"}.get(
         suffix, suffix or "mp3"
     )
+
+
+def _warn_markers2_losses(markers2: Markers2, track_id: str, report: AdapterReport) -> None:
+    """Count the cues and loops one decoded ``Serato Markers2`` frame lost."""
+    if any(name == "__raw__" for name, _ in markers2.unknown_tags):
+        # The tag read, but its Markers2 frame is a version or encoding
+        # this codec cannot decode: every marker in it is lost.
+        report.warn(
+            field="cues",
+            track_id=track_id,
+            action="dropped",
+            reason="Serato Markers2 frame could not be decoded",
+        )
+    for _ in range(markers2.backwards_loops):
+        # A loop whose end is not after its start has no length to import, so the import would drop it.
+        report.warn(
+            field="cues",
+            track_id=track_id,
+            action="dropped",
+            reason="Serato Markers2 LOOP entry ends before it starts",
+        )
+    if markers2.truncated:
+        # An entry claimed more bytes than the frame holds: it and every
+        # entry after it are lost.
+        report.warn(
+            field="cues",
+            track_id=track_id,
+            action="dropped",
+            reason=f"Serato Markers2 frame {markers2.truncation}",
+        )
+    for name, _ in markers2.unknown_tags:
+        if name in ("CUE", "LOOP"):
+            # A known entry too short to hold its position: that cue or
+            # loop is lost, not merely unrecognized.
+            report.warn(
+                field="cues",
+                track_id=track_id,
+                action="dropped",
+                reason=f"Serato Markers2 {name} entry too short to read",
+            )

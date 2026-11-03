@@ -1,6 +1,6 @@
 # Static analysis (SAST) and AI security review
 
-Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **spec, not wired** (Mon 14 Sep 2026).
 
 ## What it covers
 
@@ -11,7 +11,7 @@ every PR.
 
 It does NOT find design flaws such as "the daemon trusts every loopback caller". Those
 belong to the AI review layer below and the manual areas in
-[security.md](security.md#what-scanners-cannot-see).
+`(private path)`.
 
 ## Layers
 

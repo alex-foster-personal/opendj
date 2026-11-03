@@ -119,7 +119,7 @@ const LATER: &[(&str, &str)] = &[
 
 type Obj = Map<String, Value>;
 
-fn invalid(msg: String) -> ProtoError {
+pub(crate) fn invalid(msg: String) -> ProtoError {
     ProtoError::new(ErrorCode::Invalid, msg)
 }
 
@@ -845,7 +845,8 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
         "state_seq": state_seq,
         "decks": decks,
         "mixer": {"crossfader": s.crossfader, "master_volume": s.master_volume},
-        "master": {"muted": s.master_muted},
+        // The master bus level the page's meter shows (`Snapshot::master_rms`).
+        "master": {"muted": s.master_muted, "rms": s.master_rms},
     })
 }
 
@@ -1123,6 +1124,7 @@ mod tests {
             crossfader: 0.5,
             master_volume: 1.0,
             master_muted: false,
+            master_rms: 0.0,
         };
         s.decks[0].loop_ms = Some((1000.0, 3000.0));
         s.decks[0].loop_beats = Some(4.0);
@@ -1162,6 +1164,7 @@ mod tests {
             crossfader: 0.5,
             master_volume: 1.0,
             master_muted: false,
+            master_rms: 0.0,
         };
         s.decks[0].quantize = true;
         s.decks[0].quantize_grid = 4;
@@ -1178,6 +1181,7 @@ mod tests {
             crossfader: 0.5,
             master_volume: 1.0,
             master_muted: false,
+            master_rms: 0.0,
         };
         let v = state_json(&s, Some(HostTime { heard_ns: 5_060_000_000, sent_ns: 5_000_000_000 }), 0);
         assert_eq!(v["host_time_ns"], 5_060_000_000u64);
@@ -1191,6 +1195,21 @@ mod tests {
         for k in ["host_time_ns", "sent_ns", "heard_in_ns"] {
             assert_eq!(v[k], Value::Null, "{k}");
         }
+    }
+
+    #[test]
+    fn the_state_feed_carries_the_master_level_beside_the_mute() {
+        let s = Snapshot {
+            frame: 0,
+            sample_rate: 48000,
+            decks: Default::default(),
+            crossfader: 0.5,
+            master_volume: 1.0,
+            master_muted: true,
+            master_rms: 0.25,
+        };
+        let v = state_json(&s, None, 0);
+        assert_eq!(v["master"], json!({"muted": true, "rms": 0.25}));
     }
 
     #[test]

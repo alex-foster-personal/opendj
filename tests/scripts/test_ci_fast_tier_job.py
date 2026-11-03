@@ -183,8 +183,9 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
     ignores = lambda run: sorted(tok for tok in run.split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(fast) == ignores(shard)
     # playlist-switch bench (e2e.yml extended), nextest quarantine (contracts),
-    # NATIVE-25 live-engine (fail-closed when loudness unavailable; not on fast lane)
-    assert len(ignores(fast)) == 10
+    # the GUARD-8229 seam gate (needs frontend node_modules; runs in ci.yml `quality`
+    # instead), NATIVE-25 live-engine (fail-closed when loudness unavailable; not on fast lane)
+    assert len(ignores(fast)) == 11
 
 
 def test_shard_job_gains_only_the_ledger_guard() -> None:

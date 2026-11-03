@@ -144,6 +144,8 @@ function anlzWithCues(cues, { beats = [], phrases = [] } = {}) {
 function paint(cues, gridOpts) {
 	const rec = recordingCtx();
 	render.drawWaveRow(rec.ctx, {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: WIDTH,
 		heightCss: HEIGHT,
 		positionMs: POSITION_MS,

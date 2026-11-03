@@ -6,6 +6,9 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
+
+from _fig_sort import fig_sort_key
 
 
 _FIG_RE = re.compile(r"\[([BDEFMP]\d{1,2}|[1-9]-\d{1,2}|[a-z][a-z0-9_]{1,40})\]")
@@ -14,7 +17,7 @@ _FIG_RE = re.compile(r"\[([BDEFMP]\d{1,2}|[1-9]-\d{1,2}|[a-z][a-z0-9_]{1,40})\]"
 TWIN_KEYS = ("shift_name", "mode_name", "shift_mode_name")
 
 
-def figs_in_midi(midi: dict) -> set[str]:
+def figs_in_midi(midi: dict[str, Any]) -> set[str]:
     out: set[str] = set()
     for c in midi.get("controls", []):
         m = _FIG_RE.search(c.get("notes", "") or "")
@@ -23,11 +26,11 @@ def figs_in_midi(midi: dict) -> set[str]:
     return out
 
 
-def names_in_midi(midi: dict) -> set[str]:
+def names_in_midi(midi: dict[str, Any]) -> set[str]:
     return {c["name"] for c in midi.get("controls", [])}
 
 
-def layers_in_midi(midi: dict) -> dict[str, str | None]:
+def layers_in_midi(midi: dict[str, Any]) -> dict[str, str | None]:
     """name -> the row's declared layer, or None when the map does not say."""
     return {c["name"]: c.get("layer") for c in midi.get("controls", [])}
 
@@ -46,16 +49,8 @@ def main(device_dir: Path) -> int:
     layout_figs = {c["fig"] for c in layout["controls"]}
     names = names_in_midi(midi)
 
-    def _sk(x: str) -> tuple:
-        if "-" in x and x[0].isdigit():
-            a, b = x.split("-", 1)
-            return (0, int(a), int(b))
-        if len(x) >= 2 and x[0].isalpha() and x[1:].isdigit():
-            return (1, x[0], int(x[1:]))
-        return (2, x)
-
-    missing = sorted(midi_figs - layout_figs - waived, key=_sk)
-    extra = sorted(layout_figs - midi_figs, key=_sk)
+    missing = sorted(midi_figs - layout_figs - waived, key=fig_sort_key)
+    extra = sorted(layout_figs - midi_figs, key=fig_sort_key)
 
     bad_shift: list[str] = []
     bad_midi: list[str] = []

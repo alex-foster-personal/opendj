@@ -7,7 +7,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const API_BASE = 'https://sets-api.example.test';
 const iconRail = readFileSync(new URL('../../src/lib/components/rb/browser/IconRail.svelte', import.meta.url), 'utf8');
 const performanceRecorderRail = readFileSync(new URL('../../src/lib/components/rb/browser/PerformanceRecorderRail.svelte', import.meta.url), 'utf8');
-const recordInputPicker = readFileSync(new URL('../../src/lib/components/rb/browser/RecordInputPicker.svelte', import.meta.url), 'utf8');
+const recordInputPicker =
+	readFileSync(new URL('../../src/lib/components/rb/browser/RecordInputPicker.svelte', import.meta.url), 'utf8') +
+	readFileSync(new URL('../../src/lib/components/rb/browser/RecordInputPickerView.svelte', import.meta.url), 'utf8');
 const browserPanel = readFileSync(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url), 'utf8');
 let recorder;
 let choice;

@@ -258,6 +258,13 @@ export const PAIRINGS: ContrastPairing[] = [
   { fg: "rb-wave-mid", bg: "rb-bg", level: "non-text", label: "waveform mids band" },
   { fg: "rb-wave-high", bg: "rb-bg", level: "non-text", label: "waveform highs band" },
   { fg: "rb-wave-mono", bg: "rb-bg", level: "non-text", label: "waveform mono/line design" },
+  { fg: "rb-plan-fader", bg: "rb-bg", level: "non-text", label: "plan curve: fader (WAVEPLAN-7896)" },
+  { fg: "rb-plan-eq-low", bg: "rb-bg", level: "non-text", label: "plan curve: low EQ" },
+  { fg: "rb-plan-eq-mid", bg: "rb-bg", level: "non-text", label: "plan curve: mid EQ" },
+  { fg: "rb-plan-eq-high", bg: "rb-bg", level: "non-text", label: "plan curve: high EQ" },
+  { fg: "rb-plan-filter", bg: "rb-bg", level: "non-text", label: "plan curve: filter" },
+  { fg: "rb-plan-out", bg: "rb-bg", level: "non-text", label: "plan span edge: outgoing deck (WAVEPLAN-7896f)" },
+  { fg: "rb-plan-in", bg: "rb-bg", level: "non-text", label: "plan span edge: incoming deck" },
   { fg: "rb-wave-vocal", bg: "rb-bg", level: "non-text", label: "vocal-presence bars" },
   { fg: "rb-wave-vocal", bg: "rb-waverow-secondary", level: "non-text", label: "vocal-presence bars on deck 3/4 row" },
   {

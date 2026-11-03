@@ -38,7 +38,9 @@ class ProvenanceOut(BaseModel):
     source: str
     confidence: float | None = None
     modified_at: str
-    status: Literal["ok", "failed", "missing", "available-not-selected"]
+    status: Literal[
+        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
+    ]
     reason: str | None = None
 
 
@@ -285,7 +287,12 @@ class TrackListItemOut(TrackOut):
     # ok status only where the served value proves it.
     key_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
     key_reason: str | None = None
-    bpm_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
+    # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
+    # The listing routes pass the same computed status TrackRowOut carries, so
+    # this lane must accept it too or GET /tracks fails validation on the row.
+    bpm_status: Literal[
+        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
+    ] | None = None
     bpm_reason: str | None = None
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
     loudness_reason: str | None = None
@@ -517,7 +524,10 @@ class TrackRowOut(BaseModel):
     energy_reason: str
     key_status: Literal["ok", "failed", "missing", "available-not-selected"]
     key_reason: str | None
-    bpm_status: Literal["ok", "failed", "missing", "available-not-selected"]
+    # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
+    bpm_status: Literal[
+        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
+    ]
     bpm_reason: str | None = None
     bpm_source: str | None = None
     bpm_method: str | None = None

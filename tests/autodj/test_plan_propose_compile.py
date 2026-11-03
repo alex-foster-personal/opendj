@@ -2054,3 +2054,20 @@ def test_validation_refuses_an_outgoing_deck_trapped_in_an_engaged_loop() -> Non
     released["decks"]["1"]["loop_engaged"] = False
     released_errors = validate_plan(parse_plan(_plan()), OUT, IN, live=released).errors
     assert not any("engaged loop" in error for error in released_errors)
+
+
+def test_a_folded_launch_carries_its_fold_and_master_to_the_page() -> None:
+    """[if] Beat Sync folds the incoming tempo [then] the prepared beat_sync names the fold and its master, [else stop]."""
+    live = _live(effective_bpm=128.0)
+    live["decks"]["2"]["pitch_range"] = 6.0
+    order = compile_plan(parse_plan(_plan()), profile("trk-in", bpm=64.0), plan_id="plan-test", live=live)["plan"]
+    sync = next(c for c in order["prepare"] if c["type"] == "beat_sync")
+    assert sync == {"type": "beat_sync", "deck": 2, "enabled": True, "normalization": 0.5, "master": 1}
+
+
+def test_an_unfolded_launch_does_not_name_a_fold_to_the_page() -> None:
+    live = _live(effective_bpm=128.0)
+    live["decks"]["2"]["pitch_range"] = 6.0
+    order = compile_plan(parse_plan(_plan()), profile("trk-in", bpm=128.0), plan_id="plan-test", live=live)["plan"]
+    sync = next(c for c in order["prepare"] if c["type"] == "beat_sync")
+    assert sync == {"type": "beat_sync", "deck": 2, "enabled": True}

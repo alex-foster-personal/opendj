@@ -128,6 +128,17 @@ def mirror_transport_live(
     age_s = mirror_age_s(mirror, now_monotonic_s=now_monotonic_s)
     if mirror is None or age_s is None or age_s > max_age_s:
         return False
+    return mirror_decks_live(mirror)
+
+
+def mirror_decks_live(mirror: Mapping[str, Any]) -> bool:
+    """Does this mirror show any deck ``playing`` or ``audible``, whatever its age?
+
+    Both flags, not either alone, for the reason :func:`mirror_transport_live`
+    gives. A reader that holds the SERVED document cannot age it, because the
+    arrival stamp is not served; it gates on the served ``mirror_stale``
+    verdict first and then asks this.
+    """
     decks = mirror.get("decks")
     if not isinstance(decks, Mapping):
         return False
@@ -144,6 +155,7 @@ __all__ = [
     "MIRROR_RECEIVED_MONOTONIC_KEY",
     "LiveTransportProbe",
     "mirror_age_s",
+    "mirror_decks_live",
     "mirror_transport_live",
     "set_live_transport_probe",
     "transport_is_live",

@@ -6,7 +6,8 @@
 		listPlaylistSets,
 		type PlaylistSet
 	} from '$lib/rb/api-playlist-sets';
-	import { setTabLabel } from './playlist-set-tabs';
+	import { pushToast } from '$lib/stores.svelte';
+	import PlaylistSetTabsView from './PlaylistSetTabsView.svelte';
 
 	let { playlistId }: { playlistId: string } = $props();
 
@@ -16,6 +17,28 @@
 	let newName = $state('');
 	let creating = $state(false);
 	let running = $state(false);
+	let activeKind = $state<'practice' | 'performance' | null>(null);
+	let activeSetId = $state<number | null>(null);
+	let runNote = $state<string | null>(null);
+	let runError = $state(false);
+
+	function kindName(kind: 'practice' | 'performance'): string {
+		return kind === 'practice' ? 'Practice' : 'Performance';
+	}
+
+	function runIsLive(kind: 'practice' | 'performance'): boolean {
+		return activeKind === kind && activeSetId === selectedId && !runError;
+	}
+
+	function startLabel(kind: 'practice' | 'performance'): string {
+		if (running && activeKind === kind) return 'Starting...';
+		if (runIsLive(kind)) return `${kindName(kind)} on`;
+		return kind === 'practice' ? 'Start practice' : 'Start performance';
+	}
+
+	function patchPlayCount(setId: number, playCount: number): void {
+		sets = sets.map((set) => (set.id === setId ? { ...set, play_count: playCount } : set));
+	}
 
 	async function refresh(): Promise<void> {
 		sets = await listPlaylistSets(playlistId);
@@ -40,10 +63,36 @@
 
 	async function handleRun(kind: 'practice' | 'performance'): Promise<void> {
 		if (selectedId === null || running) return;
+		const setId = selectedId;
+		const previous = sets.find((set) => set.id === setId)?.play_count ?? 0;
+		const name = kindName(kind);
 		running = true;
+		mode = kind;
+		activeKind = kind;
+		activeSetId = setId;
+		runError = false;
+		runNote = `Starting ${kind}...`;
+		patchPlayCount(setId, previous + 1);
 		try {
-			await createPlaylistSetRun(playlistId, selectedId, kind);
-			await refresh();
+			const result = await createPlaylistSetRun(playlistId, setId, kind);
+			try {
+				await refresh();
+			} catch {
+				// The run is already recorded. A failed list reload must not hide it.
+			}
+			patchPlayCount(setId, result.play_count);
+			runError = false;
+			runNote = `${name} running. Play count ${result.play_count}.`;
+			pushToast(runNote, 'info');
+		} catch (error) {
+			patchPlayCount(setId, previous);
+			runError = true;
+			const message =
+				error instanceof Error && error.message.trim() !== ''
+					? error.message
+					: 'the set run did not start';
+			runNote = `Could not start ${kind}: ${message}`;
+			pushToast(runNote, 'error');
 		} finally {
 			running = false;
 		}
@@ -68,138 +117,17 @@
 	});
 </script>
 
-<div class="playlist-set-tabs" data-testid="playlist-set-tabs">
-	<div class="tab-row">
-		{#each sets as set (set.id)}
-			<button
-				type="button"
-				class="set-tab"
-				class:selected={selectedId === set.id}
-				data-testid="playlist-set-tab"
-				data-set-id={set.id}
-				aria-selected={selectedId === set.id}
-				onclick={() => {
-					selectedId = set.id;
-				}}
-			>
-				{setTabLabel(set.name, set.play_count)}
-			</button>
-		{/each}
-		<div class="create-set">
-			<input
-				type="text"
-				placeholder="Set name"
-				bind:value={newName}
-				data-testid="playlist-set-create-input"
-			/>
-			<button
-				type="button"
-				data-testid="playlist-set-create"
-				disabled={creating || !newName.trim()}
-				onclick={() => void handleCreate()}
-			>
-				+ Set
-			</button>
-		</div>
-	</div>
-	{#if selectedId !== null}
-		<div class="mode-row">
-			<button
-				type="button"
-				data-testid="set-mode-practice"
-				aria-pressed={mode === 'practice'}
-				class:pressed={mode === 'practice'}
-				onclick={() => {
-					mode = 'practice';
-				}}
-			>
-				Practice
-			</button>
-			<button
-				type="button"
-				data-testid="set-mode-perform"
-				aria-pressed={mode === 'performance'}
-				class:pressed={mode === 'performance'}
-				onclick={() => {
-					mode = 'performance';
-				}}
-			>
-				Perform
-			</button>
-			<button
-				type="button"
-				data-testid="set-run-practice"
-				disabled={running}
-				onclick={() => void handleRun('practice')}
-			>
-				Start practice
-			</button>
-			<button
-				type="button"
-				data-testid="set-run-perform"
-				disabled={running}
-				onclick={() => void handleRun('performance')}
-			>
-				Start performance
-			</button>
-		</div>
-	{/if}
-</div>
-
-<style>
-	.playlist-set-tabs {
-		flex: none;
-		border-bottom: 1px solid var(--rb-border);
-		background: var(--rb-panel);
-	}
-	.tab-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		padding: 4px 6px;
-		align-items: center;
-	}
-	.set-tab {
-		border: 1px solid var(--rb-border);
-		background: color-mix(in srgb, var(--rb-panel) 85%, var(--rb-accent) 15%);
-		color: var(--rb-text);
-		border-radius: 4px;
-		padding: 2px 8px;
-		font-size: var(--rb-fs-label);
-		cursor: pointer;
-		opacity: 0;
-		transform: translateY(-4px);
-		animation: set-tab-in 150ms ease forwards;
-	}
-	.set-tab.selected {
-		border-color: var(--rb-accent);
-		background: color-mix(in srgb, var(--rb-panel) 70%, var(--rb-accent) 30%);
-	}
-	.create-set {
-		display: flex;
-		gap: 4px;
-		margin-left: auto;
-	}
-	.create-set input {
-		width: 8rem;
-		font-size: var(--rb-fs-label);
-	}
-	.mode-row {
-		display: flex;
-		gap: 6px;
-		padding: 4px 6px 6px;
-		border-top: 1px solid color-mix(in srgb, var(--rb-border) 70%, transparent);
-	}
-	.mode-row button {
-		font-size: var(--rb-fs-label);
-	}
-	.mode-row button.pressed {
-		border-color: var(--rb-accent);
-	}
-	@keyframes set-tab-in {
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-</style>
+<PlaylistSetTabsView
+	{sets}
+	bind:selectedId
+	bind:mode
+	bind:newName
+	{creating}
+	{running}
+	runNote={activeSetId === selectedId ? runNote : null}
+	{runError}
+	{runIsLive}
+	{startLabel}
+	oncreate={() => void handleCreate()}
+	onrun={(kind) => void handleRun(kind)}
+/>

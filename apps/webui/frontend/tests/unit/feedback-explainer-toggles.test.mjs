@@ -33,10 +33,13 @@ const EXPLAINER = readFileSync(
 	new URL('../../src/lib/components/rb/deck/ControlExplainer.svelte', import.meta.url),
 	'utf8'
 );
-const VISIBILITY_ACTIONS = readFileSync(
-	new URL('../../src/lib/components/rb/FeedbackPinVisibilityActions.svelte', import.meta.url),
-	'utf8'
-);
+// The markup lives in the props-only view; the container wires the pref in.
+const VISIBILITY_ACTIONS = [
+	'FeedbackPinVisibilityActions.svelte',
+	'FeedbackPinVisibilityActionsView.svelte'
+]
+	.map((name) => readFileSync(new URL(`../../src/lib/components/rb/${name}`, import.meta.url), 'utf8'))
+	.join('\n');
 const VISIBILITY_PREFERENCE = readFileSync(
 	new URL('../../src/lib/rb/feedback-pin-visibility.ts', import.meta.url),
 	'utf8'
@@ -101,7 +104,8 @@ test('the topbar pins checkbox follows writes from the twin and the M reveal, no
 test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs preference', () => {
 	// The switch lives in the shared actions component, so the widget and the
 	// shell button both get it without importing prefs themselves.
-	assert.match(VISIBILITY_ACTIONS, /checked=\{uiPrefs\.show_agent_pins\}/);
+	assert.match(VISIBILITY_ACTIONS, /showAgentPins=\{uiPrefs\.show_agent_pins\}/);
+	assert.match(VISIBILITY_ACTIONS, /checked=\{showAgentPins\}/);
 	assert.match(VISIBILITY_ACTIONS, /setShowAgentPins\(!uiPrefs\.show_agent_pins\)/);
 	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
 	assert.match(WIDGET, /<FeedbackPinVisibilityActions/);

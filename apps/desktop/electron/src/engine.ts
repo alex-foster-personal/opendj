@@ -24,6 +24,7 @@ import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 
 import { appendRotated, ENGINE_LOG_MAX_BYTES, rotateLogIfNeeded } from './engine-log';
+import { HEALTH_PATH } from './shell-health';
 import { appendShellLog, EngineError, verifyLogWritable } from './shell-log';
 
 export { EngineError } from './shell-log';
@@ -34,10 +35,19 @@ export const PAYLOAD_DIR = 'payload';
 export const ENGINE_LAUNCHER = 'bin/opendj-engine';
 /** Measured cold boots are ~1.5 s; 30 s is a bound, not a wait. */
 export const BOOT_TIMEOUT_MS = 30_000;
-export const HEALTH_PATH = '/api/v1/health';
+export { HEALTH_PATH };
 const POLL_INTERVAL_MS = 150;
 const SOCKET_TIMEOUT_MS = 750;
-const SHUTDOWN_GRACE_MS = 5_000;
+/**
+ * How long a stopping engine gets between SIGTERM and SIGKILL: the Tauri
+ * shell's `SHUTDOWN_GRACE` (engine.rs), and for the same reason. Job workers
+ * lead their own sessions, so the group SIGKILL never reaches them; a SIGKILL
+ * that lands before the engine has reaped them leaves them running after the
+ * app is gone (demon-llama, Fri 2 Oct 2026). The engine's worst-case shutdown
+ * must fit inside it: (private path). A bound, not
+ * a wait: an engine that exits sooner is reaped sooner.
+ */
+export const SHUTDOWN_GRACE_MS = 25_000;
 
 /**
  * Environment the shell strips before spawning the engine. A build launched
@@ -506,13 +516,13 @@ export class Engine {
 	};
 
 	/**
-	 * Terminate the engine AND anything it spawned: SIGTERM to the group, a
-	 * 5 s grace, then SIGKILL, each logged distinctly (#2801). On Windows a
+	 * Terminate the engine AND anything it spawned: SIGTERM to the group, the
+	 * SHUTDOWN_GRACE_MS grace, then SIGKILL, each logged distinctly (#2801). On Windows a
 	 * taskkill /T that cannot ask the tree to close goes straight to /F, and one
 	 * that cannot force it either is a logged cleanup failure: the leader is killed
 	 * alone so quitting never waits on a tree nothing could reach (Sol P1 on #6830).
 	 */
-	async shutdown(): Promise<void> {
+	async shutdown(graceMs: number = SHUTDOWN_GRACE_MS): Promise<void> {
 		if (this.exit !== null) return;
 		const pid = this.pid;
 		appendShellLog('shutdown', `stopping ${this.name} pgid ${pid}: SIGTERM`);
@@ -520,7 +530,7 @@ export class Engine {
 		const termed = this.signalTree(pid, 'SIGTERM');
 		if (termed === 'unavailable') return this.stopLeaderAlone(pid);
 		if (termed === 'sent') {
-			const graceful = await Promise.race([this.exited.then(() => true), sleep(SHUTDOWN_GRACE_MS).then(() => false)]);
+			const graceful = await Promise.race([this.exited.then(() => true), sleep(graceMs).then(() => false)]);
 			if (graceful) {
 				appendShellLog('shutdown', `${this.name} pgid ${pid} exited ${Date.now() - sent}ms after SIGTERM`);
 				return;

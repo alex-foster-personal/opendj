@@ -56,12 +56,15 @@ def test_a_planted_failed_trunk_workflow_push_can_reach_the_trunk_red_alarm() ->
     condition = " ".join(job["if"].split())
     # `schedule` joined `push` for issue #1504: the nightly extended tier had
     # been red for eight nights with no alarm because only pushes were admitted.
+    # The leading `false && (` ... `)` disables the alarm (Tue 3 Nov 2026); the inner condition
+    # stays pinned so re-enabling restores exactly this admission rule.
     expected = (
+        "false && ( "
         "(github.event.workflow_run.event == 'push' "
         "|| github.event.workflow_run.event == 'schedule') "
         "&& github.event.workflow_run.head_branch "
         "== github.event.repository.default_branch "
-        "&& github.event.workflow_run.conclusion == 'failure'"
+        "&& github.event.workflow_run.conclusion == 'failure' )"
     )
     assert condition == expected, (
         "the alarm must admit exactly a failed watched-workflow push or scheduled run "

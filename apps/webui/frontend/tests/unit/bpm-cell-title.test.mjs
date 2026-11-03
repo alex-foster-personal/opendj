@@ -36,4 +36,13 @@ describe('bpm-cell-title', () => {
 		assert.ok(title.includes(`Confidence: ${error}`), title);
 		assert.doesNotMatch(title, /Dynamic tempo analysis: not analyzed/);
 	});
+
+	it('names a track with no measured tempo instead of showing 0 (issue #5986)', async () => {
+		const { bpmCellTitle, bpmUnmeasuredLabel } = await loadTypeScriptModule('src/lib/rb/bpm-cell-title.ts');
+		const reason = 'too short for a tempo: 3.0 s of audio, the tempo estimator needs at least 8 s';
+		const title = bpmCellTitle({ bpm_status: 'too_short', bpm: null, bpm_reason: reason }, 128);
+		assert.equal(title, reason);
+		assert.equal(bpmUnmeasuredLabel('too_short'), 'too short');
+		assert.equal(bpmUnmeasuredLabel('no_pulse'), 'no pulse');
+	});
 });

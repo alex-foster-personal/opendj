@@ -44,6 +44,7 @@ from apps.entitlements import (
     PROVIDER_ENV,
     UI_REFUSAL_TITLE,
 )
+from apps.entitlements.catalog import FEATURES
 from apps.feature_flags import FLAGS_FILENAME, load_flags
 from apps.feature_flags.profiles import (
     BUILD_PROFILE_ENV,
@@ -279,10 +280,13 @@ def test_entitlements_carry_the_whole_refusal_shape(client: TestClient) -> None:
     assert body["provider"] is None
 
 
-def test_nothing_is_gated_so_the_feature_list_is_empty(
+def test_the_feature_list_is_the_catalog_and_every_entry_is_entitled_while_inert(
     client: TestClient,
 ) -> None:
-    assert client.get("/api/v1/entitlements").json()["features"] == []
+    features = client.get("/api/v1/entitlements").json()["features"]
+    assert [f["feature_id"] for f in features] == [f.feature_id for f in FEATURES]
+    assert "ai.assistant" in {f["feature_id"] for f in features}
+    assert all(f["entitled"] and f["server_side"] for f in features)
 
 
 @pytest.mark.parametrize(

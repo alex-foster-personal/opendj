@@ -1,6 +1,6 @@
 """Tripwire: every writer stamps, or the row does not merge.
 
-Contract under test: ``specs/design_decision_08.md`` point 2, answering round
+Contract under test: ``(private path)`` point 2, answering round
 1 finding A1 -- the single highest-impact defect in that review. No in-repo
 writer stamped ``updated_at`` / ``origin_device_id``, so every synced row sat
 at ``(EPOCH, '')`` forever: the first push seeded the hub, every later edit
@@ -47,8 +47,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.cloud import hydration
+from apps.shared.state import library_org, sync_stamp
 from apps.shared.state import machine_identity as mid
-from apps.shared.state import sync_stamp
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
@@ -242,6 +242,25 @@ def _exercise_hydration_writers(
         )
 
 
+def _exercise_library_organization(conn: sqlite3.Connection) -> None:
+    """Every library organization table, including an edit of each seeded row."""
+    writer = StateWriter(conn, FakeEventBus(), actor="test")
+    writer.insert_playlist(
+        playlist_id="pl-org", name="Org", vendor="webui", vendor_pl_id="pl-org"
+    )
+    library_org.add_section(
+        writer, "s", owner_kind="playlist", owner_id="pl-org", before_position=0
+    )
+    for type_id in ("general", "instrument", "mood"):
+        library_org.update_tag_type(writer, "s", type_id, {"sort_index": 9})
+    library_org.put_tag_meta(writer, "s", "piano")
+    library_org.put_tag_synonym(writer, "s", "keys", "piano")
+    work = library_org.create_work(writer, "s", {"kind": "song", "title": "A"}).row["id"]
+    library_org.link_member(writer, "s", work, member_kind="track", member_id="t", role="remix")
+    library_org.dismiss_pair(writer, "s", "a", "b")
+    library_org.set_work_pref(writer, "s", work, "t")
+
+
 def _exercise_every_writer_path(
     conn: sqlite3.Connection, tmp_path: Path, db_path: Path
 ) -> None:
@@ -253,6 +272,7 @@ def _exercise_every_writer_path(
     _exercise_hydration_writers(conn, tmp_path, machine_id)
     rungs.exercise_lyric_verdict_writes(conn, machine_id, SID, _TS)
     rungs.exercise_feedback_pin_reconcile(conn, tmp_path, _TS)
+    _exercise_library_organization(conn)
 
 
 # ----- helpers -------------------------------------------------------------
@@ -395,6 +415,47 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
             "INSERT INTO feedback_pins(pin_id, doc, updated_at, origin_device_id) "
             "VALUES ('rawpin000000', '{\"id\": \"rawpin000000\"}', ?, ?)",
             (stamp, machine_id),
+        ),
+        "playlist_section": (
+            "INSERT INTO playlist_section(id, owner_kind, owner_id, before_position, "
+            "title, created_at, updated_at, origin_device_id) "
+            "VALUES ('raw', 'set', '1', 0, 'Raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "tag_type": (
+            "INSERT INTO tag_type(id, label, singular, created_at, updated_at, "
+            "origin_device_id) VALUES ('raw', 'Raw', 'Raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "tag_meta": (
+            "INSERT INTO tag_meta(name_norm, display_name, created_at, updated_at, "
+            "origin_device_id) VALUES ('raw', 'Raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "tag_synonym": (
+            "INSERT INTO tag_synonym(term_norm, tag_name_norm, created_at, updated_at, "
+            "origin_device_id) VALUES ('raw', 'raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "work": (
+            "INSERT INTO work(id, kind, title, created_at, updated_at, origin_device_id) "
+            "VALUES ('raw', 'song', 'Raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "work_member": (
+            "INSERT INTO work_member(work_id, member_kind, member_id, role, created_at, "
+            "updated_at, origin_device_id) VALUES ('raw', 'track', 'raw', 'remix', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "work_dismissal": (
+            "INSERT INTO work_dismissal(a_member, b_member, created_at, updated_at, "
+            "origin_device_id) VALUES ('raw-a', 'raw-b', ?, ?, ?)",
+            (stamp, stamp, machine_id),
+        ),
+        "work_pref": (
+            "INSERT INTO work_pref(work_id, top_member_id, created_at, updated_at, "
+            "origin_device_id) VALUES ('raw', 'raw', ?, ?, ?)",
+            (stamp, stamp, machine_id),
         ),
     }
     assert set(bypasses) == set(SYNCED_TABLES), (

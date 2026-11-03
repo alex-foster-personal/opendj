@@ -926,6 +926,15 @@ LEGACY_ONLY_PLAYLIST_SETS = frozenset(
         "playlist_sets_schema_meta",
         "idx_playlist_sets_playlist",
         "idx_playlist_set_runs_set",
+        # SET-6586 set routes (playlist_sets schema v2)
+        "playlist_component_slots",
+        "playlist_components",
+        "playlist_component_entries",
+        "playlist_component_tags",
+        "playlist_set_parts",
+        "playlist_set_run_entries",
+        "idx_playlist_components_playlist",
+        "idx_playlist_set_parts_component",
     }
 )
 """The two migration counters. Not domain data -- adoption is SUPPOSED to write

@@ -1,0 +1,13 @@
+{
+  "note": "waveform quick settings, lazy on first open",
+  "order": 50,
+  "attribution": {
+    "markers": [
+      "Open every setting in the Settings overlay"
+    ]
+  },
+  "limit": 19456,
+  "measured": 17987,
+  "measured_on": "Tue 3 Nov 2026",
+  "baseline_sha": "e44a4d9846"
+}

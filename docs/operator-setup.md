@@ -1,10 +1,10 @@
-# Operator Setup - music-dj-tools
+# Operator Setup - Open DJ
 
 _The minimum you need to install on your Mac before any feature works. Each section is independent - install only what you want._
 
 ## Environment variables
 
-The authoritative list of environment variables consumed by music-dj-tools
+The authoritative list of environment variables consumed by Open DJ
 lives in [`.env.sample`](../.env.sample) at the repo root. Each entry in that
 file has a comment explaining which subsystem reads it. Copy it to `.env` for
 local dev (gitignored) or - preferred for anything sensitive - store the
@@ -219,12 +219,16 @@ Three rail-2 and rail-6 tightenings landed just before the v1.0 ship
 sweep. They change how you see failures but do not change the CLI
 contract for normal use.
 
-- **`pgrep` is now fail-closed (PR #81).** If `pgrep` is missing or
-  errors on your machine, `apps/sync/playlist_apply.py` refuses to run
-  a live write instead of silently skipping the running-app check. The
-  escape hatch is `--force-no-pgrep`, which you should only pass after
-  manually confirming Rekordbox AND djay Pro are both quit. See
-  `apps/sync/playlist_apply.py:79` and `:492`.
+- **`pgrep` is now fail-closed (PR #81, extended to the seven-rail harness in
+  issue #7643).** If `pgrep` is missing, times out, or returns an unmeasurable
+  exit on your machine, live writers refuse instead of silently skipping the
+  running-app check. `apps/sync/playlist_apply.py` was the first surface (PR #81);
+  `LiveWriteSession` / `_is_running` in `apps/sync/safety.py` now matches.
+  The escape hatch is `--force-no-pgrep` on `python -m apps.sync.playlist_apply`
+  only, which you should only pass after manually confirming Rekordbox AND djay
+  Pro are both quit; that flag also skips that CLI's `apply_plan` self-guard.
+  Other seven-rail live writers have no such override. See
+  `apps/sync/playlist_apply.py:79` and `apps/sync/safety.py`.
 - **`allow_app_running=True` is test-only (PR #86).** `apps/tags/apply.py`
   now raises `RuntimeError` if the `allow_app_running` kwarg is passed
   from outside a pytest run (`_in_pytest()` guard at
@@ -250,9 +254,9 @@ real "app still running" condition.
 
 ## Troubleshooting
 
-- "Rekordbox is running" error on any write path: quit Rekordbox (Cmd+Q) before running commands that write to `master.db`. The safety rail uses `pgrep` to abort early (PR #81 tightened this to fail closed when `pgrep` itself is missing).
+- "Rekordbox is running" error on any write path: quit Rekordbox (Cmd+Q) before running commands that write to `master.db`. The safety rail uses `pgrep` to abort early (fail closed when `pgrep` itself is missing or unmeasurable on every seven-rail live writer).
 - "djay is running" error on any playlist or cue write: quit djay Pro AI first. Same reason.
-- `PlaylistApplyError: pgrep not found (or failed)`: your host has no `pgrep` on `$PATH`. Install one (`brew install pgrep` ships with the `proctools` formula, or `pgrep` is in BSD userland on macOS by default). Only after you have confirmed Rekordbox and djay are both quit, rerun with `--force-no-pgrep` to override rail 2.
+- `SafetyAbort` or `PlaylistApplyError` naming missing or failed `pgrep`: your host has no working `pgrep` on `$PATH`, or `pgrep` timed out. Install one (`brew install pgrep` ships with the `proctools` formula, or `pgrep` is in BSD userland on macOS by default). Only for `python -m apps.sync.playlist_apply`, after you have confirmed Rekordbox and djay are both quit, rerun with `--force-no-pgrep` to override rail 2 and skip that CLI's self-guard. Other live writers refuse with no override.
 - `503 lock_probe_failed` from the web UI: a cloud peer lock probe raised. Check `apps/cloud/replicate.py` logs for the underlying exception and confirm your Litestream / R2 credentials are still valid before retrying writes.
 - `readback mismatch (rolled back): ...` in a playlist apply run: the write was refused and rolled back; no durable change. Investigate the specific mismatch in the error message before retrying.
 - `tflite-runtime` wheel not found during `pip install`: your Python is probably 3.12 or newer. Install Python 3.11 in a separate venv (via `pyenv install 3.11` or a conda env) and reinstall. This only matters for the voice feature; everything else is fine on 3.14.

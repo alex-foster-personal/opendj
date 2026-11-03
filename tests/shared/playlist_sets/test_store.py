@@ -16,7 +16,7 @@ from apps.shared.playlist_sets import (
     load_playlist_set,
     record_run,
 )
-from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
+from apps.shared.playlist_sets.schema import SCHEMA_VERSION, apply_playlist_set_migrations
 from tests.shared.playlist_sets.conftest import seed_playlist_and_tracks
 
 pytestmark = pytest.mark.requirement("SET-05")
@@ -98,8 +98,8 @@ def test_create_from_play_order_snapshot_is_independent(
 
 
 def test_migrations_idempotent(ps_conn: sqlite3.Connection) -> None:
-    assert apply_playlist_set_migrations(ps_conn) == 1
-    assert apply_playlist_set_migrations(ps_conn) == 1
+    assert apply_playlist_set_migrations(ps_conn) == SCHEMA_VERSION
+    assert apply_playlist_set_migrations(ps_conn) == SCHEMA_VERSION
     tables = {
         r[0]
         for r in ps_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()

@@ -98,6 +98,10 @@ class WsHub:
         # Seq of the last emitted retained shell.quit (live queue or replay).
         # Cleared only when the shell acks that exact seq (issue #6262).
         self._pending_shell_quit_seq: int | None = None
+        # True when a publish() scheduled _dispatch before any ready shell
+        # subscriber existed; replay owns seq minting, so a late _dispatch must
+        # not fan out the same retention again (issue #6262).
+        self._shell_quit_stale_dispatch_pending: bool = False
 
     # ----- lifecycle -----------------------------------------------------
     def bind(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -155,6 +159,10 @@ class WsHub:
             self._pending_shell_quit_body = body
             if not self._has_shell_quit_subscriber():
                 self._pending_shell_quit_seq = None
+                self._shell_quit_stale_dispatch_pending = True
+                return
+            if self._shell_quit_stale_dispatch_pending:
+                self._shell_quit_stale_dispatch_pending = False
                 return
         self._seq += 1
         if topic == TOPIC_SHELL_QUIT:
@@ -296,10 +304,16 @@ async def events_endpoint(websocket: WebSocket) -> None:
         # hop rather than several -- an ASGI server that cancels the connection
         # task right after delivering the disconnect must still find us
         # finished.
-        pump = asyncio.create_task(_pump(websocket, subscriber))
-        if delivers_shell_quit:
-            # After hello, pump, and any queued replay: live shell.quit may fan out.
-            subscriber.ready = True
+        if delivers_shell_quit and hub._pending_shell_quit_body is not None:
+            # Retained quit replays through the pump; ready only after that frame
+            # is sent so ack seq matches delivery and live fan-out cannot race hello.
+            pump = asyncio.create_task(
+                _pump(websocket, subscriber, mark_shell_ready_after_send=True)
+            )
+        else:
+            if delivers_shell_quit:
+                subscriber.ready = True
+            pump = asyncio.create_task(_pump(websocket, subscriber))
         while True:
             # The bus is one-way for engine events; shell clients may ack
             # shell.quit receipt so retention clears only after delivery.
@@ -320,11 +334,18 @@ async def events_endpoint(websocket: WebSocket) -> None:
         hub.detach(subscriber)
 
 
-async def _pump(websocket: WebSocket, subscriber: Subscriber) -> None:
+async def _pump(
+    websocket: WebSocket,
+    subscriber: Subscriber,
+    *,
+    mark_shell_ready_after_send: bool = False,
+) -> None:
     try:
         while not subscriber.overflow.is_set():
             frame = await subscriber.queue.get()
             await websocket.send_text(frame)
+            if mark_shell_ready_after_send and not subscriber.ready:
+                subscriber.ready = True
         await websocket.close(
             code=SLOW_CONSUMER_CODE, reason=SLOW_CONSUMER_REASON
         )

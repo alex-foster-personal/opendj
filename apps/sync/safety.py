@@ -2,11 +2,12 @@
 
 Rails:
   1. Backup: copy the target DB to ``<path>.bak.<ISO8601>`` before any write.
-  2. Process check: abort if Rekordbox or djay Pro is running.
+  2. Process check: abort if Rekordbox or djay Pro is running, or if the
+     check cannot measure (missing or erroring ``pgrep``).
   3. Typed confirm: user passed ``--i-understand-the-risks`` (flag_ok=True).
   4. Post-write verify: each track writer may ``verify_readback()`` after
      writing; on mismatch the session pauses and prompts continue/abort/skip.
-  5. Reversal script: emit ``data/sync/reversal/<ISO8601>/reverse.sh``
+  5. Reversal script: emit ``(private path)/<ISO8601>/reverse.sh``
      incrementally as each track succeeds.
   6. Reason field: every write is tagged with a provenance string.
   7. iCloud coherence (djay only): WAL mtime quiesce + ``brctl status``.
@@ -40,7 +41,7 @@ class SafetyAbort(RuntimeError):
 # stamp (``require_writeback_plan``); CSV ``--bulk`` still uses the cautious
 # stamp (``require_cautious_before_bulk``).
 
-_ROLLOUT_STAMP_DIR = Path("data/sync/rollout")
+_ROLLOUT_STAMP_DIR = Path("(private path)")
 
 
 def _rollout_stamp(writer: str) -> Path:
@@ -140,9 +141,22 @@ def _is_running(process_name: str) -> bool:
             timeout=5,
             check=False,
         )
-        return res.returncode == 0 and bool(res.stdout.strip())
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError as exc:
+        raise SafetyAbort(
+            f"pgrep is unavailable; cannot prove {process_name} is closed"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SafetyAbort(
+            f"pgrep timed out; cannot prove {process_name} is closed"
+        ) from exc
+    if res.returncode == 1:
         return False
+    if res.returncode == 0 and res.stdout.strip():
+        return True
+    if res.returncode == 0:
+        raise SafetyAbort("pgrep reported a match without a process ID")
+    detail = res.stderr.strip() or "no diagnostic output"
+    raise SafetyAbort(f"pgrep failed with exit {res.returncode}: {detail}")
 
 
 def target_process_name(target: TargetName) -> str:

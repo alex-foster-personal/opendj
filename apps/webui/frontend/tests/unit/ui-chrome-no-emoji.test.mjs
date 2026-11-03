@@ -148,7 +148,7 @@ const KNOWN_DEBT = new Map([
 	['src/lib/components/rb/BrowserPanel.svelte', new Set(['▾', '←', '‹', '›'])], // button glyphs: 3356 ← Back, 3489 ‹ / › collapse
 	['src/lib/components/rb/ToastStack.svelte', new Set(['▾', '▸'])], // button glyph: 164 ▸ expand
 	['src/lib/components/rb/browser/AutoPlayWalkthrough.svelte', new Set(['😊', '🙃'])],
-	['src/lib/components/rb/browser/RecentlyDeletedFolder.svelte', new Set(['↻'])],
+	['src/lib/components/rb/browser/RecentlyDeletedFolderView.svelte', new Set(['↻'])],
 	['src/lib/components/rb/deck/HotCueBank.svelte', new Set(['✎', '×'])], // button glyph: 326, 385 × clear
 	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▯'])], // button glyph: ▯▯ mode (the INT caret moved to LoopSourceMenu as CSS, DECKCTL-6235d)
 	['src/routes/admin/LyricSourceOrder.svelte', new Set(['▲', '▼'])],
@@ -167,10 +167,10 @@ const KNOWN_DEBT = new Map([
 	['src/lib/components/rb/FeedbackPinCard.svelte', new Set(['×'])], // 277, 296
 	['src/lib/components/rb/FeedbackSupportPanel.svelte', new Set(['×'])], // 31
 	['src/lib/components/rb/MidiPanel.svelte', new Set(['×'])], // 119
-	['src/lib/components/rb/browser/PlaylistTree.svelte', new Set(['×'])], // 346
+	['src/lib/components/rb/browser/PlaylistTreeView.svelte', new Set(['×'])], // 346
 	['src/lib/components/rb/browser/PreviewStrip.svelte', new Set(['■'])], // 296 stop
 	['src/lib/components/rb/browser/SearchBox.svelte', new Set(['×'])], // 128
-	['src/lib/components/rb/browser/SpotifySourcePanel.svelte', new Set(['×'])], // 72
+	['src/lib/components/rb/browser/SpotifySourcePanelView.svelte', new Set(['×'])], // 72
 	['src/lib/components/rb/browser/TrackTable.svelte', new Set(['×'])], // 1802
 	['src/lib/components/rb/deck/LoopSafetyControls.svelte', new Set(['×'])], // 89
 	['src/lib/components/smartlists/RuleGroup.svelte', new Set(['×'])], // 40

@@ -268,14 +268,17 @@ plus a backstop rail 0. This is the one full list; `CONTRIBUTING.md`, `docs/arch
    `require_writeback_enabled` (`apps/shared/rekordbox_writeback.py`) for any rekordbox target, so a
    caller that forgets its own guard still cannot reach the real library.
 1. **Backup.** Copy the target DB to `<path>.bak.<ISO8601>` before any write (`backup_db`).
-2. **Process check.** Abort if Rekordbox or djay Pro is running (`pgrep -x`,
-   `assert_target_not_running`). The rule is fail closed: a check that cannot run refuses the
-   write, as `apps/sync/playlist_apply.py` `_process_running` does (PR #81), and the CLI override
-   `--force-no-pgrep` is only for an operator who has confirmed the app is quit. Test code may pass
+2. **Process check.** Abort if Rekordbox or djay Pro is running, or refuse when
+   the check cannot measure (`pgrep -x`, `assert_target_not_running`). The rule
+   is fail closed: a missing `pgrep`, a timeout, exit 0 with no PID, or any exit
+   other than 1 refuses the write with `SafetyAbort`, matching
+   `apps/sync/playlist_apply.py` `_process_running` (PR #81) and
+   `apps/reconcile/prefix_dead_playlists.py`. Pin: PATH-removal test in
+   `tests/test_sync_safety.py`. The CLI override `--force-no-pgrep` is only for
+   `playlist_apply` after an operator has confirmed both apps are quit; it also
+   skips that CLI's `apply_plan` self-guard. Test code may pass
    `allow_app_running=True` into `apps/tags/apply.py`, which rejects it outside pytest
    (`_in_pytest`, PR #86).
-   Known gap: the harness's own `_is_running` in `apps/sync/safety.py` returns False when `pgrep` is
-   missing or times out, so rail 2 inside `LiveWriteSession` fails open today.
 3. **Typed confirm.** The operator passed `--i-understand-the-risks` (`require_typed_confirm`).
 4. **Post-write verify.** Each track writer may call `verify_readback()` after writing; on a
    mismatch the session pauses and prompts continue, abort or skip.

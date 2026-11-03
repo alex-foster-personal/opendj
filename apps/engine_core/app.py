@@ -44,6 +44,7 @@ from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.audio_engine import AudioEngineSupervisor, autostart_from_environ
 from apps.engine_core.audio_engine_api import add_audio_engine_routes
 from apps.engine_core.audio_interference_api import add_audio_interference_route
+from apps.engine_core.bluetooth_headset_mode_api import add_audio_headset_mode_route
 from apps.engine_core.availability_api import add_availability_routes
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
@@ -69,6 +70,7 @@ from apps.engine_core.library_availability import (
 )
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
+from apps.engine_core.plugins_api import mount_plugins
 from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
@@ -77,6 +79,7 @@ from apps.engine_core.setup.library_events import on_setup_import_progress
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
+from apps.plugins.host import PluginRuntime
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.shutdown_bound import (
@@ -193,6 +196,7 @@ def create_app(
     add_perf_tier_route(app, data_dir=cfg.data_dir)
     add_app_posture_route(app, data_dir=cfg.data_dir)
     add_audio_interference_route(app)
+    add_audio_headset_mode_route(app)
     build_identity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
     if build_identity.info is not None and build_identity.info.source == "payload":
         # An installed engine owns the first-run assessment. A checkout has no
@@ -220,6 +224,11 @@ def create_app(
     add_audio_engine_routes(app, audio_engine)
     app.state.engine_cfg = cfg
     add_rescue_routes(app)
+    # The plugin store, and every module the user enabled (PLUG-6522e). Last
+    # among the API routes so a module's routes can be checked against every
+    # core route, and before the SPA mount, which would shadow them. Changes
+    # made in the store apply here, at the next start, never mid-session.
+    mount_plugins(app, cfg.data_dir)
 
     _drop_root_placeholder(app)
     _mount_spa(app)
@@ -513,6 +522,8 @@ def _wrap_lifespan(
                 instance.state.folder_rescan_scheduler = folder_rescan
                 availability_worker.start()
                 audio_engine.autostart()
+                plugins: PluginRuntime = instance.state.plugins
+                plugins.run_startup()
                 try:
                     yield
                 finally:
@@ -551,6 +562,7 @@ def _wrap_lifespan(
                             [
                                 ("audio-engine", audio_engine.stop),
                                 ("library-availability", availability_worker.stop),
+                                ("plugins", plugins.run_shutdown),
                             ],
                             deadline=deadline,
                         ),

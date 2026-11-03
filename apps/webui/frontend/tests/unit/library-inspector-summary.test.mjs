@@ -30,6 +30,15 @@ function row(overrides) {
 	};
 }
 
+
+/** TrackInspector is a container plus a props-only view; the pair is the
+ * component, container first so the function slices below stay in it. */
+function inspectorSource() {
+	return ['TrackInspector.svelte', 'TrackInspectorView.svelte']
+		.map((name) => readFileSync(`${SRC}/lib/components/library/${name}`, 'utf8'))
+		.join('\n');
+}
+
 test('a field every row agrees on reads as that value', () => {
 	assert.deepEqual(mod.readField(['House', 'House']), { kind: 'same', value: 'House' });
 	assert.equal(mod.readoutText(mod.readField([3, 3])), '3');
@@ -122,7 +131,7 @@ test('the Library page lazily mounts the Crate Desk built on the shared browser'
 });
 
 test('a save that resolves after the selection moved never lands on the new track', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	const body = inspector.slice(inspector.indexOf('async function savePatch'), inspector.indexOf('function keepMine'));
 	// The row and the load are captured before the await...
 	assert.match(body, /const seq = loadSeq;\s*const row = single !== null && single\.stable_id === track\.stable_id \? single : null;[\s\S]*await patchTrack/);
@@ -137,7 +146,7 @@ test('a save that resolves after the selection moved never lands on the new trac
 });
 
 test('every inspector field the server can attribute shows its source chip', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	// LIBWS-02: a chip for each displayed field that has provenance. Rating, BPM,
 	// key, genre, energy and comments are track_fields entries; time and plays
 	// come from the tracks row and carry no provenance.
@@ -151,7 +160,7 @@ test('every inspector field the server can attribute shows its source chip', () 
 });
 
 test('a selection change drops a conflict raised on the previous track', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	const reset = inspector.slice(inspector.indexOf('const sid = singleId;'), inspector.indexOf('if (sid === null) return;'));
 	assert.match(reset, /conflictServer = null;/);
 	assert.match(reset, /pendingPatch = null;/);
@@ -174,7 +183,7 @@ test('the Library mode track menu offers no worker-starting items', () => {
 });
 
 test('inspector saves run one at a time, each with its own patch', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	const queue = inspector.slice(inspector.indexOf('function applyPatch'), inspector.indexOf('async function savePatch'));
 	// Each save waits for the one before it (so it sends the etag that one
 	// returned), and a save queued for a track the selection left is dropped.
@@ -202,7 +211,7 @@ test('Library mode starts no ANLZ decode from browsing', () => {
 });
 
 test('an open conflict holds the save queue and keeps its own patch', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	const save = inspector.slice(inspector.indexOf('async function savePatch'), inspector.indexOf('function keepMine'));
 	// The conflicted save does not settle until the dialog answers, so the next
 	// queued save cannot run on the conflict etag or replace pendingPatch.
@@ -229,11 +238,12 @@ test('Library mode mounts no recorder and no MIDI audio entry', () => {
 	assert.match(rail, /if \(recordable\) void refreshRecorderStatus\(\);/);
 	assert.match(rail, /^\t\{recordable\}$/m);
 	const icons = readFileSync(`${SRC}/lib/components/rb/browser/IconRail.svelte`, 'utf8');
-	assert.match(icons, /entry\.action !== 'record' \|\| \(recordable && setRecordingEnabled\(\)\)/);
+	assert.match(icons, /entry\.action !== 'record' \|\| \(recordable && recordingAvailable\)/);
+	assert.match(rail, /recordingAvailable=\{setRecordingEnabled\(\)\}/);
 });
 
 test('every selection change, to none or several tracks too, invalidates saves in flight', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	const reset = inspector.slice(inspector.indexOf('const sid = singleId;'), inspector.indexOf('getTrack(sid)'));
 	// The sequence moves BEFORE the early return, or a deselect would leave an
 	// old save able to reopen its conflict over the new view.
@@ -243,7 +253,7 @@ test('every selection change, to none or several tracks too, invalidates saves i
 });
 
 test('the inspector stars stay inert until the track and its etag have loaded', () => {
-	const inspector = readFileSync(`${SRC}/lib/components/library/TrackInspector.svelte`, 'utf8');
+	const inspector = inspectorSource();
 	assert.match(inspector, /disabledReason=\{track === null \? "[^"]+" : null\}/);
 	const stars = readFileSync(`${SRC}/lib/components/rb/browser/RatingStars.svelte`, 'utf8');
 	assert.match(stars, /title=\{disabledReason \?\? `Set rating \$\{n\}`\}\s*disabled=\{disabledReason !== null\}/);

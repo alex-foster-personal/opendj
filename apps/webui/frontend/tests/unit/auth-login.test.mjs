@@ -108,8 +108,9 @@ test('consumeAuthErrorFromLocation returns null when absent', async () => {
 });
 
 test('UserBauble signed-out button does not disable on auth.loading', () => {
+	// The button's markup lives in the props-only view UserBauble renders.
 	const source = readFileSync(
-		join(FRONTEND_ROOT, 'src/lib/components/UserBauble.svelte'),
+		join(FRONTEND_ROOT, 'src/lib/components/UserBaubleView.svelte'),
 		'utf8'
 	);
 	// The button's own disabled attribute: the sign-out menu item carries its own

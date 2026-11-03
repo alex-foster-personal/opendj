@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { before, beforeEach, test } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -244,6 +245,79 @@ test('an unrelated plug event does not reset a resolved device mid-set', async (
 	const pitch = fired.filter((f) => f.action.type === 'deck_pitch');
 	assert.equal(pitch.length, 1, 'the in-flight 14-bit pair was lost to an unrelated plug event');
 	assert.equal(pitch[0].value.raw, 8192);
+});
+
+// requirement: CTRL-8312
+// [if] two same-named controllers are connected [then] each LED routes to its own output, [else stop].
+test('two same-named controllers route LED feedback to matching outputs by occurrence', async () => {
+	const sharedName = 'DDJ-400';
+	const in1 = fakePort('in-1', sharedName);
+	const out1 = fakePort('out-1', sharedName, { type: 'output' });
+	ports.inputs.set(in1.id, in1);
+	ports.outputs.set(out1.id, out1);
+
+	await webmidi.initMidi();
+	assert.equal(webmidi.midiState.devices.length, 1);
+	assert.equal(webmidi.midiState.devices[0].hasOutput, true);
+
+	const in2 = fakePort('in-2', sharedName);
+	const out2 = fakePort('out-2', sharedName, { type: 'output' });
+	ports.plug(in2, out2);
+
+	assert.equal(webmidi.midiState.devices.length, 2);
+	assert.equal(webmidi.midiState.devices.every((d) => d.hasOutput), true);
+
+	out1.sent.length = 0;
+	out2.sent.length = 0;
+	webmidi.sendLed('in-1', 1, 0x11, 0x7f);
+	webmidi.sendLed('in-2', 1, 0x22, 0x7f);
+	await sleep(webmidi.LED_THROTTLE_MS * 3);
+
+	assert.deepEqual(out1.sent, [[0x90, 0x11, 0x7f]], 'controller 1 LED must use the first same-named output');
+	assert.deepEqual(out2.sent, [[0x90, 0x22, 0x7f]], 'controller 2 LED must use the second same-named output');
+});
+
+// requirement: CTRL-8312
+// [if] a disconnected same-named output sits before the live ones [then] pairing skips it, as inputs are skipped.
+test('a disconnected same-named output does not shift occurrence pairing', async () => {
+	const sharedName = 'DDJ-400';
+	const stale = { ...fakePort('out-stale', sharedName, { type: 'output' }), state: 'disconnected' };
+	const in1 = fakePort('in-1', sharedName);
+	const in2 = fakePort('in-2', sharedName);
+	const out1 = fakePort('out-1', sharedName, { type: 'output' });
+	const out2 = fakePort('out-2', sharedName, { type: 'output' });
+	ports.inputs.set(in1.id, in1);
+	ports.inputs.set(in2.id, in2);
+	for (const out of [stale, out1, out2]) ports.outputs.set(out.id, out);
+	await webmidi.initMidi();
+
+	webmidi.sendLed('in-1', 1, 0x11, 0x7f);
+	webmidi.sendLed('in-2', 1, 0x22, 0x7f);
+	await sleep(webmidi.LED_THROTTLE_MS * 3);
+
+	assert.deepEqual(stale.sent, [], 'a disconnected output must never be paired');
+	assert.deepEqual(out1.sent, [[0x90, 0x11, 0x7f]]);
+	assert.deepEqual(out2.sent, [[0x90, 0x22, 0x7f]]);
+});
+
+test('a second same-named input without a second output reports no output port', async () => {
+	const sharedName = 'DDJ-400';
+	const in1 = fakePort('in-1', sharedName);
+	const out1 = fakePort('out-1', sharedName, { type: 'output' });
+	ports.inputs.set(in1.id, in1);
+	ports.outputs.set(out1.id, out1);
+	await webmidi.initMidi();
+
+	const in2 = fakePort('in-2', sharedName);
+	ports.plug(in2);
+
+	const second = webmidi.midiState.devices.find((d) => d.id === 'in-2');
+	assert.equal(second?.hasOutput, false, 'must not borrow the first controller output');
+	assert.throws(
+		() => webmidi.sendLed('in-2', 1, 0x22, 0x7f),
+		/has no MIDI output port/,
+		'sendLed must fail when the k-th output is missing'
+	);
 });
 
 test('a rescan before initMidi is a loud error, not a silent no-op', async () => {

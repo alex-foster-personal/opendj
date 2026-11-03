@@ -153,7 +153,8 @@ test('update moves the anchor to a new pointer', () => {
 	assert.deepEqual({ left: box(node).left, top: box(node).top }, { left: 400, top: 200 });
 });
 
-for (const file of ['TrackPlaylistsPopover.svelte', 'RelocatePopover.svelte']) {
+// Each popover's props-only view owns its placement.
+for (const file of ['TrackPlaylistsPopoverView.svelte', 'RelocatePopoverView.svelte']) {
 	test(`${file} places itself with pointFloatingAction, not a one-shot clamp`, () => {
 		const source = fs.readFileSync(
 			path.join(FRONTEND_ROOT, 'src/lib/components/rb/browser', file),

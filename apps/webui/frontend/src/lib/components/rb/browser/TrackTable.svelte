@@ -65,7 +65,10 @@
 		highlightSpans,
 		keyCellSpans,
 		rowMatchesFind,
+		arrowHead,
 		buildCurveSegments,
+		hopStroke,
+		paintChainHops,
 		segmentPath,
 		describeAutoPlayMode,
 		installTrackDragGhost,
@@ -76,6 +79,17 @@
 		genreHoverColor,
 		columnExplainer,
 		displayKey,
+		formatKey,
+		LastPlayedCell,
+		loadBpmKeyEditPopover,
+		ContextMenu,
+		formatDraftBpm,
+		commitBpmEdit,
+		commitKeyEdit,
+		editedBpm,
+		editedKey,
+		hasBpmEdit,
+		hasKeyEdit,
 		canvasMeasureText,
 		fitMusicalColumns,
 		renderedTableFont,
@@ -91,7 +105,7 @@
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
 	import { audioQualityHover, ensureLibraryScans, setGridFlagDismissed } from '$lib/rb/library-scans';
-	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import { camelotKeysAreCompatible, DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		previewCue,
@@ -101,7 +115,7 @@
 	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
-	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
+	import { deckHoverLinkId } from '$lib/rb/deck-hover.svelte';
 	import {
 		setConfirmPref,
 		setKeyNotation,
@@ -178,7 +192,7 @@
 	const OVERSCAN = 10;
 
 	// ----- AUTOPLAY-COL -----------------------------------------------------
-	const AUTOPLAY_COL_COUNT = 18;
+	const AUTOPLAY_COL_COUNT = 20;
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
 	const manuallyResizedColumns = new Set<ColId>();
 	let resizeCol: ColId | null = null;
@@ -225,6 +239,68 @@
 	let playlistsMenu = $state<PlaylistsMenuAnchor | null>(null);
 	let relocateMenu = $state<RelocateMenuAnchor | null>(null);
 
+	// Pin a720a02ecf92: double-click, or right-click then Edit, opens a small
+	// editor above the tempo or key cell. The value sticks for this session.
+	type CellEditKind = 'bpm' | 'key';
+	type CellEditTarget = { kind: CellEditKind; row: BrowserRow; anchor: HTMLElement };
+	let cellEditMenu = $state<(CellEditTarget & { x: number; y: number }) | null>(null);
+	let cellEdit = $state<CellEditTarget | null>(null);
+
+	// The editor is fetched on first use, so the /performance bundle does not carry it.
+	let BpmKeyEditPopover = $state<Awaited<ReturnType<typeof loadBpmKeyEditPopover>>['default'] | null>(null);
+
+	function showCellEdit(target: CellEditTarget): void {
+		cellEdit = target;
+		if (BpmKeyEditPopover !== null) return;
+		void loadBpmKeyEditPopover().then(
+			(mod) => {
+				BpmKeyEditPopover = mod.default;
+			},
+			(error: unknown) => {
+				if (cellEdit === target) cellEdit = null;
+				console.error('[library] the tempo/key editor could not load', error);
+			}
+		);
+	}
+
+	function openCellEdit(event: MouseEvent, row: BrowserRow, kind: CellEditKind): void {
+		event.preventDefault();
+		event.stopPropagation();
+		const anchor = event.currentTarget;
+		if (!(anchor instanceof HTMLElement)) return;
+		cellEditMenu = null;
+		showCellEdit({ kind, row, anchor });
+	}
+
+	function openCellEditMenu(event: MouseEvent, row: BrowserRow, kind: CellEditKind): void {
+		event.preventDefault();
+		event.stopPropagation();
+		const anchor = event.currentTarget;
+		if (!(anchor instanceof HTMLElement)) return;
+		cellEdit = null;
+		cellEditMenu = { kind, row, anchor, x: event.clientX, y: event.clientY };
+	}
+
+	/** A row as its K/B cells print it, session edits applied, for the column fit. */
+	function editedMusicalRow(row: BrowserRow): BrowserRow {
+		if (!hasBpmEdit(row.stable_id) && !hasKeyEdit(row.stable_id)) return row;
+		return {
+			...row,
+			key: editedKey(row.stable_id, row.key),
+			bpm: editedBpm(row.stable_id, row.bpm),
+			...(hasKeyEdit(row.stable_id) ? { key_status: 'ok' as const } : {}),
+			...(hasBpmEdit(row.stable_id) ? { bpm_status: 'ok' as const } : {})
+		};
+	}
+
+	function cellEditInitial(target: CellEditTarget): string {
+		if (target.kind === 'bpm') {
+			const bpm = editedBpm(target.row.stable_id, target.row.bpm);
+			return bpm === null ? '' : formatDraftBpm(bpm);
+		}
+		return formatKey(editedKey(target.row.stable_id, target.row.key), 'camelot') ?? '';
+	}
+
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
 		event.stopPropagation();
@@ -259,8 +335,9 @@
 	const masterKey = $derived(masterDeck?.key ?? null);
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	const masterStableId = $derived(masterDeck?.stable_id ?? null);
+	const hoverDeckId = $derived(deckHoverLinkId(uiPrefs.deck_hover_link));
 	const hoverStableId = $derived(
-		deckHoverUi.deckId === null ? null : (deckStates[deckHoverUi.deckId].stable_id ?? null)
+		hoverDeckId === null ? null : (deckStates[hoverDeckId].stable_id ?? null)
 	);
 
 	/** With the compatible filter on, a row matches under the active mode and
@@ -389,6 +466,9 @@
 		if (row.bpm_status === 'missing') {
 			return row.bpm_reason ?? 'bpm not analyzed yet';
 		}
+		if (row.bpm_status === 'too_short' || row.bpm_status === 'no_pulse') {
+			return buildBpmCellTitle(row, masterBpm);
+		}
 		// buildBpmCellTitle carries method and confidence (LIBUX-34). The grid
 		// sentence stays inline so the hover still names the stored verdict.
 		const notSelected =
@@ -489,6 +569,7 @@
 		onrestoreorder = undefined,
 		onscrollcursor,
 		onrenderedrowcapacity,
+		onlibraryviewport,
 		onsort,
 		onselectrow,
 		onloadrow,
@@ -580,6 +661,9 @@
 		/** Reports the number of actual rows the viewport can show after its
 		 * header and current density are accounted for. */
 		onrenderedrowcapacity?: (count: number) => void;
+		/** Reports the space for song rows below the header and the row height;
+		 * (0, 0) when the table unmounts. */
+		onlibraryviewport?: (viewportPx: number, rowPx: number) => void;
 		onsort: (key: SortKey) => void;
 		/** `event` carries the click's (or arrow key's) Shift/Cmd/Ctrl state;
 		 * keyboard moves reuse the same plain / Shift-range gestures. */
@@ -917,7 +1001,7 @@
 		// fonts are local system faces (app.css loads only the brand face), so nothing
 		// arrives later to re-measure for.
 		const musical = wrapEl === null ? null : fitMusicalColumns({
-			rows,
+			rows: rows.map((row) => editedMusicalRow(row)),
 			notation: uiPrefs.key_notation,
 			font: renderedTableFont(wrapEl),
 			padX: uiPrefs.library_density === 'cosy' ? 8 : 6,
@@ -1120,7 +1204,14 @@
 	});
 
 	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
-	const apCurveArrowId = $derived(`ap-curve-arrow-${restoreKey}`);
+	/** Hue and direction for the hop that leaves each ranked row. */
+	const hopByFrom = $derived.by(() => {
+		const map = new Map<string, { direction: -1 | 1; color: string }>();
+		for (const hop of paintChainHops(autoPlayOrder.chain, rowIndexOf)) {
+			map.set(hop.fromId, { direction: hop.direction, color: hopStroke(hop.hue) });
+		}
+		return map;
+	});
 
 	/** r3919185343: `table-layout: fixed` at `width: 100%` redistributes any
 	 * extra space beyond the configured column total across the columns on a
@@ -1297,6 +1388,15 @@
 
 	$effect(() => {
 		onrenderedrowcapacity?.(renderedRowCapacity);
+	});
+
+	// Space for songs, not how many are loaded. The thead sits inside the
+	// same scroller the virtual window already subtracts.
+	$effect(() => {
+		onlibraryviewport?.(viewportHeight - TRACK_TABLE_THEAD_PX, rowHeight);
+	});
+	$effect(() => {
+		return () => onlibraryviewport?.(0, 0);
 	});
 
 	// Strips for rows in view (+ one screen of margin) that were listed without
@@ -1708,6 +1808,46 @@
 			<button type="button" onclick={_restoreOrder}>Restore playlist order</button>
 		</div>
 	{/if}
+	{#if cellEditMenu !== null}
+		{@const pending = cellEditMenu}
+		<ContextMenu
+			items={[
+				{
+					id: 'edit',
+					label: 'Edit',
+					testId: 'cell-value-edit',
+					title: pending.kind === 'bpm' ? 'Edit tempo' : 'Edit key',
+					run: () => {
+						showCellEdit({ kind: pending.kind, row: pending.row, anchor: pending.anchor });
+					}
+				}
+			]}
+			x={pending.x}
+			y={pending.y}
+			onclose={() => {
+				if (cellEditMenu === pending) cellEditMenu = null;
+			}}
+		/>
+	{/if}
+	{#if cellEdit !== null && BpmKeyEditPopover !== null}
+		{@const target = cellEdit}
+		{#key `${target.row.stable_id}:${target.kind}`}
+			<BpmKeyEditPopover
+				kind={target.kind}
+				anchor={target.anchor}
+				initial={cellEditInitial(target)}
+				onclose={() => {
+					if (cellEdit === target) cellEdit = null;
+				}}
+				oncommit={async (value) => {
+					const decks = { ids: DECK_IDS, states: deckStates, pitchRanges };
+					if (typeof value === 'number') await commitBpmEdit(target.row.stable_id, value, decks);
+					else await commitKeyEdit(target.row.stable_id, value, decks);
+					if (cellEdit === target) cellEdit = null;
+				}}
+			/>
+		{/key}
+	{/if}
 	<TrackContextMenu
 		bind:this={trackContextMenu}
 		{selectedIds}
@@ -1833,6 +1973,7 @@
 				{#if !hiddenCols.has('key')}<col style={`width:${colWidths.key}px`} />{/if}
 				{#if !hiddenCols.has('bpm')}<col style={`width:${colWidths.bpm}px`} />{/if}
 				{#if !hiddenCols.has('plays')}<col style={`width:${colWidths.plays}px`} />{/if}
+				<col style={`width:${colWidths.last}px`} />
 				{#if !hiddenCols.has('rating')}<col style={`width:${colWidths.rating}px`} />{/if}
 				{#if !hiddenCols.has('comments')}<col style={`width:${colWidths.comments}px`} />{/if}
 				{#if !hiddenCols.has('time')}<col style={`width:${colWidths.time}px`} />{/if}
@@ -2071,6 +2212,23 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<th
+						class="h-last"
+						style={`width:${colWidths.last}px`}
+						use:columnExplainer={{
+							text: 'Last played, as days ago. Hover a cell for icons showing where the play happened: Rekordbox, a gig in Open DJ, Rekordbox USB, Serato, and any other source we know.'
+						}}
+					>
+						<span class="th-label"><span>Last</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'last')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('rating', 'Rating', 'rating')}
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
@@ -2161,6 +2319,10 @@
 					})}
 					{@const minorIssues = minorIssuesFor(row)}
 					{@const rowIndex = windowInfo.startIndex + i}
+					{@const cellBpm = editedBpm(row.stable_id, row.bpm)}
+					{@const cellKey = editedKey(row.stable_id, row.key)}
+					{@const bpmEdited = hasBpmEdit(row.stable_id)}
+					{@const keyEdited = hasKeyEdit(row.stable_id)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -2185,9 +2347,9 @@
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
-						class:rb-row-mix-compatible={keyCompat(row.key) &&
-							bpmCellCompatibility(row.bpm)?.compatible === true}
-						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-mix-compatible={keyCompat(cellKey) &&
+							bpmCellCompatibility(cellBpm)?.compatible === true}
+						class:rb-row-key-compat={keyCompat(cellKey)}
 						class:rb-row-paired={isPairedRow(pairedPartnerIds, row.stable_id)}
 						class:rb-row-pair={pairRowState(pairPartners, loadedIds, row.stable_id) !== 'none'}
 						class:rb-row-pair-live={pairRowState(pairPartners, loadedIds, row.stable_id) === 'live'}
@@ -2196,8 +2358,7 @@
 						class:loaded={loadedIds.has(row.stable_id)}
 						class:rb-row-master={masterOrder !== null && row.order === masterOrder}
 						class:rb-row-deck-hover={hoverStableId !== null &&
-							row.stable_id === hoverStableId &&
-							row.stable_id !== masterStableId}
+							row.stable_id === hoverStableId}
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
@@ -2297,6 +2458,7 @@
 							<td class="c-autoplay">
 								{#if _autoPlayRank(row.stable_id) !== null}
 									{@const rank = _autoPlayRank(row.stable_id)!}
+									{@const hop = hopByFrom.get(row.stable_id)}
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<span
 										title={`AutoPlay queue position ${rank}: hand off after ${rank - 1} more, from the current AutoPlay view`}
@@ -2312,6 +2474,8 @@
 										<AutoPlayRankCell
 											stableId={row.stable_id}
 											{rank}
+											arrowDirection={hop?.direction ?? 0}
+											arrowColor={hop?.color ?? null}
 											isHot={hoveredApId === row.stable_id}
 											onHover={(id) => {
 												if (id === null) {
@@ -2424,27 +2588,29 @@
 						</td>
 						<td
 							class="c-key"
-							class:key-compat={keyCompat(row.key)}
-							class:key-inert={keyCellInert(row)}
-							class:key-unparsed={keyCellDisplay(row)?.parsed === false}
-							style={keyCompatStyle(row.key)}
-							aria-label={keyCellTitle(row)}
+							class:key-compat={keyCompat(cellKey)}
+							class:key-inert={keyCellInert(row) && !keyEdited}
+							class:key-unparsed={displayKey(cellKey, uiPrefs.key_notation)?.parsed === false}
+							style={keyCompatStyle(cellKey)}
+							aria-label={`${keyCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
 							data-custom-tip=""
 							onmouseenter={(e) => _onKeyCellEnter(e, row)}
 							onmouseleave={() => (keyHover = null)}
+							ondblclick={(e) => openCellEdit(e, row, 'key')}
+							oncontextmenu={(e) => openCellEditMenu(e, row, 'key')}
 						>
-							{#if row.key_status === 'failed' || row.key_status === 'missing'}
+							{#if !keyEdited && (row.key_status === 'failed' || row.key_status === 'missing')}
 								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
 							{:else}
 								{#snippet keyCharacters(text: string)}
 									{#each text as character}<span class:camelot-suffix={uiPrefs.key_notation === 'camelot' && (character === 'A' || character === 'B')}>{character}</span>{/each}
 								{/snippet}
-								{@const match = keyMatch(row.key)}
+								{@const match = keyMatch(cellKey)}
 								{#if match !== null && match.shift !== 0}
 									<!-- KEYSHIFT-03: the key it will play in (in the chosen notation), plus the load shift. -->
 									{@render keyCharacters(shiftedKeyText(match.key, uiPrefs.key_notation))}<sup class="key-shift-sup">{keyShiftSuperscript(match.shift)}</sup>
 								{:else}
-									{#each keyCellSpans(row.key, uiPrefs.key_notation, findQuery) as part, i (i)}
+									{#each keyCellSpans(cellKey, uiPrefs.key_notation, findQuery) as part, i (i)}
 										{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
 									{/each}
 								{/if}
@@ -2452,19 +2618,23 @@
 						</td>
 						<td
 							class="c-bpm"
-							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
-							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
-							class:bpm-compatible={bpmCellCompatibility(row.bpm)?.compatible === true}
-							class:bpm-warn={bpmCellCompatibility(row.bpm)?.severity === 'warn'}
-							class:bpm-danger={bpmCellCompatibility(row.bpm)?.severity === 'danger'}
-							class:bpm-critical={bpmCellCompatibility(row.bpm)?.severity === 'critical'}
-							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
-							class:bpm-inert={bpmCellInert(row)}
-							style={bpmCellStyle(row.bpm)}
-							title={bpmCellTitle(row)}
+							class:bpm-sweet={bpmCellHeat(cellBpm)?.lane === 'sweet'}
+							class:bpm-half={bpmCellHeat(cellBpm)?.lane === 'half'}
+							class:bpm-compatible={bpmCellCompatibility(cellBpm)?.compatible === true}
+							class:bpm-warn={bpmCellCompatibility(cellBpm)?.severity === 'warn'}
+							class:bpm-danger={bpmCellCompatibility(cellBpm)?.severity === 'danger'}
+							class:bpm-critical={bpmCellCompatibility(cellBpm)?.severity === 'critical'}
+							class:bpm-far={bpmCellHeat(cellBpm)?.lane === 'far'}
+							class:bpm-inert={bpmCellInert(row) && !bpmEdited}
+							style={bpmCellStyle(cellBpm)}
+							title={`${bpmCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
 							onpointerenter={() => requestGridProvenance(row.stable_id)}
+							ondblclick={(e) => openCellEdit(e, row, 'bpm')}
+							oncontextmenu={(e) => openCellEditMenu(e, row, 'bpm')}
 						>
-							{#if bpmCellText(row).kind === 'value'}
+							{#if bpmEdited}
+								{bpmCellText({ bpm: cellBpm, bpm_status: 'ok' }).text}
+							{:else if bpmCellText(row).kind === 'value'}
 								{bpmCellText(row).text}
 							{:else}
 								<span class="bpm-status" title={bpmCellTitle(row)}>{bpmCellText(row).text}</span>
@@ -2474,6 +2644,13 @@
 							class="c-plays"
 							title="play count: rekordbox plays plus Open DJ plays heard for 60 s or more"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
+						<td class="c-last">
+							<LastPlayedCell
+								stableId={row.stable_id}
+								playCount={row.play_count}
+								wire={row.plays ?? null}
+							/>
+						</td>
 						<!-- The cell hands its own width to CSS so the stars can
 						     tighten then shrink to fit it (pin 8f60606750c6). -->
 						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
@@ -2568,25 +2745,26 @@
 				aria-hidden="true"
 				style={`--ap-curve-w:${colWidths.autoplay}px;--ap-curve-left:${colWidths.funnel + colWidths.err + colWidths.cloud + colWidths.order}px`}
 			>
-				<defs>
-					<marker id={apCurveArrowId} viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
-						<path d="M0 0L6 3L0 6z" class="ap-curve-arrow" />
-					</marker>
-				</defs>
 				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
+					{@const color = hopByFrom.get(seg.from.stable_id)?.color ?? 'var(--rb-accent)'}
+					{@const head = arrowHead(seg.from.y, seg.to.y, apCurveX)}
 					<path
-						d={segmentPath(seg, apCurveX)}
+						d={segmentPath(seg, apCurveX, head.baseY)}
 						class="ap-curve-seg"
 						class:skips={seg.skips}
 						fill="none"
-						marker-end={`url(#${apCurveArrowId})`}
+						style={`stroke:${color}`}
 					/>
+					{#if head.points !== ''}
+						<polygon points={head.points} class="ap-curve-head" style={`fill:${color}`} />
+					{/if}
 					<circle
 						cx={apCurveX}
 						cy={seg.from.y}
 						r={hoveredApId === seg.from.stable_id ? 3.5 : 2}
 						class="ap-curve-node"
 						class:hot={hoveredApId === seg.from.stable_id}
+						style={`fill:${color}`}
 					/>
 					<circle
 						cx={apCurveX}
@@ -2594,6 +2772,7 @@
 						r={hoveredApId === seg.to.stable_id ? 3.5 : 2}
 						class="ap-curve-node"
 						class:hot={hoveredApId === seg.to.stable_id}
+						style={`fill:${hopByFrom.get(seg.to.stable_id)?.color ?? color}`}
 					/>
 				{/each}
 			</svg>
@@ -2702,23 +2881,23 @@
 		overflow: visible;
 	}
 	.ap-curve-seg {
-		stroke: var(--rb-accent);
-		stroke-width: 1.25;
-		opacity: 0.75;
+		stroke-width: 2;
+		opacity: 0.92;
 	}
 	.ap-curve-seg.skips {
 		stroke-dasharray: 3 3;
-		opacity: 0.55;
+		opacity: 0.72;
 	}
 	.ap-curve-node {
-		fill: var(--rb-accent);
-		opacity: 0.85;
+		opacity: 0.9;
 	}
 	.ap-curve-node.hot {
 		opacity: 1;
 	}
-	.ap-curve-arrow {
-		fill: var(--rb-accent);
+	.ap-curve-head {
+		stroke: var(--rb-bg);
+		stroke-width: 0.75;
+		stroke-linejoin: round;
 	}
 
 	.tt-root {
@@ -3032,10 +3211,11 @@
 	}
 	/* Master: biggest pop - gold edge + strong wash. */
 	tbody tr.rb-row-master {
-		background: color-mix(in srgb, var(--rb-master) 28%, transparent);
-		box-shadow:
+		--rb-row-master-edge:
 			inset 5px 0 0 var(--rb-master),
 			inset -1px 0 0 color-mix(in srgb, var(--rb-master) 55%, transparent);
+		background: color-mix(in srgb, var(--rb-master) 28%, transparent);
+		box-shadow: var(--rb-row-master-edge);
 		outline: 1px solid color-mix(in srgb, var(--rb-master) 70%, transparent);
 		outline-offset: -1px;
 	}
@@ -3052,31 +3232,36 @@
 		outline: 1px solid #ff4da6;
 		background: color-mix(in srgb, #ff4da6 16%, transparent) !important;
 	}
-	tbody tr.rb-row-deck-hover:not(.rb-row-selected):not(.rb-row-menu) {
-		animation: deck-lib-pulse 0.9s ease-in-out infinite;
-		box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.45);
+	/* DECKUX-5917: a hovered deck's library row gets the same static left-edge tick
+	 * as the deck and waveform row. The !important beats the loaded edge; a master
+	 * row keeps its gold edge under the tick (--rb-row-master-edge). This rule
+	 * follows tbody tr.rb-row-job, which zeroes the shadow with !important at the
+	 * same specificity, so the later rule wins. */
+	tbody tr.rb-row-deck-hover {
+		box-shadow: var(--rb-deck-link-tick), var(--rb-row-master-edge, inset 0 0 0 transparent) !important;
 	}
-	@keyframes deck-lib-pulse {
-		0%,
-		100% {
-			background: color-mix(in srgb, rgba(255, 255, 255, 0.06) 100%, transparent);
-		}
-		50% {
-			background: color-mix(in srgb, rgba(255, 255, 255, 0.14) 100%, transparent);
-		}
-	}
-	/* IOPIN-11: a row is green only when both Camelot key and closest
-	 * raw/half/double BPM relationship are compatible. Skin hook: Gothic
-	 * (mono-dev) sets --rb-mix-compat-row-tint/-hover (theme.css) to drop the wash. */
+	/* IOPIN-11 + LIBM-186: a row is marked only when both Camelot key and the
+	 * closest raw/half/double BPM relationship are compatible. LIBM-186 (the maintainer,
+	 * Tue 3 Nov 2026: "less garish ... a 70-80% height highlight on just the LHS
+	 * border") replaced the full-row green wash with a thin, vertically centred
+	 * bar on the row's left edge. Every row state that owns the left edge or the
+	 * row fill (selected, menu, loaded, master, deck hover, job, Spotify pending)
+	 * keeps its own look, so the bar never sits on top of one. Skin hook:
+	 * --rb-mix-compat-bar (theme.css); the default mixes the skin's green with
+	 * its dim text so it stays muted on dark and light skins alike. */
 	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
 			.rb-row-spotify-pending
-		) {
-		background: var(--rb-mix-compat-row-tint, color-mix(in srgb, var(--rb-green) 9%, transparent));
-	}
-	tbody tr.rb-row-mix-compatible:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
-			.rb-row-master
-		):not(.rb-row-spotify-pending) {
-		background: var(--rb-mix-compat-row-hover, color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised)));
+		):not(.rb-row-deck-hover):not(.rb-row-job)::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 12.5%;
+		width: 3px;
+		height: 75%;
+		z-index: 3;
+		border-radius: 0 1.5px 1.5px 0;
+		background: var(--rb-mix-compat-bar, color-mix(in srgb, var(--rb-green) 55%, var(--rb-text-dim)));
+		pointer-events: none;
 	}
 	/* Spotify unmatched / pending acquisition: light green tint (stronger than
 	 * Camelot-compat so the missing-local rows read as intentional placeholders). */
@@ -3174,6 +3359,9 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--rb-text-dim);
 	}
+	.c-bpm {
+		cursor: pointer;
+	}
 	.h-order .th-label {
 		justify-content: center;
 		padding: 0 2px;
@@ -3190,6 +3378,16 @@
 	}
 	.c-plays {
 		font-size: 10px;
+	}
+	.c-last {
+		font-size: 10px;
+		color: var(--rb-text-dim);
+		padding-left: 4px;
+		padding-right: 4px;
+	}
+	.h-last .th-label {
+		font-size: 9px;
+		letter-spacing: 0.02em;
 	}
 	.c-order {
 		font-size: 9px;
@@ -3287,6 +3485,7 @@
 	.c-key {
 		color: var(--rb-text-dim);
 		box-sizing: border-box;
+		cursor: pointer;
 	}
 	/* Key and BPM are auto-fit to their widest text in the skin font
 	 * (musical-column-fit.ts), so a narrower column is a user drag: clip it,

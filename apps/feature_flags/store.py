@@ -263,6 +263,32 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=False,
     ),
+    FlagDef(
+        flag_id="assistant.sidebar",
+        default=False,
+        owner="maintainer",
+        note=(
+            "The agent sidebar (AISIDE-7892f, AISIDE-7892j): the right-edge tab, the "
+            "Cmd+I chord and its hotkeys row. OFF hides all three; the HTTP "
+            "assistant routes stay on for agents, and the gateway Worker is "
+            "not deployed by this code."
+        ),
+        retire_by="2027-04-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="waveform.quick_settings",
+        default=True,
+        owner="maintainer",
+        note=(
+            "WAVEQS-8348..8348e (issue #8343): the top bar's waveform glyph that opens the "
+            "waveform quick-settings popover, a second view over the same ui-prefs the "
+            "Settings overlay edits. ON by default; OFF hides the glyph and every "
+            "setting stays reachable in Settings."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (

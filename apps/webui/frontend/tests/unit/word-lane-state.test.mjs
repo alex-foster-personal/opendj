@@ -172,7 +172,9 @@ test('RENDERING it: with no words cached, the row keeps the line lane it has tod
 			lyrics: { lines: [{ start_ms: 1200, text: 'hold on' }] },
 			loadError: null,
 			positionMs: 1200,
-			pitch: 1
+			pitch: 1,
+			windowSeconds: 24,
+			playheadFrac: 0.5
 		}
 	}).body;
 	assert.match(body, /lyrics-lane/);
@@ -183,7 +185,7 @@ test('RENDERING it: with no words cached, the row keeps the line lane it has tod
 test('RENDERING it: an unmeasured word lane renders its root and zero words', async () => {
 	const ssr = await loadSvelteSsrModule(SSR_ENTRY);
 	const body = ssr.render(ssr.WordLane, {
-		props: { words: WORDS, positionMs: 1200, pitch: 1 }
+		props: { words: WORDS, positionMs: 1200, pitch: 1, windowSeconds: 24, playheadFrac: 0.5 }
 	}).body;
 	assert.match(body, /word-lane/);
 	assert.match(body, /aria-label="Karaoke words"/);

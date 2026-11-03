@@ -29,6 +29,15 @@ from typing import Any
 
 from apps.equivalence.config import CFG, SingleSourceField
 from apps.equivalence.probe import Probe, declared_unit_mismatch, probe_field
+from apps.equivalence.verdict_types import (
+    FAILED,
+    PASSED,
+    SUITE_MAPPING_BUG,
+    SUITE_NO_DATA,
+    SUITE_THIN,
+    UNTESTED,
+)
+from apps.shared.equivalence import BASIS_CROSS_SOURCE, BASIS_SINGLE_SOURCE
 from apps.equivalence.single_source_series import (
     MS_ROUNDING_BUDGET_MS,
     SeriesStructure,
@@ -229,8 +238,8 @@ def audit_scalar_against_series(
 
 # ---------------------------------------------------------------- verdict
 
-BASIS_SINGLE = "single_source"
-BASIS_CROSS = "cross_source"
+BASIS_SINGLE = BASIS_SINGLE_SOURCE
+BASIS_CROSS = BASIS_CROSS_SOURCE
 SUITE_PASSED_SINGLE = "passed_single_source"
 SUITE_FAILED_STRUCTURE = "failed_structure"
 
@@ -301,7 +310,7 @@ def _single_source_early_verdict(
     # A structurally broken series cannot be stored at all, whatever its value
     # cardinality, so this outranks every other check.
     if structure is not None and not structure.sound:
-        verdict.status = "failed"
+        verdict.status = FAILED
         verdict.suite_status = SUITE_FAILED_STRUCTURE
         reasons.extend(f"STRUCTURE VIOLATION: {v}" for v in structure.violations)
         return True
@@ -309,8 +318,8 @@ def _single_source_early_verdict(
     # A scalar that escapes its own series' range is a mis-read column, which
     # is a mapping bug and not a "we have not proven it yet".
     if series_consistency is not None and not series_consistency.sound:
-        verdict.status = "failed"
-        verdict.suite_status = "failed_mapping_bug"
+        verdict.status = FAILED
+        verdict.suite_status = SUITE_MAPPING_BUG
         reasons.extend(
             f"SCALAR-VS-SERIES VIOLATION: {v}" for v in series_consistency.violations
         )
@@ -325,15 +334,15 @@ def _single_source_early_verdict(
 
     mismatch = declared_unit_mismatch(probe)
     if mismatch is not None:
-        verdict.status = "failed"
-        verdict.suite_status = "failed_mapping_bug"
+        verdict.status = FAILED
+        verdict.suite_status = SUITE_MAPPING_BUG
         reasons.append(f"MAPPING BUG: {mismatch.detail}")
         return True
 
     residual = probe.unmapped_count - probe.out_of_window_count
     if residual:
-        verdict.status = "failed"
-        verdict.suite_status = "failed_mapping_bug"
+        verdict.status = FAILED
+        verdict.suite_status = SUITE_MAPPING_BUG
         reasons.append(
             f"MAPPING BUG: the normaliser is not total over the observed domain "
             f"({residual} unmapped values, e.g. {probe.unmapped[:5]})"
@@ -341,7 +350,7 @@ def _single_source_early_verdict(
         return True
 
     if probe.present < CFG.min_comparable:
-        verdict.suite_status = "untested_too_few_pairs"
+        verdict.suite_status = SUITE_THIN
         reasons.append(
             f"UNTESTED: only {probe.present} values, below the "
             f"{CFG.min_comparable} needed for the probe to be evidence"
@@ -363,8 +372,8 @@ def decide_single_source(
     reasons: list[str] = []
     verdict = SingleSourceVerdict(
         field_name=spec.field_name,
-        status="untested",
-        suite_status="untested_no_data",
+        status=UNTESTED,
+        suite_status=SUITE_NO_DATA,
         basis=BASIS_SINGLE,
         reasons=reasons,
         probe=probe,
@@ -379,7 +388,7 @@ def decide_single_source(
     ):
         return verdict
 
-    verdict.status = "passed"
+    verdict.status = PASSED
     verdict.suite_status = SUITE_PASSED_SINGLE
     verdict.normaliser = normaliser_name(spec.source.kind, spec.source.unit)
     reasons.append(

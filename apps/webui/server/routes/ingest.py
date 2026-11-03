@@ -414,7 +414,10 @@ def _unmapped_targets(
               f"analyzed, {queue.unreachable} unreachable)")
     _log_id_keyed_skips(job, job.skipped_steps, UNMAPPED_SCOPE)
     return {
-        "analysis": [(i.stable_id, i.file_path) for i in queue.pending],
+        "analysis": [
+            (i.stable_id, i.candidate_paths or (i.file_path,))
+            for i in queue.pending
+        ],
         "stems": [],
         "vocals": [],
     }

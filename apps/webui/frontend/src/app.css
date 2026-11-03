@@ -279,12 +279,13 @@ textarea {
 .toast-stack {
   position: fixed;
   bottom: 1rem;
-  right: 1rem;
+  /* Left of the open assistant sidebar, never over its Send button. */
+  right: calc(1rem + var(--assistant-dock-width, 0px));
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   z-index: 500;
-  max-width: min(33vw, calc(100vw - 2rem));
+  max-width: min(33vw, calc(100vw - 2rem - var(--assistant-dock-width, 0px)));
   width: max-content;
   max-height: calc(100vh - 2rem);
   overflow: hidden;

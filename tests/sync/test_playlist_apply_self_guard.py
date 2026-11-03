@@ -114,3 +114,72 @@ def test_playlist_apply_dry_run_bypasses_guard(
     # live defaults to False → guard MUST NOT fire.
     result = pa.apply_plan({"playlists": []}, db_path=db_path)
     assert result.per_playlist == []
+
+
+@pytest.mark.requirement("SYNC-03")
+@pytest.mark.requirement("SYNC-8454")
+def test_playlist_apply_self_guard_refuses_when_is_running_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] _is_running raises SafetyAbort [then] apply_plan self-guard refuses, [else stop]."""
+    db_path = tmp_path / "MediaLibrary.db"
+    db_path.touch()
+
+    def _unmeasurable(_name: str) -> bool:
+        raise _safety.SafetyAbort(
+            "pgrep is unavailable; cannot prove djay Pro is closed"
+        )
+
+    monkeypatch.setattr(_safety, "_is_running", _unmeasurable)
+
+    with pytest.raises(pa.PlaylistApplyError, match="self-guard") as exc_info:
+        pa.apply_plan({"playlists": []}, db_path=db_path, live=True)
+    assert "pgrep" in str(exc_info.value)
+
+
+@pytest.mark.requirement("SYNC-03")
+@pytest.mark.requirement("SYNC-8454")
+def test_playlist_apply_force_no_pgrep_passes_safety_session_to_apply_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] --force-no-pgrep with unmeasurable pgrep [then] apply_plan gets sentinel, [else stop]."""
+    captured: dict[str, object] = {}
+
+    def _pgrep_unavailable(_pattern: str) -> bool:
+        raise pa.PlaylistApplyError(
+            "pgrep not available; cannot verify 'djay' is not running."
+        )
+
+    def _capture_apply(*args: object, **kwargs: object) -> pa.ApplyResult:
+        captured.update(kwargs)
+        return pa.ApplyResult()
+
+    monkeypatch.setattr(pa, "_process_running", _pgrep_unavailable)
+    monkeypatch.setattr(pa, "_integrity_gate", lambda *a, **k: None)
+    monkeypatch.setattr(pa, "_live_integrity_report", object)
+    db = tmp_path / "djay.db"
+    db.write_bytes(b"djay")
+    monkeypatch.setattr(pa, "_live_db_path", lambda live: db)
+    monkeypatch.setattr(pa, "apply_plan", _capture_apply)
+    monkeypatch.setattr("builtins.input", lambda: pa.CONFIRMATION_PHRASE)
+
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        '{"generated_at":"","match_set_sha256":"","playlists":[],"djay_only":[]}',
+        encoding="utf-8",
+    )
+
+    rc = pa.main(
+        [
+            "--plan",
+            str(plan),
+            "--backup-dir",
+            str(tmp_path / "backups"),
+            "--live",
+            "--i-understand-the-risks",
+            "--force-no-pgrep",
+            "--skip-tsaf-validation",
+        ]
+    )
+    assert rc == 0
+    assert captured.get("safety_session") is not None

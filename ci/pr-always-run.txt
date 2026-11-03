@@ -83,6 +83,8 @@ tests/scripts/test_shell_construct_lint.py
 tests/quality/test_importlinter_contracts.py
 (private path)
 tests/quality/test_module_surface_contract.py
+# FILETREE.md must name every tracked top-level entry; it lists git's whole index (#5829).
+(private path)
 tests/quality/test_gate_generated_dup.py
 tests/scripts/test_ci_lock.py
 tests/open_dj/test_glossary.py
@@ -176,5 +178,11 @@ tests/quality/test_hosted_runner_pins_are_allowlisted.py
 # Tue 27 Oct; its sibling `helper_carried` guard reads 24.1 s in main's CI durations ledger.
 tests/scripts/test_ci_plan_carry_paths.py
 
+# A persistent-profile Chromium launcher without the restore flag can hang an unattended run.
+tests/scripts/test_browser_no_restore_flag.py
 # A plist template that spells a placeholder inside a comment renders unparseable on a `--` path.
 tests/scripts/test_plist_templates_keep_placeholders_out_of_comments.py
+
+# Every ctypes load in tracked apps/*.py is in the payload runtime-load allowlist (INSTALL-11).
+# dcb0aad6be added two unclassified CDLL sites and main's payload build was refused (#8380).
+tests/scripts/test_engine_payload_source_loads.py

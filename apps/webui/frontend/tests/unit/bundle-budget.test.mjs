@@ -11,26 +11,13 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 297984 then the figure moved
-//   without a reviewed note: 256000 was the inherited figure this repair
-//   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
-//   the live-transport probe on the client error path, with main already
-//   within 80 bytes of the limit, and +1 KiB Wed 23 Sep 2026 (PR #3681) for
-//   the multiple-folder rows in the statically imported SetupOverlay, with
-//   main at 277 bytes of headroom, and +1 KiB Thu 24 Sep 2026 (PR #3865) for
-//   the deck's stem hydrating state, with main already 319 bytes over, and
-//   +1 KiB Fri 2 Oct 2026 (PR #4897) for the first-run wizard's plain-language
-//   copy, with main + that PR 142 bytes over, and +2 KiB Fri 2 Oct 2026 (PR #4908)
-//   for the native headphone cue sink plus #4906's stems on a playing deck, with
-//   main at 153 bytes of headroom, and +1 KiB Sat 3 Oct 2026 (PR #4014) for the
-//   library pins under JIK's V1 budget decision, with main + that PR 823 bytes
-//   over, then +1 KiB Sat 3 Oct 2026 (PR #5086) and +1 KiB Sat 3 Oct 2026
-//   (PR #4906, the deck's named stem states). Sat 3 Oct 2026 the merge of
-//   #4014 with main measured 264,845 against the shared 264,192 ceiling
-//   (653 over); +5% ceil-to-KiB => 278,528. +1 KiB Wed 14 Oct 2026 (PR #6585's
-//   rawAnlz, +89 bytes, main 2 bytes over) => 279,552. Later raises and moves are dated in
-//   the gate; then +1 KiB Fri 30 Oct 2026 (PR #6127, 312 bytes over) => 280,576; the latest, +3 KiB Fri 30 Oct 2026 (trunk repair after #7957 and #6534, main 1,664 bytes over) => 283,648; +6 KiB Sat 31 Oct 2026 (PR #6835, the #6123/#6196 re-land) => 289,792 (main 1,680 B over, inherited). Any further move is a deliberate act with
-//   its own dated note in scripts/bundle-budget.mjs and a new pin here.
+// - if a base limit in budgets/<surface>/base.json moves without this file's EXPECTED_BASE
+//   moving with it then a base was edited outside a rebaseline: growth is a charge file
+//   (budgets/<surface>/charges/<pr>.json), never a base edit (ADR-NEW-bundle-budget-charges)
+// - if the enforced limit stops being base + sum(charges) then a charge is decorative, or two
+//   PRs' charges no longer add under merge skew
+// - if a malformed, padded or stray charge file stops failing then a charge nobody checks can
+//   widen a budget
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
 // - if an emitted chunk reachable from nothing stops failing the run then the
@@ -48,6 +35,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
+import { loadBudgets } from '../../scripts/bundle-budget-load.mjs';
 
 const GATE = fileURLToPath(new URL('../../scripts/bundle-budget.mjs', import.meta.url));
 const roots = [];
@@ -96,8 +84,16 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
   write('chunks/lib.js', `import"./shared.js";export const l=1;${_pad(sizes.library ?? 64, 1)}`);
   write('chunks/perf.js', `import"./shared.js";export const p=1;${_pad(sizes.performance ?? 64, 2)}`);
   write('chunks/other.js', `import"./shared.js";export const o=1;${_pad(sizes['other-lazy'] ?? 64, 3)}`);
+  // The assistant sidebar: two lazy chunks from the root layout, each found by its own literal.
+  write('chunks/sidebar.js', `export const a="/api/v1/assistant/agent";${_pad(sizes['ai-sidebar'] ?? 64, 4)}`);
+  write('chunks/mount.js', `export const t="Open the assistant";import("./sidebar.js");${_pad(sizes.mount ?? 64, 5)}`);
   // The Set notes editor: lazy from the root layout, found by its ProseMirror class name.
   write('chunks/editor.js', `export const e="ProseMirror-focused";${_pad(sizes['set-notes-editor'] ?? 64, 4)}`);
+  // The waveform quick-settings popover: lazy from /performance, found by its "All settings" title.
+  write(
+    'chunks/wqs.js',
+    `export const q="Open every setting in the Settings overlay";${_pad(sizes['wave-quick-settings'] ?? 64, 5)}`,
+  );
   write('chunks/error-template.js', 'export default()=>"err";');
 
   write('entry/start.AAAAAAAA.js', 'import"../chunks/shared.js";');
@@ -111,11 +107,11 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
       'import("../chunks/error-template.js");',
   );
 
-  write('nodes/0.CCCCCCCC.js', 'import"../chunks/shared.js";import("../chunks/editor.js");'); // root layout
+  write('nodes/0.CCCCCCCC.js', 'import"../chunks/shared.js";import("../chunks/mount.js");import("../chunks/editor.js");'); // root layout
   write('nodes/1.CCCCCCCC.js', 'import"../chunks/shared.js";'); // error node
   write('nodes/2.CCCCCCCC.js', 'import"../chunks/lib.js";'); // route "/"
   write('nodes/3.CCCCCCCC.js', 'import"../chunks/other.js";'); // route "/sets"
-  write(`nodes/6.CCCCCCCC.js`, `import"../chunks/perf.js";${extras.perfBody ?? ''}`); // "/performance"
+  write(`nodes/6.CCCCCCCC.js`, `import"../chunks/perf.js";import("../chunks/wqs.js");${extras.perfBody ?? ''}`); // "/performance"
 
   for (const [rel, body] of Object.entries(extras.files ?? {})) write(rel, body);
 
@@ -133,9 +129,10 @@ function _fixture({ sizes = {}, extras = {} } = {}) {
   return root;
 }
 
-function _run(root) {
+function _run(root, budgetsDir) {
+  const extra = budgetsDir ? ['--budgets', budgetsDir] : [];
   try {
-    const stdout = execFileSync('node', [GATE, '--root', root], { encoding: 'utf8', stdio: 'pipe' });
+    const stdout = execFileSync('node', [GATE, '--root', root, ...extra], { encoding: 'utf8', stdio: 'pipe' });
     return { code: 0, out: stdout };
   } catch (error) {
     return { code: error.status, out: `${error.stdout ?? ''}${error.stderr ?? ''}` };
@@ -144,51 +141,155 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 297984: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises, the #7658 trunk repair and the #6574, #7600, #7601 and #6127 raises, less the #6829 lazy-settings move, plus the #6835 re-land, the #6235 deck controls and its #7956 and fd170f45c merges, and the Mon 2 Nov headroom repair', () => {
-  const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
-    encoding: 'utf8',
-  });
-  assert.match(
-    source,
-    /\{ name: 'library', limit: 297984,/,
-    'the library figure must not move without a dated note in the gate and a new pin here'
+// The base limits, each rewritten only by a rebaseline on main (measured, ceiled to KiB,
+// plus 1 KiB). They were the bundle-budget.mjs limits on main 7837e09617, Tue 3 Nov 2026,
+// carried over unchanged; the dated raises behind them are in budgets/<surface>/HISTORY.md.
+const EXPECTED_BASE = {
+  library: 301056,
+  performance: 324608,
+  'set-notes-editor': 81920,
+  'ai-sidebar': 36864,
+  'wave-quick-settings': 19456,
+  'other-lazy': 482304,
+};
+
+test('every base limit is pinned, and every surface on disk has a pin', () => {
+  const budgets = loadBudgets();
+  assert.deepEqual(
+    Object.fromEntries(budgets.map((b) => [b.name, b.base.limit])),
+    EXPECTED_BASE,
+    'a base moves only on a rebaseline, with this pin; growth is a charge file',
   );
-  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, same PR, merged onto main e5fb30dcfd\)/, 'the raise must carry its note');
-  assert.match(source, /RAISED Fri 16 Oct 2026 \(\+1 KiB, PR #6786/, 'the raise must carry its note');
-  assert.match(source, /RAISED Thu 22 Oct 2026 \(\+2 KiB, PR #6235/, 'the raise must carry its note');
-  assert.match(source, /Merge note \(PR #6235 x main [0-9a-f]+, Fri 30 Oct 2026\)/, 'the re-base onto main must carry its note');
-  assert.match(source, /LOWERED Wed 28 Oct 2026 \(-17 KiB, PR #6829, re-land of #6205/, 'the move must carry its note');
-  assert.match(source, /RAISED Fri 30 Oct 2026 \(\+1 KiB, PR #6127, decode-on-bytes/, 'the raise must carry its note');
-  assert.match(source, /RAISED Mon 2 Nov 2026 \(\+1 KiB, headroom repair, no feature\)/, 'the raise must carry its note');
-  assert.match(source, /RAISED Fri 30 Oct 2026 \(\+3 KiB, trunk repair after #7957 and #6534\)/, 'the raise must carry its note');
-  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
-  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 28 Oct 2026 \(trunk repair #7658\)/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 28 Oct 2026 \(\+2 KiB, PR #6574,/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, PR #7600,/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, PR #7601,/, 'the raise must carry its note');
-  assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6585 follow-up/, 'the raise must carry its note');
-  assert.match(source, /RAISED Thu 22 Oct 2026 \(\+1 KiB, PR #6819, re-land of #6195/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
-  assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');
-  assert.match(source, /RAISED Fri 2 Oct 2026 \(\+1 KiB, PR #4897/, 'the raise must carry its note');
-  assert.match(source, /RAISED Fri 2 Oct 2026 \(\+2 KiB, PR #4908/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #5086/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4014/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4906/, 'the raise must carry its note');
-  assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6687 then PR #6689/, 'the raise must carry its note');
-  assert.match(source, /RAISED Fri 30 Oct 2026, #5886 analysis-while-playing: \+1 KiB after payback of 446 B/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 31 Oct 2026 \(PR #6835, re-land of #6123\/#6196, merged onto main 29a59c570c\)/, 'the raise must carry its note');
+});
+
+test('other-lazy enforces base plus PR #8342 tempo curve charge (484352 total)', () => {
+  const budget = loadBudgets().find((b) => b.name === 'other-lazy');
+  assert.ok(budget, 'other-lazy surface must exist under budgets/');
+  assert.equal(budget.limit, 484352, 'the tempo curve charge must not move without updating charges/8342.json');
+  assert.equal(budget.charged, 2048);
+  assert.deepEqual(
+    budget.charges.map((c) => c.id),
+    ['8342'],
+    'Mon 2 Nov headroom and #7896 bytes live in base/HISTORY; #8342 growth is this charge only',
+  );
+});
+
+test('every surface enforces base plus the sum of its charges, and every charge is well formed', () => {
+  for (const budget of loadBudgets()) {
+    const sum = budget.charges.reduce((total, charge) => total + charge.bytes, 0);
+    assert.equal(budget.limit, budget.base.limit + sum, budget.name);
+    for (const charge of budget.charges) {
+      assert.match(charge.sha, /^[0-9a-f]{7,40}$/, `${budget.name}/${charge.id}`);
+      assert.ok(charge.measured_with_pr > charge.measured_main, `${budget.name}/${charge.id}`);
+    }
+  }
+});
+
+// ------------------------------------------------- synthetic budgets/ tree ---
+
+const SHA = '7837e0961708e8b7a957258dbbcdbfdc3660a07a';
+
+// Small synthetic limits, so a fixture surface can be pushed over or under them cheaply.
+function _budgets({ charges = {}, extra = {} } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'bundle-budget-dir-'));
+  roots.push(dir);
+  const surfaces = {
+    library: { order: 10, attribution: { graph: 'library' }, limit: 20480 },
+    performance: { order: 20, attribution: { graph: 'performance' }, limit: 20480 },
+    'set-notes-editor': { order: 30, attribution: { markers: ['ProseMirror-focused'] }, limit: 20480 },
+    'ai-sidebar': {
+      order: 40,
+      attribution: { markers: ['/api/v1/assistant/agent', 'Open the assistant'] },
+      limit: 20480,
+    },
+    'other-lazy': { order: 90, attribution: { graph: 'other' }, limit: 20480 },
+  };
+  for (const [name, spec] of Object.entries(surfaces)) {
+    mkdirSync(join(dir, name, 'charges'), { recursive: true });
+    const base = { note: name, ...spec, measured: 1000, measured_on: 'Tue 3 Nov 2026', baseline_sha: SHA };
+    writeFileSync(join(dir, name, 'base.json'), JSON.stringify(base));
+  }
+  for (const [rel, body] of Object.entries(charges)) {
+    writeFileSync(join(dir, rel), typeof body === 'string' ? body : JSON.stringify(body));
+  }
+  for (const [rel, body] of Object.entries(extra)) writeFileSync(join(dir, rel), body);
+  return dir;
+}
+
+function _charge(overrides = {}) {
+  return {
+    bytes: 3000,
+    measured_main: 20000,
+    measured_with_pr: 22500,
+    sha: SHA,
+    date: 'Tue 3 Nov 2026',
+    reason: 'synthetic growth',
+    payback: 'none planned',
+    ...overrides,
+  };
+}
+
+test('a surface over its base fails, and a charge for the growth makes it pass with the arithmetic printed', () => {
+  const build = _fixture({ sizes: { library: 22000 } });
+  const over = _run(build, _budgets());
+  assert.equal(over.code, 1, over.out);
+  assert.match(over.out, /budget "library" exceeded/);
+  assert.match(over.out, /limit 20480 = base 20480 \+ charges 0/);
+  assert.match(over.out, /add budgets\/library\/charges\/<pr>\.json/);
+
+  const charged = _run(build, _budgets({ charges: { 'library/charges/8001.json': _charge() } }));
+  assert.equal(charged.code, 0, charged.out);
+  assert.match(charged.out, /limit 23480 = base 20480 \+ 1 charge\(s\) 3000 \(8001\)/);
+});
+
+test('two PRs charging the same surface add up, so neither races the other on one number', () => {
+  const build = _fixture({ sizes: { library: 25000 } });
+  const one = _run(build, _budgets({ charges: { 'library/charges/8001.json': _charge() } }));
+  assert.equal(one.code, 1, 'one charge alone must not cover both PRs');
+  const both = _run(
+    build,
+    _budgets({
+      charges: {
+        'library/charges/8001.json': _charge(),
+        'library/charges/8002.json': _charge({ bytes: 2500, measured_main: 22500, measured_with_pr: 24600 }),
+      },
+    }),
+  );
+  assert.equal(both.code, 0, both.out);
+  assert.match(both.out, /limit 25980 = base 20480 \+ 2 charge\(s\) 5500 \(8001, 8002\)/);
+});
+
+for (const [label, rel, body, message] of [
+  ['a charge with no sha', 'library/charges/8001.json', _charge({ sha: undefined }), /keys must be exactly/],
+  ['a charge whose weekday disagrees with its date', 'library/charges/8001.json', _charge({ date: 'Mon 3 Nov 2026' }), /is a Tue, wrong weekday/],
+  ['a charge padded past its measured growth', 'library/charges/8001.json', _charge({ bytes: 5000 }), /exceeds the measured growth 2500 ceiled to KiB plus 1 KiB \(4096\)/],
+  ['a charge for a PR that did not grow the surface', 'library/charges/8001.json', _charge({ measured_with_pr: 20000 }), /needs no charge/],
+  ['a charge with an unknown key', 'library/charges/8001.json', { ..._charge(), limit: 999999 }, /unknown limit/],
+  ['a charge that is not JSON', 'library/charges/8001.json', '{bytes: 3000', /not valid JSON/],
+  ['a charge file with the wrong name', 'library/charges/PR 8001.txt', _charge(), /not a charge file/],
+  ['a stray file in a surface directory', 'library/limit.json', '{}', /is not read by the gate/],
+]) {
+  test(`${label} FAILS the gate rather than being skipped`, () => {
+    const { code, out } = _run(_fixture(), _budgets({ charges: { [rel]: body } }));
+    assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+    assert.match(out, message);
+  });
+}
+
+test('a marker surface ordered after other-lazy fails, since it would measure nothing', () => {
+  const dir = _budgets();
+  const base = JSON.parse(readFileSync(join(dir, 'set-notes-editor', 'base.json'), 'utf8'));
+  writeFileSync(join(dir, 'set-notes-editor', 'base.json'), JSON.stringify({ ...base, order: 95 }));
+  const { code, out } = _run(_fixture(), dir);
+  assert.equal(code, 1, out);
+  assert.match(out, /surface order must be library, performance, marker surfaces, then other/);
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {
   const { code, out } = _run(_fixture());
   assert.equal(code, 0, out);
   assert.match(out, /all bundle budgets satisfied/);
-  assert.match(out, /coverage: 13 of 13 emitted JS files charged to a budget/);
+  assert.match(out, /coverage: 16 of 16 emitted JS files charged to a budget/);
 });
 
 test('dynamic imports are budget boundaries, so the shell does not pull every route into library', () => {
@@ -218,24 +319,22 @@ test('a dynamic import from performance is charged to other-lazy, not the route 
 });
 
 /**
- * Read a budget's limit out of the gate rather than restating it here.
+ * Read a budget's enforced limit (base plus charges) rather than restating it here.
  *
  * The `other-lazy` overflow below used to be the literal 70000, chosen to clear
  * a 67584 limit. When that limit moved to 110592 for the Q18 FLAC decoder
  * (PR #1691), 70000 stopped overflowing anything and this guard went GREEN
  * while asserting that a budget fails - the exact "decorative budget" failure
- * the header above says these tests exist to prevent, one level up. A guard
- * that stops guarding when the thing it guards changes is worse than no guard,
- * so the number is derived now and cannot go stale again.
+ * the header above says these tests exist to prevent, one level up. So the
+ * number is derived, from the same loader the gate uses, and cannot go stale.
  */
 function _limitOf(name) {
-  const source = readFileSync(GATE, 'utf8');
-  const match = source.match(new RegExp(`name: '${name}', limit: (\\d+)`));
-  assert.ok(match, `could not read the ${name} limit out of ${GATE}`);
-  return Number(match[1]);
+  const budget = loadBudgets().find((b) => b.name === name);
+  assert.ok(budget, `no ${name} surface under budgets/`);
+  return budget.limit;
 }
 
-for (const surface of ['library', 'performance', 'set-notes-editor', 'other-lazy']) {
+for (const surface of loadBudgets().map((b) => b.name)) {
   // EVERY surface derives from the gate, none is a literal. A literal goes
   // stale the moment a ceiling is raised and then asserts a failure that can
   // no longer happen: when PR #1587 raised performance to 227,328, the pinned
@@ -256,6 +355,20 @@ for (const surface of ['library', 'performance', 'set-notes-editor', 'other-lazy
   });
 }
 
+test('the sidebar mount is charged to ai-sidebar, not to the shared other-lazy ceiling', () => {
+  const { code, out } = _run(_fixture({ sizes: { mount: _limitOf('ai-sidebar') + 8000 } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /budget "ai-sidebar" exceeded/);
+  assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
+});
+
+test('a sidebar chunk its marker no longer finds FAILS the run rather than undercounting', () => {
+  const renamed = { 'chunks/mount.js': 'export const t="renamed";import("./sidebar.js");' };
+  const { code, out } = _run(_fixture({ extras: { files: renamed } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /the ai-sidebar budget would undercount/);
+});
+
 test('an emitted chunk that no surface reaches FAILS the run rather than being ignored', () => {
   const { code, out } = _run(_fixture({ extras: { files: { 'chunks/orphan.js': 'export const z=1;' } } }));
   assert.equal(code, 1, `expected a non-zero exit\n${out}`);
@@ -274,7 +387,7 @@ test('a URL-loaded AudioWorklet is charged to the surface whose code names it', 
     }),
   );
   assert.equal(clean.code, 0, clean.out);
-  assert.match(clean.out, /coverage: 14 of 14 emitted JS files charged to a budget/);
+  assert.match(clean.out, /coverage: 17 of 17 emitted JS files charged to a budget/);
 
   // The same worklet with nobody naming it must fail, so attribution is real
   // and not a blanket pass for anything sitting in assets/.
@@ -289,4 +402,11 @@ test('a missing build fails loudly instead of passing vacuously', () => {
   const { code, out } = _run(root);
   assert.equal(code, 1);
   assert.match(out, /not found; run 'pnpm build' first/);
+});
+
+test('WAVEQS-8348d the quick-settings popover chunk is charged to its own wave-quick-settings bucket, not other-lazy', () => {
+  const { code, out } = _run(_fixture({ sizes: { 'wave-quick-settings': _limitOf('wave-quick-settings') + 8000 } }));
+  assert.equal(code, 1, `expected a non-zero exit\n${out}`);
+  assert.match(out, /budget "wave-quick-settings" exceeded/);
+  assert.doesNotMatch(out, /budget "other-lazy" exceeded/);
 });

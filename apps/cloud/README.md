@@ -1,4 +1,4 @@
-# apps/cloud -- music-dj-tools cloud sync (Phase 11)
+# apps/cloud -- Open DJ cloud sync (Phase 11)
 
 ## Read this first: three different things are called "cloud" or "sync"
 
@@ -10,9 +10,9 @@ anything else.
 
 | You want to... | Component | Where |
 | --- | --- | --- |
-| Store or fetch a **file** (stem bundle, HQ audio, test fixture, any large artifact) | **R2 asset store**, content-addressed `assets/<sha256[:2]>/<sha256>`, immutable | `apps/cloud/asset_store.py`, ADR 06 `specs/design_decision_06.md` |
+| Store or fetch a **file** (stem bundle, HQ audio, test fixture, any large artifact) | **R2 asset store**, content-addressed `assets/<sha256[:2]>/<sha256>`, immutable | `apps/cloud/asset_store.py`, ADR 06 `(private path)` |
 | Replicate **`state.db` itself** to R2 so another machine can restore it byte-identical | **Litestream** WAL streaming | `apps/cloud/litestream.yml`, `s3://music-dj-state/wal/` |
-| Converge **library rows** (tracks, playlists, cues) between a hub and several spokes, with tombstones and conflict rules | **CloudSync protocol** (hub/spoke row sync) | `apps/sync_hub/service.py` (`/sync/hello`, `/sync/push`, `/sync/pull`), `apps/webui/server/routes/cloudsync.py` (policy/machine configuration), `specs/cloudsync-spec.md`, ADR 04 |
+| Converge **library rows** (tracks, playlists, cues) between a hub and several spokes, with tombstones and conflict rules | **CloudSync protocol** (hub/spoke row sync) | `apps/sync_hub/service.py` (`/sync/hello`, `/sync/push`, `/sync/pull`), `apps/webui/server/routes/cloudsync.py` (policy/machine configuration), `(private path)`, ADR 04 |
 | Keep raw **audio folders** in step between two laptops peer-to-peer | **Syncthing** bootstrap | this README, section 2 below |
 | Stop two machines replicating at once | **Single-writer lock** | `apps/cloud/lock.py`, `s3://music-dj-state/LOCK.json` |
 
@@ -32,7 +32,7 @@ single-writer lock (D2) and a Syncthing bootstrap for audio files.
 ## What this does
 
 1. **DB sync (CAT-04a):** Litestream streams the WAL of
-   `data/state/state.db` to `s3://music-dj-state/wal/` continuously. On a
+   `(private path)` to `s3://music-dj-state/wal/` continuously. On a
    second laptop, `litestream restore` rebuilds the DB byte-identical.
 2. **Audio sync (CAT-04b):** Syncthing peer-to-peer over `~/Music/DJ
    Library/`. R2 audio bucket is wired in `apps/cloud/s3_audio.py` but
@@ -79,13 +79,13 @@ LaunchAgent (user scope). Default to the plist.
 ```bash
 # Pull the latest replica.
 doppler run -p general -c dev_personal -- \
-    litestream restore -config apps/cloud/litestream.yml data/state/state.db
+    litestream restore -config apps/cloud/litestream.yml (private path)
 
 # Sanity-check.
-sqlite3 data/state/state.db "PRAGMA integrity_check;"
+sqlite3 (private path) "PRAGMA integrity_check;"
 ```
 
-This is destructive locally: if `data/state/state.db` exists, Litestream
+This is destructive locally: if `(private path)` exists, Litestream
 refuses by default. Add `-if-replica-exists` or move the existing file
 aside first. Phase 12+ will add a GUI flow with backup rails.
 

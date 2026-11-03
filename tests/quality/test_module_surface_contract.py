@@ -66,7 +66,9 @@ PREDATES_ADR = frozenset(
 # owes it. This is not PREDATES_ADR (never add there). A name here must leave in the PR that adds it
 # to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj (#7681)
 # cannot be enforced until apps/transition_score (#7708) stops reaching its planner modules.
-OWED_CONTRACT = {"autodj": "#7681", "transition_score": "#7708"}
+# apps/plugins came in with #6522 (plugin store) and owes its contract, a Protocol over frozen
+# models for the engine and webui importers, before it can be enforced.
+OWED_CONTRACT = {"autodj": "#7681", "transition_score": "#7708", "plugins": "#6522"}
 
 
 def _check(*pairs: tuple[str, str], enforced: tuple[str, ...] = ("lib",)) -> list[Violation]:
@@ -125,10 +127,11 @@ def _top_level_modules(container: Path) -> set[str]:
 
 
 # Importable code at the repository root that no import-linter root covers, each named with why
-# (Codex, PR #6182). `research/` imports as a namespace package and `conftest.py` as a module, so
-# either could deep-import an enforced package unseen by the graph; the scan below reads them
-# from source instead. A new production directory gets an __init__.py and joins `root_packages`.
-ROOT_NOT_PACKAGES = frozenset({"research"})  # one-off probes run by path
+# (Codex, PR #6182). `docs/` imports as a namespace package (its `(private path)/` probes, moved
+# from `research/` by #5829) and `conftest.py` as a module, so either could deep-import an
+# enforced package unseen by the graph; the scan below reads them from source instead. A new
+# production directory gets an __init__.py and joins `root_packages`.
+ROOT_NOT_PACKAGES = frozenset({"docs"})  # one-off probes run by path
 # A compiled root module (the native waveform extension a local build drops here) is no entry:
 # git ignores it, and one the tree ships is read by `unread_root_modules` (Sol, PR #6182).
 ROOT_MODULES = frozenset({"conftest"})  # pytest's root hooks

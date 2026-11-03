@@ -112,6 +112,7 @@ export async function loadTypeScriptModule(relativePath, options = {}) {
 	// such case. Runes are compile-time in Svelte; plain structured values are
 	// an honest stand-in for the deep-clone the real rune performs.
 	globalThis.__musicDjToolsTestState = (value) => value;
+	globalThis.__musicDjToolsTestState.raw = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 	// A temp file, not a data: URL: see import-bundled-source.mjs for the

@@ -324,6 +324,8 @@ test('null artwork availability identifies an unavailable reader without request
 			}
 		})
 	);
+	// TopBarStatusChips asks which installed modules draw in `topbar.end` (PLUG-6522i); none here.
+	await page.route('**/api/v1/plugins/ui-slots', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/update/check', (route) =>
 		route.fulfill({
 			json: {
@@ -435,6 +437,15 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ status: 200, json: { signed_in: false, user: null } })
 	);
 	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
+	// The Bluetooth headset banner polls this on load and every 5s
+	// (bluetooth-headset-mode.svelte.ts). An unsupported reading keeps the banner
+	// hidden; without this stub the catch-all aborts it and the assertion below
+	// reports it as an unexpected API call.
+	await page.route('**/api/v1/audio-headset-mode', (route) =>
+		route.fulfill({
+			json: { supported: false, verdict: 'unsupported', output: null, input: null, error: null }
+		})
+	);
 	// IconRail reads the build's feature flags (sets.recording, SET-12 v1
 	// fallback, recording-flag.ts) to decide whether the REC control shows.
 	// Declared ON, so the rail renders exactly as before the kill switch.

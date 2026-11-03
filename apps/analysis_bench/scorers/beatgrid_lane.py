@@ -8,13 +8,11 @@ code `tests/beatbench` pins. This module only translates: it takes the shared
 report and markdown the round log wants. Reimplementing the aggregation to fit
 a new interface would have made a round-over-round delta unattributable.
 
-WHY THE RENDERER IS STILL UNDER `scripts/`. The versioned RULER (scorer.py,
-continuity.py) moved into this package because four lanes share it. The beatgrid
-REPORT is presentation for one lane, lives beside the beatgrid runners that
-produced rounds 0 and 1, and carries three functions radon already scores over
-the complexity limit. Moving it would have added those three blocks to the
-gated `apps` tree without changing a line of them -- a ratchet regression bought
-for nothing. It is imported here rather than reimplemented.
+THE REPORT LIVES IN THIS PACKAGE. `beatgrid_report` is the scorer and renderer
+rounds 0 and 1 used (`score_track`, `aggregate`, `render_table`). It sits beside
+the ruler so this lane does not import `scripts`: the layer contract forbids
+that edge. `scripts.beatbench.report` re-exports the same functions for the CLI
+and for `tests/beatbench`, which pin this code path.
 
 THE FIXED/DYNAMIC SPLIT IS KEPT. A rekordbox grid is either one stored tempo or
 a tempo curve, and the two are different problems: round 1 measured beat_this at
@@ -27,8 +25,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from apps.analysis_bench.scorers import beatgrid_report
 from apps.analysis_bench.scorers.beatgrid import SCORER_VERSION
-from scripts.beatbench import report as beatgrid_report
 
 __all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
 
@@ -109,9 +107,7 @@ def render_table(report: dict[str, Any]) -> str:
     )
     lines: list[str] = []
     for split in ("fixed", "dynamic"):
-        cells = [
-            (name, arm[split], {"emits_downbeats": arm["emits_downbeats"]}) for name, arm in order
-        ]
+        cells = [(name, arm[split], {"emits_downbeats": arm["emits_downbeats"]}) for name, arm in order]
         rendered = beatgrid_report.render_table(f"{split} grids", cells)
         # The shared renderer heads its table with an H3, which inside a round
         # block would nest under the round's own H3 and land in the spec's

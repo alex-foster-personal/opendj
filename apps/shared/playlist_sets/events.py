@@ -13,6 +13,7 @@ _logger = logging.getLogger(__name__)
 _logged_bus_missing = False
 
 Action = Literal["created", "performed", "practiced"]
+ComponentAction = Literal["component_created", "component_updated", "component_deleted"]
 
 _MODULE_BUS = LazyModuleEventBus()
 
@@ -33,32 +34,47 @@ def emit_playlist_set_changed(
     action: Action,
     actor: str = "playlist_sets",
 ) -> None:
-    payload = {
-        "playlist_id": playlist_id,
-        "set_id": set_id,
-        "action": action,
-    }
+    """A set changed: ``playlist_set_changed`` always carries ``set_id``."""
+    _emit(
+        conn,
+        "playlist_set_changed",
+        {"playlist_id": playlist_id, "set_id": set_id, "action": action},
+        actor,
+    )
+
+
+def emit_playlist_component_changed(
+    conn: sqlite3.Connection,
+    *,
+    playlist_id: str,
+    component_id: int,
+    action: ComponentAction,
+    actor: str = "playlist_sets",
+) -> None:
+    """A component changed: its own kind, so set subscribers never see it."""
+    _emit(
+        conn,
+        "playlist_component_changed",
+        {"playlist_id": playlist_id, "component_id": component_id, "action": action},
+        actor,
+    )
+
+
+def _emit(
+    conn: sqlite3.Connection, kind: str, payload: dict[str, object], actor: str
+) -> None:
     ts = datetime.now(UTC).isoformat()
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
         conn.execute(
             "INSERT INTO events(ts, kind, stable_id, payload_json, actor) "
             "VALUES (?, ?, ?, ?, ?)",
-            (
-                ts,
-                "playlist_set_changed",
-                None,
-                payload_json,
-                actor,
-            ),
+            (ts, kind, None, payload_json, actor),
         )
     except sqlite3.OperationalError as exc:
         global _logged_bus_missing  # noqa: PLW0603
         if not _logged_bus_missing:
-            _logger.info(
-                "playlist_set_changed event dropped (event bus not online): %s",
-                exc,
-            )
+            _logger.info("%s event dropped (event bus not online): %s", kind, exc)
             _logged_bus_missing = True
         return
 
@@ -67,11 +83,5 @@ def emit_playlist_set_changed(
     except ImportError:
         return
     _get_shared_bus().publish(
-        Event(
-            ts=ts,
-            kind="playlist_set_changed",
-            stable_id=None,
-            payload=payload,
-            actor=actor,
-        )
+        Event(ts=ts, kind=kind, stable_id=None, payload=payload, actor=actor)
     )

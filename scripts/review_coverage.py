@@ -128,6 +128,7 @@ from scripts.review_coverage_carry import (
 )
 from scripts.review_docs_only import is_docs_only, render_docs_only_pass
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
+from scripts.review_no_rereview import reviewed_at_an_earlier_head
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 from scripts.review_subscription import CURSOR, GROK, LANES_BY_NAME
 
@@ -482,6 +483,13 @@ def partition_verdicts(
     return unavailable, unreviewed, revived
 
 
+def _pr_commit_shas(pr: str) -> list[str]:
+    """Every commit SHA the PR holds. The listing stops at 250 commits; it only vouches for SHAs found
+    as body text, so on a larger PR such a SHA past the cap is not counted and coverage reads MISS,
+    which is advisory (REVIEW-8220) and at worst runs one more lane."""
+    return [c["sha"] for c in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/commits")]
+
+
 def _require_head_unchanged(sampled: str, current: str) -> None:
     """Evidence gathered against `sampled` is void if the PR moved to
     `current` while the three network calls ran (issue #1016 P1 BLOCKING,
@@ -517,8 +525,7 @@ def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
     head_sha = _head_sha(pr)
     changed_files = _changed_files(pr)
-    if control_plane_rc := enforce_control_plane(pr, head_sha, changed_files):
-        return control_plane_rc  # REVIEW-13, before the docs-only exemption: CLAUDE.md is *.md
+    enforce_control_plane(pr, head_sha, changed_files)  # REVIEW-8220: an advisory note, never a hold
     if is_docs_only(changed_files):
         # Coverage is the only thing this exemption waives. Re-sample the
         # head before printing, the same race guard the normal path applies
@@ -538,6 +545,19 @@ def triage(pr: str) -> int:
         for name in EXPECTED_REVIEWERS
     }
     _require_head_unchanged(head_sha, _head_sha(pr))
+    header = f"[review-coverage] PR #{pr} @ head {head_sha} (gate code has main's {gate_commit[:9]})"
+
+    # REVIEW-8220: a review at any earlier head covers this one, so no new push needs a re-review.
+    # Read before the carries, which fetch and diff git objects a plain earlier review never needs,
+    # and whatever the head's own evidence says: an earlier review covers on its own.
+    if earlier := reviewed_at_an_earlier_head(reviews, inline, issue, head_sha, lambda: _pr_commit_shas(pr)):
+        _require_head_unchanged(head_sha, _head_sha(pr))  # the commit listing is one more round trip
+        print(header)
+        print(
+            f"[review-coverage] PASS: {earlier[0]} reviewed earlier head {earlier[1]} of this PR; "
+            "a new push needs no re-review (REVIEW-8220)."
+        )
+        return 0
 
     verdicts = substitute_alternatives(
         verdicts_with_carry(
@@ -557,7 +577,7 @@ def triage(pr: str) -> int:
         EXPECTED_REVIEWERS,
     )
 
-    print(f"[review-coverage] PR #{pr} @ head {head_sha} (gate code has main's {gate_commit[:9]})")
+    print(header)
     print()
     print("  reviewer coverage")
     for verdict in verdicts:
@@ -596,18 +616,15 @@ def triage(pr: str) -> int:
         return 1
 
     if unreviewed:
+        # Exit 1 stays "not covered" so `just review` knows to run a lane. It holds nothing:
+        # reviews are advisory (REVIEW-8220), and review-triage and the lander read it as a note.
         print(
             "[review-coverage] FAIL: "
             f"{len(unreviewed)} of {len(verdicts)} expected reviewers did not review."
         )
         print(
-            "  A reviewer that did not run produces no findings, and no findings "
-            "is not the same as no problems."
-        )
-        print(
-            "  This is NOT satisfied by re-running. Either restore the reviewer, "
-            "or amend EXPECTED_REVIEWERS and the CLAUDE.md clause together so the "
-            "gate states what it actually checks."
+            "  ADVISORY, nothing is held (REVIEW-8220): consider one review where it helps "
+            "(`just review <PR>`); one is enough."
         )
         return 1
 

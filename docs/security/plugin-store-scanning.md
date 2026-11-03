@@ -1,7 +1,10 @@
 # Plugin and skill store scanning (future)
 
-Part of [security.md](security.md). Status: **design constraints only**. The store is not
-built. Research with sources:
+Part of [security.md](security.md). Status: **the store client is built** (`apps/plugins/`,
+ADR `../decisions/ADR-NEW-plugin-store.md`): manifest, signed catalog with blocklist, per-file
+hash pinning, first-party modules only for code. The third-party pipeline below (submission
+repo, scanners, review, sandbox) is not built, so third-party plugins are data-only.
+Research with sources:
 [../research/security-plugin-store-scanning-20260914.md](../research/security-plugin-store-scanning-20260914.md).
 
 ## The core finding

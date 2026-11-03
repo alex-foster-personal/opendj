@@ -13,7 +13,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -365,6 +365,17 @@ def get_track_anlz(
     from (private path), merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
+    payload = served_anlz_payload(request, stable_id, points)
+    return _anlz_response(request, payload)
+
+
+def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[str, Any]:
+    """The exact payload ``/anlz`` serves this track now, before HTTP framing.
+
+    Shared with every route that must read the grid the deck draws (for
+    example ``/tempo-stability``, issue #8339), so none of them can resolve a
+    different beatgrid source, overlay or grid edit than the deck does.
+    """
     # NATIVE-21: a deck load (or a selected row) moves this track to the
     # front of the ahead-of-time drain; it never becomes the only producer.
     ahead = getattr(request.app.state, "ahead_analysis", None)
@@ -480,7 +491,10 @@ def get_track_anlz(
         share=getattr(request.state, "share_audience", "local") == "share",
     )
     # GRIDEDIT-6235b: the user's grid adjust / shift for the grid just resolved.
-    payload = apply_stored_grid_edit(request, stable_id, payload)
+    return apply_stored_grid_edit(request, stable_id, payload)
+
+
+def _anlz_response(request: Request, payload: dict[str, Any]) -> Response:
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

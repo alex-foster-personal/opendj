@@ -19,6 +19,7 @@
 		policyModeChange,
 		type PolicyModeDecision
 	} from './cloudsync-view';
+	import CloudSyncPolicyCellView from './CloudSyncPolicyCellView.svelte';
 
 	interface Props {
 		machineId: string;
@@ -68,65 +69,19 @@
 	}
 </script>
 
-<td class="policy-cell" data-testid="cloudsync-policy-cell" data-asset-kind={assetKind}>
-	<select
-		bind:this={selectEl}
-		title={`Sync mode for ${kindLabel} on ${machineName}${view.mode === UNSET ? ' (unset: no policy stored, so this machine keeps it local-only)' : ''}`}
-		value={view.mode}
-		class:unset={view.mode === UNSET}
-		onchange={(e) =>
-			apply(
-				policyModeChange(machineId, assetKind, policy, (e.currentTarget as HTMLSelectElement).value),
-				'policy'
-			)}
-	>
-		<option value={UNSET} title={UNSET_OPTION_TITLE}>{UNSET}</option>
-		{#each SYNC_MODES as mode (mode)}
-			<option value={mode}>{mode}</option>
-		{/each}
-	</select>
-	<input
-		bind:this={budgetEl}
-		class="budget"
-		type="number"
-		min="0"
-		step="1"
-		placeholder="MB"
-		disabled={!view.budgetEditable}
-		value={policy?.cache_budget_mb ?? ''}
-		title={`${view.budgetTitle} (${kindLabel} on ${machineName})`}
-		onchange={(e) =>
-			apply(
-				policyBudgetChange(machineId, assetKind, policy, (e.currentTarget as HTMLInputElement).value),
-				'cache budget'
-			)}
-	/>
-</td>
-
-<style>
-	td.policy-cell {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		white-space: nowrap;
-	}
-	select,
-	input.budget {
-		background: var(--bg);
-		color: var(--fg);
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 3px 6px;
-		font-size: 0.82rem;
-	}
-	select.unset {
-		color: var(--muted);
-		font-style: italic;
-	}
-	input.budget {
-		width: 5.5em;
-	}
-	input.budget:disabled {
-		opacity: 0.4;
-	}
-</style>
+<CloudSyncPolicyCellView
+	{assetKind}
+	{kindLabel}
+	{machineName}
+	mode={view.mode}
+	unset={UNSET}
+	unsetOptionTitle={UNSET_OPTION_TITLE}
+	modes={SYNC_MODES}
+	budgetEditable={view.budgetEditable}
+	budgetTitle={view.budgetTitle}
+	budgetValue={policy?.cache_budget_mb ?? ''}
+	onModeChange={(value) => apply(policyModeChange(machineId, assetKind, policy, value), 'policy')}
+	onBudgetChange={(value) => apply(policyBudgetChange(machineId, assetKind, policy, value), 'cache budget')}
+	bind:selectEl
+	bind:budgetEl
+/>

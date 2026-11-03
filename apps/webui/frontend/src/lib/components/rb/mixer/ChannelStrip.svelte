@@ -7,7 +7,7 @@
 	 */
 	import AutoGainReadout from './AutoGainReadout.svelte';
 	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
-	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
+	import { deckHoverLinkId, deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { METER_FLOOR_DBFS, calibrationCaptureDb } from '$lib/rb/meter-math';
@@ -26,6 +26,7 @@
 		type EqDial
 	} from '$lib/rb/stem-dial-map';
 	import StemRow from '../deck/StemRow.svelte';
+	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
 
@@ -102,7 +103,7 @@
 	const deck = $derived(getDeckState(deckId));
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
-	const focused = $derived(deckHoverUi.deckId === deckId);
+	const focused = $derived(deckHoverLinkId(uiPrefs.deck_hover_link) === deckId);
 	const selected = $derived(isSelected(deckId));
 
 	function handleStripClick(event: MouseEvent): void {
@@ -235,7 +236,13 @@
 			return {
 				label: STEM_DIAL_LABELS[stem],
 				value: deck.stems.controls[stem].gain,
-				onchange: (value) => onStemGain(stem, value),
+				// Write the gain here, in the same turn as the pointer, so the
+				// dial is not waiting on stem_gain to come back around the
+				// command queue. The command still owns the audio graph.
+				onchange: (value) => {
+					deck.stems.controls[stem].gain = value;
+					onStemGain(stem, value);
+				},
 				knobRole: stemKnobRole(stem),
 				accentColor: stemCssColor(stem),
 				accessibleLabel: `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`,
@@ -391,7 +398,15 @@
 		onclick={() => onStemEqMode(!stemEqMode)}>STEM</button
 	>
 	<div class="stem-slot">
-		<StemRow deck={deck} pending={stemPending} testIdScope="channel" onMute={onStemMute} onSolo={onStemSolo} />
+		<StemRow
+			deck={deck}
+			pending={stemPending}
+			testIdScope="channel"
+			onMute={onStemMute}
+			onSolo={onStemSolo}
+			stemsResetOn={trackLoadResetEnabled('stems')}
+			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el)}
+		/>
 	</div>
 </div>
 
@@ -485,20 +500,17 @@
 	.strip.secondary {
 		background: color-mix(in srgb, var(--rb-panel-raised, #1a1e25) 55%, transparent);
 	}
+	/* DECKUX-5917: top-edge tick, like a channel-assign light. */
 	.strip.deck-focus {
-		outline: 2px solid var(--rb-accent, #49c8ff);
-		outline-offset: -4px;
-		transition:
-			background 50ms ease-out,
-			box-shadow 50ms ease-out;
-		background: var(--rb-deck-hover-bg);
-		box-shadow: var(--rb-deck-hover-inset);
+		box-shadow: var(--rb-deck-link-tick-top);
 	}
 	.strip.selected {
 		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
 	}
 	.strip.selected.deck-focus {
-		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
+		box-shadow:
+			var(--rb-deck-link-tick-top),
+			inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
 	}
 	.strip-head {
 		display: flex;

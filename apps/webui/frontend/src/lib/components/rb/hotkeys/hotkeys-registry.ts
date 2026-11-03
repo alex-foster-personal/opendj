@@ -20,6 +20,8 @@
  *       ('2' / '4') and uses them in resolveDeckLayoutHotkeyMode.
  *     - settings/hotkeys.ts imports SETTINGS_CHORD_KEY / SETTINGS_CHORD_CODE
  *       (',' / 'Comma') and uses them in the Cmd+, detector.
+ *     - assistant/sidebar-toggle.ts imports ASSISTANT_CHORD_KEY / CODE
+ *       ('i' / 'KeyI') for the Cmd+I assistant sidebar toggle.
  *     - install-hotkeys-overlay.ts imports HOTKEYS_OVERLAY_HOLD_KEY ('/')
  *       and HOTKEYS_OVERLAY_TOGGLE_KEY ('?') for the overlay's own gestures.
  *   DISPLAY-ONLY TRANSCRIPTION (handler logic stays put):
@@ -48,6 +50,18 @@ export const SETTINGS_CHORD_KEY = ',';
 export const SETTINGS_CHORD_CODE = 'Comma';
 export const SETTINGS_CHORD_LABEL = 'Cmd+,';
 
+export const ASSISTANT_CHORD_KEY = 'i';
+export const ASSISTANT_CHORD_CODE = 'KeyI';
+/** This browser's `navigator.platform`; the chord helpers take it so a test can name another. */
+export const ASSISTANT_PLATFORM = globalThis.navigator?.platform ?? '';
+/** Apple platforms use Cmd for the assistant chord; every other platform uses Ctrl. */
+export const assistantChordUsesMeta = (platform: string): boolean => /mac|iphone|ipad/i.test(platform);
+export const assistantChordLabel = (platform: string): string =>
+	assistantChordUsesMeta(platform) ? 'Cmd+I' : 'Ctrl+I';
+export const assistantChordAria = (platform: string): string =>
+	assistantChordUsesMeta(platform) ? 'Meta+I' : 'Control+I';
+export const ASSISTANT_CHORD_LABEL = assistantChordLabel(ASSISTANT_PLATFORM);
+export const ASSISTANT_CHORD_ARIA = assistantChordAria(ASSISTANT_PLATFORM);
 export const SET_NOTES_TAP_CHORD = 'Right Cmd / Right Ctrl (tap)';
 
 export const HOTKEYS_OVERLAY_HOLD_KEY = '/';
@@ -80,6 +94,12 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		chord: SETTINGS_CHORD_LABEL,
 		description: 'Open the settings overlay',
 		group: 'Settings'
+	},
+	{
+		id: 'assistant-toggle',
+		chord: ASSISTANT_CHORD_LABEL,
+		description: 'Open or close the assistant sidebar (ignored while typing in a field)',
+		group: 'Assistant'
 	},
 	{
 		id: 'set-notes-toggle',
@@ -121,6 +141,18 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		id: 'performance-loop-exit',
 		chord: ')',
 		description: 'Exit the last loop',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-wave-zoom-out',
+		chord: '[',
+		description: 'Zoom the main waveform out one step (more bars, up to the whole track)',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-wave-zoom-in',
+		chord: ']',
+		description: 'Zoom the main waveform in one step (fewer bars, down to 4)',
 		group: 'Performance'
 	},
 	{
@@ -167,3 +199,11 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		group: 'Mixer'
 	}
 ];
+
+/** AISIDE-7892j: the assistant chord is listed only while its sidebar exists. */
+export function availableHotkeys(
+	registry: readonly HotkeyEntry[],
+	assistantEnabled: boolean
+): readonly HotkeyEntry[] {
+	return assistantEnabled ? registry : registry.filter((entry) => entry.id !== 'assistant-toggle');
+}

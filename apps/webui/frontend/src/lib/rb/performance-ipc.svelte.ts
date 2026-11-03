@@ -56,7 +56,7 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
-import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { clearHotCue, restoreHotCue, saveHotCue, vocalsOf, type Vocals } from '$lib/rb/api-rb';
 import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
@@ -107,10 +107,10 @@ import {
 } from '$lib/rb/grid-edit-command';
 import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
 import { onPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
-import { deckFacingMessage } from '$lib/rb/deck-load-context';
+import { deckFacingMessage, reportFoldedLaunch } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
-import { allDecks, withDeckCommandSource, type CommandSource } from './deck-stop-log';
+import { allDecks, deckCommandSource, withDeckCommandSource, type CommandSource } from './deck-stop-log';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -131,6 +131,7 @@ import {
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
+import { parseWaveformOverlay, type WaveformOverlay } from '$lib/rb/waveform-overlay-command';
 import {
 	setAutoCue,
 	setAutoPlayEnabled,
@@ -141,9 +142,22 @@ import {
 	setPerfView,
 	setShowPads,
 	setWaveformDesign,
+	setShowSections,
+	setLyricsWaveformOverlay,
+	setLyricsHoverScrub,
+	setJogRadialWaveform,
 	setUiSkin,
 	setWavePalette,
 	setWaveSplitMaster,
+	setWaveZoom,
+	setWaveZoomLinked,
+	setWaveZoomPlayhead,
+	stepWaveZoomPref,
+	deckWaveZoom,
+	parseWavePlayheadMode,
+	parseWaveZoom,
+	type WavePlayheadMode,
+	type WaveZoom,
 	PERF_VIEWS,
 	isPerfView,
 	type LibraryPanel,
@@ -294,6 +308,14 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number; exact?: boolean }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesignPref }
+	/** WAVEQS-8348e: the quick-settings popover's overlay switches (waveform-overlay-command.ts). */
+	| { type: 'set_waveform_overlay'; overlay: WaveformOverlay; enabled: boolean }
+	/** WAVEZOOM-6802: the main waveform's zoom step. deck only matters while unlinked. */
+	| { type: 'set_wave_zoom'; zoom: WaveZoom; deck?: DeckId }
+	/** WAVEZOOM-6802b: one step in (fewer bars) or out, as Ctrl/Cmd-wheel and the keys do. */
+	| { type: 'wave_zoom_step'; direction: 'in' | 'out'; deck?: DeckId }
+	/** WAVEZOOM-6802c/06: playhead behavior when zoomed out, and one zoom vs per deck. */
+	| { type: 'set_wave_zoom_options'; playhead: WavePlayheadMode; linked: boolean }
 	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
@@ -316,7 +338,7 @@ export type PerformanceCommand =
 	// above. 1/4/8 snap to the beat grid; DECKCTL-6235c 'phase' snaps a pause,
 	// seek or cue to the nearest phrase boundary (Web Audio engine only).
 	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
-	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
+	| { type: 'beat_sync'; deck: DeckId; enabled: boolean; normalization?: 0.5 | 2; master?: DeckId }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
 	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
@@ -394,6 +416,7 @@ export type PerformanceCommand =
 	| { type: 'auto_play_next_cancel' }
 	/** AUTOPLAN-06: the AutoPlay menu's Decide now. */
 	| { type: 'auto_play_decide_now' }
+	| { type: 'auto_play_next_intent'; intent: TransitionIntent }
 	/** AUTOPLAN-01: the AutoPlay menu's early planning checkbox and target. */
 	| { type: 'auto_play_early'; enabled?: boolean; decide_after_s?: number }
 	/** UI contract only: the "show other users' pins" toggle (pin 88e3abec02a0)
@@ -514,8 +537,12 @@ export interface PerformanceDeckSnapshot {
 	loop_interval: { grid_mode: boolean; grid_base: number; choices: number[] };
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
+	/** In-time of the `transition_in` row in deck.anlz.cues, or null when absent. */
+	transition_in_ms: number | null;
 	/** Real AnlzPhrase boundaries lifted for agent phrase-time planning. */
 	phrases: Array<{ start_ms: number; end_ms: number; kind: number; mood: number }>;
+	/** Validated vocal-analysis status from the deck's published ANLZ (issue #1031). */
+	vocals: Vocals | null;
 	hot_cue_slots: Array<{ slot: HotCueSlot; cue: HotCue | null; revision: string }>;
 	hot_cue_reversal: { slot: HotCueSlot; revision: string; reversal_id: string } | null;
 	/** #884: a hot_cue_trigger currently waiting for this deck's own next
@@ -661,6 +688,13 @@ export interface PerformanceState {
 		wave_palette: SkinSettings['wave_palette'];
 		wave_palette_effective: ReturnType<typeof effectiveWavePalette>;
 		wave_split_master: SkinSettings['wave_split_master'];
+		/** WAVEZOOM-6802..06: shared step, each deck's effective step, options. */
+		wave_zoom: WaveZoom;
+		wave_zoom_decks: Record<`${DeckId}`, WaveZoom>;
+		wave_zoom_playhead: WavePlayheadMode;
+		wave_zoom_linked: boolean;
+		/** WAVEQS-8348e: what set_waveform_overlay reads back, one boolean per overlay. */
+		waveform_overlays: Record<WaveformOverlay, boolean>;
 	};
 }
 
@@ -709,6 +743,7 @@ export interface AutoPlayNextController {
 	}): Promise<boolean>;
 	cancel(): Promise<void>;
 	decideNow(): Promise<void>;
+	setIntent(intent: TransitionIntent): void;
 }
 
 let _autoPlayNextController: AutoPlayNextController | null = null;
@@ -1353,6 +1388,12 @@ function _deck(value: unknown): DeckId {
 	return value;
 }
 
+/** A fold a launch may carry: half or double tempo (unity is never sent). */
+function _beatSyncNormalization(value: unknown): 0.5 | 2 {
+	if (value !== 0.5 && value !== 2) throw new RangeError(`normalization must be 0.5 or 2; got ${String(value)}`);
+	return value;
+}
+
 function _boolean(name: string, value: unknown): boolean {
 	if (typeof value !== 'boolean') throw new TypeError(`${name} must be boolean`);
 	return value;
@@ -1653,6 +1694,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
+	if (type === 'auto_play_next_intent') {
+		_exactKeys(record, ['type', 'intent']);
+		if (!TRANSITION_INTENTS.includes(record.intent as TransitionIntent)) {
+			throw new Error(`auto_play_next_intent: unknown intent ${String(record.intent)}`);
+		}
+		return { type, intent: record.intent as TransitionIntent };
+	}
 	if (type === 'auto_play_early') {
 		_exactKeys(record, ['type', 'enabled', 'decide_after_s']);
 		const after = record.decide_after_s;
@@ -1796,6 +1844,30 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
 		return { type, ...parseSkinSettings(record) };
+	}
+	if (type === 'set_wave_zoom' || type === 'wave_zoom_step') {
+		const valueKey = type === 'set_wave_zoom' ? 'zoom' : 'direction';
+		_exactKeys(record, record.deck === undefined ? ['type', valueKey] : ['type', valueKey, 'deck']);
+		const deck = record.deck === undefined ? undefined : _deck(record.deck);
+		if (type === 'set_wave_zoom') {
+			const zoom = parseWaveZoom(record.zoom);
+			if (zoom === undefined) throw new TypeError('zoom is required');
+			return deck === undefined ? { type, zoom } : { type, zoom, deck };
+		}
+		if (record.direction !== 'in' && record.direction !== 'out') {
+			throw new TypeError(`direction must be in or out; got ${String(record.direction)}`);
+		}
+		return deck === undefined ? { type, direction: record.direction } : { type, direction: record.direction, deck };
+	}
+	if (type === 'set_wave_zoom_options') {
+		_exactKeys(record, ['type', 'playhead', 'linked']);
+		const playhead = parseWavePlayheadMode(record.playhead);
+		if (playhead === undefined) throw new TypeError('playhead is required');
+		return { type, playhead, linked: _boolean('linked', record.linked) };
+	}
+	if (type === 'set_waveform_overlay') {
+		_exactKeys(record, ['type', 'overlay', 'enabled']);
+		return { type, overlay: parseWaveformOverlay(record.overlay), enabled: _boolean('enabled', record.enabled) };
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
@@ -1974,6 +2046,15 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'quantize' && record.by_user !== undefined) {
 		_exactKeys(record, ['type', 'deck', 'enabled', 'by_user']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled), by_user: _boolean('by_user', record.by_user) };
+	} else if (type === 'beat_sync' && (record.normalization !== undefined || record.master !== undefined)) {
+		_exactKeys(record, ['type', 'deck', 'enabled', 'normalization', 'master']);
+		return {
+			type,
+			deck,
+			enabled: _boolean('enabled', record.enabled),
+			normalization: _beatSyncNormalization(record.normalization),
+			master: _deck(record.master)
+		};
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) } as PerformanceCommand;
@@ -2298,6 +2379,18 @@ function _openPairingSnapshot(): PairingSnapshot {
 	return { version: 1, beat_sync_max: beats, decks };
 }
 
+function _vocalsSnapshot(anlz: ReturnType<typeof getDeckState>['anlz']): Vocals | null {
+	if (anlz === null) return null;
+	if ((anlz as { vocals?: unknown }).vocals === undefined) return null;
+	const vocals = vocalsOf(anlz);
+	if (vocals.status === 'not_analyzed') return { status: 'not_analyzed' };
+	return {
+		status: vocals.status,
+		fps: vocals.fps,
+		regions: vocals.regions.map((region) => ({ ...region }))
+	};
+}
+
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 	const deck = getDeckState(deckId);
 	const beatgrid = _beatgridProjection(deckId, deck);
@@ -2370,12 +2463,15 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		},
 		beatgrid: beatgrid.beatgrid,
 		beatgrid_ms: beatgrid.beatgrid_ms,
+		transition_in_ms:
+			deck.anlz?.cues?.find((cue) => cue.kind === 'transition_in')?.in_ms ?? null,
 		phrases: deck.anlz?.phrases?.map((phrase) => ({
 			start_ms: phrase.start_s * 1000,
 			end_ms: phrase.end_s * 1000,
 			kind: phrase.kind,
 			mood: phrase.mood
 		})) ?? [],
+		vocals: _vocalsSnapshot(deck.anlz),
 		hot_cue_slots: (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as HotCueSlot[]).map((slot) => ({
 			slot,
 			cue: deck.hot_cues.find((cue) => cue.slot === slot) ?? null,
@@ -2539,7 +2635,22 @@ export function queryPerformanceState(): PerformanceState {
 			ui_skin: uiPrefs.ui_skin,
 			wave_palette: uiPrefs.wave_palette,
 			wave_palette_effective: effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin),
-			wave_split_master: uiPrefs.wave_split_master
+			wave_split_master: uiPrefs.wave_split_master,
+			wave_zoom: uiPrefs.wave_zoom,
+			wave_zoom_decks: {
+				'1': deckWaveZoom(uiPrefs, 1),
+				'2': deckWaveZoom(uiPrefs, 2),
+				'3': deckWaveZoom(uiPrefs, 3),
+				'4': deckWaveZoom(uiPrefs, 4)
+			},
+			wave_zoom_playhead: uiPrefs.wave_zoom_playhead,
+			wave_zoom_linked: uiPrefs.wave_zoom_linked,
+			waveform_overlays: {
+				sections: uiPrefs.show_sections,
+				lyrics: uiPrefs.lyrics_waveform_overlay,
+				lyrics_scrub: uiPrefs.lyrics_hover_scrub,
+				jog_radial: uiPrefs.jog_radial_waveform
+			}
 		}
 	};
 }
@@ -2662,6 +2773,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'fader' ||
 		command.type === 'stem_mute' ||
 		command.type === 'stem_solo' ||
+		// Same drag as EQ: a stem-mode HI/MID/LOW turn must not wait behind
+		// this deck's transport queue or the needle never follows the pointer.
+		command.type === 'stem_gain' ||
+		command.type === 'stem_eq_mode' ||
 		// STEM-47: landing stems on a playing deck waits for the transport to
 		// be idle; in the deck's queue it would BE the thing keeping it busy.
 		command.type === 'stem_load' ||
@@ -2694,7 +2809,11 @@ export function performanceCommandQueueScopes(
 		command.type === 'track_load_reset' ||
 		command.type === 'key_nudge_step' ||
 		command.type === 'set_waveform_design' ||
+		command.type === 'set_waveform_overlay' ||
 		command.type === 'set_skin' ||
+		command.type === 'set_wave_zoom' ||
+		command.type === 'wave_zoom_step' ||
+		command.type === 'set_wave_zoom_options' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -2718,6 +2837,7 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'auto_play_next_arm'
 		|| command.type === 'auto_play_next_cancel'
 		|| command.type === 'auto_play_decide_now'
+		|| command.type === 'auto_play_next_intent'
 		|| command.type === 'load_play_intent'
 		|| command.type === 'playlist_undo'
 		|| command.type === 'cmdk_open'
@@ -2827,11 +2947,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	// refuses up front (the deck is playing, audible or mid-transport): that
 	// refusal throws here, before the silence (Codex P2 4287743996), and
 	// engine.load repeats it under its own claim. Silence leaves the decoded
-	// buffer for engine.load to reuse.
+	// buffer for engine.load to reuse. AutoPlay loading the next track is not
+	// a user load and leaves the audition playing (pin 104cf3b626fd).
 	if (command.type === 'load') {
 		initRustMode();
 		if (!rustMode.enabled) assertDeckLoadAllowed(command.deck);
-		silencePreviewCue();
+		if (deckCommandSource(command.deck) !== 'autoplay-handoff') silencePreviewCue();
+	}
+	// Before either engine: the Rust dispatch below returns early, and a folded launch must be reported once on both paths.
+	if (command.type === 'beat_sync' && command.enabled && command.normalization !== undefined && command.master !== undefined) {
+		reportFoldedLaunch(command.deck, command.master, command.normalization);
 	}
 	if (await executeInRustEngine(command, pushToast)) {
 		if (command.type === 'load') await _quantizeOnForNewTrack(command.deck);
@@ -3113,8 +3238,23 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await setAutoCue(command.enabled);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
+	} else if (command.type === 'set_waveform_overlay') {
+		const setOverlay = {
+			sections: setShowSections,
+			lyrics: setLyricsWaveformOverlay,
+			lyrics_scrub: setLyricsHoverScrub,
+			jog_radial: setJogRadialWaveform
+		}[command.overlay];
+		setOverlay(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
+	} else if (command.type === 'set_wave_zoom') {
+		setWaveZoom(command.zoom, command.deck);
+	} else if (command.type === 'wave_zoom_step') {
+		stepWaveZoomPref(command.direction, command.deck);
+	} else if (command.type === 'set_wave_zoom_options') {
+		setWaveZoomPlayhead(command.playhead);
+		setWaveZoomLinked(command.linked);
 	} else if (command.type === 'set_skin') {
 		setUiSkin(command.ui_skin);
 		setWavePalette(command.wave_palette);
@@ -3247,6 +3387,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error('auto_play_decide_now: no AutoPlay Next controller is mounted on this route');
 		}
 		await _autoPlayNextController.decideNow();
+	} else if (command.type === 'auto_play_next_intent') {
+		if (_autoPlayNextController === null) {
+			throw new Error('auto_play_next_intent: no AutoPlay Next controller is mounted on this route');
+		}
+		_autoPlayNextController.setIntent(command.intent);
 	} else if (command.type === 'auto_play_early') {
 		setAutoPlayEarly(command);
 	} else if (command.type === 'pins_show_other_users') {
@@ -3899,6 +4044,44 @@ function _quantizeDefaultOn(command: PerformanceCommand, caller: string): Perfor
 	return { type: 'quantize', deck: command.deck, enabled: keep };
 }
 
+/** True when a load on `deck` would be accepted right now: the Web Audio
+ * engine's up-front refusal (deck playing, audible or mid-transport) is the
+ * same one `_execute` repeats under its claim. Rust mode refuses nothing here. */
+function _deckAcceptsLoadNow(deck: DeckId): boolean {
+	initRustMode();
+	if (rustMode.enabled) return true;
+	try {
+		assertDeckLoadAllowed(deck);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * A user deck load stops a sounding library preview; AutoPlay's own load does
+ * not (pin 104cf3b626fd). A refused master load, or a load the engine would
+ * refuse, is not a load, so the preview keeps going.
+ */
+function _loadStopsPreview(command: PerformanceCommand, source: CommandSource): boolean {
+	return (
+		command.type === 'load' &&
+		source !== 'autoplay-handoff' &&
+		!(command.refuseIfMaster === true && getDeckState(command.deck).is_master) &&
+		_deckAcceptsLoadNow(command.deck)
+	);
+}
+
+/**
+ * The library's Load button and row double-click: silence the headphone
+ * preview in the same turn as the gesture, before the load command is
+ * queued, so a strip click still waiting on the audio graph cannot restart
+ * it afterwards. Only when the deck would accept the load now.
+ */
+export function silencePreviewForUserLoad(deck: DeckId): void {
+	if (_deckAcceptsLoadNow(deck)) silencePreviewCue();
+}
+
 /**
  * PLAY-18: run one command with its source registered on the decks it can
  * stop, so the engine logs any stop it causes with that cause. A deckless
@@ -4028,6 +4211,10 @@ async function _dispatchUnknown(
 		_persistCommandError(null, error);
 		throw error;
 	}
+	// Before the deck queue. A user load stops the headphone preview now,
+	// not after AutoPlay's commands in front of it finish. AutoPlay loads
+	// are ignored (pin 104cf3b626fd).
+	if (_loadStopsPreview(command, source)) silencePreviewCue();
 	const queueScopes = performanceCommandQueueScopes(command);
 	const scopes = scopesOutsideHold(command.type, queueScopes, hold);
 	if (command.type === 'fader') _deckFaderWrites[command.deck] += 1;

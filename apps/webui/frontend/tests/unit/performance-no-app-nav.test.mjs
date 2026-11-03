@@ -28,7 +28,10 @@ const LAYOUT = source('routes/+layout.svelte');
 const TOP_BAR = source('lib/components/rb/TopBar.svelte');
 const APP_MODE = source('lib/rb/app-mode.ts');
 const SIDEBAR_NAV = source('lib/shell/sidebar-nav.ts');
-const LIBRARY_TOP_BAR = source('lib/components/library/LibraryTopBar.svelte');
+// The bar is a container plus a props-only view; the pair is the component.
+const LIBRARY_TOP_BAR =
+	source('lib/components/library/LibraryTopBar.svelte') +
+	source('lib/components/library/LibraryTopBarView.svelte');
 
 /** Every page the removed strip linked to, by route. */
 const FORMER_STRIP_ROUTES = ['/', '/reconcile', '/dedup', '/smartlists', '/admin'];

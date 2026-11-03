@@ -334,11 +334,14 @@
 		max-height: 320px;
 		overflow-y: auto;
 		padding: 6px;
-		background: var(--rb-well, #0a0c0f);
-		border: 1px solid var(--rb-border);
+		/* Same reason as the draft bubble: this card is outside .perf-root,
+		   so --rb-text is unset and light mode inherits near-black ink onto
+		   this previously hard-coded black surface. */
+		background: var(--surface, #121720);
+		border: 1px solid var(--border, #1c222c);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
-		color: var(--rb-text);
+		color: var(--fg, #e6e9ef);
 		font-size: 10px;
 	}
 	.fb-body-text {
@@ -389,10 +392,12 @@
 		margin-top: 4px;
 		padding: 4px;
 		box-sizing: border-box;
-		background: var(--rb-well, #11151a);
-		border: 1px solid var(--rb-border);
+		background: var(--bg, #0b0d11);
+		border: 1px solid var(--border, #1c222c);
 		border-radius: 2px;
-		color: var(--rb-text);
+		color: var(--fg, #e6e9ef);
+		-webkit-text-fill-color: var(--fg, #e6e9ef);
+		caret-color: var(--fg, #e6e9ef);
 		font: inherit;
 		resize: vertical;
 		user-select: text;

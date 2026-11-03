@@ -38,6 +38,7 @@ from apps.autodj.plan import (
     live_outgoing_fader,
     prelaunch_synced_tempo_moves,
     read_live_channels,
+    sync_tempo_fold,
     sync_tempo_ratio,
 )
 from apps.autodj.profile import TrackProfile, trim_knob
@@ -85,13 +86,10 @@ def _compile_event(event: PlanEvent, previous_transport: float | None = None) ->
     return {"at_bar": event.at_bar, "ramp": {"command": command, "to": target, "over_bars": event.over_bars}}
 
 
-def _launch_tempo(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float | None:
-    """The tempo the paused incoming deck is set to before a ``sync_to_out`` launch.
+def _launch_decks(plan: TransitionPlan, live: Mapping[str, Any] | None) -> tuple[Mapping[str, Any], float] | None:
+    """The outgoing deck's state and the incoming deck's pitch range, from the mirror; None when either is missing.
 
-    A quantized play arms the next downbeat without Beat Sync's tempo match (Beat Sync
-    on a paused deck only sets its flag), so the deck is put on the outgoing tempo first,
-    with the ratio Beat Sync itself would pick. ``None`` leaves the tempo alone: another
-    mode, or a mirror without the tempos and range (validation says so).
+    Only a ``sync_to_out`` plan has a launch tempo to match, so any other mode has none.
     """
     if plan.tempo_mode != "sync_to_out" or live is None:
         return None
@@ -105,8 +103,44 @@ def _launch_tempo(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[
     range_pct = in_state.get("pitch_range")
     if not isinstance(range_pct, (int, float)):
         return None
-    ratio = sync_tempo_ratio(out_state, in_profile, float(range_pct))
+    return out_state, float(range_pct)
+
+
+def _launch_tempo(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float | None:
+    """The tempo the paused incoming deck is set to before a ``sync_to_out`` launch.
+
+    A quantized play arms the next downbeat without Beat Sync's tempo match (Beat Sync
+    on a paused deck only sets its flag), so the deck is put on the outgoing tempo first,
+    with the ratio Beat Sync itself would pick. ``None`` leaves the tempo alone: another
+    mode, or a mirror without the tempos and range (validation says so).
+    """
+    found = _launch_decks(plan, live)
+    if found is None:
+        return None
+    ratio = sync_tempo_ratio(found[0], in_profile, found[1])
     return None if ratio is None else round(ratio, 6)
+
+
+def _launch_fold(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float | None:
+    """The fold (0.5 or 2) the launch tempo folds to, or None when it does not fold or there is no launch tempo.
+
+    The page reports a fold through the shared Beat Sync notice (the BAR contract), so the prepared beat_sync names it.
+    """
+    found = _launch_decks(plan, live)
+    if found is None:
+        return None
+    return sync_tempo_fold(found[0], in_profile, found[1])
+
+
+def _beat_sync_command(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The incoming deck's beat_sync prepare step. A folded launch keeps phase but not the bar count, so it names the
+    fold and its master for the page (AGENTS.md BAR contract)."""
+    sync: dict[str, Any] = {"type": "beat_sync", "deck": plan.in_.deck, "enabled": plan.tempo_mode == "sync_to_out"}
+    fold = _launch_fold(plan, in_profile, live)
+    if sync["enabled"] and fold is not None and fold != 1.0:
+        sync["normalization"] = fold
+        sync["master"] = plan.out.deck
+    return sync
 
 
 def _trim_command(plan: TransitionPlan) -> dict[str, Any] | None:
@@ -325,7 +359,7 @@ def compile_plan(
     # Explicit both ways: a fresh deck defaults Beat Sync on, and an idle deck
     # keeps it from its last track, so "none" must turn it off. A synced plan keeps it on through a glide: the
     # incoming tempo moves run on the leader instead (AGENT-32, ``_leader_led_events``).
-    prepare.append({"type": "beat_sync", "deck": plan.in_.deck, "enabled": plan.tempo_mode == "sync_to_out"})
+    prepare.append(_beat_sync_command(plan, in_profile, live))
     led = replace(plan, events=_leader_led_events(plan, in_profile, live))
     # AGENT-35: compile reads the live channels exactly as validation does, so a malformed fader, trim or low EQ on
     # either deck refuses the order (Sol P1 #7595), then caps the outgoing fader; without a live fader, say so.

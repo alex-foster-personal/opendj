@@ -12,9 +12,6 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Sequence
 
-#: What a lyrics lookup needs from the row, and the words for each lack. A
-#: lack is a fact about the ROW, which a tag re-read or an edit can change, so
-#: it must never be stored as a verdict keyed on the audio file.
 METADATA_PROBLEMS: tuple[str, ...] = (
     "has no title", "has no artist", "has invalid artists_json", "has invalid duration_ms",
 )

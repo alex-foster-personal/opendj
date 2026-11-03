@@ -35,5 +35,5 @@ test('stopped waveform playhead is white before sync status is evaluated', () =>
 		'stopped state must short-circuit visual drift classification'
 	);
 	assert.match(render, /stopped: '#fff'/);
-	assert.match(waveRow, /drawPlayhead\(ctx, cssW, cssH, syncPlayheadTone\)/);
+	assert.match(waveRow, /drawPlayhead\(ctx, cssW, cssH, syncPlayheadTone[,)]/);
 });

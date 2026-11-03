@@ -26,6 +26,7 @@ Mini-PRD
 """
 from __future__ import annotations
 
+import functools
 import struct
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ from pathlib import Path
 from apps.shared.file_rewrite import replace_head
 
 HEADER_SIZE = 10
+FOOTER_SIZE = 10
 DEFAULT_PADDING = 2048
 NEW_TAG_VERSION_DEFAULT = 3
 """v2.3 is what Serato DJ Pro writes and what every DJ app reads."""
@@ -41,10 +43,16 @@ NEW_TAG_VERSION_DEFAULT = 3
 # Frame format-flag bits (second flag byte).
 _V23_COMPRESSED = 0x80
 _V23_ENCRYPTED = 0x40
+_V23_GROUPED = 0x20
+_V24_GROUPED = 0x40
 _V24_COMPRESSED = 0x08
 _V24_ENCRYPTED = 0x04
 _V24_UNSYNC = 0x02
 _V24_DATA_LENGTH = 0x01
+# Format-flag bits each version leaves undefined: v2.3 defines 0x80/0x40/0x20, v2.4 defines 0x40/0x08/0x04/0x02/0x01.
+_RESERVED_FORMAT_FLAGS = {3: 0x1F, 4: 0xB0}
+# Status-flag bits each version leaves undefined: v2.3 defines 0xE0, v2.4 defines 0x70.
+_RESERVED_STATUS_FLAGS = {3: 0x1F, 4: 0x8F}
 
 _ENC_LATIN1 = 0
 _ENC_UTF16 = 1
@@ -64,11 +72,21 @@ class Frame:
     data: bytes
     status_flags: int = 0
     format_flags: int = 0
+    #: The tag's major version the flags were read under; 0 for a frame
+    #: built in memory, whose flags are then read under both versions.
+    major: int = 0
+    #: The grouping identity byte, held apart from ``data`` and written back
+    #: in front of it; None when the frame is not grouped.
+    group_id: int | None = None
 
     @property
     def opaque(self) -> bool:
-        """Compressed or encrypted: kept verbatim, never decoded."""
-        return bool(self.format_flags & (_V24_COMPRESSED | _V24_ENCRYPTED | _V23_COMPRESSED | _V23_ENCRYPTED))
+        """Compressed or encrypted: kept verbatim, never decoded.
+
+        The bits differ by version, and v2.4's grouping bit (0x40) is v2.3's
+        encryption bit, so the flags are read under the frame's own version.
+        """
+        return bool(self.format_flags & _sealed_mask(self.major))
 
 
 @dataclass
@@ -82,7 +100,7 @@ class Id3Tag:
     def text(self, frame_id: str) -> list[str]:
         for frame in self.frames:
             if frame.frame_id == frame_id and not frame.opaque:
-                return _decode_text_values(frame.data)
+                return _decode_text_values(frame.data, frame.major)
         return []
 
     def first_text(self, frame_id: str) -> str | None:
@@ -92,14 +110,14 @@ class Id3Tag:
     def txxx(self, description: str) -> str | None:
         wanted = description.upper()
         for frame in self._decodable("TXXX"):
-            desc, values = _decode_txxx(frame.data)
+            desc, values = _decode_txxx(frame.data, frame.major)
             if desc.upper() == wanted:
                 return values[0].strip() if values and values[0].strip() else None
         return None
 
     def comments(self) -> list[tuple[str, str, str]]:
         """``(language, description, text)`` for every COMM frame."""
-        return [_decode_comm(frame.data) for frame in self._decodable("COMM")]
+        return [_decode_comm(frame.data, frame.major) for frame in self._decodable("COMM")]
 
     def popm_rating(self) -> int | None:
         for frame in self._decodable("POPM"):
@@ -110,11 +128,11 @@ class Id3Tag:
 
     def geob(self) -> list[tuple[str, str, str, bytes]]:
         """``(mime, filename, description, payload)`` for every GEOB frame."""
-        return [_decode_geob(frame.data) for frame in self._decodable("GEOB")]
+        return [_decode_geob(frame.data, frame.major) for frame in self._decodable("GEOB")]
 
     def pictures(self) -> list[tuple[str, int, str, bytes]]:
         """``(mime, picture_type, description, data)`` for every APIC frame."""
-        return [_decode_apic(frame.data) for frame in self._decodable("APIC")]
+        return [_decode_apic(frame.data, frame.major) for frame in self._decodable("APIC")]
 
     # ----- mutation -----------------------------------------------------------
     def remove(self, predicate: Callable[[Frame], bool]) -> None:
@@ -126,7 +144,7 @@ class Id3Tag:
 
     def set_txxx(self, description: str, value: str) -> None:
         wanted = description.upper()
-        self.remove(lambda f: f.frame_id == "TXXX" and not f.opaque and _decode_txxx(f.data)[0].upper() == wanted)
+        self.remove(lambda f: f.frame_id == "TXXX" and not f.opaque and _decode_txxx(f.data, f.major)[0].upper() == wanted)
         self.frames.append(Frame("TXXX", encode_txxx(description, value, self.version)))
 
     def set_popm(self, email: str, rating: int, count: int = 0) -> None:
@@ -134,7 +152,7 @@ class Id3Tag:
         self.frames.append(Frame("POPM", encode_popm(email, rating, count)))
 
     def set_geob(self, description: str, payload: bytes, mime: str = "application/octet-stream") -> None:
-        self.remove(lambda f: f.frame_id == "GEOB" and not f.opaque and _decode_geob(f.data)[2] == description)
+        self.remove(lambda f: f.frame_id == "GEOB" and not f.opaque and _decode_geob(f.data, f.major)[2] == description)
         self.frames.append(Frame("GEOB", encode_geob(mime, "", description, payload)))
 
     def _decodable(self, frame_id: str) -> Iterable[Frame]:
@@ -146,30 +164,49 @@ def read_tag(path: Path) -> Id3Tag | None:
     """The ID3v2 tag at the start of ``path``, or ``None`` when it has none."""
     with path.open("rb") as handle:
         header = handle.read(HEADER_SIZE)
+        _strict._reject_cut_short_header(path, header)
         if len(header) < HEADER_SIZE or header[:3] != b"ID3":
             return None
-        major, _revision, flags = header[3], header[4], header[5]
+        major, flags = header[3], header[5]
+        if any(b & 0x80 for b in header[6:10]):
+            # The tag size is syncsafe in v2.3 and v2.4 alike. Masking the high bit would
+            # read the declared body as fewer bytes, and the tag would import as empty.
+            raise Id3Error(f"{path}: ID3 tag size bytes {header[6:10].hex()} are not syncsafe")
         body_size = _syncsafe_to_int(header[6:10])
         body = handle.read(body_size)
-    if major not in (3, 4):
-        raise Id3Error(f"{path}: ID3v2.{major} tag is not supported (only v2.3 / v2.4)")
-    if len(body) != body_size:
-        raise Id3Error(f"{path}: ID3 tag claims {body_size} bytes but the file ends early")
-    footer = 10 if (major == 4 and flags & 0x10) else 0
+        has_footer = major == 4 and bool(flags & 0x10)
+        footer_bytes = handle.read(FOOTER_SIZE) if has_footer else b""
+    _strict._check_tag_header(path, header, body, footer_bytes)
+    footer = FOOTER_SIZE if has_footer else 0
     tag = Id3Tag(version=major, original_size=HEADER_SIZE + body_size + footer)
     tag_unsync = bool(flags & 0x80)
     if major == 3 and tag_unsync:
         body = _undo_unsync(body)
     offset = _skip_extended_header(body, major) if flags & 0x40 else 0
-    tag.frames = list(_parse_frames(body, offset, major, tag_unsync, path))
+    tag.frames, frames_end, unsynced = _parse_frames(body, offset, major, tag_unsync, path)
+    _strict._verify_extended_header(body, major, flags, offset, frames_end, unsynced, path)
+    _strict._check_text_encodings_at_read(tag.frames, major, path)
+    _strict._check_footer_padding(path, body, frames_end, has_footer)
     return tag
 
 
-def _parse_frames(body: bytes, offset: int, major: int, tag_unsync: bool, path: Path) -> Iterable[Frame]:
+def _sealed_mask(major: int) -> int:
+    if major == 4:
+        return _V24_COMPRESSED | _V24_ENCRYPTED
+    if major == 3:
+        return _V23_COMPRESSED | _V23_ENCRYPTED
+    return _V24_COMPRESSED | _V24_ENCRYPTED | _V23_COMPRESSED | _V23_ENCRYPTED
+
+
+def _parse_frames(body: bytes, offset: int, major: int, tag_unsync: bool, path: Path) -> tuple[list[Frame], int, bool]:
+    """The frames in ``body`` from ``offset``, the offset where they end (the padding starts there), and whether
+    any v2.4 frame is unsynchronised."""
+    frames: list[Frame] = []
+    unsynced = False
     while offset + HEADER_SIZE <= len(body):
         frame_id_raw = body[offset : offset + 4]
-        if frame_id_raw[0] == 0:  # padding
-            return
+        if frame_id_raw[0] == 0:  # padding, checked below for non-zero bytes after it
+            break
         if not all(48 <= b <= 57 or 65 <= b <= 90 for b in frame_id_raw):
             raise Id3Error(f"{path}: invalid frame id {frame_id_raw!r} at tag offset {offset}")
         size_bytes = body[offset + 4 : offset + 8]
@@ -177,18 +214,66 @@ def _parse_frames(body: bytes, offset: int, major: int, tag_unsync: bool, path: 
         status, fmt = body[offset + 8], body[offset + 9]
         start = offset + HEADER_SIZE
         end = start + size
+        if size == 0:
+            raise Id3Error(f"{path}: frame {frame_id_raw.decode()} has no data bytes, but the spec requires at least one")
         if end > len(body):
             raise Id3Error(f"{path}: frame {frame_id_raw.decode()} runs past the end of the tag")
-        data = body[start:end]
-        if major == 4 and not (fmt & (_V24_COMPRESSED | _V24_ENCRYPTED)):
-            if fmt & _V24_DATA_LENGTH:
-                data = data[4:]
-                fmt &= ~_V24_DATA_LENGTH
-            if fmt & _V24_UNSYNC or tag_unsync:
-                data = _undo_unsync(data)
-                fmt &= ~_V24_UNSYNC
-        yield Frame(frame_id_raw.decode("ascii"), data, status, fmt)
+        frame_id = frame_id_raw.decode("ascii")
+        _check_reserved_frame_flags(path, frame_id, major, status, fmt)
+        unsynced = unsynced or (major == 4 and bool(fmt & _V24_UNSYNC))
+        group_id, data, fmt = _unwrap_frame_data(body[start:end], fmt, major, tag_unsync, f"{path}: frame {frame_id}")
+        frames.append(Frame(frame_id, data, status, fmt, major=major, group_id=group_id))
         offset = end
+    if any(body[offset:]):
+        # Fewer bytes than a frame header are left, and they are not padding: the tag is cut short.
+        raise Id3Error(f"{path}: {len(body) - offset} trailing bytes at tag offset {offset} are not a whole frame header")
+    return frames, offset, unsynced
+
+
+def _check_reserved_frame_flags(path: Path, frame_id: str, major: int, status: int, fmt: int) -> None:
+    """Reject a frame that sets a status or format flag bit the spec leaves reserved."""
+    reserved_status = status & _RESERVED_STATUS_FLAGS[major]
+    if reserved_status:
+        raise Id3Error(f"{path}: frame {frame_id} sets reserved status flag bits 0x{reserved_status:02x}")
+    reserved_format = fmt & _RESERVED_FORMAT_FLAGS[major]
+    if reserved_format:
+        raise Id3Error(f"{path}: frame {frame_id} sets reserved format flag bits 0x{reserved_format:02x}")
+
+
+def _unwrap_frame_data(data: bytes, fmt: int, major: int, tag_unsync: bool, where: str) -> tuple[int | None, bytes, int]:
+    """Split off a group byte, then undo v2.4's length indicator and
+    unsynchronisation, for a frame that is not sealed. Returns the group id,
+    the frame body, and the format flags left to keep."""
+    if fmt & _sealed_mask(major):
+        return None, data, fmt
+    if major == 4 and (fmt & _V24_UNSYNC or tag_unsync):
+        # v2.4 unsynchronisation covers every byte after the frame header,
+        # the group byte and length indicator included, so it is undone first.
+        data = _undo_unsync(data)
+        fmt &= ~_V24_UNSYNC
+    group_id = None
+    if fmt & (_V24_GROUPED if major == 4 else _V23_GROUPED):
+        # The group byte comes first in an unsealed frame's data.
+        if not data:
+            raise Id3Error(f"{where} is grouped but has no group byte")
+        group_id, data = data[0], data[1:]
+    if major == 4 and fmt & _V24_DATA_LENGTH:
+        data = _strip_data_length_indicator(data, where)
+        fmt &= ~_V24_DATA_LENGTH
+    return group_id, data, fmt
+
+
+def _strip_data_length_indicator(data: bytes, where: str) -> bytes:
+    """Remove a v2.4 data-length indicator, which must be syncsafe and must match the bytes after it."""
+    if len(data) < 4:
+        raise Id3Error(f"{where} sets the data-length indicator but holds only {len(data)} bytes")
+    indicator = data[:4]
+    if any(b & 0x80 for b in indicator):
+        raise Id3Error(f"{where} data-length indicator {indicator.hex()} is not syncsafe")
+    declared = _syncsafe_to_int(indicator)
+    if declared != len(data) - 4:
+        raise Id3Error(f"{where} data-length indicator declares {declared} bytes but the frame holds {len(data) - 4}")
+    return data[4:]
 
 
 def _frame_size(size_bytes: bytes, major: int, body: bytes, offset: int) -> int:
@@ -217,9 +302,29 @@ def _next_frame_plausible(body: bytes, at: int) -> bool:
 
 
 def _skip_extended_header(body: bytes, major: int) -> int:
+    if len(body) < 4:
+        raise Id3Error("ID3 extended header is truncated: fewer than four body bytes")
     if major == 3:
-        return 4 + struct.unpack(">I", body[:4])[0]
-    return _syncsafe_to_int(body[:4])
+        size = struct.unpack(">I", body[:4])[0]
+        end = 4 + size
+    else:
+        if any(b & 0x80 for b in body[:4]):
+            raise Id3Error(f"ID3 extended header size bytes {body[:4].hex()} are not syncsafe")
+        size = _syncsafe_to_int(body[:4])
+        end = size
+    if end > len(body):
+        # Frames would start past the end, so the tag would read as empty with no loss counted.
+        raise Id3Error(f"ID3 extended header declares {end} bytes but the tag body holds {len(body)}")
+    if major == 3:
+        _strict._check_v23_extended_header(body, size)
+    else:
+        # v2.4 counts the size field too, and its one flag-count byte must read 1.
+        if end < 6:
+            raise Id3Error(f"ID3 extended header declares {end} bytes, fewer than the 6 a v2.4 header needs")
+        if body[4] != 1:
+            raise Id3Error(f"ID3 extended header has {body[4]} flag bytes, but a v2.4 header has 1")
+        _strict._check_v24_extended_payloads(body, end)
+    return end
 
 
 # ============================================================== write =======
@@ -250,142 +355,136 @@ def load_or_new(path: Path, *, new_version: int = NEW_TAG_VERSION_DEFAULT) -> Id
     return existing if existing is not None else Id3Tag(version=new_version)
 
 
-def _render_frame(frame: Frame, version: int) -> bytes:
-    if version == 4:
-        size = _int_to_syncsafe(len(frame.data))
-    else:
-        size = struct.pack(">I", len(frame.data))
-    return frame.frame_id.encode("ascii") + size + bytes([frame.status_flags, frame.format_flags]) + frame.data
-
-
-
 # ============================================================ encoders ======
-def encode_text_frame(value: str, version: int) -> bytes:
-    encoding, encoded = _encode_string(value, version)
-    return bytes([encoding]) + encoded
-
-
-def encode_txxx(description: str, value: str, version: int) -> bytes:
-    encoding, desc = _encode_string(description, version, prefer=_pick_encoding(description + value, version))
-    _, val = _encode_string(value, version, prefer=encoding)
-    return bytes([encoding]) + desc + _terminator(encoding) + val
-
-
-def encode_comm(language: str, description: str, text: str, version: int) -> bytes:
-    encoding, desc = _encode_string(description, version, prefer=_pick_encoding(description + text, version))
-    _, body = _encode_string(text, version, prefer=encoding)
-    lang = language.encode("latin-1")[:3].ljust(3, b" ")
-    return bytes([encoding]) + lang + desc + _terminator(encoding) + body
-
-
-def encode_popm(email: str, rating: int, count: int = 0) -> bytes:
-    if not 0 <= rating <= 255:
-        raise Id3Error(f"POPM rating must be 0..255, got {rating}")
-    return email.encode("latin-1") + b"\x00" + bytes([rating]) + struct.pack(">I", count)
-
-
-def encode_geob(mime: str, filename: str, description: str, payload: bytes) -> bytes:
-    # Serato writes encoding 0 (latin-1) with ASCII mime / description.
-    return (
-        bytes([_ENC_LATIN1])
-        + mime.encode("latin-1") + b"\x00"
-        + filename.encode("latin-1") + b"\x00"
-        + description.encode("latin-1") + b"\x00"
-        + payload
-    )
-
-
-def encode_apic(mime: str, picture_type: int, description: str, data: bytes) -> bytes:
-    return (
-        bytes([_ENC_LATIN1])
-        + mime.encode("latin-1") + b"\x00"
-        + bytes([picture_type])
-        + description.encode("latin-1") + b"\x00"
-        + data
-    )
-
-
 # ============================================================ decoders ======
-def _decode_text_values(data: bytes) -> list[str]:
+def _check_text_encoding(encoding: int, major: int) -> None:
+    """Reject a text encoding byte that the frame's version does not define. v2.3 has only 0 and 1; v2.4 adds 2 and 3.
+
+    ``major`` is 0 for a frame built in memory, which is not checked against a version.
+    """
+    if major == 3 and encoding > _ENC_UTF16:
+        raise Id3Error(f"ID3v2.3 frame uses text encoding byte {encoding}, which only v2.4 defines")
+    if major == 4 and encoding > _ENC_UTF8:
+        raise Id3Error(f"ID3v2.4 frame uses text encoding byte {encoding}, which the spec does not define")
+
+
+def _decode_text_values(data: bytes, major: int = 0, errors: str = "replace") -> list[str]:
     if not data:
         return []
     encoding, raw = data[0], data[1:]
-    return [v for v in _decode_string(raw, encoding).split("\x00") if v != ""] if raw else []
+    _check_text_encoding(encoding, major)
+    return [v for v in _decode_string(raw, encoding, errors).split("\x00") if v != ""] if raw else []
 
 
-def _decode_txxx(data: bytes) -> tuple[str, list[str]]:
+def _malformed_as_id3_error(decode):
+    """A decoder that indexes past a short or NUL-less body raises Id3Error, not IndexError.
+
+    A frame a tag writer damaged is an unreadable tag, which callers count as a
+    loss; an IndexError would escape them and stop the whole read.
+    """
+
+    @functools.wraps(decode)
+    def checked(data: bytes, major: int = 0, errors: str = "replace"):
+        try:
+            return decode(data, major, errors)
+        except (IndexError, ValueError) as exc:
+            raise Id3Error(f"malformed {decode.__name__.removeprefix('_decode_')} frame body") from exc
+
+    return checked
+
+
+@_malformed_as_id3_error
+def _decode_txxx(data: bytes, major: int = 0, errors: str = "replace") -> tuple[str, list[str]]:
     encoding = data[0]
-    desc_raw, rest = _split_terminated(data[1:], encoding)
-    values = [v for v in _decode_string(rest, encoding).split("\x00") if v != ""]
-    return _decode_string(desc_raw, encoding), values
+    _check_text_encoding(encoding, major)
+    order = _ByteOrder()
+    desc_raw, rest = _split_description(data[1:], encoding, errors)
+    description = _decode_string(desc_raw, encoding, errors, order)
+    values = [v for v in _decode_string(rest, encoding, errors, order).split("\x00") if v != ""]
+    return description, values
 
 
-def _decode_comm(data: bytes) -> tuple[str, str, str]:
+@_malformed_as_id3_error
+def _decode_comm(data: bytes, major: int = 0, errors: str = "replace") -> tuple[str, str, str]:
     encoding = data[0]
-    language = data[1:4].decode("latin-1", errors="replace")
-    desc_raw, text_raw = _split_terminated(data[4:], encoding)
-    return language, _decode_string(desc_raw, encoding), _decode_string(text_raw, encoding).rstrip("\x00")
+    _check_text_encoding(encoding, major)
+    language_raw = data[1:4]
+    if errors == "strict" and not (len(language_raw) == 3 and language_raw.isascii() and language_raw.isalpha()):
+        # The language is an ISO-639-2 code: three ASCII letters, with "XXX" for unknown. Anything else is damage.
+        raise UnicodeDecodeError("ascii", language_raw, 0, len(language_raw), "COMM language is not an ISO-639-2 code")
+    language = language_raw.decode("latin-1", errors="replace")
+    order = _ByteOrder()
+    desc_raw, text_raw = _split_description(data[4:], encoding, errors)
+    description = _decode_string(desc_raw, encoding, errors, order)
+    return language, description, _decode_string(text_raw, encoding, errors, order).rstrip("\x00")
 
 
-def _decode_geob(data: bytes) -> tuple[str, str, str, bytes]:
+@_malformed_as_id3_error
+def _decode_geob(data: bytes, major: int = 0, errors: str = "replace") -> tuple[str, str, str, bytes]:
     encoding = data[0]
+    _check_text_encoding(encoding, major)
     mime_raw, rest = data[1:].split(b"\x00", 1)
-    filename_raw, rest = _split_terminated(rest, encoding)
-    desc_raw, payload = _split_terminated(rest, encoding)
+    filename_raw, rest = _split_required_terminator(rest, encoding)
+    desc_raw, payload = _split_required_terminator(rest, encoding)
+    order = _ByteOrder()
     return (
         mime_raw.decode("latin-1"),
-        _decode_string(filename_raw, encoding),
-        _decode_string(desc_raw, encoding),
+        _decode_string(filename_raw, encoding, errors, order),
+        _decode_string(desc_raw, encoding, errors, order),
         payload,
     )
 
 
-def _decode_apic(data: bytes) -> tuple[str, int, str, bytes]:
+@_malformed_as_id3_error
+def _decode_apic(data: bytes, major: int = 0, errors: str = "replace") -> tuple[str, int, str, bytes]:
     encoding = data[0]
+    _check_text_encoding(encoding, major)
     mime_raw, rest = data[1:].split(b"\x00", 1)
     picture_type = rest[0]
-    desc_raw, image = _split_terminated(rest[1:], encoding)
-    return mime_raw.decode("latin-1"), picture_type, _decode_string(desc_raw, encoding), image
+    desc_raw, image = _split_description(rest[1:], encoding, errors)
+    return mime_raw.decode("latin-1"), picture_type, _decode_string(desc_raw, encoding, errors), image
 
 
 # ============================================================ strings =======
-def _pick_encoding(value: str, version: int) -> int:
-    try:
-        value.encode("latin-1")
-        return _ENC_LATIN1
-    except UnicodeEncodeError:
-        return _ENC_UTF8 if version == 4 else _ENC_UTF16
+class _ByteOrder:
+    """The UTF-16 byte order a frame's strings share. The first byte-order mark in the frame sets it."""
+
+    def __init__(self) -> None:
+        self.codec: str | None = None
 
 
-def _encode_string(value: str, version: int, prefer: int | None = None) -> tuple[int, bytes]:
-    encoding = prefer if prefer is not None else _pick_encoding(value, version)
-    if encoding == _ENC_LATIN1:
-        return encoding, value.encode("latin-1")
-    if encoding == _ENC_UTF8:
-        return encoding, value.encode("utf-8")
-    return encoding, value.encode("utf-16")  # BOM included
-
-
-def _decode_string(raw: bytes, encoding: int) -> str:
+def _decode_string(raw: bytes, encoding: int, errors: str = "replace", order: _ByteOrder | None = None) -> str:
     if encoding == _ENC_LATIN1:
         return raw.decode("latin-1")
     if encoding == _ENC_UTF16:
-        return _decode_utf16_with_bom(raw)
+        return _decode_utf16_with_bom(raw, errors, order or _ByteOrder())
     if encoding == _ENC_UTF16BE:
-        return raw.decode("utf-16-be", errors="replace")
+        # Encoding 2 is UTF-16BE without a byte-order mark, in every NUL-separated value, so a strict read rejects one.
+        values = _split_utf16(raw)
+        if errors == "strict" and any(v[:2] in (b"\xfe\xff", b"\xff\xfe") for v in values):
+            raise UnicodeDecodeError("utf-16-be", raw, 0, 2, "byte-order mark in UTF-16BE text")
+        return "\x00".join(v.decode("utf-16-be", errors=errors) for v in values)
     if encoding == _ENC_UTF8:
-        return raw.decode("utf-8", errors="replace")
+        return raw.decode("utf-8", errors=errors)
     raise Id3Error(f"unknown ID3 text encoding byte {encoding}")
 
 
-def _decode_utf16_with_bom(raw: bytes) -> str:
-    # v2.4 allows a BOM per null-separated value, so decode value by value.
+def _decode_utf16_with_bom(raw: bytes, errors: str, order: _ByteOrder) -> str:
+    # v2.4 allows a BOM per null-separated value, and v2.3 requires one. Every string in a frame shares the byte order
+    # the first BOM in the frame set, so a later BOM that disagrees is a conflict, not a new byte order.
     parts = []
     for chunk in _split_utf16(raw):
+        text = chunk
         if chunk[:2] in (b"\xff\xfe", b"\xfe\xff"):
-            parts.append(chunk.decode("utf-16", errors="replace"))
-        else:
-            parts.append(chunk.decode("utf-16-le", errors="replace"))
+            bom_codec = "utf-16-le" if chunk[:2] == b"\xff\xfe" else "utf-16-be"
+            if order.codec is not None and bom_codec != order.codec and errors == "strict":
+                raise UnicodeDecodeError("utf-16", chunk, 0, 2, "conflicting byte-order mark")
+            order.codec = order.codec or bom_codec
+            text = chunk[2:]
+        elif errors == "strict" and order.codec is None:
+            # An empty first field has no BOM either, and the byte order is still unknown, so it is malformed too.
+            raise UnicodeDecodeError("utf-16", chunk, 0, min(2, len(chunk)), "missing byte-order mark")
+        parts.append(text.decode(order.codec or "utf-16-le", errors=errors))
     return "\x00".join(parts)
 
 
@@ -410,6 +509,27 @@ def _split_terminated(raw: bytes, encoding: int) -> tuple[bytes, bytes]:
                 return raw[:i], raw[i + 2 :]
         return raw, b""
     head, _sep, tail = raw.partition(b"\x00")
+    return head, tail
+
+
+def _split_description(raw: bytes, encoding: int, errors: str) -> tuple[bytes, bytes]:
+    """Split a description off its terminator. A strict read requires the terminator; a lenient read keeps the old split."""
+    if errors == "strict":
+        return _split_required_terminator(raw, encoding)
+    return _split_terminated(raw, encoding)
+
+
+def _split_required_terminator(raw: bytes, encoding: int) -> tuple[bytes, bytes]:
+    """Split at the encoding's terminator, raising when the frame has none.
+
+    _split_terminated returns the whole input when no terminator is present, which
+    would let a damaged GEOB field swallow the payload. A GEOB field must end with
+    its terminator, so a missing one raises ValueError for the decoder to report.
+    """
+    head, tail = _split_terminated(raw, encoding)
+    terminator_len = 2 if encoding in (_ENC_UTF16, _ENC_UTF16BE) else 1
+    if len(head) + terminator_len > len(raw):
+        raise ValueError("frame field has no terminator")
     return head, tail
 
 
@@ -447,3 +567,16 @@ __all__ = [
     "render",
     "save",
 ]
+
+
+# The strict checks import this module's decoders, so they load last, after every name above exists.
+from apps.shared import id3v2_strict as _strict  # noqa: E402
+from apps.shared.id3v2_write import (  # noqa: E402
+    _render_frame,
+    encode_apic,
+    encode_comm,
+    encode_geob,
+    encode_popm,
+    encode_text_frame,
+    encode_txxx,
+)

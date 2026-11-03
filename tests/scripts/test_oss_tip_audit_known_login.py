@@ -36,8 +36,8 @@ pytestmark = pytest.mark.requirement("OSSPUB-03")
 _HOME = "/" + "home" + "/"
 _USERS = "/" + "Users" + "/"
 _LOGIN = "zq" + "ruser"
-_RECORD = "specs/session-record.md"
-_DOC = "docs/ops/box.md"
+_RECORD = "(private path)"
+_DOC = "(private path)"
 
 
 def _write(root: Path, name: str, text: str) -> Path:
@@ -115,6 +115,24 @@ def test_a_bare_match_exemption_still_reports_the_home_path_position(tmp_path: P
 def test_harvest_reduces_a_segment_with_trailing_noise_to_its_login() -> None:
     assert logins_in_text(f"{_USERS}{_LOGIN}...\n{_HOME}{_LOGIN}:x\n") == {_LOGIN}
     assert revealed_logins([f"{_USERS}dev\\n4."]) == frozenset()
+
+
+@pytest.mark.parametrize("child", ["Library", "library", "Shared", "Public", "Default", "Desktop"])
+def test_a_macos_home_child_after_a_home_root_is_not_harvested_as_a_login(child: str) -> None:
+    nested = f'"reported_data_dir": "{_USERS}dev/run/{_HOME[1:]}{child}/Application Support/x"'
+    assert logins_in_text(f"{_HOME}{child}/Application Support/x\n{nested}\n") == set()
+    assert logins_in_text(f"{_HOME}{_LOGIN}/Library/x\n") == {_LOGIN}
+
+
+def test_a_home_root_nested_in_a_placeholder_home_is_not_harvested_as_a_login() -> None:
+    sandbox = f"{_USERS}dev/.runs/20261103T122358Z{_HOME}fixture-library/a.mp3"
+    assert logins_in_text(f'"file_path": "{sandbox}"\n') == set()
+    assert logins_in_text(f"{_USERS}{_LOGIN}/runs{_HOME}other-login/a\n") == {_LOGIN, "other-login"}
+
+
+def test_a_macos_home_child_does_not_make_its_bare_word_a_finding(tmp_path: Path) -> None:
+    files = {_RECORD: f"data in {_HOME}Library/Application Support/x\n", _DOC: "open the library view\n"}
+    assert all(rule != "known-login" for _, _, rule, _ in _findings(tmp_path, files))
 
 
 # ----- the real gate --------------------------------------------------------------------

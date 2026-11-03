@@ -1,6 +1,6 @@
 # Autofixing: who opens the fix PRs
 
-Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **spec, not wired** (Mon 14 Sep 2026).
 
 ## Division of labor (one owner per job, so there are no duplicate PRs)
 
@@ -28,6 +28,7 @@ setting change for the owner.
   "timezone": "Etc/UTC",
   "schedule": ["before 6am on monday"],
   "minimumReleaseAge": "3 days",
+  "updateNotScheduled": false,
   "prConcurrentLimit": 6,
   "dependencyDashboard": true,
   "osvVulnerabilityAlerts": true,
@@ -71,6 +72,9 @@ Notes:
 - `rebaseWhen: "conflicted"`: Renovate rebases a branch only when it conflicts, never just
   because the base moved. The live `renovate.json` is the source of truth for this policy;
   why: [ADR-NEW-renovate-rebases-only-on-conflict](../decisions/ADR-NEW-renovate-rebases-only-on-conflict.md).
+- `updateNotScheduled: false`: existing branches are updated only inside the Monday window, not
+  whenever a new release or a main move turns up mid-week; vulnerability alerts keep `at any time`.
+  Why: [ADR-NEW-renovate-updates-only-in-schedule](../decisions/ADR-NEW-renovate-updates-only-in-schedule.md).
 - `platformAutomerge: false` makes Renovate itself confirm the checks are green before
   merging. Required-status-check enforcement (branch protection) is not available for
   private repos on GitHub Free, so GitHub's native auto-merge would have nothing to wait

@@ -20,7 +20,7 @@ export function readBootStampMirror(): string | null {
  * nothing: a blob holding only the stamp is one prefs.svelte.ts `_load`
  * rejects as malformed (no `hide_broken_links`), so the next page load of a
  * fresh profile threw before the app mounted. Found by the Electron shell
- * gate (ELECTRON-13): a new Electron profile over an engine that already
+ * gate (ELECTRON-6208): a new Electron profile over an engine that already
  * holds a gig stamp, reloaded once. The prefs blob's own first save comes
  * soon after, and the next stamp write mirrors into it.
  */

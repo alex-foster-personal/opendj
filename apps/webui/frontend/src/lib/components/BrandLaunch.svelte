@@ -9,15 +9,31 @@
 		shouldPlayBrandLaunch
 	} from '$lib/brand-launch';
 
+	/**
+	 * Whether to play now, and what to do when the animation ends. The defaults
+	 * read and write the per-browser marker; a story passes its own answers, so
+	 * its state never depends on what an earlier render left in localStorage.
+	 */
+	/**
+	 * Static capture state: the overlay shows and holds the meet frame (both
+	 * halves in place, no slide, no fade), so a screenshot cannot catch it
+	 * blank after a finite animation has run out. Never set in the app.
+	 */
+	let {
+		shouldPlay = () => shouldPlayBrandLaunch(window.localStorage),
+		onfinish = () => completeBrandLaunch(window.localStorage),
+		pinned = false
+	}: { shouldPlay?: () => boolean; onfinish?: () => void; pinned?: boolean } = $props();
+
 	let visible = $state(false);
 
 	onMount(() => {
-		visible = shouldPlayBrandLaunch(window.localStorage);
+		visible = shouldPlay();
 	});
 
 	function finish(event: AnimationEvent): void {
 		if (event.target !== event.currentTarget) return;
-		completeBrandLaunch(window.localStorage);
+		onfinish();
 		visible = false;
 	}
 </script>
@@ -25,6 +41,7 @@
 {#if visible}
 	<div
 		class="brand-launch"
+		class:brand-launch--pinned={pinned}
 		aria-label="Open DJ launch animation"
 		style="
 			--brand-slide-ms: {BRAND_LAUNCH_SLIDE_MS}ms;
@@ -109,6 +126,11 @@
 		to {
 			opacity: 0;
 		}
+	}
+	.brand-launch--pinned,
+	.brand-launch--pinned .brand-half-dark,
+	.brand-launch--pinned .brand-half-light {
+		animation: none;
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.brand-half-dark,

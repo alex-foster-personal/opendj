@@ -343,7 +343,7 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
         "apps/spotify/state_aux.py",
         lambda conn, _path: spotify_aux.ensure_aux_tables(conn),
     ),
-    Authority("apps/launcher/scripts/bootstrap_db.py", _apply_launcher),
+    Authority("apps/launcher/scripts/db_schema.py", _apply_launcher),
     # NOT PYTHON, and that is the point. See rust_ddl_statements above: the
     # desktop launcher creates launcher_meta in the same state.db on every
     # start, and no derivation restricted to *.py could ever have seen it.

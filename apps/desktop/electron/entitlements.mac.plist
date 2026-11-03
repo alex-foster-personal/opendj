@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the Developer ID signed Electron app and its helper apps
+  (scripts/electron_local_sign.py, ship_electron.py local-fast). The engine
+  payload's executables carry their own, in
+  apps/desktop/src-tauri/Entitlements.engine.plist.
+
+  allow-jit: V8 in the main process and the renderers.
+  allow-unsigned-executable-memory: Chromium helpers still map writable and
+  executable pages outside MAP_JIT.
+  audio-input: the hardened runtime refuses every audio input silently
+  without it; the headphone cue latency calibration (CUEOUT-11) listens in
+  the page. NSMicrophoneUsageDescription in build.mac.extendInfo is the
+  prompt text.
+
+  An XML comment may not contain two adjacent hyphens: codesign's strict
+  parser (AMFI) refuses the whole file if one does.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

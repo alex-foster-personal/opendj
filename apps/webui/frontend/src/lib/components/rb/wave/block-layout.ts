@@ -18,6 +18,7 @@
  * runs per animation frame (render.ts _drawCachedBands).
  */
 import type { AnlzBeat, AnlzWaveform } from '$lib/rb/anlz-types';
+import { visibleBeatLines } from './wave-math';
 
 export const BLOCK_SNAP_CFG = {
 	/** Nominal block pitch; equals render.ts BLOCK_PITCH_PX. */
@@ -198,14 +199,16 @@ function _mergeAnchors(w: number, changeX: ArrayLike<number>, beatX: ArrayLike<n
 	return out;
 }
 
-/** Beat anchors in px for a band image laid out at `pxPerS`, rounded the way
- * the grid painter rounds its lines, so the edge sits under the line rather
- * than a pixel left of it on half the beats. */
-export function beatAnchorsPx(beats: readonly AnlzBeat[] | null, pxPerS: number): Int32Array {
+/** Beat anchors in px for a band image laid out at `pxPerS`: the lines the
+ * grid painter itself selects across the whole track (visibleBeatLines with
+ * origin 0), so a beat the grid thins away under BEAT_LINE_MIN_GAP_PX
+ * (WAVEZOOM-02) bends no block, and each kept line's edge sits on its own
+ * rounded pixel. The stride is the one the track's closest beats need, which
+ * is every window's stride on a steady tempo. */
+export function beatAnchorsPx(beats: readonly AnlzBeat[] | null, pxPerS: number, barPhaseUntrusted = false): Int32Array {
 	if (beats === null) return new Int32Array(0);
-	const out = new Int32Array(beats.length);
-	for (let i = 0; i < beats.length; i++) out[i] = Math.round(beats[i].t * pxPerS);
-	return out;
+	const lines = visibleBeatLines(beats, 0, pxPerS, Infinity, 0, barPhaseUntrusted, 0);
+	return Int32Array.from(lines, (l) => l.x);
 }
 
 /** Change anchors in px for a surface where detail point i sits at i*w/n. */
@@ -223,10 +226,11 @@ export function rowBlockEdges(
 	norm: ChangeLevelNorm,
 	widthPx: number,
 	beats: readonly AnlzBeat[] | null,
-	pxPerS: number
+	pxPerS: number,
+	barPhaseUntrusted = false
 ): Int32Array {
 	const changes = changeAnchorsPx(changePointsFor(waveform, durationS, norm), waveform.detail.low.length, widthPx);
-	return snappedBlockEdges(widthPx, changes, beatAnchorsPx(beats, pxPerS));
+	return snappedBlockEdges(widthPx, changes, beatAnchorsPx(beats, pxPerS, barPhaseUntrusted));
 }
 
 const _beatsIds = new WeakMap<readonly AnlzBeat[], number>();
@@ -234,12 +238,13 @@ let _nextBeatsId = 1;
 /** A number per beats array (the grid is replaced, never edited in place,
  * PERF-GRID-01) plus its length: render.ts keys the band image on it so a grid
  * edit rebuilds the snapped edges. Here, not there, to keep it off "/". */
-export function beatsVersion(beats: readonly AnlzBeat[] | null): string {
+export function beatsVersion(beats: readonly AnlzBeat[] | null, barPhaseUntrusted = false): string {
 	if (beats === null) return 's0';
 	let id = _beatsIds.get(beats);
 	if (id === undefined) {
 		id = _nextBeatsId++;
 		_beatsIds.set(beats, id);
 	}
-	return `s${id}.${beats.length}`;
+	// The bar-phase flag picks which beats the thinned grid keeps.
+	return `s${id}.${beats.length}${barPhaseUntrusted ? 'u' : ''}`;
 }

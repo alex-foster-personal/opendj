@@ -15,10 +15,13 @@ import {
 	PARENT_FILE,
 	RECOVERY_TIMEOUT_MS,
 	type SupervisorDeps,
+	type SupervisorPhase,
 	type SupervisorSurface,
 	defaultDeps,
 	exitReason,
+	fatalDialogDetail,
 	readParentFilePid,
+	relaunchApplies,
 	releaseParentWatchOwnership,
 	shutdownSupervised,
 	supervisedOrigin,
@@ -32,16 +35,28 @@ installShellLogging(shellLog);
 
 // ----- exit naming (#2801) ----------------------------------------------------
 test('a signal kill is named by its signal', () => {
-	assert.equal(exitReason({ exitCode: null, signal: 'SIGKILL' }), 'engine-exited(signal SIGKILL)');
+	assert.equal(exitReason({ exitCode: null, signal: 'SIGKILL', unresponsive: false }), 'engine-exited(signal SIGKILL)');
 });
 test('an ordinary exit is named by its code', () => {
-	assert.equal(exitReason({ exitCode: 1, signal: null }), 'engine-exited(code 1)');
+	assert.equal(exitReason({ exitCode: 1, signal: null, unresponsive: false }), 'engine-exited(code 1)');
 });
 test('a signal wins over a placeholder exit code', () => {
-	assert.equal(exitReason({ exitCode: 1, signal: 'SIGKILL' }), 'engine-exited(signal SIGKILL)');
+	assert.equal(exitReason({ exitCode: 1, signal: 'SIGKILL', unresponsive: false }), 'engine-exited(signal SIGKILL)');
 });
 test('neither signal nor code says so rather than guessing', () => {
-	assert.equal(exitReason({ exitCode: null, signal: null }), 'engine-exited(unknown)');
+	assert.equal(exitReason({ exitCode: null, signal: null, unresponsive: false }), 'engine-exited(unknown)');
+});
+// Parity row 13: a live engine that stopped answering is named as hung, as the Tauri shell does, never as an exit code.
+test('an unresponsive engine is named as unresponsive, not as an exit', () => {
+	const reason = exitReason({ exitCode: null, signal: null, unresponsive: true });
+	assert.equal(reason, 'engine-unresponsive(pid alive, 6 health checks missed)');
+	assert.doesNotMatch(reason, /exited/);
+});
+test('the fatal dialog says a hung engine stopped answering, not that it exited', () => {
+	const detail = fatalDialogDetail(true, null, 42, 8123);
+	assert.match(detail, /^The engine stopped answering \(pid 42, port 8123\)\./);
+	assert.doesNotMatch(detail, /exited with code/);
+	assert.match(fatalDialogDetail(false, 3, 42, 8123), /^The engine exited with code 3 \(pid 42, port 8123\)\./);
 });
 
 // ----- the machine ----------------------------------------------------------------
@@ -242,6 +257,26 @@ test('a live engine that misses fewer than six health probes stays running', { s
 		}
 		await supervisor.tick();
 		assert.equal(supervisor.phase, 'restarting');
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
+	}
+});
+
+test('a live engine that misses six probes is reported unresponsive in the death reason and the dialog', { skip: POSIX_LAUNCHER }, async () => {
+	const logOffset = fs.statSync(shellLog).size;
+	const { supervisor, engine, health, seen } = await running('healthy', { health: async () => false });
+	try {
+		for (let miss = 0; miss < 6; miss += 1) await supervisor.tick();
+		assert.equal(supervisor.phase, 'restarting');
+		const slice = fs.readFileSync(shellLog, 'utf8').slice(logOffset);
+		assert.match(slice, /engine health check missed \(5\/6\) pid=\d+ port=\d+; pid alive, not restarting yet/);
+		assert.match(slice, new RegExp(`engine-unresponsive\\(pid alive, 6 health checks missed\\) pid=\\d+ port=${engine.port}`));
+		assert.doesNotMatch(slice, /engine-exited/);
+		assert.equal(health.current().exit_code, null, 'shell health carries no invented exit code');
+		await (supervisor as unknown as { showFatalDialog(): Promise<void> }).showFatalDialog();
+		assert.match(seen.dialogs[0] as string, /^The engine stopped answering \(pid \d+, port \d+\)/);
+		assert.doesNotMatch(seen.dialogs[0] as string, /exited with code/);
 	} finally {
 		await supervisor.shutdown();
 		await health.close();
@@ -466,5 +501,91 @@ test('restart release stops a hung adopted holder but quit shutdown does not', a
 		assert.ok(await waitFor(() => pidGone(pid)), 'restart path must clear a hung adopted holder');
 	} finally {
 		if (!pidGone(pid)) process.kill(pid, 'SIGKILL');
+	}
+});
+
+// ----- shell-health relaunch guard (ELECTRON-6880) --------------------------------
+async function postShellRelaunch(port: number): Promise<void> {
+	const response = await fetch(`http://127.0.0.1:${port}/api/v1/relaunch`, { method: 'POST' });
+	assert.equal(response.status, 202);
+}
+
+function shellLogSince(offset: number): string {
+	return fs.readFileSync(shellLog, 'utf8').slice(offset);
+}
+
+test('relaunchApplies in every post-death phase and never to a running engine', () => {
+	for (const phase of [
+		'dead',
+		'fatal',
+		'restarting',
+		'awaiting-relaunch',
+		'awaiting-disk-space'
+	] satisfies SupervisorPhase[]) {
+		assert.equal(relaunchApplies(phase), true, phase);
+	}
+	assert.equal(relaunchApplies('running'), false);
+	assert.equal(relaunchApplies('reaping'), false);
+});
+
+test('a shell-health relaunch while the engine is healthy is consumed and ignored', { skip: POSIX_LAUNCHER }, async () => {
+	const { supervisor, engine, health } = await running();
+	const originalPid = engine.pid;
+	const logOffset = fs.statSync(shellLog).size;
+	try {
+		supervisor.start(50);
+		await postShellRelaunch(health.port);
+		const settled = await waitFor(() => {
+			const slice = shellLogSince(logOffset);
+			if (slice.includes('relaunch request ignored: engine is running')) return true;
+			const current = supervisor.current();
+			return current !== null && current.kind === 'spawned' && current.engine.pid !== originalPid;
+		}, 10_000);
+		assert.ok(settled);
+		assert.equal(supervisor.phase, 'running');
+		const current = supervisor.current();
+		assert.ok(current !== null && current.kind === 'spawned');
+		assert.equal(current.engine.pid, originalPid);
+		assert.ok(!pidGone(originalPid));
+		const slice = shellLogSince(logOffset);
+		assert.match(slice, /relaunch request ignored: engine is running/);
+		assert.doesNotMatch(slice, /relaunch requested over shell health/);
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
+	}
+});
+
+test('a shell-health relaunch after fatal starts a fresh engine', { skip: POSIX_LAUNCHER }, async () => {
+	const { supervisor, engine, health, seen } = await running('exit', { bootTimeoutMs: 1_000 });
+	const originalPid = engine.pid;
+	const logOffset = fs.statSync(shellLog).size;
+	try {
+		process.kill(engine.pid, 'SIGKILL');
+		await engine.waitReap();
+		await supervisor.tick();
+		await supervisor.tick();
+		assert.equal(supervisor.phase, 'fatal');
+		const payloadRoot = path.dirname(supervisor.paths.payload);
+		fs.rmSync(supervisor.paths.payload, { recursive: true });
+		fakePayload(payloadRoot, 'healthy');
+		supervisor.start(50);
+		await postShellRelaunch(health.port);
+		const recovered = await waitFor(() => {
+			if (supervisor.phase !== 'running') return false;
+			const current = supervisor.current();
+			return current !== null && current.kind === 'spawned' && current.engine.pid !== originalPid;
+		}, 15_000);
+		assert.ok(recovered);
+		const current = supervisor.current();
+		assert.ok(current !== null && current.kind === 'spawned');
+		assert.notEqual(current.engine.pid, originalPid);
+		const slice = shellLogSince(logOffset);
+		assert.match(slice, /relaunch requested over shell health \(phase fatal\)/);
+		assert.match(slice, /engine restarted after exit code/);
+		assert.deepEqual(seen.origins, [supervisedOrigin(current)]);
+	} finally {
+		await supervisor.shutdown();
+		await health.close();
 	}
 });

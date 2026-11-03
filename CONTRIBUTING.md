@@ -94,11 +94,24 @@ on first decrypt. There is no separate key-download step; see the rekordbox libr
 Run only the tests for the area you changed:
 
 ```bash
+make test                  # portable core pytest slice (same --ignore set as ci.yml)
+make test-optional-native  # madmom/vocals/USB-agent/sets suites excluded from core
+make test-full             # full tree with floor 3700 (dispatch full-ci locally)
+make cov                   # adds coverage (term + HTML report in htmlcov/)
+make integration           # pytest -m integration (slower, disk-touching)
+make reqs-check            # verify requirements.txt matches reqs.json lock
+make ci                    # what CI runs: reqs-check + cov
+make fixture               # rebuild the Rekordbox test fixture DB
+make rb-parity-check       # fast Rekordbox iteration gate (unchanged by #159)
+
 uv run pytest tests/<area> -n 4          # backend, scoped
 cd apps/webui/frontend
 pnpm test:unit                           # frontend unit tests
 pnpm check                               # svelte-check (types)
 ```
+
+On macOS, run `make test-optional-native` before release to exercise Quartz/cliclick
+Pioneer agent tests. Linux CI covers these via `full-ci.yml` / periodic-checks.
 
 The full suite is large; CI runs it, so you rarely need to.
 
@@ -191,8 +204,7 @@ What a new writer must do, in short:
   is quit, requires `--i-understand-the-risks` and starts the reversal script.
 - Default to a dry run whose output is the diff the live run applies; write only with `--live`.
 - Fail closed when the running-app check cannot run (missing or erroring `pgrep`), with
-  `--force-no-pgrep` as the only operator override (PR #81). Known gap: the harness's own
-  `_is_running` in `apps/sync/safety.py` still reads a missing `pgrep` as not running.
+  `--force-no-pgrep` on `playlist_apply` as the only operator override (PR #81).
 - Never truncate in place: read back inside the same `BEGIN IMMEDIATE` ... `COMMIT` as the write
   for DB writers (`apps/sync/playlist_apply.py`, PR #81), or write a temp file and `os.replace` it.
 - Ship a reversal script; a new writer without one will not be merged.
@@ -275,13 +287,17 @@ make release-check
 
 This runs, in order:
 
-1. `make test` -- full pytest suite.
-2. `make lint` -- `ruff check apps tests scripts`.
+1. `make test` -- portable core pytest slice (no madmom/Quartz/cliclick required).
+2. `make quality` -- full enforced quality ratchet (`make lint` reports debt only).
 3. `make build-dist` -- `python -m build` producing wheel + sdist under `dist/`.
-4. `make reqs-check` -- verifies `reqs.json` is in sync with
-   the requirements source (`python -m scripts.build_reqs_json --check`).
-5. A best-effort `gh release view v1.0.1` sanity check (non-fatal; skipped
+4. `make waveform-native-verify` -- wheel consumer smoke for the native extension.
+5. `make reqs-check` -- verifies `reqs.json` is in sync with
+   `.planning/REQUIREMENTS.md` (`python -m scripts.build_reqs_json --check`).
+6. A best-effort `gh release view v1.0.1` sanity check (non-fatal; skipped
    if `gh` is unauthenticated or the release is not visible).
+
+Optional native suites are not part of `release-check`; run
+`make test-optional-native` locally or dispatch `full-ci.yml` for the complete tree.
 
 CI enforces the same target via
 [`.github/workflows/release-check.yml`](.github/workflows/release-check.yml),

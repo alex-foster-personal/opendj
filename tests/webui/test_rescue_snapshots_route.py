@@ -14,65 +14,19 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from apps.webui.server.routes.rescue_snapshots import router as rescue_router
+from tests.webui.rescue_snapshot_builders import minimal_rescue_snapshot
 
 pytestmark = pytest.mark.requirement("RESCUE-01")
 
 
 def _minimal_snapshot(captured_at_ms: int) -> dict:
-    deck = {
-        "deck_id": 1,
-        "stable_id": "abc",
-        "source_path": None,
-        "playing": True,
-        "position_ms": 1000,
-        "beat_stamp": {"kind": "sample", "position_ms": 1000},
-        "pitch": 1.0,
-        "pitch_range": 8,
-        "master_tempo_enabled": True,
-        "key_sync_enabled": False,
-        "quantize_enabled": True,
-        "beat_sync_enabled": True,
-        "sync_mode": "bar",
-        "is_master": True,
-        "cue_ms": None,
-        "loop": None,
-        "hot_cue_armed": None,
-        "stems": {
-            "vocal": {"muted": False, "solo": False, "gain": 1.0},
-            "instrumental": {"muted": False, "solo": False, "gain": 1.0},
-            "drums": {"muted": False, "solo": False, "gain": 1.0},
-        },
-        "mixer_channel": {
-            "trim": 0.5,
-            "eq_high": 0.5,
-            "eq_mid": 0.5,
-            "eq_low": 0.5,
-            "filter": 0.5,
-            "fader": 1.0,
-            "assign": "THRU",
-            "cue_enabled": False,
-        },
-    }
-    return {
-        "schema": 1,
-        "captured_at_ms": captured_at_ms,
-        "reason": "periodic",
-        "app_posture": "gig",
-        "master_deck": 1,
-        "playlist_id": None,
-        "decks": {str(i): {**deck, "deck_id": i} for i in range(1, 5)},
-        "mixer": {
-            "crossfader": 0.5,
-            "master": 1.0,
-            "headphones": {
-                "mix": 0.5,
-                "level": 0.5,
-                "output_mode": "practice",
-                "selected_master_output_device_id": None,
-                "selected_output_device_id": None,
-            },
-        },
-    }
+    return minimal_rescue_snapshot(
+        captured_at_ms,
+        reason="periodic",
+        master_deck=1,
+        playing=True,
+        position_ms=1000,
+    )
 
 
 @pytest.fixture

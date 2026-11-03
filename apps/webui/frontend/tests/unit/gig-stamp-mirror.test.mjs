@@ -2,7 +2,7 @@
  * PERFMODE-11's boot-stamp mirror must never write a prefs blob that the
  * prefs loader rejects.
  *
- * ORIGIN (Fri 9 Oct 2026, the Electron shell gate, ELECTRON-13). A fresh
+ * ORIGIN (Fri 9 Oct 2026, the Electron shell gate, ELECTRON-6208). A fresh
  * Electron profile over an engine that already held `app_mode.last_gig_at`:
  * prefs hydration mirrored the stamp into an EMPTY localStorage, creating
  * `{"app_mode_last_gig_at": ...}` under `mdt.rb.ui-prefs.v1`. The next load

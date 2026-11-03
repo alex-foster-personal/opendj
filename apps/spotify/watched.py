@@ -1,6 +1,6 @@
 """Watched Spotify playlist registry (durable re-run list).
 
-File: ``data/spotify/watched-playlists.json``.
+File: ``(private path)``.
 
 Kept separate from the state DB so agents and humans can edit URLs without
 opening SQLite, and so the list survives a state restore from backup.
@@ -85,9 +85,13 @@ def _entry_from_dict(raw: dict[str, Any]) -> WatchedPlaylist:
     )
 
 
+def _watched_path(path: Path | None) -> Path:
+    return WATCHED_PATH if path is None else Path(path)
+
+
 def load_watched(path: Path | None = None) -> list[WatchedPlaylist]:
     """Load the watched registry. Missing file -> empty list (call ensure)."""
-    target = Path(path) if path is not None else WATCHED_PATH
+    target = _watched_path(path)
     if not target.is_file():
         return []
     data = json.loads(target.read_text(encoding="utf-8"))
@@ -118,7 +122,7 @@ def save_watched(
     description: str | None = None,
 ) -> Path:
     """Atomically write the watched registry."""
-    target = Path(path) if path is not None else WATCHED_PATH
+    target = _watched_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": 1,
@@ -148,7 +152,7 @@ def save_watched(
 
 def ensure_watched_defaults(path: Path | None = None) -> list[WatchedPlaylist]:
     """Ensure the four OTLF URLs are present; create/merge the registry file."""
-    target = Path(path) if path is not None else WATCHED_PATH
+    target = _watched_path(path)
     existing = load_watched(target)
     by_id = {e.id: e for e in existing}
     changed = False

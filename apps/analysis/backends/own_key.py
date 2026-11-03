@@ -11,7 +11,7 @@ silently make `--only-missing` match nothing.
 
 ## What this producer is, exactly
 
-The classical profile DSP of `specs/native-analysis-v1.md` section 5:
+The classical profile DSP of `(private path)` section 5:
 `librosa.feature.chroma_cqt` over a full-track decode (the same call
 `scripts/keybench/run_krumhansl.py` scores the `krumhansl` bench arm with, 36
 bins per octave and automatic tuning), Krumhansl-Kessler 1982 profiles from
@@ -70,11 +70,14 @@ from apps.analysis_key import canon, flags, profiles, segments
 from apps.analysis_key.lane_payload import (
     REASON_NO_TONAL_CENTER,
     REASON_STALE_DEPENDENCY,
+    REASON_TRUNCATED_DECODE,
+    KeyLane,
     build_key_lane,
     depends_on_identity,
 )
 from apps.analysis_key.version import LANE, PRODUCER, PRODUCER_VERSION
 from apps.shared import engine_decode
+from apps.shared.audio_playable import UnplayableAudioError, check_decoded_duration
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
@@ -368,6 +371,21 @@ def analyze_audio(
     decode_fingerprint = canonical_decode_fingerprint(audio_path)
     samples, sample_rate = _decode(audio_path)
     duration_s = float(len(samples)) / float(sample_rate)
+    try:
+        # A truncated file decodes its surviving frames without an error, and
+        # those frames carry a key (issue #6150 B3): never estimate. The lane
+        # is STORED as failed with the reason, so the track row shows
+        # "failed: truncated_decode ..." rather than a key lane that reads as
+        # not run yet, and the drain does not retry it every launch.
+        check_decoded_duration(audio_path, duration_s)
+    except UnplayableAudioError as exc:
+        return _record(
+            stable_id=stable_id,
+            lane=KeyLane(status="failed", reason=f"{REASON_TRUNCATED_DECODE}: {exc.reason}"),
+            duration_s=duration_s,
+            sample_rate=sample_rate,
+            decode_fingerprint=decode_fingerprint,
+        )
     chroma = librosa.feature.chroma_cqt(y=samples, sr=sample_rate)
     times = librosa.times_like(chroma, sr=sample_rate)
     if canonical_decode_fingerprint(audio_path) != decode_fingerprint:

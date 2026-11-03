@@ -45,8 +45,8 @@
 			title={title}
 		>
 			<span class="stems-fill" style={`width: ${pct}%`}></span>
-			<span class="stems-pct" title={title}>{pct}%</span>
 		</span>
+		<span class="stems-pct" title={title}>{pct}%</span>
 	</button>
 {/if}
 
@@ -68,8 +68,10 @@
 	}
 	/* Same shape as the drawer's own bar, so one surface does not teach a
 	   different visual language from the other. */
+	/* The percentage sits beside the bar, never on it: the fill is the accent,
+	   which some skins also use as text color (Gothic, Light), so a label
+	   across the fill edge read 1:1 on half its width (UICONTRAST-6037). */
 	.stems-bar {
-		position: relative;
 		display: block;
 		width: 120px;
 		height: 10px;
@@ -83,11 +85,9 @@
 		background: var(--rb-accent);
 	}
 	.stems-pct {
-		position: absolute;
-		inset: 0;
-		text-align: center;
+		min-width: 4ch;
+		text-align: right;
 		font-size: 9px;
-		line-height: 10px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
 	}

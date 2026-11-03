@@ -53,6 +53,7 @@ from pathlib import Path
 
 from apps.lyrics.index_job import TICK_OUTCOMES, LyricIndexJob
 from apps.lyrics.search_index import DEFAULT_BATCH_MAX_DOCS, LyricsCacheUnavailable
+from apps.shared.env_on_off import read_on_off_environ
 
 log = logging.getLogger(__name__)
 
@@ -96,12 +97,12 @@ def build(
 
 def enabled_from_environ(environ: Mapping[str, str]) -> bool:
     """Read ``MUSIC_DJ_LYRIC_INDEX``. Fail fast on anything but on/off."""
-    raw = environ.get(LYRIC_INDEX_ENV, "on")
-    if raw not in LYRIC_INDEX_VALUES:
-        raise ValueError(
-            f"{LYRIC_INDEX_ENV}={raw!r} is not valid; expected one of {list(LYRIC_INDEX_VALUES)}"
-        )
-    return raw == "on"
+    return read_on_off_environ(
+        environ,
+        env_key=LYRIC_INDEX_ENV,
+        allowed=LYRIC_INDEX_VALUES,
+        default="on",
+    )
 
 
 class LyricIndexWatcher:

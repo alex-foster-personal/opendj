@@ -17,15 +17,15 @@ import type { Page } from '@playwright/test';
  * every column of the row has signal (the quiet tone paints a thin band of
  * about 2 px at the default row height) and an empty column is a real defect.
  *
- * The row is made wide (3840 px viewport) so a 60 s fixture at the fixed
- * 24 s window is wider than one tile, and the playhead is parked 2 s before
- * the first tile edge so that edge sits in view, clear of the playhead line.
+ * The row is made wide (3840 px viewport) so a 60 s fixture at the default
+ * zoom is wider than one tile, and the playhead is parked 2 s before the
+ * first tile edge so that edge sits in view, clear of the playhead line. The
+ * window and playhead column are read from the row's own data attributes
+ * (WAVEZOOM-6802/04), so the arithmetic follows whatever the zoom shows.
  */
 
 /** Mirrors BAND_CACHE_CFG.TILE_PX (render.ts). */
 const TILE_PX = 4095;
-/** Mirrors WAVE_WINDOW_S (render.ts): the row's wall-clock window. */
-const WAVE_WINDOW_S = 24;
 /** Device columns per measured bin (see the bin note in the test). */
 const BIN_COLS = 4;
 /** Bins either side of the edge that must be painted like their neighbors. */
@@ -81,7 +81,10 @@ for (const design of ['tri-band', 'line'] as const) {
 		expect(deck.pitch, 'an unsynced deck plays at native speed').toBe(1);
 		const durationS = (deck.duration_ms ?? 0) / 1000;
 		const widthCss = await canvas.evaluate((el) => el.getBoundingClientRect().width);
-		const pxPerS = widthCss / WAVE_WINDOW_S;
+		const row = page.locator('.rb-waverow[data-deck="1"]');
+		const windowS = Number(await row.getAttribute('data-wave-window-s'));
+		expect(windowS, 'the row publishes its window').toBeGreaterThan(0);
+		const pxPerS = widthCss / windowS;
 		// Positive control on the regime: the whole-track image really spans more
 		// than one tile, or this test would prove nothing about tiling.
 		expect(Math.ceil(durationS * pxPerS), `${durationS} s at ${pxPerS.toFixed(1)} px/s`).toBeGreaterThan(TILE_PX + 200);
@@ -109,9 +112,11 @@ for (const design of ['tri-band', 'line'] as const) {
 		);
 
 		const actualS = (await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].position_ms)) / 1000;
-		const tLeft = actualS - WAVE_WINDOW_S / 2;
+		const frac = Number(await row.getAttribute('data-wave-playhead-frac'));
+		expect(frac, 'the row publishes its playhead column').toBeGreaterThan(0);
+		const tLeft = actualS - windowS * frac;
 		const edgeCss = (edgeS - tLeft) * pxPerS;
-		expect(edgeCss, 'the tile edge is in view, right of the playhead').toBeGreaterThan(widthCss / 2 + 20);
+		expect(edgeCss, 'the tile edge is in view, right of the playhead').toBeGreaterThan(widthCss * frac + 20);
 		expect(edgeCss).toBeLessThan(widthCss - 200);
 
 		// Painted-pixel count per device column, read back from the real canvas.

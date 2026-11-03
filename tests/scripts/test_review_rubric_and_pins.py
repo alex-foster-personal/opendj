@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from scripts import review_lane, sol_review
+from scripts import review_gh, review_lane, sol_review
 from scripts.review_gh import TriageError
 from scripts.review_prompt import SOL_FENCE, ReviewPromptConfig, build_prompt
 from scripts.review_subscription import CURSOR_LANE, GROK_LANE
@@ -213,25 +213,25 @@ def test_a_replay_with_a_null_merge_base_is_refused(monkeypatch) -> None:
     """[if] the compare API answers null [then] the replay refuses rather than diffing from "null"."""
     from scripts import review_pr_diff
 
-    answers = iter(['{"baseRefOid": "' + "b" * 40 + '"}', "null\n"])
-    monkeypatch.setattr(review_pr_diff, "_gh", lambda _args: next(answers))
+    monkeypatch.setattr(review_gh, "_gh", lambda _args: '{"base": {"sha": "' + "b" * 40 + '"}}')
+    monkeypatch.setattr(review_pr_diff, "_gh", lambda _args: "null\n")
     with pytest.raises(TriageError, match="no merge base"):
         review_pr_diff.pr_diff_at("o/r", "5968", HEAD)
 
 
 @pytest.mark.parametrize(
     "view",
-    ['{"title": "t"}', '{"title": "t", "body": null}', '{"title": "", "body": "b"}'],
-    ids=["body-missing", "body-null", "title-empty"],
+    ['{"body": "b"}', '{"title": null, "body": "b"}', '{"title": "", "body": "b"}'],
+    ids=["title-missing", "title-null", "title-empty"],
 )
 def test_a_pr_view_without_a_usable_title_and_body_is_refused(monkeypatch, view: str) -> None:
-    """[if] gh omits the body or title [then] the lane refuses rather than prompt with a blank."""
-    monkeypatch.setattr(review_lane, "_gh", lambda _args: view)
+    """[if] the REST pull has no title [then] the lane refuses rather than prompt with a blank."""
+    monkeypatch.setattr(review_gh, "_gh", lambda _args: view)
     with pytest.raises(TriageError, match="no usable title and body"):
         review_lane.pr_title_and_body("6010")
 
 
 def test_an_empty_body_is_a_real_answer(monkeypatch) -> None:
-    """[if] the author wrote no body [then] the lane still runs, with the empty body labeled."""
-    monkeypatch.setattr(review_lane, "_gh", lambda _args: '{"title": "t", "body": ""}')
+    """[if] the author wrote no body (REST sends null) [then] the lane still runs with an empty body."""
+    monkeypatch.setattr(review_gh, "_gh", lambda _args: '{"title": "t", "body": null}')
     assert review_lane.pr_title_and_body("6010") == ("t", "")

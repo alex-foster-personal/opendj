@@ -37,7 +37,7 @@ const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 export type PhaseLockProbe = { ok: true } | { ok: false; error: string };
 
 function _gridOrNull(deck: DeckId): readonly AnlzBeat[] | null {
-	const beats = deckStates[deck].anlz?.beatgrid.beats;
+	const beats = deckStates[deck].anlz?.beatgrid?.beats;
 	try {
 		validateBeatGrid(beats ?? []);
 	} catch {

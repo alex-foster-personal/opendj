@@ -422,16 +422,46 @@ def test_clipping_runs_are_counted_per_signed_channel() -> None:
 def test_a_decode_that_keeps_progressing_outlives_the_stall_deadline(
     media: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The deadline is inactivity, not total wall time."""
-    monkeypatch.setattr(audio_scan, "DECODE_TIMEOUT_S", 0.3)
+    """The deadline is inactivity, not total wall time.
+
+    The watchdog reads a virtual clock that moves only when a chunk is fed, so
+    every gap between chunks is exactly `step_s` and the total runs far past
+    the deadline. A slow or loaded host (ffmpeg start-up, a starved thread)
+    cannot move that clock, so the margin is no longer a race against load.
+    """
+    deadline_s, step_s = 0.3, 0.1
+
+    class _FeedClock:
+        """`time`, except monotonic() is virtual and logs the watchdog's reads."""
+
+        def __init__(self) -> None:
+            self.now = 0.0
+            self.watchdog_reads: list[float] = []
+
+        def monotonic(self) -> float:
+            if threading.current_thread().name == "audio-scan-stall":
+                self.watchdog_reads.append(self.now)
+            return self.now
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(time, name)
+
+    clock = _FeedClock()
     real_feed = audio_scan._Fold.feed
 
     def slow_feed(self, block, raw):  # type: ignore[no-untyped-def]
-        time.sleep(0.1)
+        time.sleep(0.02)  # real time, so the watchdog polls while chunks arrive
+        clock.now += step_s
         real_feed(self, block, raw)
 
+    monkeypatch.setattr(audio_scan, "time", clock)
+    monkeypatch.setattr(audio_scan, "DECODE_TIMEOUT_S", deadline_s)
     monkeypatch.setattr(audio_scan._Fold, "feed", slow_feed)
     monkeypatch.setattr(audio_scan, "CHUNK_SECONDS", 0.05)
     fold = audio_scan._Fold(2, THRESHOLDS)
     audio_scan._decode(media["clean.flac"], 2, False, fold)
     assert fold.frames > 0
+    assert clock.now > 10 * deadline_s, f"decode lasted only {clock.now} virtual s"
+    assert clock.watchdog_reads and max(clock.watchdog_reads) > 3 * deadline_s, (
+        f"the watchdog never checked after the deadline had passed: {clock.watchdog_reads}"
+    )

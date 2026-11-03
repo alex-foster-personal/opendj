@@ -55,6 +55,7 @@ _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 _DEFAULT_SHOW_STEMS = False
+_DEFAULT_DECK_HOVER_LINK = True
 _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
@@ -90,7 +91,19 @@ _DECK_DEFAULT_BOOL_DEFAULTS: dict[str, bool] = {
 # scrolling waveform and the browser preview. Default off so nothing changes
 # for an existing user until they opt in.
 _DEFAULT_SHOW_SECTIONS = False
-_WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {"show_sections": _DEFAULT_SHOW_SECTIONS}
+# Tempo-change lane (PR #8342): the deck strip's tempo lane and the main
+# waveform's tempo curve. Default on: it only paints where the beatgrid
+# actually moves, so a steady track shows nothing new.
+_DEFAULT_SHOW_TEMPO_LANE = True
+_WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {
+    "show_sections": _DEFAULT_SHOW_SECTIONS,
+    "show_tempo_lane": _DEFAULT_SHOW_TEMPO_LANE,
+}
+# The tempo curve's vertical scale: fixed_10 = full height is 10 percent off
+# nominal BPM; relative = full height is the track's own largest change,
+# floored at 2 percent so jitter on a steady grid never fills the lane.
+TempoLaneScale = Literal["fixed_10", "relative"]
+_DEFAULT_TEMPO_LANE_SCALE: TempoLaneScale = "fixed_10"
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
@@ -386,6 +399,21 @@ def _parse_perf_view(raw: dict[str, Any]) -> str:
             detail={
                 "code": "UI_PREFS_INVALID",
                 "message": "perf_view must be waveform|list|phase-scope|phase-meter",
+            },
+        )
+    return value
+
+
+def _parse_tempo_lane_scale(raw: dict[str, Any]) -> str:
+    if "tempo_lane_scale" not in raw:
+        return _DEFAULT_TEMPO_LANE_SCALE
+    value = raw["tempo_lane_scale"]
+    if value not in get_args(TempoLaneScale):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "tempo_lane_scale must be " + "|".join(get_args(TempoLaneScale)),
             },
         )
     return value
@@ -811,6 +839,7 @@ def _load(path: Path) -> dict[str, Any]:
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "show_stems": _DEFAULT_SHOW_STEMS,
+            "deck_hover_link": _DEFAULT_DECK_HOVER_LINK,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "auto_gain": dict(DEFAULT_AUTO_GAIN),
             "perf_tier": _DEFAULT_PERF_TIER,
@@ -824,6 +853,7 @@ def _load(path: Path) -> dict[str, Any]:
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
             "perf_view": _DEFAULT_PERF_VIEW,
+            "tempo_lane_scale": _DEFAULT_TEMPO_LANE_SCALE,
             "key_notation": _DEFAULT_KEY_NOTATION,
             "library_hidden_columns": [],
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
@@ -894,6 +924,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_stems must be a boolean",
             },
         )
+    deck_hover_link = raw.get("deck_hover_link", _DEFAULT_DECK_HOVER_LINK)
+    if not isinstance(deck_hover_link, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "deck_hover_link must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
@@ -903,6 +942,7 @@ def _load(path: Path) -> dict[str, Any]:
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "show_stems": show_stems,
+        "deck_hover_link": deck_hover_link,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "auto_gain": parse_auto_gain(raw.get("auto_gain")),
         "perf_tier": _parse_perf_tier(raw),
@@ -916,6 +956,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
         "perf_view": _parse_perf_view(raw),
+        "tempo_lane_scale": _parse_tempo_lane_scale(raw),
         "key_notation": _parse_key_notation(raw),
         "library_hidden_columns": _parse_library_hidden_columns(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
@@ -1003,6 +1044,7 @@ class UiPrefsOut(BaseModel):
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     show_stems: bool = _DEFAULT_SHOW_STEMS
+    deck_hover_link: bool = _DEFAULT_DECK_HOVER_LINK
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
     auto_gain: AutoGainPrefsOut = Field(default_factory=AutoGainPrefsOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
@@ -1025,6 +1067,8 @@ class UiPrefsOut(BaseModel):
     perf_view: PerfView = _DEFAULT_PERF_VIEW
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
+    show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
+    tempo_lane_scale: TempoLaneScale = _DEFAULT_TEMPO_LANE_SCALE
     deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
@@ -1054,6 +1098,7 @@ class UiPrefsPatch(BaseModel):
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
     show_stems: bool | None = None
+    deck_hover_link: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
     auto_gain: AutoGainPrefsOut | None = None
     lyrics_global: bool | None = None
@@ -1082,6 +1127,9 @@ class UiPrefsPatch(BaseModel):
     # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
     deck_default_quantize: StrictBool | None = None
     show_sections: bool | None = None
+    # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
+    show_tempo_lane: StrictBool | None = None
+    tempo_lane_scale: TempoLaneScale | None = None
     # Strict for the same reason: AU is deck-wide, a coerced 1 or "yes" would arm it.
     # Omitted means unchanged; an explicit null is refused (Sol P1, PR #6235),
     # so the contract advertises it as omittable but never nullable.
@@ -1119,7 +1167,7 @@ _NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "lib
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
-    """Topbar booleans, the deck defaults and the wave-overlay ones (STRUCT-05 show_sections)."""
+    """Topbar booleans, the deck defaults and the wave-overlay ones (STRUCT-05 show_sections, show_tempo_lane)."""
     for key in (*_TOPBAR_BOOL_DEFAULTS, *_DECK_DEFAULT_BOOL_DEFAULTS, *_WAVE_OVERLAY_BOOL_DEFAULTS):
         value = getattr(body, key)
         if value is not None:
@@ -1264,7 +1312,7 @@ def post_library_key_filter(body: LibraryKeyFilterActionIn, request: Request) ->
     return LibraryKeyFilterActionOut(library_key_filter=current["library_key_filter"])
 
 
-_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view")
+_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view", "tempo_lane_scale")
 
 
 def _merge_view_scalar_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -1294,6 +1342,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["show_agent_pins"] = body.show_agent_pins
     if body.show_stems is not None:
         current["show_stems"] = body.show_stems
+    if body.deck_hover_link is not None:
+        current["deck_hover_link"] = body.deck_hover_link
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier

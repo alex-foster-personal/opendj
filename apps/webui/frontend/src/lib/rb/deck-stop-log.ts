@@ -89,6 +89,11 @@ export async function withDeckCommandSource<T>(
 	}
 }
 
+/** The source of the command running on `deck` now, or null when none is. */
+export function deckCommandSource(deck: DeckId): CommandSource | null {
+	return _commandSource[deck];
+}
+
 /** Every deck, for commands that carry none (rescue_stop_all and friends). */
 export function allDecks(): readonly DeckId[] {
 	return DECKS;

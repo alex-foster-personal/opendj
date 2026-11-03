@@ -9,7 +9,7 @@
  * against 1459/1942/1372ms). Worker spawn plus wasm compile for four decoders
  * measured 5-41ms cold, so there is no cold-start objection left standing.
  * Numbers, method and the rejected rungs:
- * docs/perf/research/stems-decode-rung-bench.md.
+ * (private path).
  *
  * This module is the POLICY. It owns three refusals, each of which exists
  * because taking the fast path anyway would be worse than being slow:
@@ -118,7 +118,7 @@ async function _flacDecoderFactory(): Promise<StemFlacDecoderFactory> {
  * Chromium and failed its LSB check there, so it was removed rather than
  * carried as an LGPL chunk in the bundle. An `mpeg` claim with no injected
  * `makeDecoder` takes the decodeAudioData fallback.
- * See research/mp3-decoder/2026-10-01-mp3-decoder-license.md.
+ * See (private path).
  */
 
 export interface StemDecodeOptions {

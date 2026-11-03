@@ -93,10 +93,11 @@ def build_acquisition_entries(
 
 
 def _spotify_web_url(uri: str) -> str:
+    """Web URL for a track URI; a URI with no track id is returned unchanged."""
     tid = _track_id_from_spotify_uri(uri)
     if tid:
         return f"https://open.spotify.com/track/{tid}"
-    return uri  # pragma: no cover
+    return uri
 
 
 def render_markdown(

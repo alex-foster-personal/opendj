@@ -29,7 +29,9 @@ test('library source tabs list Playlists, Taglists, Autolists, USBs in order', (
 });
 
 test('PlaylistTree column mode uses data-testid playlist-column-view without a full-width toggle row', () => {
-	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	const tree =
+		source('src/lib/components/rb/browser/PlaylistTree.svelte') +
+		source('src/lib/components/rb/browser/PlaylistTreeView.svelte');
 	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
 	assert.doesNotMatch(tree, /class="view-toggle"/);
 	assert.match(tree, /data-testid="playlist-column-view"/);
@@ -56,7 +58,9 @@ test('BrowserPanel loads taglists through cursor-paged fillAllTracksPane', () =>
 });
 
 test('TaglistTree fetches mytags and exposes taglist rows', () => {
-	const tree = source('src/lib/components/rb/browser/TaglistTree.svelte');
+	const tree =
+		source('src/lib/components/rb/browser/TaglistTree.svelte') +
+		source('src/lib/components/rb/browser/TaglistTreeView.svelte');
 	assert.match(tree, /data-testid="taglist-row"/);
 	assert.match(tree, /listMyTags/);
 });

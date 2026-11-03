@@ -1,0 +1,91 @@
+{
+	"_provenance": "Captured from apps.stems.artifacts.summarize_stem_bundle on checksum-locked bundles in (private path)/ (real htdemucs separation). (private path) re-runs the summarizer and fails if this drifts.",
+	"ready": {
+		"status": "ready",
+		"model": "htdemucs",
+		"preset": null,
+		"overlap": null,
+		"shifts": null,
+		"format": "flac",
+		"groups": {
+			"V": {
+				"bytes": 53621,
+				"parts": [
+					"vocals"
+				]
+			},
+			"D": {
+				"bytes": 79992,
+				"parts": [
+					"drums"
+				]
+			},
+			"I": {
+				"bytes": 183591,
+				"parts": [
+					"bass",
+					"other"
+				]
+			}
+		},
+		"total_bytes": 317204
+	},
+	"none": {
+		"status": "none"
+	},
+	"invalid": {
+		"status": "invalid",
+		"error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+	},
+	"all_files_missing": {
+		"status": "ready",
+		"model": "htdemucs",
+		"preset": null,
+		"overlap": null,
+		"shifts": null,
+		"format": "",
+		"groups": {
+			"V": {
+				"bytes": 0,
+				"parts": []
+			},
+			"D": {
+				"bytes": 0,
+				"parts": []
+			},
+			"I": {
+				"bytes": 0,
+				"parts": []
+			}
+		},
+		"total_bytes": 0
+	},
+	"drums_missing": {
+		"status": "ready",
+		"model": "htdemucs",
+		"preset": null,
+		"overlap": null,
+		"shifts": null,
+		"format": "flac",
+		"groups": {
+			"V": {
+				"bytes": 53621,
+				"parts": [
+					"vocals"
+				]
+			},
+			"D": {
+				"bytes": 0,
+				"parts": []
+			},
+			"I": {
+				"bytes": 183591,
+				"parts": [
+					"bass",
+					"other"
+				]
+			}
+		},
+		"total_bytes": 237212
+	}
+}

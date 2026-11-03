@@ -131,11 +131,18 @@ budget per SURFACE, measured from the real module graph. Measurements are JS
 under `build/_app/immutable/` (CSS is emitted as an asset, not a chunk, and is
 outside these budgets):
 
-| budget        | limit   | measured on `c3cf9329` | what it covers                                      |
-| ------------- | ------- | ---------------------- | --------------------------------------------------- |
-| `library`     | 256,000 | 93,011 (36.3%)         | the initial load of `/`                              |
-| `performance` | 203,776 | 193,544 (95.0%)        | `/performance` and its children, lazily loaded       |
-| `other-lazy`  | 67,584  | 64,328 (95.2%)         | every other route, plus deferred app-shell chunks    |
+| budget             | what it covers                                                  |
+| ------------------ | --------------------------------------------------------------- |
+| `library`          | the initial load of `/`                                         |
+| `performance`      | `/performance` and its children, lazily loaded                  |
+| `set-notes-editor` | the Set notes editor chunk, found by its ProseMirror marker     |
+| `wave-quick-settings` | the waveform quick-settings popover, found by its title marker |
+| `other-lazy`       | every other route, plus deferred app-shell chunks               |
+
+The byte limits are not restated here: each surface's limit is `budgets/<surface>/base.json`
+plus the sum of its `budgets/<surface>/charges/<pr>.json` files, and the gate prints that
+arithmetic. **A PR that grows a surface adds a charge file; it never edits a base or the
+script.** How to measure and write one: [budgets/README.md](budgets/README.md).
 
 A surface is the STATIC import closure of its roots. SvelteKit code-splits at
 every dynamic import, so a dynamic import is a budget boundary: weight behind
@@ -154,18 +161,9 @@ Two properties matter more than the numbers:
   unattributed-chunk case, against a synthetic build tree in a temp dir. No
   `pnpm build` needed; it runs in `pnpm test:unit`.
 
-The `measured` column is the esbuild-minified baseline the ceilings were derived
-from. Since then `vite.config.ts` switched the production minifier to terser,
-which takes about 6% off every surface (`performance` 205,141 -> 193,290 on
-`main`), so today's readings sit well under the recorded figures. **The ceilings
-themselves are unchanged** - the extra room is a real reduction in shipped bytes,
-not a widened budget, and the ratchet still bites at the same numbers.
-
-The `library` figure of 256,000 is unchanged from the gate's introduction. The
-other two are ratchets at their measured value plus 5%, rounded up to the next
-KiB. `other-lazy` in particular is tight by construction (about 3 KB of
-headroom across 16 routes); widen it deliberately if ordinary feature work trips
-it, and record the new derivation in `scripts/bundle-budget.mjs`.
+A base is rewritten only by a rebaseline on main: measured, ceiled to KiB, plus
+1 KiB, folding the charges in. The dated raises from before charges (Mon 31 Aug to
+Tue 3 Nov 2026) are kept in `budgets/HISTORY.md` and `budgets/<surface>/HISTORY.md`.
 
 Machine-readable totals (still exits non-zero if a budget is breached):
 

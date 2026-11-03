@@ -61,6 +61,10 @@ function engineEnv(dataDir: string, isHub: '1' | '0'): Record<string, string> {
 		MDT_CLOUDSYNC_HUB_URL: '',
 		MDT_CLOUDSYNC_SIGNED_IN_AS: '',
 		WEB_CONCURRENCY: '',
+		// The daemon trusts browser POSTs only from its configured frontend
+		// origin; without this the spoke refuses every Sync now from vite
+		// (403 ORIGIN_NOT_ALLOWED) and the 409 case never sees a 409.
+		MUSIC_DJ_FRONTEND_PORT: String(CLOUDSYNC_UI_FRONTEND_PORT),
 		HOME: join(dataDir, 'sandbox-home')
 	};
 }

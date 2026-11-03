@@ -9,3 +9,4 @@ modal
 # The pyproject `observability` extra, verbatim: the Sentry e2e tests import
 # sentry_sdk, and requirements.txt (the shipped payload) deliberately omits it.
 sentry-sdk>=2.0,<3
+defusedxml>=0.7.1

@@ -26,6 +26,11 @@
  * shell's webview is visible while a set plays.
  */
 
+import { barAt, downbeatsMs, msAtBar } from './plan-bars';
+import { alignmentChanged, buildPlanOverlay, failedPlanOverlay, incomingAlignment, type IncomingAlignment, type PlanOverlay, type PlanOverlayInput } from './plan-overlay';
+
+export { barAt, downbeatsMs, msAtBar };
+
 type DeckId = 1 | 2 | 3 | 4;
 /** A bus command as the plan carries it; the caller's `dispatch` validates it (AGENT-03). */
 export type PlanCommand = Record<string, unknown>;
@@ -111,6 +116,8 @@ export interface AgentPlanMirror {
 	fired: number;
 	total: number;
 	reason: string | null;
+	/** WAVEPLAN-7896c: the curves on each deck's track time while the plan is pending, else null. */
+	overlay: PlanOverlay | null;
 }
 
 type PlanAmendAction = 'abort' | 'finish_now' | 'extend';
@@ -156,6 +163,19 @@ function _gridBarsPerClockBar(
 	const fastestIncoming = Math.max(incoming.pitch, ...targets.incoming);
 	const slowestClock = Math.min(clock.pitch, ...targets.clock);
 	return (incomingBpm / incoming.pitch) * fastestIncoming / ((clockBpm / clock.pitch) * slowestClock);
+}
+
+const OVERLAY_KNOBS = ['fader', 'eq_low', 'eq_mid', 'eq_high', 'filter'] as const;
+const _downbeatCache = new WeakMap<object, number[]>();
+
+/** A deck's downbeats, once per grid: the overlay reads them every tick. */
+function _downbeatsOf(deck: PlanDeckView): number[] {
+	let downbeats = _downbeatCache.get(deck.beatgrid);
+	if (downbeats === undefined) {
+		downbeats = downbeatsMs(deck.beatgrid);
+		_downbeatCache.set(deck.beatgrid, downbeats);
+	}
+	return downbeats;
 }
 
 /** The ratios the plan's own tempo commands and ramps set on one deck, from the order's events. */
@@ -230,6 +250,8 @@ interface PlanDeps {
 	 * The page answers with `everyStemPartSilent`; a deck with no stem bundle is never silent this way.
 	 */
 	stemsSilent: (deck: DeckId) => boolean;
+	/** WAVEPLAN-7896: the waveform's overlay changed: a new geometry, or null once no plan is pending. */
+	onOverlay?: (overlay: PlanOverlay | null) => void;
 }
 
 // ----------------------------------------------------------------- parse ---
@@ -372,39 +394,6 @@ export function parsePlanOrder(payload: unknown): AgentPlanOrder {
 	};
 }
 
-// ------------------------------------------------------------------ bars ---
-
-export function downbeatsMs(beatgrid: readonly { n: number; time_ms: number }[]): number[] {
-	return beatgrid.filter((beat) => beat.n === 1).map((beat) => beat.time_ms);
-}
-
-/** 1-based fractional bar at `positionMs` (apps/autodj/profile.py `bar_at`). */
-export function barAt(downbeats: readonly number[], positionMs: number): number {
-	if (downbeats.length < 2) throw new Error('no_grid');
-	const last = downbeats.length - 1;
-	const barMs = downbeats[last] - downbeats[last - 1];
-	if (positionMs < downbeats[0]) return 1 + (positionMs - downbeats[0]) / barMs;
-	if (positionMs >= downbeats[last]) return 1 + last + (positionMs - downbeats[last]) / barMs;
-	let lo = 0;
-	let hi = last;
-	while (hi - lo > 1) {
-		const mid = (lo + hi) >> 1;
-		if (downbeats[mid] <= positionMs) lo = mid;
-		else hi = mid;
-	}
-	return 1 + lo + (positionMs - downbeats[lo]) / (downbeats[lo + 1] - downbeats[lo]);
-}
-
-/** The playhead (ms) at 1-based fractional bar `bar`: the inverse of `barAt`. */
-export function msAtBar(downbeats: readonly number[], bar: number): number {
-	if (downbeats.length < 2) throw new Error('no_grid');
-	const last = downbeats.length - 1;
-	const index = Math.floor(bar - 1);
-	if (index < 0) return downbeats[0] + (bar - 1) * (downbeats[1] - downbeats[0]);
-	if (index >= last) return downbeats[last] + (bar - 1 - last) * (downbeats[last] - downbeats[last - 1]);
-	return downbeats[index] + (bar - 1 - index) * (downbeats[index + 1] - downbeats[index]);
-}
-
 // --------------------------------------------------------------- execute ---
 
 function _rampKey(command: Record<string, unknown>): string {
@@ -506,8 +495,96 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 
 	const active = (): boolean => order !== null && (status === 'scheduled' || status === 'running');
 
+	/** WAVEPLAN-7896b: what the waveform shows, and what it was built from, so a tick rebuilds only after a real move. */
+	let overlay: PlanOverlay | null = null;
+	let overlayOrder: AgentPlanOrder | null = null;
+	let overlayAlignment: IncomingAlignment | null = null;
+	let overlayClockGrid: object | null = null;
+	let overlayIncomingGrid: object | null = null;
+	let overlayChannels: Record<number, object> = {};
+	let overlayLiveKnobs = false;
+	/** The build failure already reported, so a retry each tick does not republish it. */
+	let overlayFailure: string | null = null;
+
+	function _channelSnapshot(state: PlanStateView): Record<number, object> {
+		return Object.fromEntries(Object.entries(state.mixer.channels).map(([deck, channel]) => [deck, { ...channel }]));
+	}
+
+	/** Whether a knob the curves start from moved since the snapshot: a ramp runs from the value it finds when it fires. */
+	function _knobsMoved(state: PlanStateView, plan: AgentPlanOrder): boolean {
+		for (const deck of plan.incoming === null ? [plan.clock.deck] : [plan.clock.deck, plan.incoming.deck]) {
+			const live = state.mixer.channels[deck] as Record<string, unknown>;
+			const drawn = overlayChannels[deck] as Record<string, unknown>;
+			for (const knob of OVERLAY_KNOBS) if (live[knob] !== drawn[knob]) return true;
+		}
+		return false;
+	}
+
+	function _publishOverlay(next: PlanOverlay | null): void {
+		overlay = next;
+		deps.onOverlay?.(next);
+	}
+
+	function _overlayInput(state: PlanStateView, plan: AgentPlanOrder): PlanOverlayInput {
+		const clock = state.decks[plan.clock.deck];
+		const incoming = plan.incoming === null ? null : state.decks[plan.incoming.deck];
+		return {
+			order: plan,
+			channels: overlayChannels,
+			liveKnobs: overlayLiveKnobs,
+			clock: { stable_id: clock.stable_id, position_ms: clock.position_ms, downbeats: _downbeatsOf(clock) },
+			incoming:
+				incoming === null
+					? null
+					: { stable_id: incoming.stable_id, position_ms: incoming.position_ms, downbeats: _downbeatsOf(incoming), playing: incoming.playing },
+			gridBarsPerClockBar: incoming === null ? null : _gridBarsPerClockBar(clock, incoming)
+		};
+	}
+
+	/** Runs on every tick. The overlay only ever describes the plan, so its failure is logged and never reaches the transport. */
+	function _refreshOverlay(): void {
+		if (!active()) return;
+		const plan = order!;
+		try {
+			const state = deps.query();
+			const input = _overlayInput(state, plan);
+			const alignment = incomingAlignment(input);
+			// A grid that lands or changes late moves the curves without moving the incoming deck against the plan.
+			const clockGrid = state.decks[plan.clock.deck].beatgrid;
+			const incomingGrid = plan.incoming === null ? null : state.decks[plan.incoming.deck].beatgrid;
+			const sameGrids = clockGrid === overlayClockGrid && incomingGrid === overlayIncomingGrid;
+			// Only before the first event: past it, the plan itself is moving these knobs, and the curves are its own.
+			const knobsMoved = !fired.some(Boolean) && _knobsMoved(state, plan);
+			if (plan === overlayOrder && sameGrids && !knobsMoved && !alignmentChanged(overlayAlignment, alignment)) return;
+			if (knobsMoved) {
+				overlayChannels = _channelSnapshot(state);
+				overlayLiveKnobs = true;
+				input.channels = overlayChannels;
+				input.liveKnobs = true;
+			}
+			overlayOrder = plan;
+			overlayAlignment = alignment;
+			overlayClockGrid = clockGrid;
+			overlayIncomingGrid = incomingGrid;
+			_publishOverlay(buildPlanOverlay(input, alignment));
+			overlayFailure = null;
+		} catch (error) {
+			// Forgetting what was drawn makes the next tick try again.
+			overlayOrder = null;
+			const message = error instanceof Error ? error.message : String(error);
+			if (message === overlayFailure) return;
+			overlayFailure = message;
+			console.error('plan overlay', error);
+			_publishOverlay(failedPlanOverlay(plan));
+		}
+	}
+
 	function _stop(next: AgentPlanStatus, why: string | null): void {
 		if (disposed) return;
+		overlayOrder = null;
+		overlayAlignment = null;
+		overlayFailure = null;
+		if (overlay !== null) _publishOverlay(null);
 		status = next;
 		reason = why;
 		endedAt = deps.now();
@@ -1231,6 +1308,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 			return;
 		}
 		if (!active() || ticking || closing) return;
+		_refreshOverlay();
 		ticking = true;
 		inFlight = _advance();
 		await inFlight;
@@ -1477,6 +1555,10 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 			_stop('failed', `prepare failed: ${error instanceof Error ? error.message : String(error)}`);
 			throw error;
 		}
+		// Taken after prepare, so what prepare set is never mistaken for a knob the operator moved.
+		overlayChannels = _channelSnapshot(deps.query());
+		overlayLiveKnobs = false;
+		_refreshOverlay();
 		_arm();
 		return { plan_id: plan.id, status, bar: now };
 	}
@@ -1620,7 +1702,8 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 			bar: bar === null ? null : Math.round(bar * 100) / 100,
 			fired: fired.filter(Boolean).length,
 			total: fired.length,
-			reason
+			reason,
+			overlay
 		};
 	}
 

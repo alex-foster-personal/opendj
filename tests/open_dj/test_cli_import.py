@@ -300,3 +300,102 @@ def test_opendj_import_preserves_beatgrid_and_cue_color(tmp_path: Path) -> None:
     assert len(lib.playlists) == 1
     assert lib.playlists[0].track_ids == ("t1",)
 
+
+def _minimal_track_doc(*, cue_points: list[dict]) -> dict:
+    return {
+        "schema_version": "0.2",
+        "tracks": [
+            {
+                "track_id": "t1",
+                "file_path": "/m/01.mp3",
+                "title": "One",
+                "bpm": {
+                    "value": 128.0,
+                    "source": "user",
+                    "modified_at": "2024-01-01T00:00:00Z",
+                },
+                "cue_points": cue_points,
+            },
+        ],
+    }
+
+
+@pytest.mark.requirement("OPEN-8212")
+def test_dict_to_library_omitted_cue_color_stays_none() -> None:
+    """[if] cue color keys are absent [then] color_rgb stays unset, [else stop]."""
+    from apps.open_dj.cli import _dict_to_library
+
+    doc = _minimal_track_doc(
+        cue_points=[
+            {
+                "index": 0,
+                "position_ms": 1000,
+                "type": "hot",
+                "name": "Intro",
+            },
+        ],
+    )
+    lib = _dict_to_library(doc)
+    assert lib.tracks[0].cues[0].color_rgb is None
+
+
+@pytest.mark.requirement("OPEN-8212")
+def test_dict_to_library_rejects_empty_canonical_color() -> None:
+    """[if] canonical color is present but empty [then] import raises, [else stop]."""
+    from apps.open_dj.cli import _dict_to_library
+
+    doc = _minimal_track_doc(
+        cue_points=[
+            {
+                "index": 0,
+                "position_ms": 1000,
+                "type": "hot",
+                "name": "Intro",
+                "color": "",
+            },
+        ],
+    )
+    with pytest.raises(ValueError, match=r"6-digit hex RGB|0\.\.0xffffff"):
+        _dict_to_library(doc)
+
+
+@pytest.mark.requirement("OPEN-8212")
+def test_dict_to_library_canonical_color_precedes_legacy_rgb() -> None:
+    """[if] canonical color is invalid [then] legacy rgb is not used, [else stop]."""
+    from apps.open_dj.cli import _dict_to_library
+
+    doc = _minimal_track_doc(
+        cue_points=[
+            {
+                "index": 0,
+                "position_ms": 1000,
+                "type": "hot",
+                "name": "Intro",
+                "color": "",
+                "color_rgb": 0xFF8800,
+            },
+        ],
+    )
+    with pytest.raises(ValueError, match=r"6-digit hex RGB|0\.\.0xffffff"):
+        _dict_to_library(doc)
+
+
+@pytest.mark.requirement("OPEN-8212")
+def test_dict_to_library_rejects_out_of_range_legacy_color_rgb() -> None:
+    """[if] legacy color_rgb is out of range [then] import raises, [else stop]."""
+    from apps.open_dj.cli import _dict_to_library
+
+    doc = _minimal_track_doc(
+        cue_points=[
+            {
+                "index": 0,
+                "position_ms": 1000,
+                "type": "hot",
+                "name": "Intro",
+                "color_rgb": 0x1000000,
+            },
+        ],
+    )
+    with pytest.raises(ValueError, match=r"6-digit hex RGB|0\.\.0xffffff"):
+        _dict_to_library(doc)
+

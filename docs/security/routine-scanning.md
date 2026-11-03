@@ -1,6 +1,6 @@
 # Routine scanning: cadence, output, failure handling
 
-Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **spec, not wired** (Mon 14 Sep 2026).
 
 ## Principle: match the cadence to how fast the risk changes
 

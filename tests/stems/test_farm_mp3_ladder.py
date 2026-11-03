@@ -125,7 +125,7 @@ def _cbr_source(tmp_path: Path, kbps: int) -> tuple[int, float]:
 
 
 def test_the_mirror_check_passes_against_the_real_modules() -> None:
-    _farm()["assert_mp3_ladder_mirror_matches"]()
+    _farm()["assert_stem_size_policy_mirror_matches"]()
 
 
 @pytest.mark.parametrize(

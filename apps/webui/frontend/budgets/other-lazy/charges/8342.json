@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 482231,
+  "measured_with_pr": 482897,
+  "sha": "9500f05e4c",
+  "date": "Tue 3 Nov 2026",
+  "reason": "PR #8342 tempo curve (issue #8339): tempo prefs, curve painter and two inlined icons in lazy routes; one clean local vite build on merged main 9500f05e4c measured 482,897 vs 482,231 at this PR's earlier head (+666 B raw, ceiled to KiB plus 1 KiB jitter => 2048 B charge)",
+  "payback": "none planned; the curve is the feature"
+}

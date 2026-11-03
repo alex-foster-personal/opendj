@@ -4,7 +4,9 @@
 	 * Opens like a command palette, expands for results; RHS rows ARE the settings.
 	 */
 	import { tick, untrack } from 'svelte';
-	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
+	import SettingsAiAskView from './SettingsAiAskView.svelte';
+	import SettingsHeaderView from './SettingsHeaderView.svelte';
+	import SettingPreview from './SettingPreview.svelte';
 	import GroupPad from '$lib/components/rb/mixer/GroupPad.svelte';
 	import { DRAG_DEFAULTS, dragSensitivity } from '$lib/rb/drag-sensitivity.svelte';
 	import { goto } from '$app/navigation';
@@ -501,69 +503,20 @@
 			aria-label="Settings"
 			onclick={(e) => e.stopPropagation()}
 		>
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<header
-				class="so-head"
-				onpointerdown={onHeadPointerDown}
-				onpointermove={onHeadPointerMove}
-				onpointerup={onHeadPointerUp}
-				onpointercancel={onHeadPointerUp}
-			>
-				<span class="so-grip" aria-hidden="true" title="Drag to move">
-					<svg width="14" height="18" viewBox="0 0 14 18">
-						<path
-							d="M2.5 2v14M7 2v14M11.5 2v14"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.75"
-							stroke-linecap="round"
-						/>
-					</svg>
-				</span>
-				<div class="so-nav">
-					<button
-						type="button"
-						class="so-hist"
-						disabled={!canHistoryBack()}
-						onclick={() => historyBack()}
-						title="Back in settings navigation"
-						aria-label="Back"
-					>
-						&lt;
-					</button>
-					<button
-						type="button"
-						class="so-hist"
-						disabled={!canHistoryForward()}
-						onclick={() => historyForward()}
-						title="Forward in settings navigation"
-						aria-label="Forward"
-					>
-						&gt;
-					</button>
-				</div>
-				<input
-					bind:this={searchEl}
-					class="so-search"
-					type="search"
-					placeholder="Search settings..."
-					spellcheck="false"
-					autocomplete="off"
-					value={settingsOverlay.query}
-					oninput={onQueryInput}
-					onkeydown={onSearchKeydown}
-					aria-label="Search settings"
-				/>
-				<button
-					type="button"
-					class="so-close"
-					onclick={() => closeSettings()}
-					aria-label="Close settings"
-					title="Close (Esc)"
-				>
-					Esc
-				</button>
-			</header>
+			<SettingsHeaderView
+				canBack={canHistoryBack()}
+				canForward={canHistoryForward()}
+				onBack={() => historyBack()}
+				onForward={() => historyForward()}
+				bind:searchEl
+				query={settingsOverlay.query}
+				{onQueryInput}
+				{onSearchKeydown}
+				onClose={() => closeSettings()}
+				onHeadPointerDown={onHeadPointerDown}
+				onHeadPointerMove={onHeadPointerMove}
+				onHeadPointerUp={onHeadPointerUp}
+			/>
 
 			<!-- Actions, not settings: they navigate or change engine-side state
 			     rather than flipping a pref. Outside .so-body on purpose, which
@@ -733,11 +686,11 @@
 											{/if}
 										</div>
 									</div>
-									{#if def.preview === 'waveform'}
+									{#if def.preview !== undefined}
 										<!-- Static, not a lazy import: a pending or failed chunk rendered NOTHING, silently,
 										     and on a cold /performance load the dev server took over 8 s to serve it (Mon 5 Oct 2026).
 										     Full card width, below the label and control (the maintainer, Tue 6 Oct 2026). -->
-										<WaveformDesignPreview />
+										<SettingPreview kind={def.preview} label={`${def.label} preview`} />
 									{/if}
 									{#if def.tester === 'drag'}
 										<!-- Lazy: this overlay is mounted by the root layout, so a static import put the
@@ -774,35 +727,17 @@
 						</ul>
 					{/if}
 
-					{#if aiPending}
-						<p class="so-ai-status">AI matching...</p>
-					{:else if aiError}
-						<p class="so-ai-status err" title={aiError}>AI search unavailable</p>
-					{/if}
-
-					<div class="so-ai-ask">
-						<button
-							type="button"
-							class="so-ask-btn"
-							disabled={applyBusy || settingsOverlay.query.trim().length < 2}
-							onclick={() => void askAiApply()}
-							title="Ask the fast model to propose one allowlisted setting change"
-						>
-							{applyBusy ? 'Asking AI...' : 'Ask AI to change setting for you'}
-						</button>
-						{#if applyMsg}
-							<p class="so-apply-msg" class:ok={applyOk === true} class:bad={applyOk === false}>
-								{#if applyOk === true}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>{:else if applyOk === false}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>{/if}
-								{applyMsg}
-							</p>
-						{/if}
-						{#if pendingProposal}
-							<div class="so-confirm">
-								<button type="button" onclick={() => confirmProposal(true)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg> Apply</button>
-								<button type="button" onclick={() => confirmProposal(false)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg> Reject</button>
-							</div>
-						{/if}
-					</div>
+					<SettingsAiAskView
+						{aiPending}
+						{aiError}
+						{applyBusy}
+						query={settingsOverlay.query}
+						{applyMsg}
+						{applyOk}
+						{pendingProposal}
+						askAiApply={() => void askAiApply()}
+						{confirmProposal}
+					/>
 				</section>
 			</div>
 		</div>
@@ -847,60 +782,6 @@
 	.so-panel.expanded {
 		width: min(920px, 96vw);
 		max-height: 82vh;
-	}
-	.so-head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 12px 12px 10px;
-		border-bottom: 1px solid var(--border, #1c222c);
-		cursor: grab;
-		touch-action: none;
-		user-select: none;
-	}
-	.so-head:active {
-		cursor: grabbing;
-	}
-	.so-grip {
-		display: inline-flex;
-		flex: none;
-		color: var(--muted, #9aa4b2);
-	}
-	.so-nav {
-		display: inline-flex;
-		gap: 2px;
-	}
-	.so-hist,
-	.so-close {
-		height: 32px;
-		min-width: 32px;
-		padding: 0 8px;
-		border-radius: 8px;
-		border: 1px solid var(--border, #1c222c);
-		background: var(--surface, #121720);
-		color: var(--fg, #e6e9ef);
-		cursor: pointer;
-	}
-	.so-hist:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-	.so-search {
-		flex: 1;
-		height: 40px;
-		padding: 0 14px;
-		border-radius: 10px;
-		border: 1px solid var(--border, #1c222c);
-		background: var(--bg, #0b0d11);
-		color: var(--fg, #e6e9ef);
-		font-size: 1.05rem;
-		outline: none;
-		cursor: text;
-		user-select: text;
-		touch-action: auto;
-	}
-	.so-search:focus {
-		border-color: var(--accent, #ffb43a);
 	}
 	.so-actions {
 		display: flex;
@@ -1098,60 +979,10 @@
 		border-radius: 999px;
 		padding: 2px 8px;
 	}
-	.so-empty,
-	.so-ai-status {
+	.so-empty {
 		color: var(--muted, #9aa4b2);
 		font-size: 0.85rem;
 		margin: 8px 4px;
-	}
-	.so-ai-status.err {
-		color: var(--danger, #ff5a5a);
-	}
-	.so-ai-ask {
-		margin-top: 12px;
-		padding-top: 10px;
-		border-top: 1px solid var(--border, #1c222c);
-	}
-	.so-ask-btn {
-		width: 100%;
-		padding: 10px 12px;
-		border-radius: 10px;
-		border: 1px solid var(--border, #1c222c);
-		background: var(--surface-hover, #1a212c);
-		color: var(--fg, #e6e9ef);
-		cursor: pointer;
-		font-size: 0.9rem;
-	}
-	.so-ask-btn:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
-	.so-icon {
-		vertical-align: -1px;
-	}
-	.so-apply-msg {
-		margin: 8px 2px 0;
-		font-size: 0.82rem;
-		color: var(--muted, #9aa4b2);
-	}
-	.so-apply-msg.ok {
-		color: #5dce8a;
-	}
-	.so-apply-msg.bad {
-		color: var(--danger, #ff5a5a);
-	}
-	.so-confirm {
-		display: flex;
-		gap: 8px;
-		margin-top: 8px;
-	}
-	.so-confirm button {
-		padding: 6px 12px;
-		border-radius: 8px;
-		border: 1px solid var(--border, #1c222c);
-		background: var(--surface, #121720);
-		color: var(--fg, #e6e9ef);
-		cursor: pointer;
 	}
 	@keyframes so-fade {
 		from {

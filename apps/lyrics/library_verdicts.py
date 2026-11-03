@@ -197,9 +197,6 @@ class VerdictBackfillReport:
     skipped: dict[str, tuple[str, ...]] = field(default_factory=dict)
     failed: dict[str, str] = field(default_factory=dict)
 
-    def skipped_counts(self) -> dict[str, int]:
-        return {reason: len(ids) for reason, ids in self.skipped.items()}
-
 
 #-----------------------------------------------------------------------------
 # candidate discovery

@@ -32,8 +32,9 @@ import { test } from 'node:test';
 import { compile } from 'svelte/compiler';
 
 const panelUrl = new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url);
+// SpotifySourcePanel renders its props-only view, which holds the markup.
 const sidebarUrl = new URL(
-	'../../src/lib/components/rb/browser/SpotifySourcePanel.svelte',
+	'../../src/lib/components/rb/browser/SpotifySourcePanelView.svelte',
 	import.meta.url
 );
 const panel = readFileSync(panelUrl, 'utf8');

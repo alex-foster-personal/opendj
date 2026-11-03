@@ -19,6 +19,8 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
+from apps.shared.cli_subcommands import dispatch_subcommand_main
+
 Handler = Callable[[list[str]], int]
 
 
@@ -123,17 +125,7 @@ def _usage() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if not args or args[0] in {"-h", "--help", "help"}:
-        print(_usage())
-        return 0
-    name, rest = args[0], args[1:]
-    entry = COMMANDS.get(name)
-    if entry is None:
-        print(f"unknown subcommand {name!r}\n", file=sys.stderr)
-        print(_usage(), file=sys.stderr)
-        return 2
-    return entry[0](rest)
+    return dispatch_subcommand_main(COMMANDS, usage=_usage(), argv=argv)
 
 
 if __name__ == "__main__":

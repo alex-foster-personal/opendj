@@ -96,6 +96,15 @@ export interface WavePalette {
 	high: string;
 	/** Single-color mono / line designs (--rb-wave-mono). */
 	mono: string;
+	/** WAVEPLAN-7896: a pending plan's knob lines (--rb-plan-*), themed so the fader is ink on a light face. */
+	planFader: string;
+	planEqLow: string;
+	planEqMid: string;
+	planEqHigh: string;
+	planFilter: string;
+	/** WAVEPLAN-7896f: the span the plan covers: red on the outgoing deck, green on the incoming (--rb-plan-out, --rb-plan-in), which no skin desaturates. */
+	planOut: string;
+	planIn: string;
 	/** Beat/bar ticks (--rb-text). */
 	tick: string;
 	/** Non-loop hot cue markers - green (--rb-green), the same colour
@@ -139,7 +148,14 @@ const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueOutline' | 'sections'
 	cueLoop: '--rb-orange',
 	cueMemory: '--rb-red',
 	phrase: '--rb-text-dim',
-	vocal: '--rb-wave-vocal'
+	vocal: '--rb-wave-vocal',
+	planFader: '--rb-plan-fader',
+	planEqLow: '--rb-plan-eq-low',
+	planEqMid: '--rb-plan-eq-mid',
+	planEqHigh: '--rb-plan-eq-high',
+	planFilter: '--rb-plan-filter',
+	planOut: '--rb-plan-out',
+	planIn: '--rb-plan-in'
 };
 
 /** Resolve the palette from the .perf-root CSS vars. Fail-fast: a missing

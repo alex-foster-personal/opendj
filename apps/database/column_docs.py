@@ -45,6 +45,7 @@ from __future__ import annotations
 from apps.database.column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
 from apps.database.column_docs_feedback import FEEDBACK_COLUMN_DOCS
 from apps.database.column_docs_genre import GENRE_COLUMN_DOCS
+from apps.database.column_docs_library_org import LIBRARY_ORG_COLUMN_DOCS, PLAYLIST_ORG_COLUMN_DOCS
 from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pair_transitions import PAIR_TRANSITION_COLUMN_DOCS
@@ -205,6 +206,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "superseded_at": "When it was overwritten by the next value.",
     },
     "playlists": {
+        **PLAYLIST_ORG_COLUMN_DOCS,
         "playlist_id": "Primary key, minted at ingest.",
         "name": "Playlist display name.",
         "vendor": "Owning vendor: rekordbox, djay, serato, traktor, etc.",
@@ -672,6 +674,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **LYRICS_COLUMN_DOCS,
     # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
+    # Migration v26 (Library Organization PRD s6).
+    **LIBRARY_ORG_COLUMN_DOCS,
     **GENRE_COLUMN_DOCS,
     # Migration v21 sync_write_tokens (issue #4396).
     **SYNC_GATE_COLUMN_DOCS,

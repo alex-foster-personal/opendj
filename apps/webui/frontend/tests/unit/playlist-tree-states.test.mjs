@@ -23,6 +23,11 @@ const treeSource = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url)),
 	'utf8'
 );
+// PlaylistTree passes plain values and callbacks to this props-only view.
+const viewSource = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url)),
+	'utf8'
+);
 const renameSource = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/tree-playlist-rename.svelte.ts', import.meta.url)),
 	'utf8'
@@ -89,20 +94,28 @@ test('genuine empty with create wired: renders a labeled CTA instead of inert te
 
 test('empty-state CTA reuses the same create-then-rename flow as the header + button', () => {
 	assert.match(
+		viewSource,
+		/oncreate=\{cancreate \? \(\) => oncreate\(\) : undefined\}/,
+		'the empty-state CTA must call the same oncreate the header + button calls, not a duplicate creation path'
+	);
+	assert.match(viewSource, /e\.stopPropagation\(\);\s*oncreate\(\);/, 'the header + button calls the same oncreate');
+	assert.match(treeSource, /cancreate=\{oncreateplaylist !== undefined\}/);
+	assert.match(
 		treeSource,
-		/oncreate=\{oncreateplaylist \? \(\) => void rename\.createAndRename\(\) : undefined\}/,
-		'the empty-state CTA must call the same rename.createAndRename() flow, not a duplicate creation path'
+		/oncreate=\{\(\) => void rename\.createAndRename\(\)\}/,
+		'oncreate must be the rename.createAndRename() flow'
 	);
 });
 
 test('a just-created empty playlist shows a next-step hint until it gets a track', () => {
 	assert.match(
-		treeSource,
-		/\{#if rename\.createdId === node\.playlist_id && node\.track_count === 0\}/,
+		viewSource,
+		/\{#if createdId === node\.playlist_id && node\.track_count === 0\}/,
 		'the hint must be scoped to the just-created playlist and clear itself once it is no longer empty'
 	);
-	assert.match(treeSource, /data-testid="playlist-new-hint"/);
-	assert.match(treeSource, /Drag tracks or a folder here to add music/);
+	assert.match(treeSource, /createdId=\{rename\.createdId\}/);
+	assert.match(viewSource, /data-testid="playlist-new-hint"/);
+	assert.match(viewSource, /Drag tracks or a folder here to add music/);
 });
 
 test('createdId survives past the rename commit, unlike the transient editingId', () => {
@@ -115,12 +128,12 @@ test('createdId survives past the rename commit, unlike the transient editingId'
 });
 
 test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows', () => {
-	assert.match(treeSource, /class:broken=\{node\.mostly_broken\}/);
+	assert.match(viewSource, /class:broken=\{node\.mostly_broken\}/);
 	assert.match(
-		treeSource,
-		/title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : undefined\}/
+		viewSource,
+		/title=\{node\.mostly_broken \? mostlyBrokenTitle : undefined\}/
 	);
-	assert.match(treeSource, /formatMostlyBrokenTooltip\(\)/);
+	assert.match(treeSource, /mostlyBrokenTitle=\{formatMostlyBrokenTooltip\(\)\}/);
 	const policy = readFileSync(
 		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),
 		'utf8'

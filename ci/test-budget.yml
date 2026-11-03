@@ -5,8 +5,9 @@
 # shards. The selector (scripts/ci_test_selection.py, `--budget ci/test-budget.yml`) prices
 # its selection with the model below and trims it to fit the way `cap` says. Dropped modules
 # are listed in selection.json so an escape can be attributed to the budget; the nightly full
-# suite (full-ci.yml) and the trunk checkpoint (every push to main) still run everything, and
-# the checkpoint reverts what escapes. Decision records:
+# runs (ci.yml schedule, full-ci.yml) still run everything, and what escapes is fixed forward.
+# A push to main is priced as `pr_head` over every change since main's last green `ci gate`
+# (Tue 3 Nov 2026, (private path)). Decision records:
 # (private path), (private path).
 #
 # Why 10 (the maintainer, Fri 30 Oct 2026): "What if we set max 10 total runner minutes as a rule and

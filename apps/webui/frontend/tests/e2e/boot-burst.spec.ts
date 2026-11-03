@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 // is how the init script below is type checked against the real IPC.
 import type { PerformanceBrowserIpc } from '../../src/lib/rb/performance-ipc.svelte';
 import { BOOT_BURST_ORIGIN } from './playwright.boot-burst.config';
+import { BOOT_RELEASED_MARK } from '../../src/lib/rb/boot-scheduler';
 
 /** The DevTools bridge startAppInstruments installs (perf-event-log.ts). */
 interface PerfRingWindow extends Window {
@@ -416,8 +417,34 @@ test('a real deck load stamps the real machine conditions', async ({ browser }) 
 		})) as Record<string, unknown>;
 		expect(typeof pressure.available).toBe('boolean');
 
-		// Let the poller take its first sample, then load ONE deck.
-		await page.waitForTimeout(2_000);
+		// The first client poll is deferred out of the boot burst (PERF-R6 /
+		// machine-pressure.ts, BOOT_QUIET_MS). A flat 2s wait is shorter than that
+		// window, so a deck load stamped pressure=unknown while the engine's own
+		// endpoint already answered available:true -- a stale timing assertion,
+		// not a missing sensor. Wait for the real deferred poll before loading.
+		if (pressure.available === true) {
+			await page.waitForFunction(
+				(markName: string) => performance.getEntriesByName(markName).length > 0,
+				BOOT_RELEASED_MARK,
+				{ timeout: 20_000 }
+			);
+			await page.waitForFunction(
+				(markName: string) => {
+					const released = performance.getEntriesByName(markName)[0];
+					if (released === undefined) return false;
+					return performance
+						.getEntriesByType('resource')
+						.some(
+							(entry) =>
+								entry.name.includes('/api/v1/performance/telemetry/pressure') &&
+								entry.startTime >= released.startTime
+						);
+				},
+				BOOT_RELEASED_MARK,
+				{ timeout: 15_000 }
+			);
+		}
+
 		await page.evaluate((id: string) => {
 			const ipc = (window as PerfRingWindow).musicDjToolsPerformance;
 			void ipc?.dispatch({ type: 'load', deck: 1, stable_id: id });
@@ -437,9 +464,12 @@ test('a real deck load stamps the real machine conditions', async ({ browser }) 
 		expect(labels.solo).toBe('1');
 		expect(labels.concurrent_loads).toBe('1');
 
-		// The machine half is present only when the engine could measure, and
-		// an age without a reading beside it would be a row claiming one.
-		if (pressure.available === true) {
+		// The machine half is present only when the client poller stored a
+		// sourced snapshot. An age without a reading beside it would be a row
+		// claiming a measurement it does not have. If the engine is unavailable
+		// (or available with no finite field the client will store), the row
+		// stays explicitly unknown -- never invent numbers here.
+		if (labels.pressure_age_ms !== undefined) {
 			const readings = ['load_avg_1m', 'mem_free_mb', 'swap_used_mb'].filter(
 				(name) => labels[name] !== undefined
 			);
@@ -447,7 +477,7 @@ test('a real deck load stamps the real machine conditions', async ({ browser }) 
 			expect(Number(labels.pressure_age_ms)).toBeGreaterThanOrEqual(0);
 			for (const name of readings) expect(Number.isFinite(Number(labels[name]))).toBe(true);
 		} else {
-			expect(labels.pressure_age_ms).toBeUndefined();
+			expect(labels.pressure).toBe('unknown');
 		}
 	} finally {
 		await context.close();

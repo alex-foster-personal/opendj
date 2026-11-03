@@ -57,10 +57,10 @@ test('signed-in login cluster uses green styling for the gated-feature list', ()
 // requirement: LESSV-04
 // [if] the top bar renders an account button outside the login dropdown [then] fail, [else stop]
 test('the account button lives only inside the login dropdown', () => {
-	const bauble = readFileSync(
-		fileURLToPath(new URL('../../src/lib/components/UserBauble.svelte', import.meta.url)),
-		'utf8'
-	);
+	// Container plus its props-only view: the pair is the component.
+	const bauble = ['UserBauble.svelte', 'UserBaubleView.svelte']
+		.map((name) => readFileSync(fileURLToPath(new URL(`../../src/lib/components/${name}`, import.meta.url)), 'utf8'))
+		.join('\n');
 	assert.equal(cluster.includes('class="account-btn"'), false, 'no standalone Account pill beside the bauble');
 	assert.equal(cluster.includes('openAccountOverlay'), false, 'the cluster opens no account panel itself');
 	assert.equal(topbar.includes('openAccountOverlay'), false, 'TopBar opens no account panel itself');

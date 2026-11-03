@@ -47,6 +47,16 @@ from typing import Literal
 #: the tempo-line grid flagged `bar_phase_untrusted` instead of failing, and a
 #: beat just before zero snaps to 0 keeping its bar number. A 1.6.0 grid or
 #: terminal failure is not current, so the drain re-runs it.
+#: NOT bumped for the pre-zero snap window (15 ms to 30 ms, Tue 3 Nov 2026,
+#: PR #8281), a deliberate exception to the MINOR rule above. That change can
+#: only PREPEND one beat at 0 s, numbered as the old first beat's predecessor,
+#: to a grid whose dropped first beat sat in [-30, -15) ms; every other beat,
+#: the BPM and the bar numbers are byte-identical (2 of 76 ok round-1 grids
+#: change, both that way). A bump would re-run the Beat This! model on every
+#: stored track (about 100 CPU-seconds per 6-minute track) and, through the
+#: key lane's depends_on identity, every key too, to change about 3% of grids
+#: by one beat. A 1.7.0 grid written before that PR may therefore lack that
+#: first beat; re-analysing the track (or a later bump) brings it.
 PRODUCER_VERSION = "1.7.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record

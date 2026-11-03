@@ -86,11 +86,11 @@ def test_shallow_clone_reports_unknown_and_does_not_carry(repo: Path, reviewed: 
     assert any("shallow clone" in note for note in result.unknown), result.unknown
 
 
-@pytest.mark.requirement("REVIEW-16")
-def test_triage_prints_base_merge_pass_line_and_proof(
+@pytest.mark.requirement("REVIEW-8220")
+def test_triage_passes_a_merge_of_main_on_the_earlier_review(
     repo: Path, reviewed: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """[if] a base-merge carry passes [then] triage prints both full SHAs and the disjoint-path proof, [else stop]."""
+    """[if] main is merged into a reviewed PR [then] the earlier review covers the new head, naming both SHAs, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main(repo)
     reviews = [review_at(reviewed)]
@@ -101,18 +101,15 @@ def test_triage_prints_base_merge_pass_line_and_proof(
     monkeypatch.setattr(review_coverage, "_changed_files", lambda pr: [FILE, OTHER])
     monkeypatch.setattr(review_coverage, "_checks", lambda pr: [])
     monkeypatch.setattr(
-        review_coverage, "_paginated_json_list", lambda path: reviews if path.endswith("/reviews") else []
+        review_coverage,
+        "_paginated_json_list",
+        lambda path: reviews if path.endswith("/reviews") else [{"sha": reviewed}] if path.endswith("/commits") else [],
     )
     monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: "0" * 40)
 
     assert review_coverage.triage(PR) == 0
 
     out = capsys.readouterr().out
-    reviewed_base = git(repo, "merge-base", "origin/main", reviewed)
-    head_base = git(repo, "merge-base", "origin/main", head)
-    assert f"ok   {CLAUDE}: carried from {reviewed[:11]} (net diff unchanged since; base merge only)" in out
-    assert f"base-merge carry: reviewed {reviewed} -> head {head}" in out
-    assert f"reviewed {reviewed_base}, head {head_base}" in out
-    assert "disjoint paths: main changed 1, PR changed 1, shared 0" in out
-    assert "net diff byte-identical at both heads, sha256 " in out
-    assert "[review-coverage] PASS" in out
+    assert head in out
+    assert f"PASS: {CLAUDE} reviewed earlier head {reviewed} of this PR" in out
+    assert "base-merge carry:" not in out

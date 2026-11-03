@@ -139,9 +139,15 @@ test('CHROME-16 if a design has no painter branch then the preview falls through
 });
 
 test('CHROME-16 if SettingsOverlay lazy-imports the preview again then a pending or failed chunk renders nothing', () => {
+	// WAVEQS-8348c: the overlay renders previews through the shared SettingPreview,
+	// which imports the painter component statically; neither may lazy-import it.
 	const src = readFileSync('src/lib/components/settings/SettingsOverlay.svelte', 'utf8');
-	assert.match(src, /import WaveformDesignPreview from '\.\/WaveformDesignPreview\.svelte';/);
-	assert.match(src, /\{#if def\.preview === 'waveform'\}/);
-	assert.doesNotMatch(src, /import\(\s*['"]\.\/WaveformDesignPreview\.svelte['"]\s*\)/);
+	const shared = readFileSync('src/lib/components/settings/SettingPreview.svelte', 'utf8');
+	assert.match(src, /import SettingPreview from '\.\/SettingPreview\.svelte';/);
+	assert.match(src, /\{#if def\.preview !== undefined\}/);
+	assert.match(shared, /import WaveformDesignPreview from '\.\/WaveformDesignPreview\.svelte';/);
+	for (const file of [src, shared]) {
+		assert.doesNotMatch(file, /import\(\s*['"]\.\/(WaveformDesignPreview|SettingPreview)\.svelte['"]\s*\)/);
+	}
 	assert.doesNotMatch(src, /def\.id === 'waveform_design' \|\| def\.id === 'wave_palette'/, 'previews key on the catalog declaration, not hardcoded ids');
 });

@@ -129,6 +129,8 @@ const STRIP_H = 40;
 function paintRow(loop) {
 	const { ctx, calls } = recordingCtx();
 	render.drawWaveRow(ctx, {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: ROW_W,
 		heightCss: ROW_H,
 		positionMs: ROW_POSITION_MS,
@@ -184,6 +186,8 @@ test('a stored loop hot cue does not hide the engaged-loop band on either wavefo
 
 	const row = recordingCtx();
 	render.drawWaveRow(row.ctx, {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: ROW_W,
 		heightCss: ROW_H,
 		positionMs: ROW_POSITION_MS,

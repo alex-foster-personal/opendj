@@ -6,7 +6,7 @@ signing check passed. The machine held no Developer ID certificate in any
 keychain at all, and the build died at codesign 30 seconds later, after
 staging and verifying the whole payload:
 
-    Developer ID Application: the maintainer (5K6FYJMYR6): no identity found
+    Developer ID Application: the maintainer (ABCDE12345): no identity found
     [ERROR] codesign failed inside the payload
 
 Converting exactly that into a one-second refusal is what this preflight is

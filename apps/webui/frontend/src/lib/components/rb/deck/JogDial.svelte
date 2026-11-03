@@ -220,8 +220,8 @@
 		gridless
 			? gridInertTip
 			: deck.quantize_enabled
-				? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
-				: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
+				? 'Quantize ON - snaps what you do (seeks, cue, hot-cue jumps, loop ends) to the nearest grid line; it does not change the beatgrid or the audio'
+				: 'Quantize OFF - seeks, cue, hot-cue jumps and loop ends use exact playhead times; the beatgrid and the audio are unchanged either way'
 	);
 	// Q label mirrors the active grid (pin a67bafbfc4b0). 'phase' is plumbed
 	// but not implemented, so the label can show it (the setting exists) even
@@ -230,7 +230,9 @@
 		deck.quantize_grid_beats === 'phase' ? 'Q-phase' : `Q${deck.quantize_grid_beats}`
 	);
 	const qGridBullets: readonly string[] = [
-		'Choose the beat grid that seeks, cue points, and loop ends snap to.',
+		'Quantize never changes the beatgrid or the audio. It only snaps what you do (seeks, cue, hot-cue jumps, loop ends) to a grid line.',
+		'Choose the grid: 1 snaps to every beat, 4 to every bar downbeat, 8 to every second downbeat.',
+		'It snaps to the NEAREST line, earlier or later, never always forward: on 4, a press a quarter into a bar goes back to that bar\'s downbeat and one three quarters in goes on to the next; exactly halfway goes back.',
 		'"phase" snaps seeks, cue and pause to the nearest phrase boundary from analysis; loops keep whole beats.'
 	];
 	const phraseTitle: string = $derived(

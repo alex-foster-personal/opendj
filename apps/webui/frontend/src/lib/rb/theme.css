@@ -33,6 +33,13 @@
 	--rb-wave-mid: #f0a020;      /* waveform mids band - amber */
 	--rb-wave-high: #f4f6f8;     /* waveform highs band - white */
 	--rb-wave-mono: #3d7dd9;     /* mono / line waveform designs */
+	--rb-plan-fader: #ffffff;    /* plan curves over the deck waveform (WAVEPLAN-7896) */
+	--rb-plan-eq-low: #ffc04d;
+	--rb-plan-eq-mid: #7ee787;
+	--rb-plan-eq-high: #ff7eb6;
+	--rb-plan-filter: #4dd8ff;
+	--rb-plan-out: #ff3b30;      /* a plan's span: red out, green in, in every skin, so not --rb-red or --rb-green */
+	--rb-plan-in: #35c04f;
 	--rb-wave-vocal: #4fb2ff;    /* vocal-presence bars over waveforms */
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
@@ -77,8 +84,7 @@
 	--rb-issue-square-ink: initial;    /* unset: the '!' glyph on that square stays near-black */
 	--rb-quality-filter: none;         /* QLT venue badges keep their colour ramp */
 	--rb-bpm-mismatch-ring: initial;   /* unset: off-tempo BPM cells keep their red severity rings */
-	--rb-mix-compat-row-tint: initial; /* unset: key+BPM-compatible library rows get a faint green wash */
-	--rb-mix-compat-row-hover: initial;
+	--rb-mix-compat-bar: initial;      /* unset: key+BPM-compatible library rows get a muted left-edge bar (green mixed with dim text) */
 	--rb-stem-vocal: initial;          /* unset: stem chips, tags, dials and rows use STEM_COLORS (stem-colors.ts) */
 	--rb-stem-instrumental: initial;
 	--rb-stem-drums: initial;
@@ -129,6 +135,14 @@ html[data-theme='light'] .perf-root {
 	--rb-wave-mid: #9a5a00;
 	--rb-wave-high: #4a4f57;
 	--rb-wave-mono: #2166b1;
+	/* Ink, not white: the plan curves sit on a light face. */
+	--rb-plan-fader: #1b1a17;
+	--rb-plan-eq-low: #8a4b00;
+	--rb-plan-eq-mid: #1a6b33;
+	--rb-plan-eq-high: #a81e62;
+	--rb-plan-filter: #0b6a8a;
+	--rb-plan-out: #b3261e;
+	--rb-plan-in: #1d7035;
 	--rb-wave-vocal: #2a76c0;    /* #4fb2ff was 2.07:1 on the light face, under the 3:1 floor */
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
@@ -170,6 +184,7 @@ html[data-theme='light'] .perf-root {
 	--rb-stem-drums: #7a5f45;
 	--rb-stem-bass: #625a7a;
 	--rb-stem-other: #3f6b63;
+	--rb-stem-ink: var(--rb-text); /* text on stem tags, chips and the stems status (UICONTRAST-6037) */
 }
 
 /* Legacy waveform palette (pre-#4219: orange low, blue mid, near-white
@@ -261,11 +276,6 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-issue-square-ink: #0a0a0a;
 	--rb-quality-filter: grayscale(1);
 	--rb-bpm-mismatch-ring: transparent;
-	/* W41 (the maintainer, Tue 6 Oct 2026): "in gothic let's not highlight matching
-	   rows, clutters." No row wash at rest or on hover; the key cell's
-	   compatible ring still marks the match. */
-	--rb-mix-compat-row-tint: transparent;
-	--rb-mix-compat-row-hover: var(--rb-panel-raised);
 	/* Stems: low-chroma tints, still five distinct hues, so they stop
 	   shouting against the gray chrome. */
 	--rb-stem-vocal: #8ea6ba;
@@ -273,6 +283,7 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-stem-drums: #b8a088;
 	--rb-stem-bass: #a59cba;
 	--rb-stem-other: #86aea6;
+	--rb-stem-ink: initial; /* Gothic keeps the dark-skin stem inks, even on the light theme */
 	/* Light-only hooks (see the Light skin block): unset, so Gothic keeps
 	 * its dark wells and jog ink even on the light theme. */
 	--rb-jog-text: initial;
@@ -376,6 +387,14 @@ html[data-skin='light'] .perf-root {
 	--rb-wave-mid: #9a5a00;
 	--rb-wave-high: #4a4f57;
 	--rb-wave-mono: #2166b1;
+	/* Ink, not white: the plan curves sit on a light face. */
+	--rb-plan-fader: #1b1a17;
+	--rb-plan-eq-low: #8a4b00;
+	--rb-plan-eq-mid: #1a6b33;
+	--rb-plan-eq-high: #a81e62;
+	--rb-plan-filter: #0b6a8a;
+	--rb-plan-out: #b3261e;
+	--rb-plan-in: #1d7035;
 	--rb-wave-vocal: #2a76c0;
 	--rb-red: #b3261e;
 	--rb-yellow: #4f4f4f;
@@ -401,14 +420,12 @@ html[data-skin='light'] .perf-root {
 	--rb-issue-square-ink: #f5f5f5;
 	--rb-quality-filter: grayscale(1);
 	--rb-bpm-mismatch-ring: transparent;
-	/* W41 mirrored: light is Gothic flipped, so no compatible-row wash either. */
-	--rb-mix-compat-row-tint: transparent;
-	--rb-mix-compat-row-hover: var(--rb-panel-raised);
 	--rb-stem-vocal: #4f6a80;
 	--rb-stem-instrumental: #566b49;
 	--rb-stem-drums: #7a5f45;
 	--rb-stem-bass: #625a7a;
 	--rb-stem-other: #3f6b63;
+	--rb-stem-ink: var(--rb-text); /* text on stem tags, chips and the stems status (UICONTRAST-6037) */
 	/* STRUCT-05 section band hues: the light theme's, so the translucent
 	 * bands keep their families on this near-white ground and no dark-theme
 	 * hue leaks in. */

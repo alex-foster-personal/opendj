@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../src/lib/components/rb/browser');
-const source = readFileSync(join(root, 'PlaylistSetTabs.svelte'), 'utf8');
+// The container fetches and runs; its props-only view draws the controls.
+const source =
+	readFileSync(join(root, 'PlaylistSetTabs.svelte'), 'utf8') +
+	readFileSync(join(root, 'PlaylistSetTabsView.svelte'), 'utf8');
 
 test('SET-05 PlaylistSetTabs refetches when playlistId changes', () => {
 	assert.match(source, /\$effect\(\(\) => \{[\s\S]*const id = playlistId/);

@@ -27,6 +27,9 @@ Regression lines:
   - if a cross-uid holder whose pid `ss` cannot report is failed instead of
     waited for, or fails the step after releasing during that wait, then
     broken (issue #1613)
+  - if a listener on a non-loopback, non-wildcard address (a host's
+    Tailscale IP) is waited on or fails the step then broken, and if an
+    unseeable loopback or wildcard holder stops failing it then broken
 """
 
 from __future__ import annotations
@@ -260,6 +263,68 @@ def test_the_trailing_command_runs_only_once_ports_are_clear(
 def test_a_free_port_is_quiet_and_runs_the_command() -> None:
     result = _run(str(_free_port()), "--", "echo", "suite-ran", live_re="Runner\\.Worker")
     assert result.returncode == 0 and result.stdout == "suite-ran\n"
+
+
+def _canned_ss(tmp_path: Path, local_address: str) -> Path:
+    """An ``ss`` that reports ONE ownerless listener at ``local_address``.
+
+    The owner list is absent, as for another uid's socket (root's tailscaled on
+    agbox3-7). The address is one this test process could not bind itself,
+    such as a host's Tailscale IPv6, so the line is canned rather than real.
+    """
+    fake = tmp_path / "ss-canned"
+    fake.write_text(
+        f"#!/usr/bin/env bash\necho 'LISTEN 0      4096   {local_address} [::]:*'\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    return fake
+
+
+@pytest.mark.parametrize(
+    "address", ["[fd7a:115c:a1e0::d328:7f08]", "192.0.2.10", "[fe80::1%eth0]"]
+)
+def test_a_listener_on_a_non_loopback_address_is_quiet_and_runs_the_command(
+    tmp_path: Path, address: str
+) -> None:
+    """if a listener on a non-loopback, non-wildcard address (a host's
+    Tailscale IP) is waited on or fails the step then broken"""
+    port = _free_port()
+    result = _run(
+        str(port),
+        "--",
+        "echo",
+        "suite-ran",
+        live_re=ORPHAN,
+        foreign_wait_s="1",
+        ss_bin=_canned_ss(tmp_path, f"{address}:{port}"),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == "suite-ran\n", result.stdout
+    assert result.stderr == "", result.stderr
+
+
+@pytest.mark.parametrize(
+    "address", ["127.0.0.1", "127.0.0.53%lo", "[::1]", "0.0.0.0", "[::]", "*", "[::ffff:127.0.0.1]"]
+)
+def test_a_foreign_listener_on_loopback_or_wildcard_still_fails(
+    tmp_path: Path, address: str
+) -> None:
+    """CONTROL: if an unseeable holder on loopback or the wildcard stops
+    failing the step once non-loopback listeners are ignored then broken"""
+    port = _free_port()
+    result = _run(
+        str(port),
+        "--",
+        "echo",
+        "suite-ran",
+        live_re=ORPHAN,
+        foreign_wait_s="1",
+        ss_bin=_canned_ss(tmp_path, f"{address}:{port}"),
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "suite-ran" not in result.stdout
+    assert "cannot see" in result.stderr, result.stderr
 
 
 def test_no_ports_is_a_usage_error() -> None:

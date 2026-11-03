@@ -83,4 +83,4 @@ def test_one_row_per_ordered_pair_and_sources_are_checked(tmp_path: Path) -> Non
 def test_the_engine_store_ladder_carries_the_same_table() -> None:
     assert "pair_transitions" in store_schema.TABLES["pair_transitions"]
     assert any("CREATE TABLE IF NOT EXISTS pair_transitions" in statement for statement in store_schema.ALL_DDL)
-    assert all("IF NOT EXISTS" in statement for statement in store_schema.MIGRATIONS[-1])
+    assert all("IF NOT EXISTS" in statement for statement in store_schema._V14)

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import socket
 import sqlite3
 from collections.abc import Iterator
@@ -459,6 +460,46 @@ def test_the_scheduler_syncs_only_when_switched_on(air: Engine, hub_url: str) ->
     result = on.run_once()
     assert result is not None and result.status == "ok"
     assert air.status(pin["id"])["pins"][0]["state"] == "synced"
+
+
+@pytest.mark.requirement("FBSYNC-4978")
+def test_a_wire_version_409_is_not_an_unreachable_hub(
+    air: Engine, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] hello is wire 409 [then] feedback sync is FEEDBACK_SYNC_FAILED, [else stop].
+
+    [if] the scheduler meets that refusal [then] it logs WARNING, never ERROR
+    (ERROR pages Sentry on every backoff tick), [else stop].
+    """
+    from tests.cloudsync.wire_mismatch_hub import serve_wire_mismatch_hub
+
+    for mismatch_url in serve_wire_mismatch_hub():
+        monkeypatch.setenv(sync_status.ENDPOINT_ENV, mismatch_url)
+        pin = air.drop("made while wires differed")
+        refused = air.http.post("/api/v1/feedback/sync")
+        assert refused.status_code == 502, refused.text
+        body = refused.json()["detail"]
+        assert body["code"] == "FEEDBACK_SYNC_FAILED"
+        assert "SYNC_WIRE_VERSION" in body["message"]
+        assert "FEEDBACK_SYNC_HUB_UNREACHABLE" not in refused.text
+        assert pin["id"] in air.pins()
+        scheduler = CloudSyncScheduler(
+            air.app,
+            env={
+                sync_status.SCHEDULER_ENV: "1",
+                sync_status.ENDPOINT_ENV: mismatch_url,
+            },
+        )
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="apps.webui.server.cloudsync_scheduler"):
+            assert scheduler.run_once() is None
+        tick_records = [
+            r for r in caplog.records if r.name == "apps.webui.server.cloudsync_scheduler"
+        ]
+        assert [r.levelno for r in tick_records] == [logging.WARNING], tick_records
+        assert scheduler.status().last_error is not None
+        assert "FEEDBACK_SYNC_FAILED" in scheduler.status().last_error
+        assert "FEEDBACK_SYNC_HUB_UNREACHABLE" not in scheduler.status().last_error
 
 
 # ----- FBSYNC-05: attachment metadata syncs, the bytes gap is explicit -------

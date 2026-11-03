@@ -78,11 +78,21 @@ ROUND_STEPS = (1.0, 0.5, 0.1, 0.01)
 #: (matches rekordbox), +8 ms (human truth, round 2) the v2 target.
 DEFAULT_OFFSET_S = OFFSET_SERVED_S
 
-#: A beat this close to 0 s is still this file's first beat. The served
-#: offset is -10 ms, so a kick the model placed at 0 lands inside this
-#: window. Moving only that beat to 0 stays under a flam. A beat in
-#: [-0.05, -PRE_ZERO_SNAP_S) is before the file and is dropped instead.
-PRE_ZERO_SNAP_S = 0.015
+#: One Beat This! frame (50 fps): the model's own time quantization.
+MODEL_FRAME_S = 0.020
+
+#: A beat this close to 0 s is still this file's first beat, so it moves to 0.
+#: The window is the served offset's own shift plus one model frame. 15 ms
+#: (the served -10 ms alone, plus 5) dropped a kick the model heard at 0:
+#: Beat This! sits early (the module docstring: about 8 ms against human
+#: annotation), so the 124 BPM acceptance kick's line crossed -7.7 ms and was
+#: served at -17.7 ms, dropped, and its grid started on beat 2 at 0.466 s
+#: (installed-app acceptance, Tue 3 Nov 2026, reproduced headless). Moving
+#: only that beat to 0 shortens the file's first interval by at most this
+#: much. A beat in [-0.05, -PRE_ZERO_SNAP_S) is before the file and is
+#: dropped instead (round-1 wav 8c3f6b60a8da494c14c291dfa326da3eab3dd1a2,
+#: 37 ms early, still drops).
+PRE_ZERO_SNAP_S = round(-OFFSET_SERVED_S + MODEL_FRAME_S, 6)
 
 #: A model interval within this of the median counts as clean when seeding the
 #: line: two 50 fps frames, the model's own quantization plus one frame of jitter.

@@ -13,7 +13,7 @@ from pathlib import Path
 from apps.shared.smartlists import SmartlistRuleError, validate_rule
 from apps.smartlists.repo import SmartlistsRepoError
 
-from ._common import build_repo
+from ._common import build_repo, read_rule_json
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        rule = json.loads(args.rule.read_text())
+        rule = read_rule_json(args.rule)
     except (OSError, json.JSONDecodeError) as exc:
         print(f"error: could not read rule file: {exc}", file=sys.stderr)
         return 2

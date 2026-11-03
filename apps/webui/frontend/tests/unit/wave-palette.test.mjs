@@ -129,6 +129,8 @@ function paintLowOnly(palette) {
 		vocals: { status: 'not_analyzed' }
 	};
 	render.drawWaveRow(recordingContext([]), {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: 240,
 		heightCss: 60,
 		positionMs: 30_000,

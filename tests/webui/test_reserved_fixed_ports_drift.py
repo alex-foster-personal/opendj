@@ -223,6 +223,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         8692,
     ),
     (
+        "apps/webui/frontend/tests/e2e/playwright.electron-shell.config.ts",
+        "export const ELECTRON_SHELL_PORT = 8694;",
+        8694,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/playwright.stem-decode-bench.config.ts",
         "process.env.STEM_DECODE_BENCH_PORT ?? 8700",
         8700,
@@ -292,6 +297,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",
         "export const LYRICS_WORDS_API_PORT = 8706;",
         8706,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.silence-expected-audible.config.ts",
+        "export const SILENCE_EXPECTED_AUDIBLE_FRONTEND_PORT = 5327;",
+        5327,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.silence-expected-audible.config.ts",
+        "export const SILENCE_EXPECTED_AUDIBLE_API_PORT = 8707;",
+        8707,
     ),
     (
         "apps/webui/frontend/tests/e2e/stems-e2e-endpoints.ts",

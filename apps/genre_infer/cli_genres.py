@@ -27,7 +27,7 @@ from typing import Any
 
 from apps.analysis import store as analysis_store
 
-from . import findings, pipeline, providers, service, tag_write
+from . import findings, keystore, pipeline, providers, service, tag_write
 
 EXIT_REFUSED = 2
 EXIT_UNAVAILABLE = 3
@@ -112,6 +112,19 @@ def _import_search_cache(args: argparse.Namespace, conn: Any) -> dict[str, Any]:
     return {"added": added}
 
 
+def _keys_set(args: argparse.Namespace) -> int:
+    value = sys.stdin.readline().strip()
+    if not value:
+        print(f"[ERROR] no {args.name} on stdin", file=sys.stderr)
+        return EXIT_REFUSED
+    try:
+        print(json.dumps(service.set_key(args.name, value), indent=2))
+    except keystore.KeystoreError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return EXIT_UNAVAILABLE
+    return 0
+
+
 def register(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     def add(name: str, fn: Callable[[argparse.Namespace, Any], Any]) -> argparse.ArgumentParser:
         p = sub.add_parser(name)
@@ -159,6 +172,10 @@ def register(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p.add_argument("write_id", type=int)
     p = add("tag-journal", lambda a, c: {"writes": tag_write.journal(c, a.stable_id)})
     p.add_argument("--stable-id")
+    p = sub.add_parser("keys", help="store a provider key in the macOS Keychain (value read from stdin)")
+    p.add_argument("action", choices=["set"])
+    p.add_argument("name", choices=list(providers.KEY_NAMES))
+    p.set_defaults(func=_keys_set, needs_wheel=False)
     p = add("import-search-cache", _import_search_cache)
     p.add_argument("path")
 

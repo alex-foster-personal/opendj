@@ -14,9 +14,11 @@ master mid-set would cut the deck that is already playing.
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import unquote
 
 from apps.opendj_cli.orders import SEQUENCE, SINGLE
 from apps.shared.rekordbox_writeback import WRITE_SURFACES
@@ -165,19 +167,36 @@ def guard_order(
     return rewritten, {"prepended_master_mute": prepended}
 
 
-def validate_api_path(path: str) -> None:
-    if not path.startswith("/api/v1/"):
+def canonical_api_path(path: str) -> str:
+    """The route ``path`` names, for a rail to judge: no query or fragment, decoded once, one slash, no dot segments.
+
+    The engine decodes before routing and the client resolves dot segments, so
+    a rail that reads the raw string judges a different path from the one that
+    runs. A trailing slash stays: ``/api/v1/ingest/`` is not ``/api/v1/ingest``.
+    """
+    decoded = unquote(re.split(r"[?#]", path, maxsplit=1)[0])
+    canonical = "/" + posixpath.normpath(decoded).lstrip("/")
+    return f"{canonical}/" if decoded.endswith(("/", "/.", "/..")) and canonical != "/" else canonical
+
+
+def validate_api_path(path: str) -> str:
+    """Refuse a path outside /api/v1/, and return its :func:`canonical_api_path` for the caller's own rails."""
+    # Raw AND canonical: the engine decodes %2e%2e to '..' before routing, and
+    # the raw form is appended to an origin, so neither may leave /api/v1/.
+    canonical = canonical_api_path(path)
+    if not (path.startswith("/api/v1/") and canonical.startswith("/api/v1/")):
         raise SafetyRefusal(
             "invalid_path",
             f"only /api/v1/* paths are allowed, got: {path}",
             path=path,
         )
-    if ".." in path:
+    if ".." in unquote(path):
         raise SafetyRefusal(
             "invalid_path",
             f"path traversal is not allowed: {path}",
             path=path,
         )
+    return canonical
 
 
 def guard_update_apply(environ: Mapping[str, str] | None = None) -> None:
@@ -198,8 +217,9 @@ def guard_update_apply(environ: Mapping[str, str] | None = None) -> None:
 
 def guard_library_request(method: str, path: str, environ: Mapping[str, str] | None = None) -> None:
     upper = method.upper()
+    canonical = canonical_api_path(path)
     for marker in _WRITEBACK_HTTP_MARKERS:
-        if marker in path:
+        if marker in canonical or marker in path:
             raise SafetyRefusal(
                 "writeback_blocked",
                 f"writeback surface blocked: {upper} {path}",
@@ -208,7 +228,7 @@ def guard_library_request(method: str, path: str, environ: Mapping[str, str] | N
     if destructive_enabled(environ):
         return
     for blocked_method, pattern in _DESTRUCTIVE_PATH_PATTERNS:
-        if upper == blocked_method and pattern.match(path):
+        if upper == blocked_method and pattern.match(canonical):
             raise SafetyRefusal(
                 "destructive_blocked",
                 f"destructive library call blocked: {upper} {path}",

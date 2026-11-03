@@ -173,7 +173,7 @@ Two further gaps, both verified:
   than hashing file content, flagged `x_content_hash_mode=inferred`. Since `content_hash` is the
   spec's integrity anchor, an inferred value does not provide the guarantee the field implies.
 
-Tracked as R1-10 and R1-11 in [`../../refactor1.md`](../../refactor1.md).
+Tracked in issues odj-5817 (schema_version) and odj-5818 (Rekordbox adapter roadmap).
 
 ## Why the licences are split
 

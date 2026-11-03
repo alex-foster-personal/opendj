@@ -141,6 +141,28 @@ def test_post_sync_journals_a_result_that_status_shows(
     assert len(after["recent_results"]) == 1
 
 
+@pytest.mark.requirement("FBSYNC-4978")
+def test_post_sync_wire_version_409_is_refused_not_unreachable(
+    enroll_spoke_dir: Path,
+) -> None:
+    """[if] hub hello is wire 409 [then] ops sync is CLOUDSYNC_SYNC_REFUSED, [else stop]."""
+    from tests.cloudsync.wire_mismatch_hub import serve_wire_mismatch_hub
+
+    for mismatch_url in serve_wire_mismatch_hub():
+        with ops_client(enroll_spoke_dir) as http:
+            response = http.post(
+                "/api/v1/cloudsync/sync", json={"hub_url": mismatch_url}
+            )
+            status = http.get("/api/v1/cloudsync/status").json()
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_SYNC_REFUSED"
+    assert "SYNC_WIRE_VERSION" in response.json()["detail"]["message"]
+    assert status["last_result"]["status"] == "error"
+    assert status["update_required"] is not None
+    assert status["update_required"]["code"] == "SYNC_WIRE_VERSION"
+
+
 def test_post_sync_to_an_unreachable_hub_is_502_and_journaled_as_error(
     enroll_spoke_dir: Path,
 ) -> None:

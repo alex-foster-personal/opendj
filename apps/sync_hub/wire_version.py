@@ -71,7 +71,7 @@ from apps.sync_hub import protocol
 #: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
 #: field older peers ignore, advertised by the ``identity-reject/v1``
 #: capability token: NOT a wire change under the rule above, so no bump.
-WIRE_VERSION: int = 7
+WIRE_VERSION: int = 8
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -96,6 +96,9 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     # outranks every write that is not a later restore (issue #4628). Shape
     # AND meaning change: the semantic contract below carries the meaning half.
     7: "1c03a42201eb8943",
+    # v8: playlists hierarchy columns plus the library organization tables
+    # (Library Organization PRD s6).
+    8: "102568930f24f54b",
 }
 
 #: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
@@ -106,6 +109,7 @@ WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
     5: "track_fields_modified_at_lww_fallback",
     6: "track_fields_modified_at_lww_fallback",
     7: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
+    8: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

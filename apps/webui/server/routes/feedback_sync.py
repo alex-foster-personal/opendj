@@ -39,6 +39,7 @@ from apps.sync_hub import client as sync_client
 from apps.sync_hub import config as sync_config
 from apps.sync_hub import maintenance as sync_maintenance
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.transport import is_wire_version_refusal
 
 from .feedback_replica import PinSyncStatus, pin_statuses, reconcile
 
@@ -88,7 +89,9 @@ class FeedbackStoreSyncOut(BaseModel):
     attachments_missing: int
 
 
-SchedulerState = Literal["not_armed", "off", "misconfigured", "running", "stopped", "dead"]
+SchedulerState = Literal[
+    "not_armed", "off", "misconfigured", "running", "halted", "stopped", "dead"
+]
 
 
 class CloudSyncSchedulerOut(BaseModel):
@@ -97,6 +100,8 @@ class CloudSyncSchedulerOut(BaseModel):
     ``not_armed``: this app never builds one (tests, non-daemon boots).
     ``off``: armed, switch not on. ``misconfigured``: switched on but it could
     not start (``reason`` says why); the engine booted regardless.
+    ``halted``: a settled ``SyncDigestMismatch`` (ADR 04 c6); the thread stays
+    parked and does not tick again until the engine is restarted.
     ``dead``: it was started and its thread is gone without ``stop()``.
     """
 
@@ -254,6 +259,10 @@ def sync_feedback_pins(
                 f"CloudSync sync deferred: {exc.reason}",
             ) from exc
         except sync_client.SyncTransportError as exc:
+            if is_wire_version_refusal(exc):
+                raise FeedbackSyncError(
+                    502, "FEEDBACK_SYNC_FAILED", f"SyncVersionMismatch: {exc}"
+                ) from exc
             raise FeedbackSyncError(
                 503,
                 "FEEDBACK_SYNC_HUB_UNREACHABLE",

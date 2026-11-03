@@ -17,6 +17,8 @@ from .schema import apply_set_notes_migrations
 
 _SCOPE_RE = re.compile(r"^(scratch|playlist:[^\s:]+|playlist_set:\d+)$")
 
+_SET_NOTE_COLUMNS = "scope, body_md, x, y, w, h, visible, rev, updated_at"
+
 
 @dataclass(slots=True)
 class Geometry:
@@ -97,8 +99,7 @@ def _current_rev(conn: sqlite3.Connection, scope: str) -> int:
 def list_set_notes(conn: sqlite3.Connection) -> list[SetNote]:
     apply_set_notes_migrations(conn)
     rows = conn.execute(
-        "SELECT scope, body_md, x, y, w, h, visible, rev, updated_at "
-        "FROM set_notes ORDER BY scope"
+        f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes ORDER BY scope"
     ).fetchall()
     return [_row_to_note(row) for row in rows]
 
@@ -107,8 +108,7 @@ def load_set_note(conn: sqlite3.Connection, scope: str) -> SetNote:
     validate_scope(scope)
     apply_set_notes_migrations(conn)
     row = conn.execute(
-        "SELECT scope, body_md, x, y, w, h, visible, rev, updated_at "
-        "FROM set_notes WHERE scope = ?",
+        f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes WHERE scope = ?",
         (scope,),
     ).fetchone()
     if row is None:

@@ -29,7 +29,8 @@ MINI-PRD
          scan goes on ⛔️ a crash that ends the scan, or a letter that reads checked
     [if] stop() is called [then] the scan ends after the files in flight and
          a later scan resumes ⛔️ redoing stored work
-  ✔︎ ✅ 🎯 ScanRunner: single-flight background scan with a readable status.
+  ✔︎ ✅ 🎯 ScanRunner: single-flight background scan with a readable status
+    (engine in scan_runner.py).
 
 -Claude
 """
@@ -42,7 +43,7 @@ import threading
 import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ from apps.shared.audio_scan import ScanCancelled, ScanError, rule_version, scan_
 from apps.shared.events import publish
 from apps.webui.server import audio_quality_store, library_playable
 from apps.webui.server.audio_quality_store import StoredScan
+from apps.webui.server.scan_runner import ScanRunner as SharedScanRunner
 
 log = logging.getLogger(__name__)
 
@@ -236,94 +238,41 @@ def scan_library(
 # ---------------------------------------------------------------- runner
 
 
-class ScanRunner:
+def _publish_audio_result(result: ScanResult) -> None:
+    if result.scanned > 0 or result.newly_unreadable > 0:
+        # Rows carry the grade, so listings must be read again. A file that
+        # just became unreadable changes its row too (checked -> failed).
+        publish("library.changed", {"kind": "tracks", "ids": []})
+
+
+class ScanRunner(SharedScanRunner[ScanResult]):
     """Single-flight scan with a status any caller can read, and a stop."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self._stop = threading.Event()
-        self._last_result: ScanResult | None = None
-        self._last_error: str | None = None
-
-    def status(self) -> dict[str, Any]:
-        with self._lock:
-            return {
-                "state": "running" if self._running else "idle",
-                "stopping": self._running and self._stop.is_set(),
-                "last_result": asdict(self._last_result) if self._last_result else None,
-                "last_error": self._last_error,
-            }
-
-    def _claim(self) -> bool:
-        with self._lock:
-            if self._running:
-                return False
-            self._running = True
-            self._stop = threading.Event()
-            return True
-
-    def _run(self, state_db: Path, workers: int, pause_s: float, limit: int | None) -> None:
-        result: ScanResult | None = None
-        error: str | None = None
-        try:
-            result = scan_library(state_db, workers=workers, pause_s=pause_s, limit=limit, stop=self._stop)
-        except Exception as exc:
-            log.exception("audio-quality scan failed")
-            error = f"{type(exc).__name__}: {exc}"
-        with self._lock:
-            self._running = False
-            self._last_error = error
-            if result is not None:
-                self._last_result = result
-        if result is not None and (result.scanned > 0 or result.newly_unreadable > 0):
-            # Rows carry the grade, so listings must be read again. A file that
-            # just became unreadable changes its row too (checked -> failed).
-            publish("library.changed", {"kind": "tracks", "ids": []})
-
-    def run_blocking(self, state_db: Path, workers: int, limit: int | None) -> dict[str, Any]:
-        """Scan on the caller's thread; refuses while a scan is running."""
-        if not self._claim():
-            return self.status()
-        self._run(state_db, workers, 0.0, limit)
-        return self.status()
+        super().__init__(
+            thread_name=SCAN_THREAD_NAME,
+            label="audio-quality",
+            on_busy="refuse",
+            extra_status=lambda running, stop, _extra: {"stopping": running and stop.is_set()},
+            on_result=_publish_audio_result,
+            shutdown_join_s=SHUTDOWN_JOIN_S,
+        )
 
     def start(self, state_db: Path, limit: int | None = None) -> dict[str, Any]:
         """Start a background scan (one worker) unless one is running."""
-        if self._claim():
-            thread = threading.Thread(
-                target=self._run, args=(state_db, 1, BACKGROUND_PAUSE_S, limit),
-                name=SCAN_THREAD_NAME, daemon=True,
-            )
-            with self._lock:
-                self._thread = thread
-            thread.start()
-        return self.status()
+        return self.start_work(
+            lambda stop: scan_library(
+                state_db, workers=1, pause_s=BACKGROUND_PAUSE_S, limit=limit, stop=stop
+            ),
+        )
 
-    def stop(self) -> dict[str, Any]:
-        """Ask a running scan to end after the files in flight."""
-        self._stop.set()
-        return self.status()
-
-    def shutdown(self) -> None:
-        """App shutdown: stop queued files, kill the decode in flight, and wait
-        a bounded time. The thread is a daemon, so a slow exit ends with the process."""
-        self._stop.set()
-        with self._lock:
-            thread = self._thread
-        if thread is not None:
-            thread.join(SHUTDOWN_JOIN_S)
-            if thread.is_alive():
-                log.warning("audio-quality scan still stopping after %s s at shutdown", SHUTDOWN_JOIN_S)
-
-    def join(self, timeout_s: float) -> None:
-        with self._lock:
-            thread = self._thread
-        if thread is not None:
-            thread.join(timeout_s)
-            if thread.is_alive():
-                raise TimeoutError(f"audio-quality scan still running after {timeout_s} s")
+    def run_blocking(self, state_db: Path, workers: int, limit: int | None) -> dict[str, Any]:
+        """Scan on the caller's thread; refuses while a scan is running."""
+        return self.run_work(
+            lambda stop: scan_library(
+                state_db, workers=workers, pause_s=0.0, limit=limit, stop=stop
+            ),
+        )
 
 
 _RUNNER_GUARD = threading.Lock()

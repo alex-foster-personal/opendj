@@ -116,6 +116,27 @@ test('reportClientError POSTs payload fields to client-errors', async () => {
 	}, 'drain');
 });
 
+test('a typed daemon code leads the reported message once (OBS-5422)', async () => {
+	const bodies = [];
+	globalThis.fetch = async (input) => {
+		bodies.push(await input.clone().json());
+		return new Response(JSON.stringify({ event_id: 'e', stored: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+	const coded = Object.assign(new Error('Track not found'), { code: 'TRACK_NOT_FOUND' });
+	const already = Object.assign(new Error('TRACK_NOT_FOUND: Track not found'), { code: 'TRACK_NOT_FOUND' });
+	reporting.reportClientError(coded, { source: 'typed-a' }, 'ui-error');
+	reporting.reportClientError(already, { source: 'typed-b' }, 'ui-error');
+	reporting.reportClientError(new Error('plain'), { source: 'typed-c' }, 'ui-error');
+	await waitFor(() => bodies.length === 3, 'three POST bodies');
+	const bySource = Object.fromEntries(bodies.map((b) => [b.context.source, b.message]));
+	assert.equal(bySource['typed-a'], 'TRACK_NOT_FOUND: Track not found');
+	assert.equal(bySource['typed-b'], 'TRACK_NOT_FOUND: Track not found');
+	assert.equal(bySource['typed-c'], 'plain');
+});
+
 test('any_deck_live carries the registered transport probe, null without one', async () => {
 	// The engine holds the Sentry forward while this is true (the "never send
 	// while a deck is live" rule). Three cases, each of which must be

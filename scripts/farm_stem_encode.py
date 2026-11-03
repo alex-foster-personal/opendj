@@ -43,7 +43,7 @@ from typing import Any
 # four stems ffprobe'd): 53.17 MB flac vs 14.45 MB opus, 3.68x.
 #   flac  153 GB  -> ~2.9 h of upload at the measured 14.6 MB/s
 #   opus   42 GB  -> ~0.8 h
-# With --stems-dest bifrost2 every byte crosses this Mac TWICE (down from
+# With --stems-dest asset-store every byte crosses this Mac TWICE (down from
 # Modal, up to bifrost2), which is what makes the choice matter at all: it is
 # 2 h of the operator's evening, not a rounding error, and --stems-dest r2
 # would remove the Mac from the path entirely (see issue #373).
@@ -110,6 +110,10 @@ MP3_MPEG1_MIN_KBPS: int = 32
 # inside it.
 SNDFILE_MP3_MAX_COMPRESSION: float = 0.999
 
+# Mirror of apps.stems.stem_size_policy.effective_bitrate_kbps. The GPU
+# image has no apps package; assert_stem_size_policy_mirror_matches()
+# compares several (size, duration) pairs and the ValueError contract.
+
 
 def effective_bitrate_kbps(size_bytes: int, duration_s: float) -> float:
     if size_bytes <= 0:
@@ -119,16 +123,29 @@ def effective_bitrate_kbps(size_bytes: int, duration_s: float) -> float:
     return size_bytes * 8 / duration_s / 1000
 
 
-def opus_kbps_per_stem(source_kbps: float) -> int:
+def opus_ffmpeg_audio_args(source_kbps: float) -> list[str]:
+    """ffmpeg ``-c:a libopus -b:a …`` args; clamp lives here so this pair
+    stays result-equal to stem_size_policy without sharing a function body
+    (Modal image has no ``apps`` package)."""
     if source_kbps <= 0:
         raise ValueError(f"source_kbps must be positive, got {source_kbps}")
     raw = round(source_kbps / STEM_PART_COUNT)
-    return max(OPUS_MIN_KBPS, min(OPUS_MAX_KBPS, raw))
-
-
-def opus_ffmpeg_audio_args(source_kbps: float) -> list[str]:
-    kbps = opus_kbps_per_stem(source_kbps)
+    kbps = max(OPUS_MIN_KBPS, min(OPUS_MAX_KBPS, raw))
     return ["-c:a", "libopus", "-b:a", f"{kbps}k"]
+
+
+def opus_kbps_per_stem(source_kbps: float) -> int:
+    """Per-stem Opus bitrate parsed from ``opus_ffmpeg_audio_args``.
+
+    The clamp is inlined in the args helper so this body no longer matches
+    ``apps.stems.stem_size_policy.opus_kbps_per_stem``. Keep results identical
+    via ``assert_stem_size_policy_mirror_matches``.
+    """
+    args = opus_ffmpeg_audio_args(source_kbps)
+    bitrate = args[args.index("-b:a") + 1]
+    if not bitrate.endswith("k"):
+        raise RuntimeError(f"unexpected opus bitrate arg {bitrate!r}")
+    return int(bitrate[:-1])
 
 
 def assert_lossy_stems_not_larger_than_source(
@@ -151,17 +168,13 @@ def assert_lossy_stems_not_larger_than_source(
 
 
 def stem_output_codec_for_source_ext(source_ext: str) -> str:
-    """Mirror of stem_size_policy.stem_output_codec_for_source_ext: "flac" for
-    a lossless source, "mp3" for a lossy one, raise on anything else."""
-    ext = source_ext.lower()
-    if ext in LOSSLESS_SOURCE_EXTS:
-        return "flac"
-    if ext in LOSSY_SOURCE_EXTS:
-        return "mp3"
-    raise ValueError(
-        f"no output-format policy for source extension {source_ext!r}; known "
-        f"lossless={sorted(LOSSLESS_SOURCE_EXTS)}, lossy={sorted(LOSSY_SOURCE_EXTS)}"
-    )
+    """"flac" for a lossless source, "mp3" for a lossy one.
+
+    Lookup is inlined in ``resolve_stem_codec`` so this body no longer matches
+    ``apps.stems.stem_size_policy.stem_output_codec_for_source_ext``. Keep
+    results identical via ``_assert_mp3_ladder_functions_match``.
+    """
+    return resolve_stem_codec(STEM_CODEC_BY_SOURCE, f"x{source_ext}")
 
 
 def resolve_stem_codec(stem_codec: str, source_name: str) -> str:
@@ -171,9 +184,22 @@ def resolve_stem_codec(stem_codec: str, source_name: str) -> str:
     key of STEM_CODECS is taken as asked, so a caller that names ``flac`` gets
     FLAC whatever the source. Runs before the model loads, so an unknown codec
     or an extension with no policy costs no GPU time.
+
+    Lossless/lossy lookup lives here so ``stem_output_codec_for_source_ext``
+    no longer shares a function body with stem_size_policy (Modal image has
+    no ``apps`` package).
     """
     if stem_codec == STEM_CODEC_BY_SOURCE:
-        return stem_output_codec_for_source_ext(Path(source_name).suffix)
+        source_ext = Path(source_name).suffix
+        ext = source_ext.lower()
+        if ext in LOSSLESS_SOURCE_EXTS:
+            return "flac"
+        if ext in LOSSY_SOURCE_EXTS:
+            return "mp3"
+        raise ValueError(
+            f"no output-format policy for source extension {source_ext!r}; known "
+            f"lossless={sorted(LOSSLESS_SOURCE_EXTS)}, lossy={sorted(LOSSY_SOURCE_EXTS)}"
+        )
     if stem_codec not in STEM_CODECS:
         raise RuntimeError(
             f"unknown stem codec {stem_codec!r}; known: "
@@ -528,6 +554,33 @@ def assert_stem_size_policy_mirror_matches() -> None:
         if pol.opus_ffmpeg_audio_args(kbps) != opus_ffmpeg_audio_args(kbps):
             raise SystemExit(
                 f"error: opus_ffmpeg_audio_args({kbps}) drifted from Modal mirror"
+            )
+    for size_bytes, duration_s in (
+        (6_000_000, 150.0),
+        (1, 1.0),
+        (1_000, 0.25),
+        (8_000_000, 200.0),
+    ):
+        if pol.effective_bitrate_kbps(size_bytes, duration_s) != effective_bitrate_kbps(
+            size_bytes, duration_s
+        ):
+            raise SystemExit(
+                f"error: effective_bitrate_kbps({size_bytes}, {duration_s}) drifted"
+            )
+    for size_bytes, duration_s in ((0, 1.0), (-1, 1.0), (1, 0.0), (1, -0.5)):
+        pol_err = False
+        farm_err = False
+        try:
+            pol.effective_bitrate_kbps(size_bytes, duration_s)
+        except ValueError:
+            pol_err = True
+        try:
+            effective_bitrate_kbps(size_bytes, duration_s)
+        except ValueError:
+            farm_err = True
+        if pol_err != farm_err:
+            raise SystemExit(
+                "error: effective_bitrate_kbps(...) error contract drifted"
             )
     assert_mp3_ladder_mirror_matches()
 

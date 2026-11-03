@@ -84,7 +84,7 @@ pub fn sine(sr: u32, hz: f64, secs: f64) -> Vec<f32> {
     pcm
 }
 
-pub fn write_wav(dir: &std::path::Path, name: &str, sr: u32, pcm: &[f32]) -> PathBuf {
+pub fn write_wav(dir: &Path, name: &str, sr: u32, pcm: &[f32]) -> PathBuf {
     let p = dir.join(name);
     let mut f = std::io::BufWriter::new(std::fs::File::create(&p).unwrap());
     wav::write_i16(&mut f, sr, pcm).unwrap();

@@ -66,7 +66,7 @@ function performanceComponents() {
 const CONVERTED = {
 	'mixer/Knob.svelte': 'mixer-knob',
 	'mixer/CrossfadeCurveSelect.svelte': 'crossfade-curve',
-	'FeedbackPinVisibilityActions.svelte': 'feedback-pin-visibility',
+	'FeedbackPinVisibilityActionsView.svelte': 'feedback-pin-visibility',
 	'ContextMenu.svelte': 'context-menu-unavailable',
 	'browser/TrackTable.svelte': 'track-table-filter'
 	// 'deck/JogDial.svelte': 'quantize-grid-phase' left this list when DECKCTL-6235c

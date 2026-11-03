@@ -70,6 +70,7 @@ from apps.sync_hub.scheduler_owed import (
     scheduler_owed,
 )
 from apps.sync_hub.single_flight import sync_lock_for
+from apps.sync_hub.transport import SyncTransportError, classify_transport_failure
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +112,20 @@ def _default_pressure_reader() -> Mapping[str, Any]:
 def next_delay_s(interval_s: float, consecutive_failures: int, max_backoff_s: float) -> float:
     """Seconds until the next round: the interval, doubled per consecutive failure."""
     return min(interval_s * (2**consecutive_failures), max_backoff_s)
+
+
+def _expected_round_failure(exc: BaseException) -> bool:
+    """True for classified hub transport misses and SyncStillMoving (CSSTATUS-4980).
+
+    Same policy as STEM-38: an unreachable hub or timeout is expected at a
+    venue, so WARNING stays local. warning_log forwards only ERROR to Sentry.
+    Unclassified exceptions (bugs, SyncApplyError, sqlite locks) stay ERROR.
+    """
+    if isinstance(exc, sync_client.SyncStillMoving):
+        return True
+    if isinstance(exc, SyncTransportError):
+        return classify_transport_failure(str(exc)) is not None
+    return False
 
 
 def _production_sync(data_dir: Path, hub_url: str, name: str | None) -> sync_client.SyncResult:
@@ -218,11 +233,20 @@ class CloudSyncScheduler:
             self.busy_refusals += 1
             log.info("cloudsync round skipped (deferred: %s)", exc.reason)
             return "busy"
-        except Exception:
+        except Exception as exc:
             # Not swallowed: maintenance.sync journaled the error row that
             # status shows, and the backoff below is the declared response.
             self.consecutive_failures += 1
-            log.exception("cloudsync round failed (%d in a row)", self.consecutive_failures)
+            if _expected_round_failure(exc):
+                log.warning(
+                    "cloudsync round failed (%d in a row)",
+                    self.consecutive_failures,
+                    exc_info=True,
+                )
+            else:
+                log.exception(
+                    "cloudsync round failed (%d in a row)", self.consecutive_failures
+                )
             return "error"
         self.consecutive_failures = 0
         return "inconclusive" if result.digest_inconclusive else "ok"

@@ -139,14 +139,13 @@ pub(crate) mod platform {
     pub(crate) const K_AUDIO_OUTPUT_UNIT_PROPERTY_CURRENT_DEVICE: u32 = 2000;
 
     pub(crate) const K_AUDIO_FORMAT_LINEAR_PCM: u32 = fourcc(b"lpcm");
-    const K_AUDIO_FORMAT_FLAG_IS_SIGNED_INTEGER: u32 = 0x4;
     pub(crate) const K_AUDIO_FORMAT_FLAG_IS_PACKED: u32 = 0x8;
 
-    const PROBE_SAMPLE_RATE: f64 = 44_100.0;
-    const PROBE_DURATION_MS: u64 = 100;
-    const PROBE_SETTLE_MS: u64 = 120;
-    const PROBE_AMPLITUDE: f32 = 0.001; // ~-60 dBFS
-    const PROBE_FREQ_HZ: f32 = 440.0;
+    /// How long the probe's silent IO proc counts cycles. AUDIO-DEVICE-08: it used
+    /// to play a 440 Hz tone into the operator's output for 100 ms of this window
+    /// every 2 s while a deck played (the "beeping", silver Tue 3 Nov 2026); the
+    /// verdict never needed it, the cycle count and IsRunningSomewhere decide it.
+    const PROBE_WINDOW_MS: u64 = 220;
 
     #[repr(C)]
     pub(crate) struct AudioObjectPropertyAddress {
@@ -233,13 +232,6 @@ pub(crate) mod platform {
         device: AudioDeviceID,
         proc_id: AudioDeviceIOProcID,
         counter: *mut AtomicU64,
-    }
-
-    struct ProbeToneState {
-        phase: f32,
-        sample_rate: f32,
-        amplitude: f32,
-        freq_hz: f32,
     }
 
     #[link(name = "CoreAudio", kind = "framework")]
@@ -613,48 +605,6 @@ pub(crate) mod platform {
         }
     }
 
-    extern "C" fn probe_render_callback(
-        in_ref_con: *mut c_void,
-        _io_action_flags: *mut u32,
-        _in_time_stamp: *const AudioTimeStamp,
-        _in_bus_number: u32,
-        in_number_frames: u32,
-        io_data: *mut AudioBufferList,
-    ) -> OSStatus {
-        if in_ref_con.is_null() || io_data.is_null() {
-            return NO_ERR;
-        }
-        // SAFETY: the ref con is the tone state that outlives the started unit,
-        // and `io_data` is the AU's buffer list for this render cycle. The
-        // client format is packed interleaved i16, so buffer 0 holds
-        // `frames * channels` samples.
-        let state = unsafe { &mut *(in_ref_con as *mut ProbeToneState) };
-        let list = unsafe { &mut *io_data };
-        if list.m_number_buffers == 0 {
-            return NO_ERR;
-        }
-        let buffer = &mut list.m_buffers[0];
-        if buffer.m_data.is_null() {
-            return NO_ERR;
-        }
-        let frames = in_number_frames as usize;
-        let channels = buffer.m_number_channels.max(1) as usize;
-        let capacity = buffer.m_data_byte_size as usize / std::mem::size_of::<i16>();
-        let len = (frames * channels).min(capacity);
-        let samples = unsafe { std::slice::from_raw_parts_mut(buffer.m_data as *mut i16, len) };
-        let phase_inc = 2.0 * std::f32::consts::PI * state.freq_hz / state.sample_rate;
-        for frame in samples.chunks_mut(channels) {
-            let value =
-                (state.amplitude * state.phase.sin() * 32_767.0).clamp(-32_767.0, 32_767.0) as i16;
-            state.phase += phase_inc;
-            if state.phase > 2.0 * std::f32::consts::PI {
-                state.phase -= 2.0 * std::f32::consts::PI;
-            }
-            frame.fill(value);
-        }
-        NO_ERR
-    }
-
     /// `AudioUnitSetProperty` at one `auhal_plan` target.
     ///
     /// # Safety
@@ -678,112 +628,6 @@ pub(crate) mod platform {
             return Err(format!("{what} failed: {status}"));
         }
         Ok(())
-    }
-
-    fn play_probe_tone_hal(device: AudioDeviceID) -> Result<(), String> {
-        let desc = AudioComponentDescription {
-            component_type: K_AUDIO_UNIT_TYPE_OUTPUT,
-            component_sub_type: K_AUDIO_UNIT_SUBTYPE_HAL_OUTPUT,
-            component_manufacturer: K_AUDIO_UNIT_MANUFACTURER_APPLE,
-            component_flags: 0,
-            component_flags_mask: 0,
-        };
-        // SAFETY: `desc` is a valid description; a null result is handled.
-        let component = unsafe { AudioComponentFindNext(ptr::null_mut(), &desc) };
-        if component.is_null() {
-            return Err("HAL output AudioUnit component not found".into());
-        }
-        let mut unit: AudioUnit = ptr::null_mut();
-        // SAFETY: `component` is non-null and `unit` is a live out slot.
-        let status = unsafe { AudioComponentInstanceNew(component, &mut unit) };
-        if status != NO_ERR || unit.is_null() {
-            return Err(format!("AudioComponentInstanceNew failed: {status}"));
-        }
-
-        let mut tone_state = ProbeToneState {
-            phase: 0.0,
-            sample_rate: PROBE_SAMPLE_RATE as f32,
-            amplitude: PROBE_AMPLITUDE,
-            freq_hz: PROBE_FREQ_HZ,
-        };
-        // SAFETY: `unit` stays live until the dispose after this block, and
-        // `tone_state` outlives the unit's start/stop window inside it.
-        let result = unsafe {
-            (|| {
-                let enable = 1u32;
-                let disable = 0u32;
-                set_unit_property(
-                    unit,
-                    K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO,
-                    auhal_plan::ENABLE_OUTPUT_IO,
-                    &enable,
-                    "enable HAL output IO",
-                )?;
-                set_unit_property(
-                    unit,
-                    K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO,
-                    auhal_plan::DISABLE_INPUT_IO,
-                    &disable,
-                    "disable HAL input IO",
-                )?;
-                set_unit_property(
-                    unit,
-                    K_AUDIO_OUTPUT_UNIT_PROPERTY_CURRENT_DEVICE,
-                    auhal_plan::CURRENT_DEVICE,
-                    &device,
-                    "set HAL current device",
-                )?;
-                let fmt = AudioStreamBasicDescription {
-                    m_sample_rate: PROBE_SAMPLE_RATE,
-                    m_format_id: K_AUDIO_FORMAT_LINEAR_PCM,
-                    m_format_flags: K_AUDIO_FORMAT_FLAG_IS_SIGNED_INTEGER
-                        | K_AUDIO_FORMAT_FLAG_IS_PACKED,
-                    m_bytes_per_packet: 2,
-                    m_frames_per_packet: 1,
-                    m_bytes_per_frame: 2,
-                    m_channels_per_frame: 1,
-                    m_bits_per_channel: 16,
-                    m_reserved: 0,
-                };
-                set_unit_property(
-                    unit,
-                    K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT,
-                    auhal_plan::CLIENT_STREAM_FORMAT,
-                    &fmt,
-                    "set HAL client stream format",
-                )?;
-                let callback = AURenderCallbackStruct {
-                    input_proc: probe_render_callback,
-                    input_proc_ref_con: &mut tone_state as *mut ProbeToneState as *mut c_void,
-                };
-                set_unit_property(
-                    unit,
-                    K_AUDIO_UNIT_PROPERTY_SET_RENDER_CALLBACK,
-                    auhal_plan::RENDER_CALLBACK,
-                    &callback,
-                    "set HAL render callback",
-                )?;
-
-                let status = AudioUnitInitialize(unit);
-                if status != NO_ERR {
-                    return Err(format!("AudioUnitInitialize failed: {status}"));
-                }
-                let status = AudioOutputUnitStart(unit);
-                if status != NO_ERR {
-                    let _ = AudioUnitUninitialize(unit);
-                    return Err(format!("AudioOutputUnitStart failed: {status}"));
-                }
-
-                thread::sleep(Duration::from_millis(PROBE_DURATION_MS));
-                let _ = AudioOutputUnitStop(unit);
-                let _ = AudioUnitUninitialize(unit);
-                Ok(())
-            })()
-        };
-
-        // SAFETY: `unit` is live and disposed exactly once.
-        let _ = unsafe { AudioComponentInstanceDispose(unit) };
-        result
     }
 
     fn device_delivering_verdict(
@@ -823,8 +667,7 @@ pub(crate) mod platform {
         let monitor = IoCycleMonitor::start(device, &counter as *const AtomicU64 as *mut AtomicU64)?;
         let cycle_before = monitor.count();
 
-        play_probe_tone_hal(device)?;
-        thread::sleep(Duration::from_millis(PROBE_SETTLE_MS));
+        thread::sleep(Duration::from_millis(PROBE_WINDOW_MS));
 
         let cycle_after = monitor.count();
         drop(monitor);
@@ -986,6 +829,23 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::{auhal_plan, fourcc, health_verdict, pick_cycle_target};
+
+    /// AUDIO-DEVICE-08: the probe GET runs every 2 s while a deck plays, so it must
+    /// never render audio into the operator's output (it beeped a 440 Hz tone into
+    /// the Sony headphones on silver, Tue 3 Nov 2026). Read off the source because
+    /// the probe itself needs real CoreAudio; split literals keep this test from
+    /// matching itself.
+    #[test]
+    fn the_output_health_probe_renders_no_tone() {
+        let src = include_str!("output_health.rs");
+        let start = src.find(concat!("fn probe_output_", "health() -> Result")).expect("probe fn");
+        let probe = &src[start..];
+        let body = &probe[..probe.find("\n    }\n").expect("probe fn end")];
+        for forbidden in [concat!("AudioOutputUnit", "Start"), concat!("_tone", "_hal"), concat!("SET_RENDER_", "CALLBACK")] {
+            assert!(!body.contains(forbidden), "output-health probe must stay silent, found {forbidden}");
+        }
+        assert!(!src.contains(concat!("fn play_probe", "_tone")), "the probe tone came back");
+    }
 
     #[test]
     fn a_jack_muted_default_is_never_ok_even_while_the_hal_delivers() {

@@ -14,10 +14,14 @@ Usage (from the workflow, with the repository as the working directory)::
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    from scripts.ci_path_resolve import resolve_on_path
+except ModuleNotFoundError:
+    from ci_path_resolve import resolve_on_path
 
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT: Path = REPOSITORY_ROOT / "apps" / "webui" / "frontend"
@@ -29,10 +33,7 @@ CUE_PREVIEW_OUTPUT: str = "test-results/cmdk-preview-cue"
 
 def resolve(name: str) -> str:
     """The absolute path of a program on PATH, or SystemExit naming it."""
-    found = shutil.which(name)
-    if found is None:
-        raise SystemExit(f"[ERROR] {name} is not on PATH; the cue-preview gate cannot run without it")
-    return found
+    return resolve_on_path(name, without="the cue-preview gate")
 
 
 def run(argv: list[str], cwd: Path, env: dict[str, str]) -> None:

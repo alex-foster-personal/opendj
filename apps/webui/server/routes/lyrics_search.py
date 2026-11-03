@@ -26,17 +26,18 @@ from apps.lyrics.search_snippet import matched_snippet
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state
+from ..shell_output_health import lyric_index_data_dir_from_state_db
 from .search import SearchHit, SearchResults
 
 router = APIRouter(prefix="/lyrics/search", tags=["lyrics"])
 
 
-def _data_dir(request: Request) -> Path:
-    # Same derivation apps.webui.server.app.build_lyric_index_watcher uses to
-    # bind the background indexer to this app's data (state_db_path is
-    # data_dir/state/state.db).
-    state_db_path = Path(getattr(request.app.state, "state_db_path", "(private path)"))
-    return state_db_path.parent.parent
+def _lyric_index_data_dir(request: Request) -> Path:
+    # Lyric cache/index live under this root (``.../state/lyrics-*``). JEV
+    # guesses come from ``get_library_data_dir`` (flat or nested library root).
+    return lyric_index_data_dir_from_state_db(
+        Path(getattr(request.app.state, "state_db_path", "(private path)"))
+    )
 
 
 @router.get("", response_model=SearchResults)
@@ -50,7 +51,7 @@ def search_lyrics(
     ),
     limit: int = Query(DEFAULT_SEARCH_LIMIT, ge=1, le=MAX_SEARCH_LIMIT),
     offset: int = Query(0, ge=0),
-    data_dir: Path = Depends(_data_dir),  # noqa: B008
+    data_dir: Path = Depends(_lyric_index_data_dir),  # noqa: B008
     library_dir: Path = Depends(get_library_data_dir),  # noqa: B008
     state_db: Path = Depends(get_library_state_db),  # noqa: B008
     backend: StateBackend = Depends(get_read_state),  # noqa: B008

@@ -5,8 +5,8 @@
  * the component, where cueout-09 pins it.
  */
 export const calibrateBullets = [
-	'Measures how far the headphones lag the room with the built-in mic and splits the difference between HEAD DELAY and ROOM per the alignment mode.',
-	'Live only in two outputs with a HEADPHONE CUE sink selected. Playing decks pause for the chirps and resume after.'
+	'Measures how far the headphones lag the room with the microphone you choose, then splits the difference between HEAD DELAY and ROOM per the alignment mode.',
+	'Choose that microphone before starting. A loud room still reads as silence on the wrong mic. Live only in two outputs with a HEADPHONE CUE sink selected. Playing decks pause for the chirps and resume after.'
 ];
 
 export const roomBullets = [
@@ -25,7 +25,7 @@ export const modeBullets = [
 ];
 
 export const inputPickBullets = [
-	'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.',
+	'The microphone CALIBRATE listens with. It also unlocks output names. Pick the one that can hear the speakers. Never pick a headphone/HFP mic.',
 	'Test plays a few beeps on the master output. The thin meter is this input.'
 ];
 

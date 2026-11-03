@@ -12,12 +12,15 @@ export function lyricLanePositionPercent({
 	lineStartMs,
 	positionMs,
 	pitch,
-	windowSeconds
+	windowSeconds,
+	playheadFrac
 }: {
 	lineStartMs: number;
 	positionMs: number;
 	pitch: number;
 	windowSeconds: number;
+	/** Where the playhead sits across the row, 0..1 (WAVEZOOM-6802c). Required. */
+	playheadFrac: number;
 }): number {
 	if (!Number.isFinite(lineStartMs) || !Number.isFinite(positionMs)) {
 		throw new Error('lyric lane timestamps must be finite');
@@ -25,7 +28,10 @@ export function lyricLanePositionPercent({
 	if (!Number.isFinite(pitch) || pitch <= 0 || !Number.isFinite(windowSeconds) || windowSeconds <= 0) {
 		throw new Error('lyric lane requires positive pitch and windowSeconds');
 	}
-	return 50 + ((lineStartMs - positionMs) / (windowSeconds * pitch * 1000)) * 100;
+	if (!Number.isFinite(playheadFrac) || playheadFrac < 0 || playheadFrac > 1) {
+		throw new Error('lyric lane requires playheadFrac within 0..1');
+	}
+	return playheadFrac * 100 + ((lineStartMs - positionMs) / (windowSeconds * pitch * 1000)) * 100;
 }
 
 /**

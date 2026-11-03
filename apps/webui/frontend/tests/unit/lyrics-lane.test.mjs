@@ -13,13 +13,20 @@ before(async () => {
 	));
 });
 
+test('the lyric lane refuses a missing playhead place instead of centering on it', () => {
+	assert.throws(
+		() => lyricLanePositionPercent({ lineStartMs: 66_000, positionMs: 60_000, pitch: 1, windowSeconds: 24 }),
+		/playheadFrac/
+	);
+});
+
 test('lyrics lane projects track timestamps through the same pitch-scaled waveform window', () => {
 	assert.equal(
-		lyricLanePositionPercent({ lineStartMs: 66_000, positionMs: 60_000, pitch: 1, windowSeconds: 24 }),
+		lyricLanePositionPercent({ lineStartMs: 66_000, positionMs: 60_000, pitch: 1, windowSeconds: 24, playheadFrac: 0.5 }),
 		75
 	);
 	assert.equal(
-		lyricLanePositionPercent({ lineStartMs: 66_000, positionMs: 60_000, pitch: 2, windowSeconds: 24 }),
+		lyricLanePositionPercent({ lineStartMs: 66_000, positionMs: 60_000, pitch: 2, windowSeconds: 24, playheadFrac: 0.5 }),
 		62.5
 	);
 });

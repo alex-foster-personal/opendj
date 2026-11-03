@@ -3,7 +3,7 @@
 // Why: the desktop shell serves the page from http://127.0.0.1:<port> with an
 // OS-chosen port per launch, so a per-origin salt makes every saved output id
 // unresolvable on the next launch. Decision record:
-// docs/decisions/ADR-NEW-output-device-descriptor-survives-origin-change.md.
+// (private path).
 //
 // Usage (from apps/webui/frontend):
 //   node scripts/probe-device-id-salting.mjs [--channel msedge|chrome|chromium]
@@ -78,7 +78,9 @@ const [serverA, serverB] = [await serveBlankPage(), await serveBlankPage()];
 const originA = `http://127.0.0.1:${serverA.address().port}`;
 const originB = `http://127.0.0.1:${serverB.address().port}`;
 const channel = values.channel === 'chromium' ? undefined : values.channel;
-const launch = () => chromium.launchPersistentContext(profile, { channel, headless: true });
+// The probe relaunches the SAME profile; the flag keeps a crashed first run from leaving a restore prompt.
+const launch = () =>
+	chromium.launchPersistentContext(profile, { channel, headless: true, args: ['--hide-crash-restore-bubble'] });
 let result;
 try {
 	let context = await launch();

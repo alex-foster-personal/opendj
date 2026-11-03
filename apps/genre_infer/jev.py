@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import keystore
 from .probability import unit_probability as _prob
 
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
@@ -254,7 +255,7 @@ def classify(
     workers: int = 8,
 ) -> dict[str, dict[str, Any]]:
     """Ask JEV about every track in ``states`` (stable_id -> state text), one call per track."""
-    key = key if key is not None else os.environ.get(KEY_ENV, "")
+    key = key if key is not None else keystore.resolve(KEY_ENV)
     model = resolve_model(model)
     if not key:
         return {sid: _unknown(f"no {KEY_ENV} in the environment") for sid in states}

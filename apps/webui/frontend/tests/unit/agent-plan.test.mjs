@@ -35,7 +35,8 @@ function rig({
 	onDispatch = null, // a hook that runs after each dispatch, so a test can change the decks mid-tick
 	handingOff = () => false, // AutoPlay reports a handoff in flight: schedule refuses while it does
 	hold = null, // (command, state) => a promise the dispatch waits on AFTER its effect lands, or null: a command still in flight
-	stemsSilent = {} // deck => true when its ready stem parts are all muted (the page answers with everyStemPartSilent)
+	stemsSilent = {}, // deck => true when its ready stem parts are all muted (the page answers with everyStemPartSilent)
+	onOverlay = undefined // the waveform's overlay feed (WAVEPLAN-7896)
 } = {}) {
 	const dispatched = [];
 	const lag = { hideArmed: false, holdWrites: false };
@@ -117,6 +118,7 @@ function rig({
 		clearTimer: () => {},
 		now: () => now,
 		handoffInFlight: handingOff,
+		onOverlay,
 		// The AudioContext clock: 1000 s ahead of the page clock, so a test can tell the two apart.
 		contextNowSec: () => 1000 + now / 1000,
 		// One engine observation: the clock deck's playhead with the context time it was presented at.
@@ -3346,4 +3348,135 @@ test('AGENT-30: a step that already landed is never re-fired after a later engin
 	assert.equal(runner.mirror().status, 'running');
 	assert.equal(dispatched.slice(before).filter((c) => c.type === 'eq' && c.band === 'low').length, 0, 'the landed kill is not sent again');
 	assert.equal(state.mixer.channels[1].eq_low, 0.7);
+});
+
+// ---- WAVEPLAN-7896b: the overlay the runner keeps on the mirror -----------------------------------------------------
+
+function overlayOrder() {
+	return {
+		id: 'plan-overlay',
+		clock: { deck: 1, stable_id: 'trk-out' },
+		incoming: { deck: 2, stable_id: 'trk-in' },
+		start_bar: 20,
+		bars: 8,
+		style: 'blend',
+		prepare: [{ type: 'seek', deck: 2, position_ms: 8 * BAR_MS, exact: true }],
+		events: [
+			{ at_bar: -0.25, command: { type: 'play', deck: 2, playing: true, quantize: true } },
+			{ at_bar: 0, ramp: { command: { type: 'fader', deck: 2 }, to: 1, over_bars: 4 } },
+			{ at_bar: 4, ramp: { command: { type: 'fader', deck: 1 }, to: 0, over_bars: 4 } }
+		],
+		notes: []
+	};
+}
+
+const incomingCurveStart = (runner) => runner.mirror().overlay.decks.find((row) => row.deck === 2).start_ms;
+
+test('WAVEPLAN-7896b: moving the incoming deck after planning moves its overlay, and the clock deck stays put', async () => {
+	const overlays = [];
+	const r = rig({ onOverlay: (overlay) => overlays.push(overlay) });
+	r.state.decks[2].position_ms = 8 * BAR_MS;
+	const { runner } = r;
+	await runner.schedule(overlayOrder());
+	assert.equal(incomingCurveStart(runner), 8 * BAR_MS);
+	assert.equal(overlays.length, 1);
+	const clockBefore = runner.mirror().overlay.decks.find((row) => row.deck === 1);
+
+	r.state.decks[2].position_ms = 12 * BAR_MS;
+	await runner.tick();
+	assert.equal(incomingCurveStart(runner), 12 * BAR_MS);
+	assert.deepEqual(runner.mirror().overlay.decks.find((row) => row.deck === 1), clockBefore);
+	assert.equal(runner.mirror().overlay.anchor_moved.moved_bars, 4);
+	assert.equal(overlays.length, 2);
+
+	await runner.tick();
+	assert.equal(overlays.length, 2, 'an unmoved deck must not rebuild the geometry');
+	await runner.dispose();
+});
+
+test('WAVEPLAN-7896b: a clock grid that changes while the incoming deck holds still rebuilds the clock curves', async () => {
+	const r = rig();
+	r.state.decks[2].position_ms = 8 * BAR_MS;
+	const { runner } = r;
+	await runner.schedule(overlayOrder());
+	const clockStart = () => runner.mirror().overlay.decks.find((row) => row.deck === 1).start_ms;
+	assert.equal(clockStart(), 19 * BAR_MS);
+	r.state.decks[1].beatgrid = GRID.map((beat) => ({ ...beat, time_ms: beat.time_ms + 100 }));
+	await runner.tick();
+	assert.equal(clockStart(), 19 * BAR_MS + 100);
+	await runner.dispose();
+});
+
+test('WAVEPLAN-7896b: a knob moved before the plan starts moves the curve, since a ramp runs from what it finds', async () => {
+	const overlays = [];
+	const r = rig({ onOverlay: (overlay) => overlays.push(overlay) });
+	r.state.decks[2].position_ms = 8 * BAR_MS;
+	const { runner } = r;
+	await runner.schedule(overlayOrder());
+	const firstFader = () => runner.mirror().overlay.decks.find((row) => row.deck === 1).curves[0].points[0][1];
+	assert.equal(firstFader(), 1);
+	r.state.mixer.channels[1].fader = 0.5;
+	await runner.tick();
+	assert.equal(firstFader(), 0.5);
+	const built = overlays.length;
+	await runner.tick();
+	assert.equal(overlays.length, built, 'an unmoved knob must not rebuild the geometry');
+	await runner.dispose();
+});
+
+test('WAVEPLAN-7896b: the overlay is gone once the plan is not pending, and a failed build never fails the plan', async () => {
+	const overlays = [];
+	const r = rig({ onOverlay: (overlay) => overlays.push(overlay) });
+	r.state.decks[2].position_ms = 8 * BAR_MS;
+	const { runner } = r;
+	await runner.schedule(overlayOrder());
+	assert.notEqual(runner.mirror().overlay, null);
+	await runner.amend({ id: 'plan-overlay', action: 'abort' });
+	assert.equal(runner.mirror().status, 'aborted');
+	assert.equal(runner.mirror().overlay, null);
+	assert.equal(overlays.at(-1), null);
+
+	const broken = rig();
+	broken.state.decks[2].position_ms = 8 * BAR_MS;
+	delete broken.state.mixer.channels[1].eq_low;
+	const live = broken.runner;
+	const brokenOverlays = [];
+	const errors = [];
+	const realError = console.error;
+	console.error = (...args) => errors.push(args);
+	try {
+		await live.schedule({ ...overlayOrder(), id: 'plan-broken' });
+		assert.equal(live.mirror().status, 'scheduled');
+		// A failed build reads as a pending plan with no curves, never as no plan.
+		assert.deepEqual(
+			live.mirror().overlay.decks.map((row) => [row.deck, row.unavailable]),
+			[[1, 'build_failed'], [2, 'build_failed']]
+		);
+		await live.tick();
+		assert.equal(errors.length, 1, 'a failure that repeats each tick is reported once');
+	} finally {
+		console.error = realError;
+	}
+	broken.state.mixer.channels[1].eq_low = 0.5;
+	await live.tick();
+	assert.equal(live.mirror().overlay.decks.find((row) => row.deck === 1).unavailable, null, 'the next tick retries the build');
+	await live.dispose();
+});
+
+test('WAVEPLAN-7896b: what prepare sets is the starting point, not a knob the operator moved', async () => {
+	const overlays = [];
+	const r = rig({ onOverlay: (overlay) => overlays.push(overlay) });
+	r.state.decks[2].position_ms = 8 * BAR_MS;
+	const { runner } = r;
+	const order = overlayOrder();
+	order.prepare.push({ type: 'fader', deck: 2, value: 0.3 });
+	await runner.schedule(order);
+	const incomingFader = () => runner.mirror().overlay.decks.find((row) => row.deck === 2).curves[0].points[0][1];
+	assert.equal(incomingFader(), 0.3);
+	await runner.tick();
+	assert.equal(overlays.length, 1, 'the prepared fader must not read as a move and rebuild the geometry');
+	r.state.mixer.channels[2].fader = 0.6;
+	await runner.tick();
+	assert.equal(incomingFader(), 0.6, 'a knob moved after preparation outranks the prepared value');
+	await runner.dispose();
 });

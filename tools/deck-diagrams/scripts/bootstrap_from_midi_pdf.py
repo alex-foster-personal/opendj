@@ -18,6 +18,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from _fig_sort import fig_sort_key
+
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parents[1]
 SCRIPTS = Path(__file__).resolve().parent
@@ -32,13 +34,6 @@ _FIG_LETTER = re.compile(r"\b([BDFMP]\d{1,2})\b")
 _FIG_SECTION = re.compile(r"\b([1-9]-\d{1,2})\b")
 
 
-def _fig_sort_key(fig: str) -> tuple:
-    if "-" in fig:
-        a, b = fig.split("-", 1)
-        return (0, int(a), int(b))
-    return (1, fig[0], int(fig[1:]))
-
-
 def _extract_figs(text: str) -> list[str]:
     """Extract plate fig ids. Supports letter (D1) and section (1-1) styles."""
     head = text[:16000]
@@ -51,7 +46,7 @@ def _extract_figs(text: str) -> list[str]:
         figs = letter
     else:
         figs = set(_FIG_LETTER.findall(text)) | set(_FIG_SECTION.findall(text))
-    return sorted(figs, key=_fig_sort_key)
+    return sorted(figs, key=fig_sort_key)
 
 
 def _grid_pos(figs: list[str]) -> dict[str, tuple[float, float, float, float, str]]:

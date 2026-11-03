@@ -135,16 +135,18 @@
 							</span>
 						</div>
 
-						<div
-							class="jobs-bar"
-							role="progressbar"
-							aria-valuenow={progressPct(job.progress)}
-							aria-valuemin="0"
-							aria-valuemax="100"
-							aria-label={`${job.kind} progress`}
-							title={progressTitle(job)}
-						>
-							<div class="jobs-fill" style={`width: ${progressPct(job.progress)}%`}></div>
+						<div class="jobs-progress">
+							<div
+								class="jobs-bar"
+								role="progressbar"
+								aria-valuenow={progressPct(job.progress)}
+								aria-valuemin="0"
+								aria-valuemax="100"
+								aria-label={`${job.kind} progress`}
+								title={progressTitle(job)}
+							>
+								<div class="jobs-fill" style={`width: ${progressPct(job.progress)}%`}></div>
+							</div>
 							<span class="jobs-pct" title={progressTitle(job)}>{progressPct(job.progress)}%</span>
 						</div>
 
@@ -291,9 +293,11 @@
 		text-transform: uppercase;
 		color: var(--rb-text-dim);
 	}
+	/* Accent on the border only: Default's #2f6fd6 as text on the raised
+	   panel is 3.47:1, below AA (UICONTRAST-6037). */
 	.jobs-chip.st-running,
 	.jobs-chip.st-cancelling {
-		color: var(--rb-accent);
+		color: var(--rb-text);
 		border-color: var(--rb-accent);
 	}
 	.jobs-chip.st-succeeded {
@@ -305,8 +309,15 @@
 		color: var(--rb-red);
 		border-color: var(--rb-red);
 	}
+	/* The percentage sits beside the bar, never across the accent fill
+	   (UICONTRAST-6037); StemsProgress uses the same shape. */
+	.jobs-progress {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
 	.jobs-bar {
-		position: relative;
+		flex: 1;
 		height: 10px;
 		background: var(--rb-panel);
 		border: 1px solid var(--rb-border);
@@ -317,11 +328,9 @@
 		background: var(--rb-accent);
 	}
 	.jobs-pct {
-		position: absolute;
-		inset: 0;
-		text-align: center;
+		min-width: 4ch;
+		text-align: right;
 		font-size: 9px;
-		line-height: 10px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
 	}

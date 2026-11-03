@@ -44,6 +44,14 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "the absolute path of libSystem, loaded by apps/diagnostics/probe_native_metrics.py "
         "for mach_timebase_info; part of every macOS install, see 'System'."
     ),
+    "/System/Library/Frameworks/CoreAudio.framework/CoreAudio": (
+        "an OS framework under /System/Library, loaded read-only by "
+        "apps/engine_core/bluetooth_headset_mode_api.py for the headset-mode banner (BTHFP-01)."
+    ),
+    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation": (
+        "an OS framework under /System/Library, loaded by "
+        "apps/engine_core/bluetooth_headset_mode_api.py to read CoreAudio device names."
+    ),
     "/usr/lib/libproc.dylib": (
         "the macOS process-info library (proc_pid_rusage), loaded by "
         "apps/diagnostics/probe_native_metrics.py behind a platform.system() == 'Darwin' "

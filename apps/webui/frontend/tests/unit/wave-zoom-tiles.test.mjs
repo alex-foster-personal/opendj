@@ -1,10 +1,11 @@
-// requirement: WAVEZOOM-01, WAVEZOOM-02
+// requirement: WAVEZOOM-01, WAVEZOOM-02, WAVEZOOM-6802b
 // [if] a long track's band cache allocates one canvas wider than TILE_PX [then] this fails, [else stop].
 // [if] a frame builds tiles it cannot see [then] this fails, [else stop].
 // [if] the tiles, laid side by side, paint different bars than one whole-track image (tri-band or blocks) [then] this fails, [else stop].
 // [if] the line design loses a segment at a tile edge [then] this fails, [else stop].
 // [if] the beat grid draws lines closer than BEAT_LINE_MIN_GAP_PX when zoomed out [then] this fails, [else stop].
 // [if] the thinning also drops beats at today's 24 s window [then] this fails, [else stop].
+// [if] a zoom glide rebuilds the band cache on its frames instead of scaling one cache [then] this fails, [else stop].
 // [if] a faster tempo later in the window draws lines closer than the gap [then] this fails, [else stop].
 // Tile ARITHMETIC only: the recording canvas below cannot see real pixels, so
 // the real-browser proof that tiles paint seamlessly is
@@ -45,7 +46,10 @@ function recordingContext() {
 		strokeStyle: '',
 		lineWidth: 1,
 		globalAlpha: 1,
-		fillRect() {},
+		// Blocks bars paint with fillRect (PGWAVE-7692b); bands still fill a path.
+		fillRect(x, y, w, h) {
+			fills.push([this.fillStyle, x, y, w, h]);
+		},
 		fill(path) {
 			for (const r of path.rects) fills.push([this.fillStyle, ...r]);
 		},
@@ -99,6 +103,8 @@ const PX_PER_S = ROW_W / 24;
 
 function frame(positionMs, design) {
 	return {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: ROW_W, heightCss: ROW_H, positionMs, durationMs: DUR_MS, anlz,
 		palette: PALETTE, pitch: 1, loop: null, waveformDesign: design
 	};
@@ -162,6 +168,22 @@ for (const design of ['tri-band', 'blocks']) {
 		assert.deepEqual(tiled.map(key).sort(), whole.fills.map(key).sort());
 	});
 }
+
+test('a zoom glide scales one cache built at the wider step; settling rebuilds once', () => {
+	render.resetWaveBandCacheForTest();
+	canvases = [];
+	const ctx = recordingContext();
+	const glide = (windowS, cacheWindowS) =>
+		render.drawWaveRow(ctx, { ...frame(500_000, 'tri-band'), windowS, cacheWindowS });
+	for (const windowS of [24, 30, 38, 46, 48]) glide(windowS, 48);
+	const built = canvases.length;
+	assert.ok(built >= 1 && built <= 2, `the glide built ${built} tiles, all at the 48 s scale`);
+	assert.ok(canvases.every((c) => c.width <= render.BAND_CACHE_CFG.TILE_PX));
+	render.drawWaveRow(ctx, { ...frame(500_000, 'tri-band'), windowS: 48 });
+	assert.equal(canvases.length, built, 'settling on the wider step reuses the glide cache');
+	for (const windowS of [40, 30, 24]) render.drawWaveRow(ctx, { ...frame(500_000, 'tri-band'), windowS });
+	assert.ok(canvases.length > built + 1, 'control: without cacheWindowS each new scale rebuilds');
+});
 
 /** Every stroked segment, as "x0,y0>x1,y1" keys, shifted right by dx. */
 function segments(opLists, dx = 0) {

@@ -84,8 +84,14 @@ def test_directory_witness_ignores_the_directory_s_own_times(tmp_path: Path) -> 
     while time.time_ns() <= before.st_mtime_ns + 20_000_000 and time.monotonic() < deadline:
         time.sleep(0.005)
     (tmp_path / "new-entry").write_bytes(b"x")
+    # A new entry moves the directory's mtime only when the filesystem clock has
+    # ticked since the directory was made, which a fast Linux host does not
+    # promise (coarse timestamps: the two landed in one tick on a CI runner and
+    # the size stayed one block). Move the time explicitly so the precondition
+    # holds on every host.
+    os.utime(tmp_path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
     after = os.lstat(tmp_path)
-    assert after.st_mtime_ns != before.st_mtime_ns or after.st_size != before.st_size
+    assert after.st_mtime_ns != before.st_mtime_ns
     assert rhc.directory_witness(after) == rhc.directory_witness(before)
 
 

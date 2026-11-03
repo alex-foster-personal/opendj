@@ -1,6 +1,6 @@
 # CI and GitHub Actions supply chain
 
-Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **spec, not wired** (Mon 14 Sep 2026).
 
 ## Why this matters here
 
@@ -8,7 +8,7 @@ Security scanners are themselves an attack surface. On Thu 19 Mar 2026, 76 of 77
 `aquasecurity/trivy-action` tags were force-pushed to a credential stealer that dumped
 runner memory and harvested SSH and cloud keys, specifically on **self-hosted** runners
 (CVE-2026-33634). Checkmarx's KICS actions were hit the same week. Details and sources:
-[../research/security-paid-vs-oss-20260914.md](../research/security-paid-vs-oss-20260914.md).
+`(private path)`.
 
 Our exposure, measured Mon 14 Sep 2026:
 
@@ -46,7 +46,7 @@ Our exposure, measured Mon 14 Sep 2026:
      GitHub-hosted billing block reads as "skipped" on a PR rather than as a
      scanner verdict; the scheduled scans are not gated and stay loud. The
      restoration step is in
-     [ci-actions-cost-review-2026-08-16.md](../ci-actions-cost-review-2026-08-16.md#switching-ci-between-self-hosted-and-github-hosted).
+     `(private path)`.
    - Why not self-hosted: those runners are persistent and shared with jobs that hold
      write-scoped tokens, the nucbox runners sit on a machine we do not administer, and
      on Tue 15 Sep 2026 `CI_RUNS_ON_UNPRIVILEGED_LINUX` matched zero online runners.

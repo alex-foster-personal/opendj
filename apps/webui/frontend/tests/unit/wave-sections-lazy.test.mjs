@@ -199,6 +199,8 @@ describe('sections-lazy loader', () => {
 		const paint = () => {
 			fills.length = 0;
 			mod.drawWaveRow(ctx, {
+				windowS: 24,
+				playheadFrac: 0.5,
 				widthCss: 240, heightCss: 60, anlz, positionMs: 20_000, durationMs: 300_000, palette,
 				pitch: 1, loop: null, showSections: true
 			});

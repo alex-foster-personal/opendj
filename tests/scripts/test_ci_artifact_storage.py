@@ -75,35 +75,94 @@ def _sparse_entries(step: dict) -> list[str] | None:
     return None if sparse is None else [line.strip() for line in sparse.splitlines() if line.strip()]
 
 
+def _checkout_path(step: dict) -> str | None:
+    path = (step.get("with") or {}).get("path")
+    if path in (None, "", "."):
+        return None
+    return str(path)
+
+
 def _cone_holds(cone: list[str], directory: str) -> bool:
     return any(directory == entry or directory.startswith(f"{entry}/") for entry in cone)
 
 
 def _r2_step_blindness(job: str, steps: list[dict]) -> list[str]:
-    """Why a job's R2 steps cannot find the action or its client, empty when they can."""
-    uses = [str(step.get("uses") or "") for step in steps]
-    r2_steps = [i for i, used in enumerate(uses) if used == R2_ACTION]
-    checkouts = [i for i, used in enumerate(uses) if used.startswith("actions/checkout")]
-    if not r2_steps:
-        return []
-    if not checkouts or checkouts[0] > r2_steps[0]:
-        return [f"{job}: no checkout before its first R2 step"]
-    cone = _sparse_entries(steps[checkouts[0]])
-    if cone is None:
-        return []
-    return [f"{job}: sparse cone omits {d}" for d in (R2_ACTION_DIR, R2_CLIENT_DIR) if not _cone_holds(cone, d)]
+    """Why a job's R2 steps cannot find the action or its client, empty when they can.
+
+    Each R2 step is judged against its latest preceding checkout. actions/checkout cleans
+    only its own destination; a path: vendor checkout does not remove a prior root checkout.
+    clean: false does not protect the cone when sparse-checkout changes. _cone_holds assumes
+    cone mode (no workflow sets sparse-checkout-cone-mode: false today).
+    """
+    findings: list[str] = []
+    latest_checkout: int | None = None
+    for i, step in enumerate(steps):
+        used = str(step.get("uses") or "")
+        if used.startswith("actions/checkout"):
+            latest_checkout = i
+            continue
+        if used != R2_ACTION:
+            continue
+        label = step.get("name") or f"#{i + 1}"
+        if latest_checkout is None:
+            findings.append(f"{job}: no checkout before R2 step {label}")
+            continue
+        checkout = steps[latest_checkout]
+        path = _checkout_path(checkout)
+        if path is not None:
+            findings.append(
+                f"{job}: checkout path {path!r} puts the action off the workspace root before R2 step {label}"
+            )
+            continue
+        cone = _sparse_entries(checkout)
+        if cone is not None:
+            findings.extend(
+                f"{job}: sparse cone omits {d} before R2 step {label}"
+                for d in (R2_ACTION_DIR, R2_CLIENT_DIR)
+                if not _cone_holds(cone, d)
+            )
+    return findings
 
 
 def test_a_blind_job_is_reported() -> None:
     """[if] the blindness check cannot flag a known-blind job [then] the scan below proves nothing, [else stop]."""
-    r2_step = {"uses": R2_ACTION}
-    checkout = {"uses": "actions/checkout@sha"}
-    sparse = {"uses": "actions/checkout@sha", "with": {"sparse-checkout": "scripts\n.github/workflows\n"}}
-    full_cone = {"uses": "actions/checkout@sha", "with": {"sparse-checkout": "scripts\n.github/actions\n"}}
-    assert _r2_step_blindness("j", [r2_step, checkout]) == ["j: no checkout before its first R2 step"]
-    assert _r2_step_blindness("j", [sparse, r2_step]) == ["j: sparse cone omits .github/actions"]
-    assert _r2_step_blindness("j", [checkout, r2_step]) == []
-    assert _r2_step_blindness("j", [full_cone, r2_step]) == []
+    r2 = {"name": "upload", "uses": R2_ACTION}
+    r2_b = {"name": "upload-b", "uses": R2_ACTION}
+    checkout = {"name": "checkout", "uses": "actions/checkout@sha"}
+    sparse_apps = {
+        "name": "sparse-apps",
+        "uses": "actions/checkout@sha",
+        "with": {"sparse-checkout": "apps\n"},
+    }
+    sparse_no_actions = {
+        "name": "sparse",
+        "uses": "actions/checkout@sha",
+        "with": {"sparse-checkout": "scripts\n.github/workflows\n"},
+    }
+    full_cone = {
+        "name": "full-cone",
+        "uses": "actions/checkout@sha",
+        "with": {"sparse-checkout": "scripts\n.github/actions\n"},
+    }
+    vendor = {
+        "name": "vendor",
+        "uses": "actions/checkout@sha",
+        "with": {"path": "vendor"},
+    }
+    assert _r2_step_blindness("j", [r2, checkout]) == ["j: no checkout before R2 step upload"]
+    assert _r2_step_blindness("j", [sparse_no_actions, r2]) == [
+        "j: sparse cone omits .github/actions before R2 step upload"
+    ]
+    assert _r2_step_blindness("j", [checkout, r2]) == []
+    assert _r2_step_blindness("j", [full_cone, r2]) == []
+    assert _r2_step_blindness("j", [checkout, r2, sparse_apps, r2_b]) == [
+        "j: sparse cone omits .github/actions before R2 step upload-b",
+        "j: sparse cone omits scripts before R2 step upload-b",
+    ]
+    assert _r2_step_blindness("j", [vendor, r2]) == [
+        "j: checkout path 'vendor' puts the action off the workspace root before R2 step upload"
+    ]
+    assert _r2_step_blindness("j", [sparse_no_actions, checkout, r2]) == []
 
 
 def test_every_r2_step_can_see_the_action_and_its_client() -> None:

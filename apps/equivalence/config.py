@@ -359,6 +359,23 @@ SINGLE_SOURCE_FIELDS: tuple[SingleSourceField, ...] = (
 )
 
 
+def field_names_by_target() -> dict[str, frozenset[str]]:
+    """Map ``source.attr`` targets to the equivalence field names they gate.
+
+    Shared by the known-answer harness and the CLI hold-back logic so a field
+    moving between ``FIELD_PAIRS`` and ``SINGLE_SOURCE_FIELDS`` cannot silently
+    change which pending check withholds it.
+    """
+    mapping: dict[str, set[str]] = {}
+    for pair in FIELD_PAIRS:
+        for side in (pair.left, pair.right):
+            mapping.setdefault(f"{side.source}.{side.attr}", set()).add(pair.field_name)
+    for spec in SINGLE_SOURCE_FIELDS:
+        target = f"{spec.source.source}.{spec.source.attr}"
+        mapping.setdefault(target, {spec.field_name})
+    return {target: frozenset(names) for target, names in mapping.items()}
+
+
 # ------------------------------------------------------------------ CFG
 
 
@@ -368,7 +385,7 @@ class _Cfg:
 
     # Paths (resolved against --data-dir at runtime).
     data_dir: Path = Path("data")
-    rekordbox_db: Path = Path("data/master.plain.db")
+    rekordbox_db: Path = Path("(private path)")
     mik_db: Path = (
         Path.home() / "Library/Application Support/Mixedinkey/Collection10.mikdb"
     )
@@ -458,4 +475,5 @@ __all__ = [
     "FieldPair",
     "SingleSourceField",
     "SourceField",
+    "field_names_by_target",
 ]

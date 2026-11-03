@@ -209,7 +209,7 @@ def main() -> int:
                 result = farm.separate_track.remote(
                     mixture_bytes, f"4stem-{model}", "mixture.wav",
                     model, OVERLAP, SHIFTS,
-                    "bifrost2",  # the only dest that hands the stem bytes back
+                    "asset-store",  # the only dest that hands the stem bytes back
                     str(track_dir / "mixture.wav"),
                     {"tag": f"{model}-ov{OVERLAP}", "model": model,
                      "overlap": OVERLAP, "shifts": SHIFTS, "rung": -1},

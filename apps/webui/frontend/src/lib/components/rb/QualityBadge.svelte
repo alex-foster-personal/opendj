@@ -13,7 +13,7 @@
 -->
 <script lang="ts">
 	import type { TrackQuality } from '$lib/rb/library-types';
-	import { gradeView, hoverIsFresh, hoverTitle, type LoadedHover } from '$lib/rb/quality-grade';
+	import { gradeView } from '$lib/rb/quality-grade';
 
 	interface Props {
 		quality: TrackQuality | null;
@@ -31,17 +31,18 @@
 	}
 
 	const { quality, showContainer = true, compact = false, loadHover }: Props = $props();
-	// The loaded hover is tied to the grade it describes: a re-graded row
-	// falls back to its summary, a reply for an older grade is dropped, and a
-	// hover older than the TTL is asked for again.
-	let loaded = $state<LoadedHover | null>(null);
+	let hoverText = $state<string | null>(null);
+	let hoverKey = $state<string | null>(null);
 	const gradeKey = $derived(JSON.stringify(quality?.grade ?? null));
 
 	function _requestHover(): void {
-		if (loadHover === undefined || hoverIsFresh(loaded, gradeKey, Date.now())) return;
+		if (loadHover === undefined) return;
 		const key = gradeKey;
 		void loadHover().then((text) => {
-			if (key === gradeKey) loaded = { key, at: Date.now(), text };
+			if (key === gradeKey) {
+				hoverText = text;
+				hoverKey = key;
+			}
 		});
 	}
 
@@ -81,7 +82,7 @@
 {#if graded}
 	<span
 		class={graded.classes}
-		title={hoverTitle(loaded, gradeKey, graded.title)}
+		title={hoverKey === gradeKey && hoverText ? hoverText : graded.title}
 		data-venue={rung}
 		data-grade={graded.dataGrade}
 		onmouseenter={_requestHover}

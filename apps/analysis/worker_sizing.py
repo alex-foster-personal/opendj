@@ -73,13 +73,13 @@ def per_worker_budget_mb_from_config(config: dict[str, Any] | None = None) -> fl
     raw = load_config() if config is None else config
     section = raw.get("concurrency")
     if not isinstance(section, dict):
-        raise ValueError(
+        raise TypeError(
             "apps/analysis/config.yaml must define concurrency.per_worker_budget_mb; "
             f"got concurrency={section!r}"
         )
     value = section.get("per_worker_budget_mb")
     if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise ValueError(
+        raise TypeError(
             "concurrency.per_worker_budget_mb must be a positive number of MB; "
             f"got {value!r}"
         )
@@ -119,7 +119,7 @@ def _effective_ram_budget_mb(
     if isinstance(predicted_peak_mb, bool) or not isinstance(
         predicted_peak_mb, (int, float)
     ):
-        raise ValueError(
+        raise TypeError(
             "predicted_peak_mb must be a positive number of MB when set; "
             f"got {predicted_peak_mb!r}"
         )

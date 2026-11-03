@@ -84,10 +84,10 @@ describe('collapseCss', () => {
 
 describe('library components follow the rule', () => {
 	it('the Playlists folder collapses through the shared transition', () => {
-		const tree = readFileSync(
-			join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'),
-			'utf8'
-		);
+		// The tree is a container plus a presentational view; the markup lives in the view.
+		const tree =
+			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'), 'utf8') +
+			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTreeView.svelte'), 'utf8');
 		assert.match(tree, /<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/);
 		// [if] the block used transition:collapse [then] Svelte would keep the open-time
 		// snap decision for the close [else stop] (sol review P1, PR #7600)

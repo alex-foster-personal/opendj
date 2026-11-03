@@ -19,6 +19,18 @@ function _deckOf(el: Element): DeckId | null {
 	return DECK_IDS.includes(n as DeckId) ? (n as DeckId) : null;
 }
 
+/** A waveform row publishes its live zoom view; a missing or malformed one is
+ * a broken DOM contract, so it throws rather than mapping the click to the
+ * default 24-second window (WAVEZOOM-6802c). */
+function _rowViewAttr(el: Element, name: string, valid: (value: number) => boolean): number {
+	const raw = el.getAttribute(name);
+	const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
+	if (!Number.isFinite(value) || !valid(value)) {
+		throw new Error(`wave click: ${name} is missing or malformed on a waveform row (got ${raw ?? 'null'})`);
+	}
+	return value;
+}
+
 /** The loaded track and time under the pointer, or null off a wave surface
  * or on a deck with nothing (or nothing measured) loaded. */
 export function waveClickAt(event: MouseEvent, target: EventTarget | null): WaveClick | null {
@@ -38,7 +50,10 @@ export function waveClickAt(event: MouseEvent, target: EventTarget | null): Wave
 					widthPx: rect.width,
 					centerPositionMs: deck.position_ms,
 					durationMs: deck.duration_ms,
-					pitch: deck.pitch
+					pitch: deck.pitch,
+					// WaveRow publishes its live zoom view on the row element.
+					windowS: _rowViewAttr(surface, 'data-wave-window-s', (v) => v > 0),
+					playheadFrac: _rowViewAttr(surface, 'data-wave-playhead-frac', (v) => v >= 0 && v <= 1)
 				})
 			: stripTimeS({ pointerX, widthPx: rect.width, durationMs: deck.duration_ms });
 	return { deck: deckId, stableId: deck.stable_id, timeS };

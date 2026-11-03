@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
+from tests.scripts.ci_runner_routes import MAIN_TOKEN_RUNS_ON, TOKEN_RUNS_ON, without_main_reserve
 
 REPO = Path(__file__).resolve().parents[2]
 CI = REPO / ".github" / "workflows" / "ci.yml"
@@ -51,9 +51,13 @@ def test_the_upload_job_is_the_light_pool_job_downstream_of_the_shards() -> None
     """CONTROL: the cancellation assertions below are about the gated job that
     waits on the pytest shards, now on the self-hosted light pool
     (ADR-NEW-trunk-token-jobs-self-hosted), where a skipped start saves a runner
-    seat instead of a hosted minute."""
+    seat instead of a hosted minute. A push to main prefers the opt-in
+    CI_RUNS_ON_MAIN reserve first (#8248, tests/scripts/test_ci_main_push_runner_reserve.py);
+    every other event still takes the light pool route."""
     job_id, job = _upload_job()
-    assert job.get("runs-on") == TOKEN_RUNS_ON, f"{job_id} left the light pool route"
+    runs_on = job.get("runs-on")
+    assert runs_on == MAIN_TOKEN_RUNS_ON, f"{job_id} left the main-reserved light pool route"
+    assert without_main_reserve(runs_on) == TOKEN_RUNS_ON, f"{job_id} left the light pool route"
     assert "test" in (job["needs"] if isinstance(job["needs"], list) else [job["needs"]]), (
         f"{job_id} no longer waits on the pytest shards"
     )

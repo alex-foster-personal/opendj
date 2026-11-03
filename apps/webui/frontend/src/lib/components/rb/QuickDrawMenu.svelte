@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { quickDrawClaimsContextMenu } from '$lib/components/rb/quick-draw-target';
 	// Performance quick-draw: right-click opens a two-column menu.
 	// Left of the click = always-on tall Unload / Loop tree. At the click =
 	// contextual actions derived from the target (deck-scoped for now).
 	import { onMount, tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { DECK_IDS, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { DECK_IDS, engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
@@ -299,6 +300,19 @@
 				try {
 					const set = await setTransitionInCue(click.stableId, click.timeS * 1000);
 					pushToast(`Transition-in cue set at bar ${set.bar}`, 'info');
+					try {
+						for (const id of DECK_IDS) {
+							if (getDeckState(id).stable_id === click.stableId) {
+								// refreshHotCues also replaces st.anlz from a fresh /anlz fetch.
+								await engine.refreshHotCues(id);
+							}
+						}
+					} catch (refreshErr) {
+						pushToast(
+							`Transition-in cue saved but waveform did not refresh: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`,
+							'error'
+						);
+					}
 				} catch (e) {
 					pushToast(`Transition-in cue not set: ${e instanceof Error ? e.message : String(e)}`, 'error');
 				}
@@ -403,7 +417,7 @@
 
 	function onContextMenu(e: MouseEvent): void {
 		const t = e.target;
-		if (!(t instanceof Element) || t.closest('.perf-root') === null) return;
+		if (!(t instanceof Element) || !quickDrawClaimsContextMenu(t)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		// W28: a library surface whose registry menu is empty gets no menu at

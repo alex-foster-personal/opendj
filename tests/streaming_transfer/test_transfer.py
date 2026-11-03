@@ -23,7 +23,7 @@ from apps.streaming_transfer.llm import (
     build_batch_request,
     parse_batch_response,
 )
-from apps.streaming_transfer.service import plan_transfer, resolve_transfer
+from apps.streaming_transfer.service import TransferContractError, plan_transfer, resolve_transfer
 from apps.streaming_transfer.soundcloud import build_playlist_payload, parse_tracks_payload
 
 
@@ -248,3 +248,23 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
         {"id": 718846078},
         {"id": 718846078},
     ]
+
+
+@pytest.mark.requirement("META-05")
+def test_non_finite_confidence_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] a candidate scores non-finite confidence [then] the plan refuses, [else stop]."""
+    source_capture = parse_playlist_payload(SPOTIFY_CAPTURE)
+    source = replace(source_capture, tracks=(source_capture.tracks[0],))
+    target = parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC)[0]
+    monkeypatch.setattr(
+        "apps.streaming_transfer.service.score_spotify_candidate",
+        lambda *_: (float("nan"), ("title",)),
+    )
+    with pytest.raises(TransferContractError, match="finite"):
+        plan_transfer(
+            source,
+            target_service="soundcloud",
+            candidates={source.tracks[0].spotify_uri: (target,)},
+            confidence_threshold=0.70,
+            duration_tolerance_ms=2_000,
+        )

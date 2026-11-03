@@ -51,6 +51,16 @@ AUDIO_MEDIA_TYPES: dict[str, str] = {
     ".opus": "audio/ogg",
 }
 
+#: What the ANALYZER can decode: playback's types plus the extensions
+#: apps.shared.paths.AUDIO_EXTENSIONS accepts that a browser cannot stream.
+#: Analysis selects with this table so a playback MIME gap never makes a
+#: decodable file unreachable for analysis.
+ANALYSIS_MEDIA_TYPES: dict[str, str] = {
+    **AUDIO_MEDIA_TYPES,
+    ".aac": "audio/aac",
+    ".alac": "audio/x-alac",
+}
+
 MIN_VENUE_ENV = "MDT_AUDIO_MIN_VENUE"
 MAX_VENUE_ENV = "MDT_AUDIO_MAX_VENUE"
 SHARE_MAX_VENUE_ENV = "MDT_AUDIO_SHARE_MAX_VENUE"
@@ -593,7 +603,7 @@ def playable_candidate_paths(
     return out
 
 
-def upsert_location(
+def upsert_location(  # noqa: PLR0913
     conn: sqlite3.Connection,
     *,
     stable_id: str,
@@ -604,8 +614,15 @@ def upsert_location(
     content_hash: str | None = None,
     now: str | None = None,
     machine_id: str | None = None,
+    revive: bool = False,
 ) -> str:
     """Insert or refresh one location for one machine. Returns location_id.
+
+    ``revive`` clears ``deleted_at`` on an existing soft-deleted row with the
+    same natural key, so an explicit relink after :func:`remove_location`
+    brings the row back instead of refreshing a tombstone nobody can see.
+    Ingest and hydration callers leave it off: a tombstone they did not
+    write is not theirs to lift.
 
     The natural key is ``(stable_id, machine_id, kind, file_path|remote_url)``
     -- the same tuple the partial UNIQUE indexes assert -- so re-probing a
@@ -662,7 +679,9 @@ def upsert_location(
     conn.execute(
         "UPDATE track_locations SET role=?, venue_key=?, venue_rank=?, "
         "available=?, probed_at=?, content_hash=?, updated_at=?, "
-        "origin_device_id=? WHERE location_id=?",
+        "origin_device_id=?, "
+        "deleted_at=CASE WHEN ? THEN NULL ELSE deleted_at END "
+        "WHERE location_id=?",
         (
             role,
             venue_key,
@@ -672,10 +691,46 @@ def upsert_location(
             content_hash,
             stamp.updated_at,
             stamp.origin_device_id,
+            1 if revive else 0,
             location_id,
         ),
     )
     return location_id
+
+
+def remove_location(
+    conn: sqlite3.Connection,
+    *,
+    stable_id: str,
+    location_id: str,
+    now: str | None = None,
+    machine_id: str | None = None,
+) -> None:
+    """Soft-delete one live location row this machine owns for ``stable_id``.
+
+    Stamps ``deleted_at`` (a synced tombstone, never a hard DELETE) so the
+    undo of a relink travels to the hub like any other write. Raises
+    :class:`LocationError` when no live row matches all three keys: a row of
+    another track or another machine is never touched.
+    """
+    owner = machine_id or _sync_stamp.ensure_local_machine(conn)
+    row = conn.execute(
+        "SELECT 1 FROM track_locations WHERE location_id=? AND stable_id=? "
+        "AND machine_id=? AND deleted_at IS NULL",
+        (location_id, stable_id, owner),
+    ).fetchone()
+    if row is None:
+        raise LocationError(
+            f"no live location {location_id!r} for track {stable_id!r} on this machine"
+        )
+    stamp = _sync_stamp.stamp_and_log(
+        conn, "track_locations", (location_id,), owner, now=now,
+    )
+    conn.execute(
+        "UPDATE track_locations SET deleted_at=?, updated_at=?, origin_device_id=? "
+        "WHERE location_id=?",
+        (stamp.updated_at, stamp.updated_at, stamp.origin_device_id, location_id),
+    )
 
 
 def should_attach_local_primary(
@@ -729,17 +784,17 @@ def sync_primary_local(
     )
 
 
-def pick_playable(
+def _collect_playable_candidates(
     conn: sqlite3.Connection,
     stable_id: str,
     *,
-    policy: PickPolicy | None = None,
     folder_path: str | None = None,
     duration_ms: int | None = None,
     extra_paths: Sequence[tuple[str, str, Kind]] = (),
-) -> PickedAudio | None:
-    """Return the single playable winner, or None when nothing works."""
-    policy = policy or policy_from_env()
+    path_map: PathMap | None = None,
+    media_types: Mapping[str, str] = AUDIO_MEDIA_TYPES,
+) -> list[_Candidate]:
+    """Every resolved candidate for ``stable_id``, in collection order."""
     duration = duration_ms
     if duration is None:
         row = conn.execute(
@@ -747,7 +802,7 @@ def pick_playable(
             (stable_id,),
         ).fetchone()
         if row is None:
-            return None
+            return []
         duration = row[0]
         implicit_file = row[1]
     else:
@@ -761,8 +816,12 @@ def pick_playable(
     candidates: list[_Candidate] = []
     for loc in list_locations(conn, stable_id):
         cand = _candidate_from_path(
-            loc.file_path, kind=loc.kind, source=f"location:{loc.location_id}",
+            loc.file_path,
+            kind=loc.kind,
+            source=f"location:{loc.location_id}",
             duration_ms=duration,
+            path_map=path_map,
+            media_types=media_types,
         )
         if cand is not None:
             seen.add(str(cand.path))
@@ -773,13 +832,17 @@ def pick_playable(
     )
     for raw, source, kind in (*implicit_paths, *extra_paths):
         cand = _candidate_from_path(
-            raw, kind=kind, source=source, duration_ms=duration,
+            raw,
+            kind=kind,
+            source=source,
+            duration_ms=duration,
+            path_map=path_map,
+            media_types=media_types,
         )
         if cand is not None and str(cand.path) not in seen:
             seen.add(str(cand.path))
             candidates.append(cand)
-
-    return _pick_winner(candidates, policy)
+    return candidates
 
 
 def pick_playable_from_candidates(
@@ -820,7 +883,8 @@ def _pick_winner(candidates: Sequence[_Candidate], policy: PickPolicy) -> Picked
         if locals_only:
             pool = locals_only
     windowed = [
-        c for c in pool
+        c
+        for c in pool
         if c.venue_rank is not None
         and policy.min_venue_rank <= c.venue_rank <= policy.max_venue_rank
     ]
@@ -837,6 +901,118 @@ def _pick_winner(candidates: Sequence[_Candidate], policy: PickPolicy) -> Picked
         venue_rank=winner.venue_rank,
         source=winner.source,
     )
+
+def _order_playable_pool(
+    candidates: Sequence[_Candidate],
+    policy: PickPolicy,
+) -> list[_Candidate]:
+    """Working candidates in playback winner-first order."""
+    indexed = [(i, c) for i, c in enumerate(candidates) if c.working]
+    chosen = _playback_pool(indexed, policy)
+    return [
+        c
+        for _, c in sorted(
+            chosen,
+            key=lambda ic: (
+                -(ic[1].venue_rank if ic[1].venue_rank is not None else -1),
+                ic[0],
+            ),
+        )
+    ]
+
+
+def _playback_pool(
+    indexed: list[tuple[int, _Candidate]], policy: PickPolicy,
+) -> list[tuple[int, _Candidate]]:
+    """Apply playback's local preference and venue window to indexed candidates."""
+    if not indexed:
+        return []
+    pool = indexed
+    if policy.prefer_local:
+        local = [(i, c) for i, c in indexed if c.kind == "local"]
+        if local:
+            pool = local
+    windowed = [
+        (i, c)
+        for i, c in pool
+        if c.venue_rank is not None
+        and policy.min_venue_rank <= c.venue_rank <= policy.max_venue_rank
+    ]
+    return windowed or pool
+
+
+def ordered_playable_candidates(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    policy: PickPolicy | None = None,
+    folder_path: str | None = None,
+    duration_ms: int | None = None,
+    extra_paths: Sequence[tuple[str, str, Kind]] = (),
+    path_map: PathMap | None = None,
+    for_analysis: bool = False,
+) -> list[PickedAudio]:
+    """All playable candidates in the same order ``pick_playable`` uses.
+
+    ``for_analysis`` keeps that order but not playback's eligibility:
+    regular files only (``fs_residency.is_materialised``; a FIFO would hang a
+    decoder with no bounded open), every :data:`ANALYSIS_MEDIA_TYPES` suffix,
+    and the working candidates the playback pool filters out (non-local,
+    outside the venue window, unknown venue) appended after the pool in
+    collection order, as decode fallbacks: a corrupt winner must not hide a
+    valid copy behind it.
+    """
+    residency: ResidencyPredicate = (
+        fs_residency.is_materialised if for_analysis else fs_residency.exists_for_audio_open_probe
+    )
+    media_types = ANALYSIS_MEDIA_TYPES if for_analysis else AUDIO_MEDIA_TYPES
+    policy = policy or policy_from_env()
+    raw = _collect_playable_candidates(
+        conn,
+        stable_id,
+        folder_path=folder_path,
+        duration_ms=duration_ms,
+        extra_paths=extra_paths,
+        path_map=path_map,
+        media_types=media_types,
+    )
+    materialized = [c for c in raw if residency(c.path)]
+    ordered = _order_playable_pool(materialized, policy)
+    if for_analysis:
+        kept = {id(c) for c in ordered}
+        ordered += [c for c in materialized if c.working and id(c) not in kept]
+    return [
+        PickedAudio(
+            path=c.path,
+            media_type=c.media_type,
+            kind=c.kind,
+            venue_key=c.venue_key,
+            venue_rank=c.venue_rank,
+            source=c.source,
+        )
+        for c in ordered
+    ]
+
+
+def pick_playable(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    policy: PickPolicy | None = None,
+    folder_path: str | None = None,
+    duration_ms: int | None = None,
+    extra_paths: Sequence[tuple[str, str, Kind]] = (),
+) -> PickedAudio | None:
+    """Return the single playable winner, or None when nothing works."""
+    ordered = ordered_playable_candidates(
+        conn,
+        stable_id,
+        policy=policy,
+        folder_path=folder_path,
+        duration_ms=duration_ms,
+        extra_paths=extra_paths,
+    )
+    return ordered[0] if ordered else None
 
 
 def _find_existing(
@@ -881,14 +1057,16 @@ def _candidate_from_path(
     kind: Kind,
     source: str,
     duration_ms: int | None,
+    path_map: PathMap | None = None,
+    media_types: Mapping[str, str] = AUDIO_MEDIA_TYPES,
 ) -> _Candidate | None:
     if not raw or raw.startswith(platform_paths.STREAMING_PREFIXES):
         return None
-    mapped = platform_paths.resolve_asset_path(raw)
+    mapped = platform_paths.resolve_asset_path(raw, path_map=path_map)
     if mapped.resolved is None:
         return None
     path = mapped.resolved
-    media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
+    media_type = media_types.get(path.suffix.lower())
     if media_type is None:
         return None
     working = fs_residency.exists_for_audio_open_probe(path)

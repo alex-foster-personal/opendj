@@ -32,7 +32,12 @@ from apps.equivalence.config import (
     SINGLE_SOURCE_FIELDS,
     SourceField,
 )
-from apps.equivalence.normalisers import MISSING, Key, NormaliseError, normalise
+from apps.equivalence.normalisers import (
+    MISSING,
+    NormaliseError,
+    format_canonical,
+    normalise,
+)
 from apps.equivalence.sources import MikRow, Pairing
 
 VERIFIED_BY = ("source-read", "audit-table", "needs-maintainer")
@@ -155,9 +160,7 @@ def _canonical_text(value: Any, spec: SourceField) -> str | None:
         return f"UNMAPPED ({exc.reason})"
     if result is MISSING:
         return "MISSING"
-    if isinstance(result, Key):
-        return result.camelot
-    return f"{float(result):g}"
+    return format_canonical(result)
 
 
 def _find_mik(mik_rows: list[MikRow], selector: dict[str, Any]) -> MikRow | None:

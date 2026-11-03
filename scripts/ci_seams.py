@@ -1,5 +1,5 @@
 """Seam classification of a change set, and the seam plan the `scope` job logs (SMARTEST-CI
-round 13, docs/decisions/ADR-NEW-seam-ci.md).
+round 13, (private path)).
 
 Every changed path maps to exactly one `Kind`. The code seams are webui (TypeScript/Svelte),
 engine (Rust), desktop (Tauri) and python; the other kinds are prose (exactly what
@@ -28,7 +28,7 @@ Requirements:
 - ✔︎ ✅ 🎯 Unnarrowable cases select every seam.
 - ✔︎ ✅ 🎯 Standard library only: the light pool's runner images carry a bare `python3`.
 
-Acceptance tests (tests/scripts/test_ci_seams.py):
+Acceptance tests ((private path)):
 - [if] a new top-level file lands without a class [then] a test names it [⛔️ if it would
   silently select the full pipeline forever].
 - [if] a webui-only diff is planned [then] it touches only the webui seam [⛔️ if the
@@ -90,22 +90,18 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     (".github/", Kind.INFRA),
     ("ci/", Kind.INFRA),
     (".ci/", Kind.INFRA),
-    (".config/", Kind.INFRA),  # cargo-nextest: .config/nextest.toml
+    (".config/", Kind.INFRA),  # cargo-nextest: (private path)
     (".trunk/", Kind.INFRA),
-    (".pnpm-store/", Kind.INFRA),
     # Trees whose only CI consumers are pytest modules.
     ("apps/", Kind.PYTHON),
     ("scripts/", Kind.PYTHON),
     ("tests/", Kind.PYTHON),
     ("ops/", Kind.PYTHON),
     ("tools/", Kind.PYTHON),
-    ("research/", Kind.PYTHON),
     ("open-dj/", Kind.PYTHON),
-    ("site/", Kind.PYTHON),
     ("usb-profiles/", Kind.PYTHON),
     # Dependency license register and policy; read by scripts/license_gate.py and its tests.
     ("licenses/", Kind.PYTHON),
-    ("reports/", Kind.PYTHON),
     ("data/", Kind.PYTHON),
     ("app_docs/", Kind.PYTHON),
     ("docs/", Kind.PYTHON),
@@ -113,7 +109,6 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     (".claude/", Kind.PYTHON),
     (".cursor/", Kind.PYTHON),
     (".codex/", Kind.PYTHON),
-    (".learnings/", Kind.PYTHON),
     (".design-sync/", Kind.PYTHON),
 )
 
@@ -164,7 +159,6 @@ _ROOT_FILES: Mapping[str, Kind] = {
             ".cursorindexingignore",
             ".geminiignore",
             ".antigravityignore",
-            ".tmp.hallo.cursor.txt",
         ),
         Kind.PYTHON,
     ),

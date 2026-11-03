@@ -23,67 +23,13 @@ from apps.rescue.ring import (
     read_latest,
     write_atomic,
 )
+from tests.webui.rescue_snapshot_builders import minimal_rescue_snapshot
 
 pytestmark = pytest.mark.requirement("RESCUE-01")
 
 
 def _minimal_snapshot(captured_at_ms: int, marker: str = "v1") -> dict:
-    deck = {
-        "deck_id": 1,
-        "stable_id": "abc",
-        "source_path": None,
-        "playing": False,
-        "position_ms": 0,
-        "beat_stamp": {"kind": "sample", "position_ms": 0},
-        "pitch": 1.0,
-        "pitch_range": 8,
-        "master_tempo_enabled": True,
-        "key_sync_enabled": False,
-        "quantize_enabled": True,
-        "beat_sync_enabled": True,
-        "sync_mode": "bar",
-        "is_master": False,
-        "cue_ms": None,
-        "loop": None,
-        "hot_cue_armed": None,
-        "stems": {
-            "vocal": {"muted": False, "solo": False, "gain": 1.0},
-            "instrumental": {"muted": False, "solo": False, "gain": 1.0},
-            "drums": {"muted": False, "solo": False, "gain": 1.0},
-        },
-        "mixer_channel": {
-            "trim": 0.5,
-            "eq_high": 0.5,
-            "eq_mid": 0.5,
-            "eq_low": 0.5,
-            "filter": 0.5,
-            "fader": 1.0,
-            "assign": "THRU",
-            "cue_enabled": False,
-        },
-    }
-    decks = {str(i): {**deck, "deck_id": i} for i in range(1, 5)}
-    return {
-        "schema": 1,
-        "captured_at_ms": captured_at_ms,
-        "reason": "transport",
-        "app_posture": "gig",
-        "master_deck": None,
-        "playlist_id": None,
-        "decks": decks,
-        "mixer": {
-            "crossfader": 0.5,
-            "master": 1.0,
-            "headphones": {
-                "mix": 0.5,
-                "level": 0.5,
-                "output_mode": "practice",
-                "selected_master_output_device_id": None,
-                "selected_output_device_id": None,
-            },
-        },
-        "marker": marker,
-    }
+    return minimal_rescue_snapshot(captured_at_ms, marker=marker)
 
 
 def test_append_updates_index_and_newest_slot(tmp_path: Path) -> None:

@@ -28,6 +28,7 @@ adapter output through (serato / traktor); module-family adapters
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -262,26 +263,36 @@ def _color_int_to_hex(color_rgb: int) -> str:
     return f"#{int(color_rgb) & 0xFFFFFF:06x}"
 
 
-def color_hex_to_int(value: Any) -> int | None:
-    """Inverse of :func:`_color_int_to_hex`.
+_COLOR_HEX_RE = re.compile(r"^(?:#[0-9a-fA-F]{6}|[0-9a-fA-F]{6})$")
+_MAX_CUE_COLOR_RGB = 0xFFFFFF
 
-    Accepts ``"#rrggbb"``, ``"rrggbb"``, or a plain int. Returns ``None``
-    on anything it cannot parse so loaders degrade gracefully rather than
-    crashing on vendor-emitted oddities.
+
+def _invalid_cue_color_error(value: Any) -> ValueError:
+    return ValueError(
+        f"invalid cue color {value!r}: expected 6-digit hex RGB or int 0..0x{_MAX_CUE_COLOR_RGB:x}"
+    )
+
+
+def color_hex_to_int(value: Any) -> int:
+    """Inverse of :func:`_color_int_to_hex` for a *present* cue color.
+
+    Accepts ``"#rrggbb"``, bare ``"rrggbb"``, or an integer in
+    ``0 .. 0xFFFFFF``. Raises :class:`ValueError` for malformed or
+    out-of-range values. Callers that treat color as optional must not
+    invoke this helper when the color field is absent.
     """
-    if value is None:
-        return None
+    if isinstance(value, bool):
+        raise _invalid_cue_color_error(value)
     if isinstance(value, int):
-        return value & 0xFFFFFF
+        if 0 <= value <= _MAX_CUE_COLOR_RGB:
+            return value
+        raise _invalid_cue_color_error(value)
     if isinstance(value, str):
-        s = value.strip().lstrip("#")
-        if not s:
-            return None
-        try:
-            return int(s, 16) & 0xFFFFFF
-        except ValueError:
-            return None
-    return None
+        if _COLOR_HEX_RE.fullmatch(value):
+            digits = value[1:] if value.startswith("#") else value
+            return int(digits, 16)
+        raise _invalid_cue_color_error(value)
+    raise _invalid_cue_color_error(value)
 
 
 def _wrap_source_stamp(

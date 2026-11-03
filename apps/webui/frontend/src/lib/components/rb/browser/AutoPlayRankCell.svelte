@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
-	const AUTOPLAY_ARROW = '\u2193';
-
 	let {
 		stableId,
 		rank,
 		isHot = false,
+		arrowDirection = 0,
+		arrowColor = null,
 		onHover
 	}: {
 		stableId: string;
 		rank: number;
 		isHot?: boolean;
+		/** +1 next track is below this row, -1 above, 0 when this is the last hop. */
+		arrowDirection?: -1 | 0 | 1;
+		arrowColor?: string | null;
 		onHover: (stableId: string | null) => void;
 	} = $props();
 
@@ -27,7 +30,12 @@
 	onpointerleave={() => onHover(null)}
 	onfocus={() => onHover(stableId)}
 	onblur={() => onHover(null)}
->{rank}{AUTOPLAY_ARROW}</span>
+>{rank}{#if arrowDirection !== 0}<svg
+		class="ap-rank-arrow"
+		viewBox="0 0 8 10"
+		aria-hidden="true"
+		style={arrowColor ? `color:${arrowColor}` : ''}
+	><path d={arrowDirection < 0 ? 'M3 10H5V5H8L4 0L0 5H3Z' : 'M3 0H5V5H8L4 10L0 5H3Z'} /></svg>{/if}</span>
 {#if pinRole}
 	<span
 		class="ap-pin-role"
@@ -48,6 +56,15 @@
 	.ap-rank-hot,
 	.ap-rank:focus {
 		color: var(--rb-accent);
+	}
+	.ap-rank-arrow {
+		display: inline-block;
+		width: 6px;
+		height: 8px;
+		margin-left: 1px;
+		vertical-align: -1px;
+		fill: currentColor;
+		overflow: visible;
 	}
 	.ap-pin-role {
 		display: inline-block;

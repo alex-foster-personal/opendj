@@ -9,7 +9,8 @@
  *
  * Rendering honesty: preview bands are the REAL 400-point PWAV arrays, never
  * synthesized; vocal bars paint only for a real PVDI/demucs region; the loop
- * band paints only for an engaged loop the engine actually reports.
+ * band paints only for an engaged loop the engine actually reports; the tempo
+ * curve paints only the daemon's own tempo-stability segments (issue #8339).
  */
 import {
 	BLOCK_BAR_PX,
@@ -23,6 +24,15 @@ import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palett
 import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 import type { SectionPalette, SectionSpan } from '../wave/sections';
 import type { SectionsApi } from '../wave/sections-lazy.svelte';
+import {
+	drawTempoCurve,
+	TEMPO_LANE_COLORS,
+	type TempoCurveData,
+	type TempoLaneColors,
+	type TempoLaneScale
+} from '../wave/tempo-marks';
+
+export { TEMPO_LANE_COLORS };
 
 // This module is PRESENTATIONAL: it names the shapes it paints instead of
 // importing `$lib/rb/types` or `$lib/rb/api-rb`. Two reasons, in order:
@@ -46,6 +56,13 @@ const LOOP_CUE_MARKER_PX = 8;
 /** Vocal bar height on the strip's backing canvas. 4 backing px over the 40px
  * backing height reads as the ~2 CSS px the strip is scaled down to. */
 const VOCAL_BAR_BACKING_PX = 4;
+
+/** Tempo curve (issue #8339) on the strip: a band a third of the strip tall,
+ * just below the vocal bar, sized for the 40 px reference backing height and
+ * scaled with the real one (see wave/tempo-marks.ts for the design). */
+const TEMPO_CURVE_REFERENCE_HEIGHT_PX = 40;
+const TEMPO_CURVE_LINE_PX = 1.6;
+const TEMPO_CURVE_ICON_PX = 13;
 
 /** Same-length normalized 0..1 energy arrays, one per frequency band. */
 export interface StripBands {
@@ -110,6 +127,13 @@ export interface StripFrame {
 	waveformDesign?: WaveformDesign;
 	/** Band fills from `resolveStripBandColors`; default rekordbox 3Band. */
 	bandColors?: WaveBandColors;
+	/** Tempo-stability answer; null when not fetched, not analyzed, or the
+	 * show_tempo_lane pref is off. A steady track has no segments and paints nothing. */
+	tempo?: TempoCurveData | null;
+	tempoColors?: TempoLaneColors;
+	tempoScale?: TempoLaneScale;
+	/** CSS width / height stretch of one backing px (icons stay round); default 1. */
+	tempoXStretch?: number;
 }
 
 /**
@@ -155,6 +179,25 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 	// itself, so an engaged loop stays visible on a track whose ANLZ is
 	// missing. An engaged loop is never invisible on a surface that has a
 	// duration to place it with (DECKUX-04).
+	if (frame.tempo != null && durationMs !== null && durationMs > 0) {
+		const scale = h / TEMPO_CURVE_REFERENCE_HEIGHT_PX;
+		drawTempoCurve(
+			ctx,
+			frame.tempo,
+			0,
+			w / (durationMs / 1000),
+			w,
+			{
+				top: (VOCAL_BAR_BACKING_PX + 1) * scale,
+				height: h / 3,
+				lineWidth: TEMPO_CURVE_LINE_PX * scale,
+				iconPx: TEMPO_CURVE_ICON_PX * scale,
+				xStretch: frame.tempoXStretch ?? 1
+			},
+			frame.tempoColors ?? TEMPO_LANE_COLORS.dark,
+			frame.tempoScale ?? 'fixed_10'
+		);
+	}
 	if (durationMs !== null && durationMs > 0) {
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / durationMs) * w, w, h);
 		_drawLoopCueBands(ctx, frame.loopCues, durationMs, w, h);

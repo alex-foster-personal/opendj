@@ -37,7 +37,8 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Any, Literal, cast
 
 from ._value_check import require_allowed_value
 from .canonical import PROJECTION_FIELDS
@@ -495,6 +496,13 @@ def source_state(
 # the one scalar read
 #-----------------------------------------------------------------------------
 
+#: Every status a lane-owned field can carry. ``too_short`` and ``no_pulse``
+#: name why the analyzer measured no tempo (issue #5986, `bpm_status`).
+FieldStatus = Literal[
+    "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
+]
+
+
 @dataclass(frozen=True)
 class EffectiveField:
     """One field's effective value plus the status the read model needs.
@@ -508,7 +516,7 @@ class EffectiveField:
     source: str
     confidence: float | None
     modified_at: str
-    status: Literal["ok", "failed", "missing", "available-not-selected"]
+    status: FieldStatus
     reason: str | None = None
 
 
@@ -574,6 +582,29 @@ def _missing_own_field(field_name: str) -> EffectiveField:
         status="missing",
         reason="no own analysis record for this lane yet",
     )
+
+
+def _unmeasured_tempo_fields(
+    conn: sqlite3.Connection, field_name: str, ids: list[str],
+) -> dict[str, EffectiveField]:
+    """The named no-tempo status for own-resolved ids with no bpm (issue #5986).
+
+    Read only for ids that would otherwise be ``missing``: an own projection
+    row or a ``track_fields`` value always wins. A track the portable
+    analyzer DID analyze and found no tempo in says so by name rather than
+    reading as never analyzed, and never as BPM 0.
+    """
+    if field_name != "bpm" or not ids:
+        return {}
+    from .bpm_status import LEGACY_TEMPO_BACKEND, unmeasured_bpm_status
+
+    return {
+        sid: EffectiveField(
+            value=None, source=LEGACY_TEMPO_BACKEND, confidence=None,
+            modified_at="", status=cast(FieldStatus, status), reason=reason,
+        )
+        for sid, (status, reason) in unmeasured_bpm_status(conn, ids).items()
+    }
 
 
 def _implicit_default_track_values(
@@ -726,9 +757,13 @@ def effective_fields(
             if projection_available
             else {sid: {} for sid in ids}
         )
-        for sid in ids:
-            for field_name in own_fields:
-                found = projected[sid].get(field_name)
+        for field_name in own_fields:
+            unmeasured = _unmeasured_tempo_fields(
+                conn, field_name,
+                [sid for sid in ids if projected[sid].get(field_name) is None],
+            )
+            for sid in ids:
+                found = projected[sid].get(field_name, unmeasured.get(sid))
                 out[sid][field_name] = (
                     found if found is not None else _missing_own_field(field_name)
                 )
@@ -757,8 +792,17 @@ def effective_fields(
             track_values = _implicit_default_track_values(
                 conn, field_name, lane, own_ids, projected,
             )
+            unmeasured = _unmeasured_tempo_fields(
+                conn, field_name,
+                [
+                    sid for sid in own_ids
+                    if projected[sid].get(field_name) is None and sid not in track_values
+                ],
+            )
             for sid in own_ids:
-                found = projected[sid].get(field_name, track_values.get(sid))
+                found = projected[sid].get(
+                    field_name, track_values.get(sid, unmeasured.get(sid))
+                )
                 out[sid][field_name] = (
                     found if found is not None else _missing_own_field(field_name)
                 )

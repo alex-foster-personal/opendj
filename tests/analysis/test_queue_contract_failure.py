@@ -22,8 +22,9 @@ from apps.analysis import queue as queue_api
 from apps.analysis.lanes import LaneResult
 from apps.analysis.queue_runner import RunSummary, _RunContext, _settle_one, run_batch
 from apps.analysis.store import open_conn
+from apps.shared.state import analysis_stale
 
-from .queue_probe_backends import BeatgridProbeV1, _base_record, _beatgrid_payload
+from .queue_probe_backends import PROBE_DIR_ENV, BeatgridProbeV1, _base_record, _beatgrid_payload
 
 
 def _candidate(stable_id: str, tmp_path: Path) -> admission.Candidate:
@@ -150,4 +151,53 @@ def test_a_malformed_stored_record_fails_that_track_and_keeps_the_batch(tmp_path
         "SELECT record_json FROM analysis WHERE stable_id = ?", (item.stable_id,)
     ).fetchone()[0]
     assert stored == '{"lanes": []}', "the malformed row must not be overwritten"
+    conn.close()
+
+
+def test_explicit_null_lanes_fails_that_track_and_leaves_the_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a stored record has explicit null lanes [then] StoredRecordError and no overwrite, [else stop].
+
+    Driven through ``run_batch``: the production pool runs the queue suite's
+    own beatgrid backend in a worker and the production settle commits its
+    record against the malformed row already in state.db, so no completed
+    future or hand-built result stands in for the runner.
+    """
+    probe_dir = tmp_path / "probe"
+    probe_dir.mkdir()
+    monkeypatch.setenv(PROBE_DIR_ENV, str(probe_dir))  # the backend's per-track execution marker
+    conn = open_conn(tmp_path / "state.db")
+    batch = queue_api.enqueue(conn, [_candidate("a", tmp_path), _candidate("b", tmp_path)])
+    malformed = '{"lanes": null}'
+    conn.execute(
+        "INSERT INTO analysis (stable_id, backend, backend_version, analyzed_at, duration_s, "
+        "sample_rate, bpm, bpm_confidence, key_camelot, key_openkey, key_confidence, energy, "
+        "energy_source, record_json) VALUES (?, ?, ?, ?, 180.0, 44100, 120.0, 0.9, '8A', '1m', "
+        "0.9, 5, 'derived', ?)",
+        ("a", BeatgridProbeV1.name, BeatgridProbeV1.version, "2026-10-08T00:00:00Z", malformed),
+    )
+    # The dependency cascade's own invalidation, so the runner re-analyzes the
+    # track instead of skipping it as already current.
+    analysis_stale.ensure_stale_table(conn)
+    analysis_stale.mark_stale(
+        conn,
+        stable_id="a",
+        lane="beatgrid",
+        backend=BeatgridProbeV1.name,
+        backend_version=BeatgridProbeV1.version,
+        reason="cascade: upstream lane changed",
+    )
+    conn.commit()
+
+    summary = run_batch(conn, batch.batch_id, backend_cls=BeatgridProbeV1)
+
+    assert summary.failed == 1, "if the null-lanes track does not fail on its own then broken"
+    assert summary.completed == 1, "if the sibling track does not still complete then broken"
+    rows = {i.stable_id: i for i in queue_store.list_items(conn, batch.batch_id, limit=10)}
+    assert rows["a"].state == queue_store.ITEM_FAILED
+    assert "explicit null lanes" in (rows["a"].reason or "")
+    assert rows["b"].state == queue_store.ITEM_DONE
+    stored = conn.execute("SELECT record_json FROM analysis WHERE stable_id = ?", ("a",)).fetchone()[0]
+    assert stored == malformed, "if the malformed row is overwritten then broken"
     conn.close()

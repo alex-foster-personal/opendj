@@ -37,6 +37,11 @@
  *     LEARN_LOG_CAP (50).
  *   ✔︎ LED sender: per-device coalescing queue flushed on a throttle
  *     timer; last write per (ch,note) wins within a flush window.
+ *   ✔︎ Output pairing: the k-th connected input named N pairs with the
+ *     k-th output named N (zero-based, map iteration order), matching the
+ *     native MIDI bridge; a missing k-th output leaves hasOutput false.
+ *     [if] two inputs share a port name [then] each routes LEDs to its own
+ *       matching output occurrence, not the first name match
  */
 
 import type {
@@ -208,9 +213,17 @@ function _resolveMap(portName: string): DeviceMap | null {
 	return null;
 }
 
-function _findOutputFor(access: MIDIAccess, inputName: string): _MidiOutputPort | null {
+function _findOutputFor(
+	access: MIDIAccess,
+	inputName: string,
+	occurrence: number
+): _MidiOutputPort | null {
+	let seen = 0;
 	for (const output of access.outputs.values()) {
-		if (output.name === inputName) return output;
+		// Count connected outputs only, as inputs are counted, or a stale twin shifts every pairing.
+		if (output.name !== inputName || output.state !== 'connected') continue;
+		if (seen === occurrence) return output;
+		seen += 1;
 	}
 	return null;
 }
@@ -230,11 +243,14 @@ function _rescanWebMidiPorts(): void {
 	// This page is leaving for djio; attaching handlers now would only be torn down.
 	if (_djioRedirectIssued) return;
 	const seen = new Set<string>();
+	const inputOccurrenceByName = new Map<string, number>();
 	for (const input of _access.inputs.values()) {
 		if (input.state !== 'connected') continue;
 		seen.add(input.id);
-		if (_resolved.has(input.id)) continue;
 		const name = input.name ?? '';
+		const occurrence = inputOccurrenceByName.get(name) ?? 0;
+		inputOccurrenceByName.set(name, occurrence + 1);
+		if (_resolved.has(input.id)) continue;
 		const map = _resolveMap(name);
 		const { index, lsbIndex } =
 			map !== null
@@ -247,7 +263,7 @@ function _rescanWebMidiPorts(): void {
 			detachInput: () => {
 				input.onmidimessage = null;
 			},
-			output: _findOutputFor(_access, name),
+			output: _findOutputFor(_access, name, occurrence),
 			map,
 			index,
 			msbValues: new Map(),

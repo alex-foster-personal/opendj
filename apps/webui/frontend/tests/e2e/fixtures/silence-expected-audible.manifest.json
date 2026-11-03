@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "why": "silence-expected-audible.spec.ts decodes four committed media files and asserts silence/loud passages at hard-coded playhead offsets. Serving them without a digest check would let a regenerated clip pass while exercising different audio, which is not valid release evidence (AGENTS.md locked-fixture contract).",
+  "provenance": "am-contra-heart-peripheral bench clips (mixture, truth vocals, cfg-a instrumental) plus phase7-dedup other-silent-intro.mp3; digests measured on the PR branch at b876ffc2.",
+  "immutable": "Never edit a listed file to make this suite pass. Add a new manifest entry and scenario for new audio; never rewrite bytes under an existing sha256.",
+  "files": {
+    "(private path)": {
+      "sha256": "3164ff9d776a9426915ebb59fdb03c0b1077b726fa95572da17ce439df8ecd3a",
+      "bytes": 1984407
+    },
+    "(private path)": {
+      "sha256": "24d4a03b4ca0362703f5a3087f840f1e0642102fd7260e774d8fc3cfdd50b0dc",
+      "bytes": 1919477
+    },
+    "(private path)": {
+      "sha256": "898817c91a140e86d0dbeae10a2fded09698aa9a8ce85ea666b5239c4914587b",
+      "bytes": 1939752
+    },
+    "tests/fixtures/phase7-dedup/other-silent-intro.mp3": {
+      "sha256": "db8d8671be0f6375714e8fefde362ec9d8e43bcc3c725c82a97ba305e9baf45a",
+      "bytes": 73083
+    }
+  }
+}

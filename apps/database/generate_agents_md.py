@@ -248,7 +248,9 @@ def introspect(
     the app, while foreign-authority tables stay in the sidecar. The CLI
     leaves this unset, so extras still fail there.
     """
-    names = documentable_table_names(conn, owned_tables=owned_tables)
+    names = documentable_table_names(
+        conn, owned_tables=owned_tables, is_shadow=is_fts5_shadow_table
+    )
 
     tables: list[TableInfo] = []
     for name in names:

@@ -67,6 +67,11 @@ REASON_NO_TONAL_CENTER = "no_tonal_center"
 #: current canonical own beatgrid (spec section 5, nav1-key-record.md).
 REASON_STALE_DEPENDENCY = "stale_dependency"
 
+#: A file whose decode is far shorter than its container claims (DECODE-01):
+#: the lane fails with this token and the durations, never a key from the
+#: frames that survived the cut.
+REASON_TRUNCATED_DECODE = "truncated_decode"
+
 #: The exact five-field dependency-identity schema (spec section 5). Compared
 #: field for field by whichever reader checks staleness; a block missing any
 #: of them is not a weaker match, it is not a block.

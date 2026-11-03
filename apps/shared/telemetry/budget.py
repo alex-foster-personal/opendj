@@ -59,6 +59,16 @@ _TRANSIENT_NETWORK_PREFIXES: tuple[str, ...] = (
     "AbortError: ",
     "DOMException: ",
 )
+#: Newer WebKit appends the host it could not reach: ``Load failed (127.0.0.1:7700)``
+#: (Sentry OPEN-DJ-BE-4G). Anchored, so only that exact shape matches.
+_WEBKIT_LOAD_FAILED_HOST: re.Pattern[str] = re.compile(r"Load failed \([^()\s]+\)")
+#: STATE-14 HTTP 503 code, as forwarded by the SPA ``RbApiError`` (Sentry
+#: OPEN-DJ-FE-P / sibling OPEN-DJ-BE-7B). Token match only so a bare sqlite
+#: ``database is locked`` still ships. Keep in lockstep with
+#: ``telemetry-network-noise.ts``.
+STATE_STORE_BUSY_TOKEN: str = "STATE_STORE_BUSY"
+_TOKEN_RE: re.Pattern[str] = re.compile(r"[A-Za-z0-9_]+")
+
 #: uvicorn ERROR when SIGTERM hits still-open HTTP/WS tasks after
 #: timeout_graceful_shutdown (INSTALL-33). The cancel is the bound working;
 #: Sentry OPEN-DJ-BE-8X treated it as a crash.
@@ -68,6 +78,34 @@ UVICORN_GRACEFUL_SHUTDOWN_MARKER: str = "timeout graceful shutdown exceeded"
 UVICORN_GRACEFUL_SHUTDOWN_SOURCE_SITE: str = "engine:uvicorn.error"
 _UVICORN_GRACEFUL_SHUTDOWN_MESSAGE = re.compile(
     r"Cancel [0-9]+ running task\(s\), " + re.escape(UVICORN_GRACEFUL_SHUTDOWN_MARKER)
+)
+
+#: Expected deck-load refusals a DJ already sees as a toast/banner
+#: (Sentry OPEN-DJ-BE-8H / OPEN-DJ-BE-7S). Token plus colon so a mention
+#: in a real crash still ships. Keep in lockstep with
+#: ``isExpectedLibraryRefusalMessage`` in ``deck-load-failure-copy.ts``.
+#: AUDIO_FILE_MISSING is deliberately absent: it also covers iCloud stubs
+#: and unopenable local files.
+EXPECTED_LIBRARY_REFUSAL_CODES: frozenset[str] = frozenset(
+    {
+        "CLOUD_ASSET_UNAVAILABLE",
+        "AUDIO_NOT_ON_THIS_MACHINE",
+        "CLOUD_POLICY_UNCONFIGURED",
+        "CLOUD_HYDRATING",
+        "TRACK_NOT_FOUND",
+        "USB_STICK_NOT_MOUNTED",
+        "USB_FILE_MISSING",
+        "USB_TRACK_NOT_FOUND",
+    }
+)
+_EXPECTED_LIBRARY_REFUSAL_TOKEN: re.Pattern[str] = re.compile(
+    r"(?:^|[\s:])(" + "|".join(sorted(EXPECTED_LIBRARY_REFUSAL_CODES)) + r"):"
+)
+#: Banner/toast sentences after CLOUDSYNC-33/35 rewrite the raw code away.
+_EXPECTED_LIBRARY_REFUSAL_SENTENCES: tuple[str, ...] = (
+    "This file isn't on this computer.",
+    "This track's audio is not on this machine and could not be fetched.",
+    "Its audio isn't on this Mac (looked at ",
 )
 
 _WINDOW_S: float = 3600.0
@@ -93,10 +131,47 @@ def is_transient_network_error(_name: str | None, message: str) -> bool:
     text = message.strip()
     if not text:
         return False
-    if text in TRANSIENT_NETWORK_MESSAGES:
+    if text in TRANSIENT_NETWORK_MESSAGES or _WEBKIT_LOAD_FAILED_HOST.fullmatch(text):
         return True
     for prefix in _TRANSIENT_NETWORK_PREFIXES:
-        if text.startswith(prefix) and text[len(prefix) :] in TRANSIENT_NETWORK_MESSAGES:
+        rest = text[len(prefix) :]
+        if text.startswith(prefix) and (
+            rest in TRANSIENT_NETWORK_MESSAGES or _WEBKIT_LOAD_FAILED_HOST.fullmatch(rest)
+        ):
+            return True
+    return False
+
+
+#: Engine availability worker (LIBM-09): after SQLITE_BUSY retries it logs at
+#: ERROR so the local JSONL sink still records the round, then stays queued
+#: and drains. That is designed contention, not a crash (Sentry OPEN-DJ-BE-7V).
+AVAILABILITY_LOCK_GIVE_UP_MARKER: str = (
+    "database lock retries; unchecked rows stay queued"
+)
+
+
+def is_availability_lock_give_up(kind: str, message: str) -> bool:
+    """True for the engine worker's lock-retry give-up log (OBS-5412)."""
+    return kind == "engine" and AVAILABILITY_LOCK_GIVE_UP_MARKER in message
+
+
+def is_expected_library_refusal(message: str) -> bool:
+    """A known play refusal the DJ already saw, not an application crash."""
+    if _EXPECTED_LIBRARY_REFUSAL_TOKEN.search(message) is not None:
+        return True
+    return any(sentence in message for sentence in _EXPECTED_LIBRARY_REFUSAL_SENTENCES)
+
+
+def is_expected_state_store_busy(_name: str | None, message: str) -> bool:
+    """STATE-14 HTTP 503 forwarded as a browser RbApiError (OBS-5454).
+
+    Token-matches ``STATE_STORE_BUSY`` in the exception name or message.
+    A bare sqlite ``database is locked`` is a different fault and still ships.
+    """
+    for text in (_name, message):
+        if not text:
+            continue
+        if STATE_STORE_BUSY_TOKEN in _TOKEN_RE.findall(text):
             return True
     return False
 
@@ -107,6 +182,8 @@ def is_local_only_browser_error(kind: str, name: str | None, message: str) -> bo
         is_perf_console_mirror(kind, message)
         or is_dev_tooling_console(kind, message)
         or is_transient_network_error(name, message)
+        or is_expected_library_refusal(message)
+        or is_expected_state_store_busy(name, message)
     )
 
 
@@ -121,6 +198,18 @@ def is_uvicorn_graceful_shutdown_timeout(kind: str, source_site: str, message: s
         and source_site == UVICORN_GRACEFUL_SHUTDOWN_SOURCE_SITE
         and _UVICORN_GRACEFUL_SHUTDOWN_MESSAGE.fullmatch(message) is not None
     )
+
+
+#: uvicorn HTTP/WS protocols log this first line with ``exc_info`` when an
+#: unhandled ASGI callable raises (``httptools_impl.run_asgi``). ``warning_log``
+#: forwards the ERROR; Sentry OPEN-DJ-BE-8Z grouped every such fault under the
+#: wrapper because ``maybe_send_sentry`` used ``capture_message`` of the log.
+UVICORN_ASGI_EXCEPTION_PREFIX: str = "Exception in ASGI application"
+
+
+def is_uvicorn_asgi_exception_log(message: str) -> bool:
+    """True when the log is uvicorn's unhandled-ASGI wrapper, not the inner fault."""
+    return message.lstrip().startswith(UVICORN_ASGI_EXCEPTION_PREFIX)
 
 
 @dataclass

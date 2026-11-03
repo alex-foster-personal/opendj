@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from apps.spotify.acquisition import build_acquisition_entries
-from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
-from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
+from apps.spotify.matcher_adapter import MatchedPair, MatchResult
 from apps.spotify.reporting import (
     build_report_dir,
     write_all_reports,
@@ -17,20 +16,11 @@ from apps.spotify.reporting import (
     write_to_acquire_csv,
 )
 
-
-def _playlist() -> SpotifyPlaylist:
-    return SpotifyPlaylist(
-        id="pl123", name="Pop 2026", snapshot_id="snap-1",
-        owner="dev3", description="", tracks=(),
-    )
-
-
-def _src(sid, title="Title", isrc="USABC2500001") -> SpotifyTrack:
-    return SpotifyTrack(
-        spotify_id=sid, spotify_uri=f"spotify:track:{sid}", isrc=isrc,
-        title=title, artists=("Artist",), album="Album",
-        duration_ms=200000, is_local=False,
-    )
+from tests.spotify.builders import (
+    make_local_track,
+    make_playlist,
+    make_spotify_track,
+)
 
 
 @pytest.mark.requirement("CAT-01")
@@ -43,9 +33,9 @@ def test_build_report_dir_uses_timestamp(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_matches_csv_roundtrips(tmp_path: Path) -> None:
-    src1 = _src("t1", title="Hello", isrc="USABC2500001")
-    src2 = _src("t2", title="Mystery, with comma", isrc=None)
-    tgt = LocalTrack("s1", "USABC2500001", "Hello", ("Artist",), 200000)
+    src1 = make_spotify_track("t1", title="Invented Title", isrc="USABC2500001")
+    src2 = make_spotify_track("t2", title="Mystery, with comma", isrc=None)
+    tgt = make_local_track("s1", isrc="USABC2500001", title="Invented Title")
     pairs = [
         MatchedPair(src1, tgt, 0.35, ("isrc",), "matched"),
         MatchedPair(src2, None, 0.0, (), "unmatched"),
@@ -61,8 +51,8 @@ def test_matches_csv_roundtrips(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_to_acquire_csv_has_all_5_source_cols(tmp_path: Path) -> None:
-    playlist = _playlist()
-    pairs = [MatchedPair(_src("t1"), None, 0.0, (), "unmatched")]
+    playlist = make_playlist()
+    pairs = [MatchedPair(make_spotify_track("t1"), None, 0.0, (), "unmatched")]
     entries = build_acquisition_entries(pairs)
     out = tmp_path / "ta.csv"
     write_to_acquire_csv(playlist, entries, out)
@@ -76,11 +66,14 @@ def test_to_acquire_csv_has_all_5_source_cols(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("CAT-01")
 def test_write_all_reports_produces_four_files(tmp_path: Path) -> None:
-    playlist = _playlist()
-    src = _src("t1", title="Hello", isrc="USABC2500001")
+    playlist = make_playlist()
+    src = make_spotify_track("t1", title="Invented Title", isrc="USABC2500001")
     pair = MatchedPair(
-        src, LocalTrack("s1", "USABC2500001", "Hello", ("Artist",), 200000),
-        0.35, ("isrc",), "matched",
+        src,
+        make_local_track("s1", isrc="USABC2500001", title="Invented Title"),
+        0.35,
+        ("isrc",),
+        "matched",
     )
     paths = build_report_dir("pl123", root=tmp_path)
     write_all_reports(playlist, MatchResult(pairs=[pair]), paths,

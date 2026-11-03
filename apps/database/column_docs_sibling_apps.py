@@ -356,6 +356,48 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "applied_at": "RFC 3339 UTC timestamp when this version was applied.",
     },
+    "playlist_component_slots": {
+        "playlist_id": "Playlist the slot order belongs to. Not FK-enforced.",
+        "slot": "Slot name, lowercased: a ladder slot or a user's own.",
+        "position": (
+            "Sort key in route order. Ladder slots use their ladder index "
+            "times 100; custom slots follow every slot already present."
+        ),
+    },
+    "playlist_components": {
+        "id": "Surrogate primary key for one component.",
+        "playlist_id": "Playlist the component lives in. Not FK-enforced.",
+        "name": "Component name, UNIQUE per playlist.",
+        "slot": "Slot the component fills; components sharing one are alternatives.",
+        "created_at": "RFC 3339 UTC timestamp when the component was created.",
+        "updated_at": "RFC 3339 UTC timestamp of the last component edit.",
+    },
+    "playlist_component_entries": {
+        "component_id": "FK -> playlist_components(id), ON DELETE CASCADE.",
+        "position": "0-based track position within the component.",
+        "stable_id": "Track stable_id. A track may sit in several components.",
+    },
+    "playlist_component_tags": {
+        "component_id": "FK -> playlist_components(id), ON DELETE CASCADE.",
+        "tag": "Free user tag, stored without a leading '#'.",
+    },
+    "playlist_set_parts": {
+        "set_id": "FK -> playlist_sets(id), ON DELETE CASCADE.",
+        "position": "0-based place of this component on the set's route.",
+        "component_id": (
+            "FK -> playlist_components(id), ON DELETE RESTRICT; may name a "
+            "component from another playlist."
+        ),
+    },
+    "playlist_set_run_entries": {
+        "run_id": "FK -> playlist_set_runs(id), ON DELETE CASCADE.",
+        "position": "0-based position in what the run played.",
+        "stable_id": "Track stable_id as resolved when the run was recorded.",
+        "component_id": (
+            "Component the track came from, or NULL for a v1 snapshot set. "
+            "Not FK-enforced, so history survives a component delete."
+        ),
+    },
     "spotify_playlist_links": {
         "vendor_pl_id": (
             "Primary key. Spotify's own playlist id, so a re-import can find "

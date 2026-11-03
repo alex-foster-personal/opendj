@@ -174,7 +174,10 @@ export function formatToastPresentation(input: {
 		return applyDiagnostic(withSolutionHint(input.kind, deckLoad), input.diagnostic);
 	}
 
-	if (isBareExceptionText(rawMessage) || (causeName !== undefined && isBareExceptionText(causeName))) {
+	// Every `new Error(msg)` is named 'Error', so that name alone says nothing
+	// about the message; only a built-in failure (RangeError, ...) does.
+	const bareCause = causeName !== undefined && causeName !== 'Error' && isBareExceptionText(causeName);
+	if (isBareExceptionText(rawMessage) || bareCause) {
 		const detailParts = [rawMessage];
 		if (causeMessage !== undefined && causeMessage !== rawMessage) detailParts.push(causeMessage);
 		return applyDiagnostic(
@@ -188,13 +191,20 @@ export function formatToastPresentation(input: {
 		);
 	}
 
+	// The page stringifies errors as `${name}: ${message}`; for a plain Error the
+	// name is noise in the headline. rawMessage keeps it for copy and logs.
+	const text =
+		causeName === 'Error' && causeMessage !== undefined
+			? rawMessage.replace(`Error: ${causeMessage}`, causeMessage)
+			: rawMessage;
+
 	// Long technical strings: keep a short headline, stash the rest for expand.
 	// Never split or cut on " - ". A track title is allowed to contain it
 	// ("7A - 6 - Glasswing"), and the first fragment is not the error.
-	if (rawMessage.length > 96) {
-		const newline = rawMessage.indexOf('\n');
+	if (text.length > 96) {
+		const newline = text.indexOf('\n');
 		const splitAt = newline > 0 && newline < 96 ? newline : 93;
-		const headline = newline > 0 && newline < 96 ? rawMessage.slice(0, newline) : `${rawMessage.slice(0, splitAt)}...`;
+		const headline = newline > 0 && newline < 96 ? text.slice(0, newline) : `${text.slice(0, splitAt)}...`;
 		return applyDiagnostic(
 			withSolutionHint(input.kind, {
 				headline,
@@ -208,7 +218,7 @@ export function formatToastPresentation(input: {
 
 	return applyDiagnostic(
 		withSolutionHint(input.kind, {
-			headline: rawMessage,
+			headline: text,
 			feature,
 			rawMessage
 		}),

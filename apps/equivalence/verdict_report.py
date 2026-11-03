@@ -15,6 +15,8 @@ from apps.equivalence import SUITE_VERSION
 from apps.equivalence.config import CFG
 from apps.shared.source_fingerprint import fingerprint as _fingerprint
 
+from apps.equivalence.single_source import SingleSourceVerdict
+
 from .verdict_types import SUITE_NO_DATA, PairVerdict
 
 
@@ -23,7 +25,7 @@ def build_document(
     *,
     match_report: dict[str, Any],
     known_answers: dict[str, Any] | None,
-    single_source: list[Any] | None = None,
+    single_source: list[SingleSourceVerdict] | None = None,
     checked_at: str | None = None,
 ) -> dict[str, Any]:
     """The full verdict document, in ``apps.shared.equivalence`` shape.
@@ -340,7 +342,7 @@ def render_report(document: dict[str, Any]) -> str:
         "",
         "> " + meta["rule"],
         "",
-        "Section 4b of `.agents/skills/novel-music-app-onboarding/SKILL.md` as",
+        "Section 4b of `(private path)` as",
         "runnable code. An agreement rate below a FAILED verdict is not a",
         "result: the two columns were not proven to be the same field.",
         "",

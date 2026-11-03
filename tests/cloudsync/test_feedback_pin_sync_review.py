@@ -23,9 +23,11 @@ reverting its fix; see the PR body for the output):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from types import MappingProxyType
@@ -36,7 +38,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client as sync_client
+from apps.sync_hub import engine as sync_engine
 from apps.sync_hub import service as sync_service
 from apps.sync_hub import single_flight
 from apps.sync_hub import status as sync_status
@@ -344,6 +348,102 @@ def test_a_scheduler_switch_that_is_not_0_or_1_is_a_loud_misconfiguration(
         record.levelno >= logging.WARNING and "'yes'" in record.getMessage()
         for record in caplog.records
     )
+
+
+_DIGEST_ORIGIN = "cccccccccccccccccccccccccccccccc"
+
+
+def _insert_track(data_dir: Path, stable_id: str, title: str) -> None:
+    conn = state_db.open_rw(sync_client.state_db_path(data_dir))
+    try:
+        stamped = sync_stamp.stamp_and_log(
+            conn, "tracks", (stable_id,), _DIGEST_ORIGIN, now=sync_stamp.canonical_now()
+        ).updated_at
+        conn.execute(
+            "INSERT INTO tracks(stable_id, stable_id_tier, title, content_hash, "
+            "created_at, updated_at, origin_device_id) "
+            "VALUES (?, 'inferred', ?, ?, ?, ?, ?)",
+            (
+                stable_id,
+                title,
+                hashlib.sha256(stable_id.encode("utf-8")).hexdigest(),
+                stamped,
+                stamped,
+                _DIGEST_ORIGIN,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("CSSTATUS-5375")
+def test_a_settled_digest_mismatch_halts_the_scheduler_and_does_not_retick(
+    air: Engine, hub_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] a scheduled tick ends in SyncDigestMismatch [then] it HALTS, [else stop]."""
+    _insert_track(air.data_dir, "trk-digest-halt", "settled")
+    scheduler = CloudSyncScheduler(air.app, env={
+        sync_status.SCHEDULER_ENV: "1", sync_status.ENDPOINT_ENV: hub_url,
+    })
+    first = scheduler.run_once()
+    assert first is not None and first.status == "ok"
+
+    conn = state_db.open_rw(sync_client.state_db_path(air.data_dir))
+    try:
+        seq_before = sync_engine.local_seq(conn)
+        changed = conn.execute(
+            "UPDATE tracks SET title = 'changed behind the changelog' "
+            "WHERE stable_id = ?",
+            ("trk-digest-halt",),
+        ).rowcount
+        assert changed == 1
+        assert sync_engine.local_seq(conn) == seq_before
+        conn.commit()
+    finally:
+        conn.close()
+
+    with caplog.at_level(logging.ERROR, logger="apps.webui.server.cloudsync_scheduler"):
+        halted = scheduler.run_once()
+    assert halted is None
+    status = scheduler.status()
+    assert status.state == "halted"
+    assert status.ticks == 2
+    assert status.last_error is not None
+    assert "HALTED" in status.last_error
+    assert "SyncDigestMismatch" in status.last_error
+    assert any(
+        record.levelno == logging.ERROR and "HALTED" in record.getMessage()
+        for record in caplog.records
+    ), "the first digest mismatch was not logged as a one-shot HALT"
+
+    caplog.clear()
+    with caplog.at_level(logging.ERROR, logger="apps.webui.server.cloudsync_scheduler"):
+        again = scheduler.run_once()
+    assert again is None
+    assert scheduler.status().state == "halted"
+    assert scheduler.status().ticks == 2
+    assert not any(
+        "scheduled sync failed" in record.getMessage() or "HALTED" in record.getMessage()
+        for record in caplog.records
+    ), "a halted scheduler logged another digest-mismatch ERROR"
+
+    loop = CloudSyncScheduler(air.app, interval_s=0.05, env={
+        sync_status.SCHEDULER_ENV: "1", sync_status.ENDPOINT_ENV: hub_url,
+    })
+    loop.start()
+    try:
+        wait_for_external_state(
+            lambda: loop.status().state == "halted",
+            what="the background tick to HALT on the same settled mismatch",
+        )
+        halted_ticks = loop.status().ticks
+        time.sleep(0.25)
+        assert loop.status().state == "halted"
+        assert loop.status().ticks == halted_ticks
+        assert loop.running, "the halt parked the thread; it must not look dead"
+    finally:
+        loop.stop()
 
 
 def _scheduler_for(air: Engine, hub_url: str) -> CloudSyncScheduler:

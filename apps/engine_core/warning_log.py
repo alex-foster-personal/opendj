@@ -96,7 +96,12 @@ class _WarningJsonHandler(logging.Handler):
                 self._opendj_sink_busy = True
                 try:
                     append_sink(event)
-                    maybe_send_sentry(event)
+                    inner = (
+                        record.exc_info[1]
+                        if record.exc_info and record.exc_info[1] is not None
+                        else None
+                    )
+                    maybe_send_sentry(event, exc=inner)
                 finally:
                     self._opendj_sink_busy = False
         except (OSError, ValueError, TypeError, ImportError):

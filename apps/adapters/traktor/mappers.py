@@ -77,6 +77,10 @@ def traktor_rating_to_stars(value: int | str | None) -> int | None:
         raw = int(value)
     except (TypeError, ValueError):
         return None
+    if not 0 <= raw <= 255:
+        # Traktor writes 0..255 only; anything else (including an integer
+        # too large to divide as a float) is not a rating.
+        return None
     # Find the nearest slot.
     stars = max(0, min(5, round(raw / 51.0)))
     return stars

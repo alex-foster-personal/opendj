@@ -47,6 +47,8 @@ def test_access_log_allows_steady_low_rate() -> None:
 def test_configure_access_log_sampling_attaches_to_uvicorn_access(
     tmp_path,
 ) -> None:
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error_propagate = uvicorn_error.propagate
     handler = configure_warning_log(tmp_path / "engine-warn.log", "boot-access")
     access_logger = logging.getLogger("uvicorn.access")
     try:
@@ -59,3 +61,5 @@ def test_configure_access_log_sampling_attaches_to_uvicorn_access(
             if not isinstance(filt, AccessLogRateFilter)
         ]
         logging.getLogger().removeHandler(handler)
+        uvicorn_error.removeHandler(handler)
+        uvicorn_error.propagate = uvicorn_error_propagate

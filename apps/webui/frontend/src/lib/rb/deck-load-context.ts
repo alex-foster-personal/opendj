@@ -48,6 +48,7 @@ import { reportClientError, type ClientErrorContext } from '$lib/client-error-re
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
 import { pressureLabels, readMachinePressure } from '$lib/rb/machine-pressure';
+import { foldedLaunchNotices } from '$lib/rb/beat-sync-math';
 import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -280,7 +281,8 @@ export function deckLoadFailureContext(
  * unsupported extensions and unresolvable paths, where the file IS here.
  */
 const PLAIN_LOAD_FAILURES: Readonly<Record<string, string>> = {
-	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer."
+	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer.",
+	CLOUD_ASSET_UNAVAILABLE: "This track's audio is not on this machine and could not be fetched."
 };
 
 function plainLoadFailure(message: string): string {
@@ -523,4 +525,14 @@ export function reportDeckLoadCommandFailure(deck: 1 | 2 | 3 | 4, message: strin
 	// Grouped per deck, as the dispatcher groups every other command failure:
 	// a refusal repeated by a held key is one toast with a count, not a stack.
 	_pushDeckLoadFailureToast(deck, message, cause, { source: 'deck-load', deck }, `performance:${deck}:load:`);
+}
+
+/** The orange fold notice and its perf rows for a folded sync launch. The paused incoming deck never reaches the engine's own notice path, so the page raises them here. */
+export function reportFoldedLaunch(deck: 1 | 2 | 3 | 4, master: 1 | 2 | 3 | 4, normalization: 0.5 | 2): void {
+	for (const notice of foldedLaunchNotices(deck, master, normalization)) {
+		pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
+		for (const event of notice.events) {
+			recordPerfEvent(event.kind, event.detail, event.deck, notice.kind);
+		}
+	}
 }

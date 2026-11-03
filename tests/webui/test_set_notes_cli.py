@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 
 from apps.set_notes.store import Geometry, open_set_notes, save_set_note
-from apps.shared.state import db as state_db
+
+from tests.webui.set_notes_test_db import init_empty_state_db
 
 pytestmark = pytest.mark.requirement("SETNOTE-6340c")
 
@@ -22,8 +23,7 @@ REPO = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     db_path = tmp_path / "state" / "state.db"
-    db_path.parent.mkdir()
-    state_db.open_rw(db_path).close()
+    init_empty_state_db(db_path)
     return tmp_path
 
 

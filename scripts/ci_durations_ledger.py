@@ -18,7 +18,10 @@ coverage fell under the fast tier's floor, and main locked itself red
 Subcommands (standard library only, so a bare runner `python3` can run them):
 
 - `build`: union the five `test-durations-shard-N` artifacts of the newest successful
-  main-push `ci.yml` run that still has all five, and write the merged ledger. The runs
+  main `ci.yml` run, nightly `schedule` or `push`, that still has all five, and write the
+  merged ledger. Since Tue 3 Nov 2026 a main push runs the capped selection and writes no
+  durations, so the 02:00Z nightly full lane is the usual source
+  (ADR-NEW-main-push-runs-the-capped-selection). The runs
   are listed through the GitHub API; the artifacts are read from Cloudflare R2
   (`scripts/r2_artifact.py`, key `ci/<repo>/<run_id>/<name>.tar.gz`), where CI uploads
   them since GitHub blocked artifact uploads on Fri 30 Oct 2026. An absent object is a
@@ -76,6 +79,8 @@ MAX_LEDGER_AGE_DAYS = 14
 MAX_TEST_SECONDS = 1800.0
 MIN_ROW_RATIO = 0.9
 RUNS_TO_SCAN = 20
+#: The main `ci.yml` events whose runs can carry all five shards' durations, nightly first.
+SOURCE_EVENTS = ("schedule", "push")
 # fetch: two attempts of three calls each (commit, tree, blob) must fit its 2-minute
 # CI step with 15 s to spare.
 FETCH_GH_TIMEOUT_S = 15
@@ -198,11 +203,20 @@ def _artifact_file(store: ArtifactStore, key: str) -> bytes:
 def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: ArtifactStore | None = None) -> str:
     store = R2Store() if store is None else store
     seed = _validate(_read_json(seed_path), f"seed {seed_path}")
-    runs = _gh_json(
-        api,
-        f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
-        f"?branch=main&event=push&status=success&per_page={RUNS_TO_SCAN}",
-    ).get("workflow_runs", [])
+    runs = sorted(
+        (
+            run
+            for event in SOURCE_EVENTS
+            for run in _gh_json(
+                api,
+                f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
+                f"?branch=main&event={event}&status=success&per_page={RUNS_TO_SCAN}",
+            ).get("workflow_runs", [])
+        ),
+        # Run ids grow with creation time, so this is newest first across both events.
+        key=lambda run: int(run["id"]),
+        reverse=True,
+    )
     skipped: list[str] = []
     for run in runs:
         keys = _shard_keys(repo, run["id"])
@@ -227,7 +241,7 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
             f"slowest {max(ledger.values()):.1f} s"
         )
     raise LedgerError(
-        f"none of the newest {len(runs)} successful main-push {SOURCE_WORKFLOW} runs gave a valid "
+        f"none of the newest {len(runs)} successful main {SOURCE_WORKFLOW} runs gave a valid "
         f"ledger from all {SHARDS} shard durations artifacts: " + "; ".join(skipped)
     )
 

@@ -12,9 +12,12 @@ import { expect, test, type Page } from '@playwright/test';
  * - if choosing it stores nothing the track API can read then broken
  * - if the stored cue is not a downbeat of the grid /anlz serves then broken
  * - if the stored cue is not near where the click landed then broken
+ * - if the menu PUT succeeds and query().decks[1].transition_in_ms stays null then the waveform read model was not refreshed
  */
 
 type Beat = { n: number; t: number };
+
+test.skip(process.platform === 'win32', 'POSIX-only: guardedWebServerCommand launches /bin/sh and .venv/bin/python');
 
 async function trackWithGrid(page: Page): Promise<{ stableId: string; downbeatsMs: number[] }> {
 	const listing = await page.request.get('/api/v1/tracks?limit=50');
@@ -62,4 +65,8 @@ test('the waveform menu sets the transition-in cue and the track API reads it ba
 	const clickedMs = fraction * durationMs;
 	const barMs = Math.max(...downbeatsMs.slice(1).map((t, i) => t - downbeatsMs[i]));
 	expect(Math.abs(cue.in_ms - clickedMs), 'snapped within one bar of the click').toBeLessThanOrEqual(barMs);
+
+	await expect
+		.poll(async () => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].transition_in_ms))
+		.toBe(cue.in_ms);
 });

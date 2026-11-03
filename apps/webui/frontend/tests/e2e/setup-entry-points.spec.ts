@@ -80,7 +80,9 @@
  * - [if] a fatal blocker's sentence is not red [then ⛔️] the failure reads as
  *   ordinary prose, which is exactly what a tester reported.
  */
-import { test, expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
+import type { APIRequestContext, APIResponse, Page } from '@playwright/test';
+// Browser configs get @playwright/test itself; the Electron shell config gets the shell (ELECTRON-6208).
+import { test, expect } from './support/shell-test';
 
 import { spendBootLanding } from './support/boot-landing';
 import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
@@ -142,6 +144,27 @@ async function gotoShellReady(page: Page, path: string): Promise<void> {
 		undefined,
 		{ timeout: 30_000 }
 	);
+}
+
+/** The root Playwright suite shares one engine; unload decks a prior spec may have left loaded. */
+async function unloadSharedEngineDecks(page: Page): Promise<void> {
+	await gotoShellReady(page, '/performance?muted=1');
+	await page.waitForFunction(
+		() =>
+			(window as { musicDjToolsPerformance?: { version: number } }).musicDjToolsPerformance
+				?.version === 1,
+		undefined,
+		{ timeout: 30_000 }
+	);
+	await page.evaluate(async () => {
+		const perf = window.musicDjToolsPerformance;
+		if (perf === undefined) return;
+		for (const deck of [1, 2, 3, 4] as const) {
+			if (perf.query().decks[deck].stable_id !== null) {
+				await perf.dispatch({ type: 'unload', deck });
+			}
+		}
+	});
 }
 
 /**
@@ -206,6 +229,7 @@ test.describe('setup entry points', () => {
 		// handoff, and Chromium logs a designed 409 on `/api/v1/state/ui-mirror`.
 		// Same pattern as smoke.spec.ts and the build-identity test below.
 		await spendBootLanding(page);
+		await unloadSharedEngineDecks(page);
 		await gotoShellReady(page, '/');
 		await expect(settingsDialog(page)).toHaveCount(0);
 
@@ -219,7 +243,15 @@ test.describe('setup entry points', () => {
 		// engine with the endpoint it is configured to read. The manifest behind
 		// that endpoint lives on github.com and is validated in its own test
 		// below, so an outage there cannot discard this test's local evidence.
-		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
+		// The page's own response proves BuildIdentity issued the check and the
+		// engine answered it. Its body is read with a fresh request, not from the
+		// page: Run setup navigates to the wizard, and the page's copy of the body
+		// is gone or never finishes loading after that ("No resource with given
+		// identifier found", or a hang to the test timeout), which failed about
+		// half of main's Electron shell runs (Tue 3 Nov 2026).
+		const updateCheckResponse = await updateCheckResponsePromise;
+		expect(updateCheckResponse.status()).toBe(200);
+		const updateCheckBody = (await (await page.request.get(updateCheckResponse.url())).json()) as {
 			endpoint: string;
 		};
 		expect(updateCheckBody.endpoint).toMatch(/^https:\/\//);
@@ -371,6 +403,12 @@ test.describe('setup entry points', () => {
 		const dialog = setupDialog(page);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Get started' }).click();
+		// The pointer stays where 'Get started' was, and a detect-step button can
+		// render under it. Chromium (the Electron shell) then fires pointerover,
+		// and the hover tooltip parks `title` on `data-tip` while it shows
+		// (single-hover-tooltip.ts); WebKit does not. The assertions below are
+		// about the title at rest, so take the pointer off the dialog first.
+		await page.mouse.move(0, 0);
 
 		for (const label of ESCAPE_LABELS) {
 			const button = dialog.getByRole('button', { name: label, exact: true });

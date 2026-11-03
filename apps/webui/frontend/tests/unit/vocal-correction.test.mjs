@@ -127,13 +127,21 @@ test("parseVocalAnchor('#foo') is null so FB-03 CSS anchors stay CSS anchors", (
 	assert.equal(vocal.parseVocalAnchor(''), null);
 });
 
+test('the wavestack mapping refuses a row whose zoom geometry was not published', () => {
+	const base = { pointerX: 200, widthPx: 400, centerPositionMs: 60_000, durationMs: 180_000, pitch: 1 };
+	assert.throws(() => vocal.waveRowTimeS({ ...base, playheadFrac: 0.5 }), 'windowS is required');
+	assert.throws(() => vocal.waveRowTimeS({ ...base, windowS: 24 }), 'playheadFrac is required');
+});
+
 test('wavestack mapping agrees with waveClickTargetMs at the window center', () => {
 	const args = {
 		pointerX: 200,
 		widthPx: 400,
 		centerPositionMs: 60_000,
 		durationMs: 180_000,
-		pitch: 1
+		pitch: 1,
+		windowS: 24,
+		playheadFrac: 0.5
 	};
 	const seconds = vocal.waveRowTimeS(args);
 	const ms = scrub.waveClickTargetMs({
@@ -141,7 +149,8 @@ test('wavestack mapping agrees with waveClickTargetMs at the window center', () 
 		pointerX: args.pointerX,
 		widthPx: args.widthPx,
 		durationMs: args.durationMs,
-		windowSeconds: 24 * args.pitch
+		windowSeconds: 24 * args.pitch,
+		playheadFrac: 0.5
 	});
 	assert.equal(seconds, ms / 1000);
 	assert.equal(seconds, 60);

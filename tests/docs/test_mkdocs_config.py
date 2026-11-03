@@ -113,7 +113,7 @@ def test_docs_workflow_present():
     assert wf.is_file(), ".github/workflows/docs.yml missing"
     text = wf.read_text(encoding="utf-8")
     assert "mkdocs build --strict" in text
-    assert "wrangler@4.148.0 pages deploy site" in text
+    assert "wrangler@4.148.0 pages deploy build/mkdocs-site" in text
     assert "actions/deploy-pages" not in text
     assert "upload-pages-artifact" not in text
 

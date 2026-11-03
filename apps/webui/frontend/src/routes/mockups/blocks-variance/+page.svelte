@@ -75,7 +75,9 @@
 				pitch: 1,
 				loop: null,
 				waveformDesign: 'blocks' as const,
-				blocksVariant: variant
+				blocksVariant: variant,
+				windowS: WAVE_WINDOW_S,
+				playheadFrac: 0.5
 			};
 			const t0 = performance.now();
 			drawWaveRow(ctx, frame); // cold: builds the cached band image

@@ -151,7 +151,7 @@ test('the audio engine choice is saved to disk and handed to the next page load'
 	assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { choice: 'webaudio' });
 });
 
-test('a navigation to an untrusted URL is refused and the page stays put', async () => {
+test('will-navigate blocks off-origin main-frame navigation and keeps one BrowserWindow', async () => {
 	const before = page.url();
 	// Not loopback, so not trusted; TEST-NET-1, so nothing real is contacted.
 	await page.evaluate(() => {
@@ -160,6 +160,7 @@ test('a navigation to an untrusted URL is refused and the page stays put', async
 	assert.ok(await waitFor(() => fs.readFileSync(shellLog, 'utf8').includes('refused navigation to http://192.0.2.1/')));
 	await page.waitForTimeout(500);
 	assert.equal(page.url(), before);
+	assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
 });
 
 test('an untrusted page gets no globals and no bridge', async () => {

@@ -53,8 +53,8 @@ def _nml(entries: list[str], playlists: str = "") -> str:
 
 
 def _entry(audio: Path, *, title: str, bpm: str = "", key: str = "", ranking: str = "",
-           comment: str = "", playcount: str = "", cues: str = "") -> str:
-    info = f'<INFO RANKING="{ranking}" COMMENT="{comment}" PLAYCOUNT="{playcount}" PLAYTIME="200"/>'
+           comment: str = "", playcount: str = "", playtime: str = "200", cues: str = "") -> str:
+    info = f'<INFO RANKING="{ranking}" COMMENT="{comment}" PLAYCOUNT="{playcount}" PLAYTIME="{playtime}"/>'
     tempo = f'<TEMPO BPM="{bpm}" BPM_QUALITY="100.000000"/>' if bpm else ""
     musical = f'<MUSICAL_KEY VALUE="{key}"/>' if key else ""
     return (
@@ -313,6 +313,209 @@ def test_the_command_line_dry_runs_by_default_and_writes_with_write(
     assert vendor.main(["traktor", "--source", str(tmp_path / "missing.nml"), "--db", str(state_db_path)]) == 1
 
 
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_the_summary_counts_what_the_reader_could_not_carry_over(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] the app's reader drops a value [then] the import summary counts it by kind, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    b = _wav(tmp_path / "music" / "Invented Tune Two.wav", frames=2)
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([
+        _entry(a, title="Invented Tune One", bpm="124.0"),
+        _entry(b, title="Invented Tune Two", bpm="not-a-number"),
+    ]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    out = capsys.readouterr().out
+    assert "not carried over by the reader: 1" in out
+    assert "1  bpm dropped: unparseable TEMPO @BPM 'not-a-number'" in out
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_key_rating_playtime_and_playcount_losses_are_counted(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a Traktor key, rating, play time or play count cannot be read [then] each is counted as
+    dropped, and readable ones are not, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    b = _wav(tmp_path / "music" / "Invented Tune Two.wav", frames=2)
+    c = _wav(tmp_path / "music" / "Invented Tune Three.wav", frames=3)
+    huge = "9" * 309  # an integer too large to divide as a float, or to store
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([
+        # control: every value readable, so nothing is counted for this track
+        _entry(a, title="Invented Tune One", key="21", ranking="204", playcount="3", playtime="200"),
+        _entry(b, title="Invented Tune Two", key="99", ranking="lots", playcount="many", playtime="inf"),
+        # oversized integers are counted, never raised out of the import
+        _entry(c, title="Invented Tune Three", ranking=huge, playcount=str(2**64), playtime="1e100"),
+    ]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    out = capsys.readouterr().out
+    assert "not carried over by the reader: 7" in out
+    assert "1  duration dropped: unparseable INFO @PLAYTIME '1e100'" in out
+    assert f"1  rating dropped: unparseable INFO @RANKING {huge!r}" in out
+    assert f"1  play_count dropped: unparseable INFO @PLAYCOUNT '{2**64}'" in out
+    assert "1  key dropped: unreadable MUSICAL_KEY @VALUE '99'" in out
+    assert "1  rating dropped: unparseable INFO @RANKING 'lots'" in out
+    assert "1  duration dropped: unparseable INFO @PLAYTIME 'inf'" in out
+    assert "1  play_count dropped: unparseable INFO @PLAYCOUNT 'many'" in out
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_negative_play_times_play_counts_and_cue_starts_are_counted_not_stored(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a Traktor PLAYTIME, PLAYCOUNT or CUE_V2 START is negative [then] it is counted as dropped
+    and never stored as a negative duration, count or position, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    nml = tmp_path / "collection.nml"
+    cues = (
+        '<CUE_V2 NAME="Negative" DISPL_ORDER="0" TYPE="0" START="-0.4" LEN="0" REPEATS="-1" HOTCUE="0"/>'
+        '<CUE_V2 NAME="Kept" DISPL_ORDER="0" TYPE="0" START="1000.0" LEN="0" REPEATS="-1" HOTCUE="1"/>'
+    )
+    nml.write_text(_nml([_entry(a, title="Invented Tune One", bpm="-1e-999", playcount="-1", playtime="-0.0004", cues=cues)]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path), "--write"]) == 0
+    out = capsys.readouterr().out
+    assert "1  bpm dropped: unparseable TEMPO @BPM '-1e-999'" in out
+    assert "1  duration dropped: unparseable INFO @PLAYTIME '-0.0004'" in out
+    assert "1  play_count dropped: unparseable INFO @PLAYCOUNT '-1'" in out
+    assert "1  cue_points.position dropped: unparseable CUE_V2 @START" in out
+    library, _ = vendor.read_vendor_library("traktor", nml)
+    (track,) = library.tracks
+    assert track.bpm is None
+    assert track.duration_ms is None
+    assert track.play_count == 0
+    assert {c.name for c in track.cues} == {"Kept"}
+    assert all(c.position_ms >= 0 for c in track.cues)
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_a_bpm_that_underflows_to_zero_is_counted_not_stored(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a Traktor TEMPO @BPM is nonzero but too small to keep as a float [then] it is counted as dropped, not stored
+    as a zero BPM, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([_entry(a, title="Invented Tune One", bpm="1e-999")]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    assert "1  bpm dropped: unparseable TEMPO @BPM '1e-999'" in capsys.readouterr().out
+    library, _ = vendor.read_vendor_library("traktor", nml)
+    (track,) = library.tracks
+    assert track.bpm is None
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_a_play_time_near_the_store_limit_keeps_its_exact_milliseconds(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] a Traktor PLAYTIME is a large but storable number of seconds [then] its milliseconds
+    are exact, not rounded across the store limit by a float, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([_entry(a, title="Invented Tune One", playtime="9223372036854775")]))
+    _ingest_nml(state_conn, nml)
+    (duration_ms,) = state_conn.execute(
+        "SELECT duration_ms FROM tracks WHERE stable_id = ?", (_sid_for(state_conn, a),)
+    ).fetchone()
+    assert duration_ms == 9223372036854775000
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_a_play_time_on_a_half_millisecond_rounds_to_even_not_by_float_error(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] a Traktor PLAYTIME is exactly half a millisecond past a whole one [then] it rounds half to even
+    on the exact value, so 68526245.2705 s stores 68526245270 ms; a float stored ...271 from its error, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([_entry(a, title="Invented Tune One", playtime="68526245.2705")]))
+    _ingest_nml(state_conn, nml)
+    (duration_ms,) = state_conn.execute(
+        "SELECT duration_ms FROM tracks WHERE stable_id = ?", (_sid_for(state_conn, a),)
+    ).fetchone()
+    assert duration_ms == 68526245270
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_traktor_non_finite_bpm_and_location_less_entries_are_counted(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] a Traktor BPM is NaN or infinite, or an entry has no file location [then] each is counted
+    as dropped and no stand-in track is made, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Tune One.wav")
+    b = _wav(tmp_path / "music" / "Invented Tune Two.wav", frames=2)
+    c = _wav(tmp_path / "music" / "Invented Tune Three.wav", frames=3)
+    no_location = '<ENTRY TITLE="Invented Nowhere" ARTIST="Invented Artist"><INFO PLAYTIME="200"/></ENTRY>'
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([
+        _entry(a, title="Invented Tune One", bpm="124.0"),  # control: a finite BPM adds nothing
+        _entry(b, title="Invented Tune Two", bpm="nan"),
+        _entry(c, title="Invented Tune Three", bpm="inf"),
+        no_location,
+        no_location.replace("Invented Nowhere", "Invented Nowhere Two"),
+        # a partial LOCATION (volume or directory, no file) is no file location either
+        '<ENTRY TITLE="Invented Volume Only" ARTIST="Invented Artist"><LOCATION VOLUME="Macintosh HD"/></ENTRY>',
+        '<ENTRY TITLE="Invented Dir Only" ARTIST="Invented Artist"><LOCATION DIR="/:Invented/:" VOLUME="Macintosh HD"/></ENTRY>',
+    ]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    out = capsys.readouterr().out
+    assert "not carried over by the reader: 6" in out
+    assert "1  bpm dropped: unparseable TEMPO @BPM 'nan'" in out
+    assert "1  bpm dropped: unparseable TEMPO @BPM 'inf'" in out
+    assert "4  location dropped: collection entry has no file location" in out
+    # the dropped entries stay in the source total, not just the loss list
+    assert "entries in source:    7" in out
+    assert "dropped by reader:    4" in out
+    assert "entries in library:   3" in out
+    # an infinite cue START is counted, not raised out of the import
+    d = _wav(tmp_path / "music" / "Invented Tune Four.wav", frames=4)
+    cue_nml = tmp_path / "cues.nml"
+    broken_cues = (
+        _cues_xml()
+        .replace('START="32000.0"', 'START="inf"')
+        .replace(' START="64000.0"', "")
+        .replace('START="1000.0"', 'START="1e300"')
+    )
+    cue_nml.write_text(_nml([_entry(d, title="Invented Tune Four", cues=broken_cues)]))
+    # written for real, so an oversized value would have to fit the store
+    assert vendor.main(["traktor", "--source", str(cue_nml), "--db", str(state_db_path), "--write"]) == 0
+    cue_out = capsys.readouterr().out
+    assert "2  cue_points.position dropped: unparseable CUE_V2 @START" in cue_out  # inf and 1e300
+    assert "1  cue_points.position dropped: CUE_V2 has no @START" in cue_out
+    # the dropped cues are gone, not placed at 0; their siblings are kept
+    cue_library, _ = vendor.read_vendor_library("traktor", cue_nml)
+    (cue_track,) = cue_library.tracks
+    assert not {"Drop", "Roll", "Mix in"} & {c.name for c in cue_track.cues}
+    assert 0 not in {c.position_ms for c in cue_track.cues}
+    assert "AutoGrid" in {c.name for c in cue_track.cues}
+    library, _ = vendor.read_vendor_library("traktor", nml)
+    assert sorted(t.title for t in library.tracks) == ["Invented Tune One", "Invented Tune Three", "Invented Tune Two"]
+
+    # Control: a clean library says so with a zero, not by printing nothing.
+    nml.write_text(_nml([_entry(a, title="Invented Tune One", bpm="124.0")]))
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    clean_out = capsys.readouterr().out
+    assert "not carried over by the reader: 0" in clean_out
+    assert "entries in source:    1" in clean_out and "dropped by reader:    0" in clean_out
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_rekordbox_xml_track_with_no_location_is_counted_as_not_carried_over(tmp_path: Path) -> None:
+    """[if] a rekordbox XML track has no file location [then] the read counts it, [else stop]."""
+    xml = tmp_path / "rekordbox.xml"
+    xml.write_text(
+        '<DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="2">'
+        '<TRACK TrackID="1" Name="Invented Local" Location="file://localhost/Volumes/Invented/a.mp3"/>'
+        '<TRACK TrackID="2" Name="Invented Stream" Location=""/>'
+        "</COLLECTION></DJ_PLAYLISTS>"
+    )
+    read = vendor.read_vendor("rekordbox-xml", xml)
+    assert len(read.library.tracks) == 1
+    assert read.reader_notes == {"location dropped: streaming or blank": 1}
+    assert read.entries_dropped == 1  # kept in the source total
+
+
 @pytest.mark.requirement("DJIMPORT-01")
 def test_serato_library_imports_bpm_key_and_crates(state_conn, tmp_path: Path) -> None:
     """[if] a Serato library is imported [then] BPM, key and crate order land, [else stop]."""
@@ -354,6 +557,28 @@ def test_serato_library_imports_bpm_key_and_crates(state_conn, tmp_path: Path) -
         "WHERE p.vendor = 'serato' AND p.name = 'Invented Crate' ORDER BY m.order_key"
     )]
     assert members == [sid_b, sid_a]
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_serato_row_with_no_file_path_is_counted_as_not_carried_over(tmp_path: Path) -> None:
+    """[if] a Serato database row has no file path [then] the read counts it and keeps it out, [else stop]."""
+    a = _wav(tmp_path / "music" / "Invented Serato Blank Path.wav")
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=str(a.relative_to(drive)), title="Invented Serato Blank Path"),
+                Track(track_id="s2", file_path="", title="Invented Serato Blank Row"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert [t.title for t in read.library.tracks] == ["Invented Serato Blank Path"]
+    assert read.reader_notes == {"location dropped: database row has no file path": 1}
+    assert read.entries_dropped == 1  # kept in the source total
 
 
 @pytest.mark.requirement("DJIMPORT-04")
@@ -578,6 +803,402 @@ def test_rekordbox_xml_never_replaces_master_db_values_or_cues(state_conn, tmp_p
     assert report.cue_sets_written == 0
 
 
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_serato_mp3_whose_tag_cannot_be_read_is_counted_not_silent(tmp_path: Path) -> None:
+    """[if] a Serato track's MP3 has an ID3 tag that does not parse [then] the read counts its cues as
+    dropped, and a readable MP3 adds nothing, [else stop]."""
+    music = tmp_path / "music"
+    music.mkdir()
+    broken = music / "Invented Broken.mp3"
+    # An ID3v2.3 header claiming a 4096-byte tag in a file that ends early.
+    broken.write_bytes(b"ID3\x03\x00\x00\x00\x00\x20\x00" + b"\x00" * 16)
+    clean = music / "Invented Clean.mp3"
+    clean.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 16)  # no tag at all
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(broken), title="Invented Broken"),
+                Track(track_id="s2", file_path=rel(clean), title="Invented Clean"),
+            ),
+            playlists=(),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert len(read.library.tracks) == 2
+    assert read.reader_notes == {"cues dropped: Serato GEOB frames could not be read (Id3Error)": 1}
+
+
+def _id3_with_markers2(payload: bytes, *, format_flags: int = 0, sealed_body: bytes | None = None) -> bytes:
+    """An ID3v2.3 tag holding one ``Serato Markers2`` GEOB frame, then an MPEG frame header.
+
+    ``sealed_body`` replaces the frame body as stored, for a frame whose
+    ``format_flags`` mark it compressed or encrypted.
+    """
+    body = b"\x00" + b"application/octet-stream\x00" + b"\x00" + b"Serato Markers2\x00" + payload
+    if sealed_body is not None:
+        body = sealed_body
+    frame = b"GEOB" + len(body).to_bytes(4, "big") + b"\x00" + bytes([format_flags]) + body
+    size = len(frame)
+    syncsafe = bytes(((size >> shift) & 0x7F) for shift in (21, 14, 7, 0))
+    return b"ID3\x03\x00\x00" + syncsafe + frame + b"\xff\xfb\x90\x00" + b"\x00" * 16
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_serato_markers2_frame_that_cannot_be_decoded_is_counted(tmp_path: Path) -> None:
+    """[if] a Serato MP3's tag reads but its Markers2 frame cannot be decoded [then] its cues are
+    counted as dropped, and a decodable empty frame adds nothing, [else stop]."""
+    from apps.adapters.serato.geob import Markers2, encode_markers2, read_geob_frames
+
+    music = tmp_path / "music"
+    music.mkdir()
+    garbled = music / "Invented Garbled.mp3"
+    garbled.write_bytes(_id3_with_markers2(b"\x02\x09not a frame this codec knows"))
+    decodable = music / "Invented Decodable.mp3"
+    decodable.write_bytes(_id3_with_markers2(encode_markers2(Markers2())))
+    # control: the tag itself reads in both files, so only the frame differs
+    assert [name for name, _ in read_geob_frames(garbled, strict=True).markers2.unknown_tags] == ["__raw__"]
+    assert read_geob_frames(decodable, strict=True).markers2.unknown_tags == ()
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(garbled), title="Invented Garbled"),
+                Track(track_id="s2", file_path=rel(decodable), title="Invented Decodable"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert len(read.library.tracks) == 2
+    assert read.reader_notes == {"cues dropped: Serato Markers2 frame could not be decoded": 1}
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_serato_markers2_cue_too_short_to_read_is_counted(tmp_path: Path) -> None:
+    """[if] a decodable Markers2 frame holds a CUE entry too short for its position [then] that cue is
+    counted as dropped, and a whole CUE adds nothing, [else stop]."""
+    from apps.adapters.serato.geob import Markers2, Markers2Cue, encode_markers2, read_geob_frames
+
+    music = tmp_path / "music"
+    music.mkdir()
+    short = music / "Invented Short Cue.mp3"
+    short.write_bytes(_id3_with_markers2(encode_markers2(Markers2(unknown_tags=(("CUE", b"\x00" * 5),)))))
+    whole = music / "Invented Whole Cue.mp3"
+    whole.write_bytes(_id3_with_markers2(encode_markers2(Markers2(
+        cues=(Markers2Cue(index=0, position_ms=1000, color_rgb=0xCC0000, name="", kind="hot"),),
+    ))))
+    # control: the short entry survives decoding as an unread CUE, the whole one as a cue
+    assert [name for name, _ in read_geob_frames(short, strict=True).markers2.unknown_tags] == ["CUE"]
+    assert [c.position_ms for c in read_geob_frames(whole, strict=True).markers2.cues] == [1000]
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(short), title="Invented Short Cue"),
+                Track(track_id="s2", file_path=rel(whole), title="Invented Whole Cue"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert read.reader_notes == {"cues dropped: Serato Markers2 CUE entry too short to read": 1}
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_serato_markers2_frame_that_ends_inside_an_entry_is_counted(tmp_path: Path) -> None:
+    """[if] a Markers2 entry declares more bytes than its frame holds, or the frame is empty, [then]
+    the track's cues are counted as dropped, and a whole frame adds nothing, [else stop]."""
+    import base64
+    import struct
+
+    from apps.adapters.serato.geob import Markers2, Markers2Cue, encode_markers2, read_geob_frames
+
+    whole_frame = encode_markers2(Markers2(
+        cues=(Markers2Cue(index=0, position_ms=1000, color_rgb=0xCC0000, name="", kind="hot"),),
+    ))
+    # a CUE entry whose declared length runs past the end of the body
+    body = b"CUE\x00" + struct.pack(">I", 64) + b"\x00" * 8
+    cut_frame = b"\x01\x01" + base64.b64encode(b"\x01\x01" + body).rstrip(b"=")
+    music = tmp_path / "music"
+    music.mkdir()
+    cut = music / "Invented Cut Frame.mp3"
+    cut.write_bytes(_id3_with_markers2(cut_frame))
+    empty = music / "Invented Empty Frame.mp3"
+    empty.write_bytes(_id3_with_markers2(b""))  # not even the 01 01 header
+    # header only: the outer 01 01, or an inner 01 01 with no entry list or
+    # NUL, or a whole BPMLOCK entry with no NUL after it
+    no_end = b"BPMLOCK\x00" + struct.pack(">I", 1) + b"\x00"
+    unended = {
+        "Invented Outer Header Only": b"\x01\x01",
+        "Invented Inner Header Only": b"\x01\x01" + base64.b64encode(b"\x01\x01").rstrip(b"="),
+        "Invented No Terminator": b"\x01\x01" + base64.b64encode(b"\x01\x01" + no_end).rstrip(b"="),
+    }
+    for title, frame in unended.items():
+        (music / f"{title}.mp3").write_bytes(_id3_with_markers2(frame))
+    whole = music / "Invented Whole Frame.mp3"
+    whole.write_bytes(_id3_with_markers2(whole_frame))
+    # control: the parser flags the cut and empty frames and not the whole one
+    assert read_geob_frames(cut, strict=True).markers2.truncated is True
+    assert read_geob_frames(empty, strict=True).markers2.truncated is True
+    for title in unended:
+        assert read_geob_frames(music / f"{title}.mp3", strict=True).markers2.truncated is True, title
+    assert read_geob_frames(whole, strict=True).markers2.truncated is False
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(cut), title="Invented Cut Frame"),
+                Track(track_id="s2", file_path=rel(whole), title="Invented Whole Frame"),
+                Track(track_id="s3", file_path=rel(empty), title="Invented Empty Frame"),
+                *(
+                    Track(track_id=f"u{n}", file_path=rel(music / f"{title}.mp3"), title=title)
+                    for n, title in enumerate(unended)
+                ),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert read.reader_notes == {
+        "cues dropped: Serato Markers2 frame ends inside an entry": 1,
+        "cues dropped: Serato Markers2 frame is empty": 1,
+        "cues dropped: Serato Markers2 frame has no entry list": 2,
+        "cues dropped: Serato Markers2 frame is missing its entry-list terminator": 1,
+    }
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_sealed_serato_geob_frame_is_counted(tmp_path: Path) -> None:
+    """[if] an MP3's GEOB frame is encrypted, so it is never decoded, [then] the track's cues are
+    counted as dropped, and a plain frame adds nothing, [else stop]."""
+    from apps.adapters.serato.geob import Markers2, encode_markers2, read_geob_frames
+
+    music = tmp_path / "music"
+    music.mkdir()
+    sealed = music / "Invented Sealed Frame.mp3"
+    # ID3v2.3 encryption flag (0x40): the body opens with a method byte
+    sealed.write_bytes(_id3_with_markers2(b"", format_flags=0x40, sealed_body=b"\x80" + b"\x5a" * 40))
+    plain = music / "Invented Plain Frame.mp3"
+    plain.write_bytes(_id3_with_markers2(encode_markers2(Markers2())))
+    # control: the tag reads in both files; only the sealed one has a frame the reader skips
+    assert read_geob_frames(sealed, strict=True).sealed_geob_frames == 1
+    assert read_geob_frames(plain, strict=True).sealed_geob_frames == 0
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(sealed), title="Invented Sealed Frame"),
+                Track(track_id="s2", file_path=rel(plain), title="Invented Plain Frame"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert len(read.library.tracks) == 2
+    assert read.reader_notes == {"cues dropped: ID3 GEOB frame is compressed or encrypted": 1}
+
+
+def _id3_with_markers2_frames(*payloads: bytes) -> bytes:
+    """An ID3v2.3 tag repeating the ``Serato Markers2`` GEOB frame, once per payload."""
+    frames = b""
+    for payload in payloads:
+        body = b"\x00" + b"application/octet-stream\x00" + b"\x00" + b"Serato Markers2\x00" + payload
+        frames += b"GEOB" + len(body).to_bytes(4, "big") + b"\x00\x00" + body
+    syncsafe = bytes(((len(frames) >> shift) & 0x7F) for shift in (21, 14, 7, 0))
+    return b"ID3\x03\x00\x00" + syncsafe + frames + b"\xff\xfb\x90\x00" + b"\x00" * 16
+
+
+@pytest.mark.requirement("DJIMPORT-04")
+def test_a_serato_file_that_cannot_be_read_stops_the_import_rather_than_being_counted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] an existing Serato audio file cannot be read for a filesystem reason [then] the read raises,
+    so the import stops, and it is not counted as a lost tag, [else stop]."""
+    from apps.adapters.serato import adapter as serato_adapter
+    from apps.open_dj import AdapterReport
+
+    def unreadable(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError(13, "Invented permission denied")
+
+    monkeypatch.setattr(serato_adapter, "read_geob_frames", unreadable)
+    music = tmp_path / "music"
+    music.mkdir()
+    locked = music / "Invented Locked.mp3"
+    locked.write_bytes(b"ID3")
+    with pytest.raises(PermissionError):
+        serato_adapter.SeratoAdapter()._read_geob_for_track(str(locked), "s1", AdapterReport())
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_lossy_markers2_frame_shadowed_by_a_later_one_is_counted(tmp_path: Path) -> None:
+    """[if] an earlier, undecodable copy of a repeated Markers2 frame [then] its loss is counted, and two good copies add nothing, [else stop]."""
+    from apps.adapters.serato.geob import Markers2, Markers2Cue, encode_markers2, read_geob_frames
+
+    good = encode_markers2(Markers2(cues=(Markers2Cue(index=0, position_ms=1000, color_rgb=0xCC0000, name=""),)))
+    music = tmp_path / "music"
+    music.mkdir()
+    shadowed = music / "Invented Shadowed Frame.mp3"
+    shadowed.write_bytes(_id3_with_markers2_frames(b"\x02\x09not a frame this codec knows", good))
+    doubled = music / "Invented Doubled Frame.mp3"
+    doubled.write_bytes(_id3_with_markers2_frames(good, good))
+    # control: both tags read, and the last Markers2 copy in each decodes with its cue
+    for path in (shadowed, doubled):
+        bundle = read_geob_frames(path, strict=True)
+        assert [c.position_ms for c in bundle.markers2.cues] == [1000]
+        assert len(bundle.shadowed_markers2) == 1
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(shadowed), title="Invented Shadowed Frame"),
+                Track(track_id="s2", file_path=rel(doubled), title="Invented Doubled Frame"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert len(read.library.tracks) == 2
+    assert read.reader_notes == {"cues dropped: Serato Markers2 frame could not be decoded": 1}
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_djay_cue_list_that_stops_parsing_is_counted() -> None:
+    """[if] a djay cue or loop array names more elements than parse, or holds one with no usable
+    position, [then] it is counted as unreadable, and a whole one is not, [else stop]."""
+    import struct
+
+    from apps.shared.djay_db import parse_cues_with_loss
+    from apps.shared.normalised import NormalisedCue
+    from apps.sync.djay_writer import encode_cue_array
+
+    def blob(array: bytes) -> bytes:
+        return b"TSAF" + b"\x00" * 12 + b"\x08cuePoints\x00" + array + b"\x00"
+
+    array = encode_cue_array([
+        NormalisedCue(position_msec=1000, kind="hot", index=0),
+        NormalisedCue(position_msec=2000, kind="hot", index=1),
+    ])
+    cues, lost = parse_cues_with_loss(blob(array))
+    assert (len(cues), lost) == (2, 0)  # control: a whole array reads in full
+    overcounted = b"\x0b" + struct.pack("<I", 3) + array[5:]  # says 3, holds 2
+    assert parse_cues_with_loss(blob(overcounted))[1] == 1
+    assert parse_cues_with_loss(blob(b"\x05"))[1] == 1  # named, but not an array
+    assert array.count(b"position") == 2
+    no_position = array.replace(b"position", b"positiom", 1)  # first cue walks but has no position
+    cues, lost = parse_cues_with_loss(blob(no_position))
+    assert ([c.position_msec for c in cues], lost) == ([2000], 1)
+    one_second = struct.pack("<f", 1.0)
+    assert array.count(one_second) == 1
+    # a non-finite position, a negative one (even one that rounds to zero), or a float32 too large to store in ms,
+    # is rejected, not raised
+    for bad in (float("inf"), float("-inf"), float("nan"), 3.0e38, -1.0, -0.0004):
+        cues, lost = parse_cues_with_loss(blob(array.replace(one_second, struct.pack("<f", bad))))
+        assert ([c.position_msec for c in cues], lost) == ([2000], 1)
+    assert parse_cues_with_loss(b"TSAF" + b"\x00" * 12)[1] == 0  # no cue list at all
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_djay_cue_array_cut_short_inside_its_last_element_is_counted() -> None:
+    """[if] a djay cue array ends inside its last element, before the element terminator [then] the array is counted as
+    unreadable, while a whole array is not, [else stop]."""
+    from apps.shared.djay_db import parse_cues_with_loss
+    from apps.shared.normalised import NormalisedCue
+    from apps.sync.djay_writer import encode_cue_array
+
+    array = encode_cue_array([
+        NormalisedCue(position_msec=1000, kind="hot", index=0),
+        NormalisedCue(position_msec=2000, kind="hot", index=1),
+    ])
+
+    def blob(arr: bytes) -> bytes:
+        return b"TSAF" + b"\x00" * 12 + b"\x08cuePoints\x00" + arr
+
+    assert parse_cues_with_loss(blob(array))[1] == 0  # control: a whole array reads in full
+    for cut in range(1, 8):  # the element terminator, then the key and value bytes before it
+        assert parse_cues_with_loss(blob(array[:-cut]))[1] == 1, cut
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_djay_loop_whose_length_cannot_be_read_is_a_lost_loop() -> None:
+    """[if] a djay loop has a length that is not a positive finite number the store can hold [then] the loop is
+    counted as unreadable, not stored without a length, [else stop]."""
+    from apps.shared.djay_db import _CUE_CLASS, _LOOP_CLASS, _fields_to_cue
+
+    loop = {"position": 1.0, "class": _LOOP_CLASS.decode("utf-8")}
+    assert _fields_to_cue({**loop, "length": 2.5}).loop_length_msec == 2500  # control: a readable length is kept
+    for bad in ("abc", float("nan"), float("inf"), 0.0, -1.0, -0.0004, 0.0004, 1e300):
+        assert _fields_to_cue({**loop, "length": bad}) is None, bad
+    assert _fields_to_cue(loop) is None  # a loop with no length at all is lost too
+    cue = {"position": 1.0, "class": _CUE_CLASS.decode("utf-8"), "index": 0}
+    assert _fields_to_cue(cue).kind == "hot"  # control: the cue class reads
+    assert _fields_to_cue({**cue, "class": "ADCMediaItemSomethingElse"}) is None  # an unknown class is no cue
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_each_sealed_serato_geob_frame_in_one_tag_is_counted(tmp_path: Path) -> None:
+    """[if] one MP3's tag holds two encrypted GEOB frames [then] each is counted as a dropped loss, [else stop]."""
+    from apps.adapters.serato.geob import read_geob_frames
+
+    sealed_body = b"\x80" + b"\x5a" * 40
+    frame = b"GEOB" + len(sealed_body).to_bytes(4, "big") + b"\x00" + bytes([0x40]) + sealed_body
+    frames = frame + frame
+    size = len(frames)
+    syncsafe = bytes(((size >> shift) & 0x7F) for shift in (21, 14, 7, 0))
+    music = tmp_path / "music"
+    music.mkdir()
+    two = music / "Invented Two Sealed Frames.mp3"
+    two.write_bytes(b"ID3\x03\x00\x00" + syncsafe + frames + b"\xff\xfb\x90\x00" + b"\x00" * 16)
+    # control: the tag reads, and both frames are seen as sealed
+    assert read_geob_frames(two, strict=True).sealed_geob_frames == 2
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = str(two.relative_to(drive))
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(Track(track_id="s1", file_path=rel, title="Invented Two Sealed Frames"),),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert read.reader_notes == {"cues dropped: ID3 GEOB frame is compressed or encrypted": 2}
+
+
+def test_only_the_djimport_6039_loss_kinds_are_counted() -> None:
+    """[if] an adapter warns about a kind DJIMPORT-6039 does not list [then] it is not counted, [else stop]."""
+    from apps.open_dj.schema import AdapterReport
+
+    report = AdapterReport()
+    report.warn(field="bpm", track_id="1", action="dropped", reason="unparseable BPM 'x'")
+    report.warn(field="playlist_entry", track_id="1", action="dropped", reason="crate has no row")
+    report.warn(field="cues", track_id="1", action="dropped", reason="ID3 GEOB frame is compressed or encrypted")
+
+    assert vendor._count_warnings(report, vendor._SERATO_READER_LOSSES) == {
+        "bpm dropped: unparseable BPM 'x'": 1,
+        "cues dropped: ID3 GEOB frame is compressed or encrypted": 1,
+    }
+
+
 @pytest.mark.requirement("DJIMPORT-06")
 def test_rekordbox_xml_playlists_whose_names_contain_a_slash_do_not_collide(state_conn, tmp_path: Path) -> None:
     """[if] folder A holds playlist B/C and folder A/B holds playlist C [then] both keep their own members, [else stop]."""
@@ -632,3 +1253,67 @@ def test_the_playlist_key_escapes_only_for_rekordbox_xml() -> None:
     """[if] a playlist path has a slash [then] only rekordbox-xml escapes it, so other vendors keep their ids, [else stop]."""
     assert vendor._playlist_key("traktor", ("A", "B/C")) == "A/B/C"
     assert vendor._playlist_key("rekordbox-xml", ("A", "B/C")) == "A/B\\/C"
+
+
+def _serato32(value: int) -> bytes:
+    """serato-tags' documented serato32 encoder, the inverse of the codec's decoder."""
+    a, b, c = (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
+    return bytes((a >> 5, ((b >> 6) | (a << 2)) & 0x7F, ((c >> 7) | (b << 1)) & 0x7F, c & 0x7F))
+
+
+def _serato_markers_legacy(cue0_ms: int, cue0_rgb: int) -> bytes:
+    """A ``Serato Markers_`` payload that sets hot cue 0 only; every other slot is unset."""
+    unset_start_end = b"\x7f" * 10
+    set_cue = b"\x00" + _serato32(cue0_ms) + b"\x7f" * 5 + b"\x00\x7f\x7f\x7f\x7f\x7f" + _serato32(cue0_rgb) + bytes((1, 0))
+    unset_cue = unset_start_end + b"\x00\x7f\x7f\x7f\x7f\x7f" + _serato32(0) + bytes((1, 0))
+    unset_loop = unset_start_end + b"\x00\x7f\x7f\x7f\x7f\x7f" + _serato32(0) + bytes((3, 0))
+    entries = [set_cue] + [unset_cue] * 4 + [unset_loop] * 9
+    return b"\x02\x05" + (14).to_bytes(4, "big") + b"".join(entries) + b"\x07\x7f\x7f\x7f"
+
+
+def _id3_with_serato_geob_frames(frames: tuple[tuple[str, bytes], ...]) -> bytes:
+    """An ID3v2.3 tag holding one GEOB frame per (description, payload), then an MPEG frame header."""
+    body_frames = b""
+    for desc, payload in frames:
+        body = b"\x00" + b"application/octet-stream\x00" + b"\x00" + desc.encode() + b"\x00" + payload
+        body_frames += b"GEOB" + len(body).to_bytes(4, "big") + b"\x00\x00" + body
+    size = len(body_frames)
+    syncsafe = bytes(((size >> shift) & 0x7F) for shift in (21, 14, 7, 0))
+    return b"ID3\x03\x00\x00" + syncsafe + body_frames + b"\xff\xfb\x90\x00" + b"\x00" * 16
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_serato_cues_survive_read_and_markers_legacy_overrides_markers2_position(tmp_path: Path) -> None:
+    """[if] a Serato MP3 holds Markers2 and Markers_ [then] the cue Markers_ sets takes its position and
+    the cue is kept, and a file with Markers2 alone keeps its cue, [else stop]."""
+    from apps.adapters.serato.geob import Markers2, Markers2Cue, encode_markers2
+
+    music = tmp_path / "music"
+    music.mkdir()
+    markers2 = encode_markers2(Markers2(cues=(
+        Markers2Cue(index=0, position_ms=1_000, color_rgb=0xCC0000, name="Intro", kind="hot"),
+    )))
+    both = music / "Invented Legacy Wins.mp3"
+    both.write_bytes(_id3_with_serato_geob_frames((
+        ("Serato Markers2", markers2),
+        ("Serato Markers_", _serato_markers_legacy(1_500, 0xCC8800)),
+    )))
+    alone = music / "Invented Markers2 Only.mp3"
+    alone.write_bytes(_id3_with_serato_geob_frames((("Serato Markers2", markers2),)))
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(both), title="Invented Legacy Wins"),
+                Track(track_id="s2", file_path=rel(alone), title="Invented Markers2 Only"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    by_title = {t.title: t for t in read.library.tracks}
+    assert [(c.name, c.position_ms) for c in by_title["Invented Legacy Wins"].cues] == [("Intro", 1_500)]
+    assert [(c.name, c.position_ms) for c in by_title["Invented Markers2 Only"].cues] == [("Intro", 1_000)]

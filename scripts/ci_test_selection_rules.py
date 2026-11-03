@@ -51,6 +51,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from fnmatch import fnmatch
 from functools import cached_property
 from pathlib import Path, PurePosixPath
@@ -927,6 +928,13 @@ class SourceTokens:
 def _source_tokens(text: str) -> SourceTokens:
     written, prefixes = _tokens_of(text)
     return SourceTokens(text, frozenset(written), frozenset(prefixes))
+
+
+@lru_cache(maxsize=8192)
+def _test_source_snapshot(root_str: str, test_rel: str, mtime_ns: int) -> tuple[SourceTokens, str]:
+    """Read and tokenize one test module; keyed by mtime so edits invalidate without a restart."""
+    text = (Path(root_str) / test_rel).read_text(encoding="utf-8", errors="replace")
+    return _source_tokens(text), text
 
 
 def _tokens_of(text: str) -> tuple[set[str], set[str]]:
@@ -1853,9 +1861,11 @@ def _select_by_source(
     root: Path,
     selection: Selection,
 ) -> None:
+    root_str = str(root)
     for test in universe:
-        text = (root / test).read_text(encoding="utf-8", errors="replace")
-        if names.named_by(_source_tokens(text)):
+        stat = (root / test).stat()
+        tokens, text = _test_source_snapshot(root_str, test, stat.st_mtime_ns)
+        if names.named_by(tokens):
             selection.add(test, "named reference", NAMED_REFERENCE_DISTANCE)
         for coupling in couplings:
             if coupling.matches(text):

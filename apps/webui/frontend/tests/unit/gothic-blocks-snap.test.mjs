@@ -78,6 +78,10 @@ function rowBars(win, frame = {}) {
 	const rects = [];
 	const base = {
 		fillStyle: '',
+		// Block bars paint with fillRect (WebKit antialiases a Path2D fill of 2px bars); other marks use paths.
+		fillRect(x, y, w, h) {
+			if (this.fillStyle === mono) rects.push({ x, y, w, h });
+		},
 		fill(path) {
 			if (this.fillStyle === mono) rects.push(...path.rects);
 		}
@@ -86,7 +90,7 @@ function rowBars(win, frame = {}) {
 	const durationMs = win.durS * 1000;
 	render.drawWaveRow(ctx, {
 		widthCss: ROW_W, heightCss: ROW_H, positionMs: durationMs / 2, durationMs, anlz: anlzOf(win.detail, win.beats),
-		palette, pitch: win.durS / render.WAVE_WINDOW_S, loop: null, waveformDesign: 'blocks', ...frame
+		palette, pitch: win.durS / render.WAVE_WINDOW_S, windowS: render.WAVE_WINDOW_S, playheadFrac: 0.5, loop: null, waveformDesign: 'blocks', ...frame
 	});
 	return rects.sort((a, b) => a.x - b.x);
 }
@@ -277,7 +281,11 @@ test('before the lazy snapper lands the cached band image holds the fixed pitch,
 	const mono = '#cfcfcf';
 	const images = [];
 	const recordingCtx = (rects) => {
-		const base = { fillStyle: '', fill(path) { if (this.fillStyle === mono) rects.push(...path.rects); } };
+		const base = {
+			fillStyle: '',
+			fillRect(x, y, w, h) { if (this.fillStyle === mono) rects.push({ x, y, w, h }); },
+			fill(path) { if (this.fillStyle === mono) rects.push(...path.rects); }
+		};
 		return new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
 	};
 	const hadDocument = 'document' in globalThis;
@@ -443,9 +451,10 @@ test('a snapped bar across a band-cache tile edge paints the same columns as the
 	const palette = { low: '#1', mid: '#2', high: '#3', mono: '#4' };
 	const columns = (x0, x1) => {
 		const cov = new Uint8Array(W);
-		const ctx = { fillStyle: '', globalAlpha: 1, fill: (path) => {
-			for (const r of path.rects) for (let x = Math.max(0, r.x); x < Math.min(x1 - x0, r.x + r.w); x++) cov[x0 + x] = 1;
-		} };
+		const cover = (r) => {
+			for (let x = Math.max(0, r.x); x < Math.min(x1 - x0, r.x + r.w); x++) cov[x0 + x] = 1;
+		};
+		const ctx = { fillStyle: '', globalAlpha: 1, fill: (path) => path.rects.forEach(cover), fillRect: (x, y, w, h) => cover({ x, y, w, h }) };
 		render.__test_drawBands(ctx, waveform, 1, W, W, ROW_H, palette, 'blocks', blocks, 0, {
 			x0, x1, blockColumns: { heights, shares: null, edges }
 		});
@@ -456,4 +465,31 @@ test('a snapped bar across a band-cache tile edge paints the same columns as the
 	const tiled = columns(0, tile).map((v, x) => v | right[x]);
 	assert.deepEqual(Array.from(tiled), Array.from(whole));
 	assert.equal(whole[tile - 1] + whole[tile], 2, 'CONTROL: the straddling bar covers both sides of the edge');
+});
+
+test('on a thinned grid only painted beat lines anchor, and each keeps its edge (Sol P1 4426841369 on PR #6534)', async () => {
+	const math = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts');
+	// 1.5 px per beat: the grid keeps every 4th bar, and the hidden beat before
+	// each kept line rounds to 1 px before it, inside the anchor merge gap, where
+	// the earlier anchor wins: anchoring it would take the line's edge away.
+	const pxPerS = 3;
+	const beats = Array.from({ length: 480 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: 1 + i * 0.5 }));
+	const W = Math.ceil(241 * pxPerS);
+	const anchors = Array.from(layout.beatAnchorsPx(beats, pxPerS));
+	assert.ok(anchors.length > 0 && anchors.length < beats.length / 4, `CONTROL: the grid thinned (${anchors.length} of ${beats.length})`);
+	const edges = new Set(layout.snappedBlockEdges(W, [], anchors));
+	// Every line a scrolled window paints starts a block, at the row's own origin.
+	for (const tLeft of [0, 17.3, 63.9, 150.25]) {
+		const origin = Math.round(tLeft * pxPerS);
+		const lines = math.visibleBeatLines(beats, tLeft, pxPerS, 96 * pxPerS, 40, false, origin);
+		assert.ok(lines.length > 0, `CONTROL: the window at ${tLeft} s paints lines`);
+		for (const l of lines) assert.ok(edges.has(l.x + origin), `the line at ${l.x + origin} px starts a block (window ${tLeft} s)`);
+	}
+	// Hidden beats bend nothing: kept lines sit 24 px apart (16 beats of 1.5 px),
+	// so between the first and last anchor every block keeps the fixed 3 px pitch.
+	for (let i = 1; i < anchors.length; i++) assert.equal(anchors[i] - anchors[i - 1], 24, 'CONTROL: kept lines 24 px apart');
+	const row = Array.from(layout.snappedBlockEdges(W, [], anchors)).filter((e) => e >= anchors[0] && e <= anchors.at(-1));
+	for (let b = 1; b < row.length; b++) assert.equal(row[b] - row[b - 1], 3, `fixed pitch at ${row[b - 1]} px`);
+	// Control: at deck zoom nothing thins, and every beat anchors.
+	assert.equal(layout.beatAnchorsPx(beats, 40).length, beats.length);
 });

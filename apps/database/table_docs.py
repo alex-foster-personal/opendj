@@ -152,6 +152,15 @@ TABLE_DOCS: dict[str, str] = {
         "verdict."
     ),
     # ----- v12 (FBSYNC-01, ADR-0013) ----------------------------------------
+    "playlist_section": "A visual separator inside a playlist or set; it does nothing functional.",
+    "tag_type": "A kind of tag (general, instrument, mood) and where it shows.",
+    "tag_meta": "Type and colour for one tag name. Tag values stay in My Tag.",
+    "tag_synonym": "A term that should suggest an existing tag.",
+    "work": "A musical work that groups versions of a track.",
+    "work_member": "One track or virtual edit linked to a work.",
+    "work_dismissal": "A pair the user said is not a version of each other.",
+    "work_pref": "Which member a work shows first. Display only.",
+    "undo_journal": "Before and after snapshots of library organization writes, per undo session. Machine-local.",
     "feedback_pins": (
         "One row per Open DJ feedback comment pin, carrying the whole pin "
         "as JSON (text, page, anchor, x/y, status, replies, author, build "
@@ -352,6 +361,34 @@ TABLE_DOCS: dict[str, str] = {
     "playlist_sets_schema_meta": (
         "Private migration-version counter for playlist_sets, kept separate "
         "from schema_meta (apps/shared/playlist_sets/schema.py)."
+    ),
+    "playlist_component_slots": (
+        "Route order of a playlist's component slots; default ladder slots "
+        "sit at fixed positions and custom slots follow them "
+        "(apps/shared/playlist_sets/components.py, SET-6586)."
+    ),
+    "playlist_components": (
+        "SET-6586 component: a named run of tracks inside a playlist with a "
+        "slot and free tags. Components in one slot are alternatives "
+        "(apps/shared/playlist_sets/components.py)."
+    ),
+    "playlist_component_entries": (
+        "Ordered tracks of one playlist component; edits change every set "
+        "whose route names it (apps/shared/playlist_sets/components.py)."
+    ),
+    "playlist_component_tags": (
+        "Free user tags on a playlist component; separate from MyTag, which "
+        "labels tracks and syncs to rekordbox "
+        "(apps/shared/playlist_sets/components.py)."
+    ),
+    "playlist_set_parts": (
+        "A playlist set's route: its components in play order. A set with "
+        "no parts is a v1 snapshot set (apps/shared/playlist_sets/store.py)."
+    ),
+    "playlist_set_run_entries": (
+        "The tracks one practice or performance run played, frozen when the "
+        "run was recorded so history survives component edits "
+        "(apps/shared/playlist_sets/store.py)."
     ),
     "tracks_fts": (
         "FTS5 full-text index over a subset of tracks' searchable columns, "

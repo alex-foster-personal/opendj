@@ -10,7 +10,9 @@ import { listBroken } from '$lib/reconcile-api';
 import type { PlaylistNode } from '$lib/rb/library-types';
 import type { BrowserRow } from './pane-contract.svelte';
 
-export const MISSING_TRACKS_ID = 'missing';
+import { MISSING_TRACKS_ID } from './missing-tracks-id';
+
+export { MISSING_TRACKS_ID };
 export const MISSING_TRACKS_NAME = 'Missing Tracks';
 export const MISSING_TRACKS_ENERGY_REASON = 'not on broken listing';
 

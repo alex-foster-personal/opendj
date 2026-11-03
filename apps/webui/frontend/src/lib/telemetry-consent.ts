@@ -34,7 +34,10 @@
 
 import { api } from './api/client';
 import type { BootScheduler } from './rb/boot-scheduler';
-import { sentryEventIsTransientNetwork } from './telemetry-network-noise';
+import {
+	sentryEventIsExpectedStateStoreBusy,
+	sentryEventIsTransientNetwork
+} from './telemetry-network-noise';
 import {
 	scrubBreadcrumb,
 	scrubEvent,
@@ -43,8 +46,11 @@ import {
 } from './telemetry-scrub';
 
 export {
+	isExpectedStateStoreBusy,
 	isTransientNetworkError,
+	sentryEventIsExpectedStateStoreBusy,
 	sentryEventIsTransientNetwork,
+	STATE_STORE_BUSY_TOKEN,
 	TRANSIENT_NETWORK_MESSAGES
 } from './telemetry-network-noise';
 import {
@@ -218,10 +224,12 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 			// The loader SDK captures browser exceptions on its own; while a
 			// deck is live they are dropped here, the same answer the engine
 			// gives a forwarded error whose `any_deck_live` is true. Transient
-			// fetch/abort TypeErrors (Safari `Load failed`) stay local too.
+			// fetch/abort TypeErrors (Safari `Load failed`, OBS-07) and
+			// STATE-14 STATE_STORE_BUSY RbApiErrors (OBS-5454) stay local too.
 			beforeSend: (event: ScrubbableEvent) => {
 				if (deps.isLive()) return null;
 				if (sentryEventIsTransientNetwork(event)) return null;
+				if (sentryEventIsExpectedStateStoreBusy(event)) return null;
 				return scrubEvent(event);
 			},
 			beforeBreadcrumb: (crumb: { message?: unknown; data?: unknown }) => scrubBreadcrumb(crumb)

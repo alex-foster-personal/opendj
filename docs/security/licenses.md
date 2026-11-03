@@ -1,8 +1,8 @@
 # Dependency licenses
 
-Part of [security.md](security.md). Status: **wired** (Wed 1 Oct 2026),
+Part of `(private path)`. Status: **wired** (Thu 1 Oct 2026),
 `.github/workflows/license-gate.yml`, decision in
-[ADR-NEW-dependency-license-gate](../decisions/ADR-NEW-dependency-license-gate.md).
+`(private path)`.
 
 ## What it covers
 
@@ -11,7 +11,7 @@ every model weights file the payload builders ship. It answers one question: did
 license we do not want come in, directly, through a transitive dependency, or
 through a version bump that relicensed a package we already had?
 
-Why it exists: on Wed 1 Oct 2026 the shipped desktop payload already carried two GPL
+Why it exists: on Thu 1 Oct 2026 the shipped desktop payload already carried two GPL
 packages nobody had chosen. `rbox` went from MIT/Apache to GPL-3.0-only at 0.1.6, and
 `jsonschema[format]` pulled in `rfc3987` (GPL-3.0+). The second is fixed here
 (`jsonschema[format-nongpl]`); the first was a recorded exception until PR #4813
@@ -21,9 +21,9 @@ replaced it with our own OneLibrary handle over `sqlcipher3-wheels` (Zlib) the s
 
 | File | Written by | Holds |
 |---|---|---|
-| `licenses/policy.json` | hand | lockfiles scanned, `allow` and `deny` regexes, reasoned `exceptions`, reasoned `overrides` |
-| `licenses/register.json` | `python -m scripts.license_gate update` | one line per locked `name@version` per ecosystem (pypi, npm, cargo) with its license expression |
-| `licenses/models.json` | hand | model weights: code license, weights license, whether it ships, evidence |
+| `(private path)` | hand | lockfiles scanned, `allow` and `deny` regexes, reasoned `exceptions`, reasoned `overrides` |
+| `(private path)` | `python -m scripts.license_gate update` | one line per locked `name@version` per ecosystem (pypi, npm, cargo) with its license expression |
+| `(private path)` | hand | model weights: code license, weights license, whether it ships, evidence |
 
 ## How a license is judged
 
@@ -50,7 +50,7 @@ weekly lock maintenance, needs one `update` run on the branch:
 
 ```bash
 python -m scripts.license_gate update   # network: PyPI JSON, npm registry, cargo metadata / crates.io
-git diff licenses/register.json          # review: new licenses show up here
+git diff (private path)          # review: new licenses show up here
 python -m scripts.license_gate check    # the CI gate, offline
 ```
 
@@ -62,7 +62,7 @@ with no license metadata comes back `UNKNOWN`; read its upstream LICENSE and add
 
 - Code vendored into the tree without a lockfile entry. Review catches that, not this.
 - Models downloaded at runtime by name (Hugging Face ids, `torch.hub`). Those are
-  declared in `licenses/models.json` by hand; the gate only discovers weights files
+  declared in `(private path)` by hand; the gate only discovers weights files
   that the payload builders reference.
 - Whether an exception's reasoning is still true. `ships` and `status` fields record
   what was believed on the `recorded` date.

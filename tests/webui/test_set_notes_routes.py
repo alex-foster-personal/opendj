@@ -10,10 +10,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
+
+from tests.webui.set_notes_test_db import init_empty_state_db
 
 pytestmark = pytest.mark.requirement("SETNOTE-6340c")
 
@@ -21,7 +22,7 @@ pytestmark = pytest.mark.requirement("SETNOTE-6340c")
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
     db_path = tmp_path / "state.db"
-    state_db.open_rw(db_path).close()
+    init_empty_state_db(db_path)
     app = create_app(
         backend=SqliteBackend(db_path),
         state_db_path=str(db_path),

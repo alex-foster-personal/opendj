@@ -196,7 +196,11 @@ def register_dj_tools(
         """Perform a TransitionPlan: loads the incoming track on an idle deck if
         needed, validates against the live mix, and arms the page's executor,
         which fires every event on the outgoing deck's bars. Returns a plan_id at
-        once; watch it with get_mix_state (agent_plan). A plan only continues a
+        once; watch it with get_mix_state (agent_plan). While it is pending,
+        agent_plan.overlay holds the curves drawn on each deck as track_ms points,
+        and overlay.anchor_moved says the incoming deck left the planned cue: the
+        plan still runs from there, so abort and schedule again to fit the new
+        cue. A plan only continues a
         set that is already playing. In a muted agent session (the default;
         OPENDJ_AGENT_AUDIO=live turns it off) the plan mutes the master first.
         ``notes`` lists what the compiler decided on your behalf (for example an

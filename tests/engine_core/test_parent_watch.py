@@ -164,3 +164,27 @@ def test_watch_signals_sigterm_not_hard_exit(tmp_path: Path) -> None:
         guard_s=2.0,
     )
     child.wait(timeout=5)
+
+
+@pytest.mark.requirement("INSTALL-42")
+def test_watch_exits_the_child_when_its_stderr_reader_died_with_the_parent(tmp_path: Path) -> None:
+    """
+    [if] the parent and its stderr reader die [then] parent_watch still exits the child, [else stop].
+
+    The warning cannot be written to the dead pipe and must not stop the SIGTERM.
+    """
+    dummy = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    child = _popen_child(
+        _CHILD_SLEEP,
+        str(tmp_path),
+        env={"OPENDJ_PARENT_PID": str(dummy.pid)},
+    )
+    assert child.stderr is not None
+    child.stderr.close()  # the only reader: the next write to stderr gets EPIPE
+    dummy.kill()
+    dummy.wait(timeout=5)
+    wait_for_external_state(
+        lambda: child.poll() is not None,
+        what="child exits after its parent and stderr reader are gone",
+        guard_s=2.0,
+    )

@@ -52,7 +52,11 @@ from .depends_on import declared_dependency, dependency_identity, dependency_mat
 from .lane_enums import LANES
 from .lanes import parse_own_backend
 from .record import AnalysisRecord
-from .worker_sizing import HostCapacity, size_workers_for_host
+from .worker_sizing import (
+    HostCapacity,
+    InsufficientMemoryError,
+    size_workers_for_host,
+)
 
 #: Static lane-level edge list: ``dependent -> lanes it depends on``.
 #: Registered independently of any record, which is what lets a lane with no
@@ -82,6 +86,10 @@ NO_OWN_DOWNBEATS: str = "no_own_downbeats"
 
 class QueueError(RuntimeError):
     """The queue was asked for something it cannot do."""
+
+
+class NoSuchBatchError(QueueError):
+    """The named batch does not exist. HTTP maps only this to 404."""
 
 
 class TargetResolver(Protocol):
@@ -170,12 +178,15 @@ def enqueue(
             raise QueueError(f"unknown lane {cand.lane!r}; lanes are {LANES}")
     backend = next(iter(backends))
     chosen = model if model is not None else admission.memory_model_for(backend)
-    plan = admission.admit(
-        candidates,
-        model=chosen,
-        host=host,
-        per_worker_budget_mb=per_worker_budget_mb,
-    )
+    try:
+        plan = admission.admit(
+            candidates,
+            model=chosen,
+            host=host,
+            per_worker_budget_mb=per_worker_budget_mb,
+        )
+    except InsufficientMemoryError as exc:
+        raise QueueError(str(exc)) from exc
 
     batch_id = queue_store.new_batch_id()
     queue_store.ensure_queue_tables(conn)
@@ -268,7 +279,7 @@ def progress(
     queue_store.ensure_queue_tables(conn)
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
-        raise QueueError(f"no such batch {batch_id!r}")
+        raise NoSuchBatchError(f"no such batch {batch_id!r}")
     return Progress(
         batch_id=batch.batch_id,
         state=batch.state,
@@ -291,7 +302,7 @@ def cancel(conn: sqlite3.Connection, batch_id: str) -> int:
     queue_store.ensure_queue_tables(conn)
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
-        raise QueueError(f"no such batch {batch_id!r}")
+        raise NoSuchBatchError(f"no such batch {batch_id!r}")
     cancelled = queue_store.cancel_open_items(conn, batch_id)
     queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_CANCELLED)
     return cancelled
@@ -330,7 +341,7 @@ def runnable_sizing_inputs(
             [(item.predicted_peak_mb, item.duration_s) for item in remaining],
             batch.memory_model,
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise QueueError(str(exc)) from exc
     return cap, band, predicted
 
@@ -360,16 +371,19 @@ def resume(
     queue_store.ensure_queue_tables(conn)
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
-        raise QueueError(f"no such batch {batch_id!r}")
+        raise NoSuchBatchError(f"no such batch {batch_id!r}")
     inputs = runnable_sizing_inputs(conn, batch)
     if inputs is not None:
         cap, band, predicted = inputs
-        workers = size_workers_for_host(
-            duration_cap=cap,
-            host=host,
-            per_worker_budget_mb=per_worker_budget_mb,
-            predicted_peak_mb=predicted,
-        ).workers
+        try:
+            workers = size_workers_for_host(
+                duration_cap=cap,
+                host=host,
+                per_worker_budget_mb=per_worker_budget_mb,
+                predicted_peak_mb=predicted,
+            ).workers
+        except InsufficientMemoryError as exc:
+            raise QueueError(str(exc)) from exc
     else:
         workers, band = 0, admission.BAND_EMPTY
     revived = queue_store.revive_cancelled_items(conn, batch_id)
@@ -582,6 +596,7 @@ __all__ = [
     "NO_OWN_DOWNBEATS",
     "CascadeOutcome",
     "EnqueueResult",
+    "NoSuchBatchError",
     "Progress",
     "QueueError",
     "TargetResolver",

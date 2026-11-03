@@ -18,6 +18,7 @@ import { durationProgress, resolveDuration, type Duration } from './agent-durati
 import type { AgentPlanMirror, PlanRunner, PlanStateView } from './agent-plan';
 import { autoPlayHandoffInFlight, registerAgentPlanStatus } from './auto-play-plan-gate';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
+import { setPlanOverlay } from './plan-overlay-store.svelte';
 
 type ClockDeck = 1 | 2 | 3 | 4;
 
@@ -89,7 +90,8 @@ async function _plans(): Promise<PlanRunner> {
 		positionAnchor: (deck) => performancePositionAnchor(deck),
 		stepState: (stepId) => performanceStepState(stepId),
 		forgetStep: (stepId) => performanceForgetStep(stepId),
-		stemsSilent: (deck) => everyStemPartSilent(queryPerformanceState().decks[deck])
+		stemsSilent: (deck) => everyStemPartSilent(queryPerformanceState().decks[deck]),
+		onOverlay: setPlanOverlay
 	});
 	return _planRunner;
 }

@@ -74,7 +74,8 @@ test('waveform click seeks the engine to the track time beneath the pointer', ()
 			pointerX: 300,
 			widthPx: 400,
 			durationMs: 180_000,
-			windowSeconds: 24
+			windowSeconds: 24,
+			playheadFrac: 0.5
 		}),
 		66_000
 	);
@@ -110,7 +111,8 @@ test('waveform seek targets clamp to the real track boundaries and reject invali
 			pointerX: 400,
 			widthPx: 400,
 			durationMs: 180_000,
-			windowSeconds: 24
+			windowSeconds: 24,
+			playheadFrac: 0.5
 		}),
 		180_000
 	);

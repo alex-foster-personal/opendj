@@ -33,7 +33,9 @@
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
-	import { drawStripWaveform } from './strip-waveform-render';
+	import { drawStripWaveform, TEMPO_LANE_COLORS } from './strip-waveform-render';
+	import { tempoCurveData, tempoStabilityKey, tempoStabilityTitle } from '$lib/rb/tempo-stability';
+	import { requestTempoStability, tempoStabilityFor } from '$lib/rb/tempo-stability.svelte';
 	import { readPalette } from '../wave/cues';
 	import type { SectionSpan } from '../wave/sections';
 	import { sectionsApiFor } from '../wave/sections-lazy.svelte';
@@ -103,6 +105,19 @@
 	const vocals: Vocals | null = $derived(deck.anlz === null ? null : vocalsOf(deck.anlz));
 
 	const vocalsTitle: string | null = $derived(vocalsStatusTitle(vocals));
+
+	// Issue #8339: the daemon's tempo-stability read for the grid this deck
+	// draws; the key moves with the grid, so an edit or a source flip refetches.
+	const tempoKey: string | null = $derived(
+		deck.stable_id === null || deck.anlz === null ? null : tempoStabilityKey(deck.stable_id, deck.anlz.beatgrid)
+	);
+	$effect(() => {
+		if (tempoKey !== null && deck.stable_id !== null) requestTempoStability(deck.stable_id, tempoKey);
+	});
+	const tempoView = $derived(tempoKey === null ? null : tempoStabilityFor(tempoKey));
+	const stripTitle: string | null = $derived(
+		[vocalsTitle, tempoView === null ? null : tempoStabilityTitle(tempoView)].filter((t) => t !== null).join('\n') || null
+	);
 
 	const memoryCuesMs: number[] = $derived(
 		deck.anlz === null
@@ -233,7 +248,14 @@
 					? { spans: sectionSpansNow, palette: readPalette(c).sections, drawBands: sectionsApi.drawSectionBands }
 					: null,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
-			bandColors: resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin))
+			bandColors: resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin)),
+			tempo: uiPrefs.show_tempo_lane ? tempoCurveData(tempoView) : null,
+			tempoColors: TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)],
+			tempoScale: uiPrefs.tempo_lane_scale,
+			// CSS stretches the backing store; icons are drawn narrower by this much.
+			// stripBoxW is bound state, so this repaints once layout has measured the
+			// strip (a read of c.clientWidth alone ran before layout and stayed at 0).
+			tempoXStretch: stripBoxW > 0 && c.clientHeight > 0 ? (stripBoxW / W) / (c.clientHeight / H) : 1
 		});
 	});
 
@@ -321,7 +343,7 @@
 		disabled={deck.stable_id === null || pending}
 		aria-label={`waveform seek deck ${deck.deck_id}`}
 		data-testid={`waveform-seek-deck-${deck.deck_id}`} data-wave-surface="strip"
-		title={vocalsTitle ?? undefined}
+		title={stripTitle ?? undefined}
 		bind:clientWidth={stripBoxW}
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>

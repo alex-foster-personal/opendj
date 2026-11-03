@@ -291,6 +291,8 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
             headline: "Open DJ could not find its data folder.".into(),
             detail: format!("Resolving Application Support failed: {err}"),
         })?;
+    // Issue #6068 is the macOS installed-app acceptance harness redirecting HOME;
+    // Windows/Linux use USERPROFILE or other homes and must not fail here.
     #[cfg(target_os = "macos")]
     validate_data_dir_contained_in_home(
         &data_dir,

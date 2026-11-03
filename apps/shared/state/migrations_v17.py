@@ -36,9 +36,16 @@ REPAIR_MARKER: str = "cloudsync_hub_changelog_stamp_repair_v1"
 _V17: list[str] = []
 
 
-def _live_rows_union_sql() -> str:
+def _live_rows_union_sql(conn: sqlite3.Connection) -> str:
+    """Union of every synced table this database has at its current rung."""
+    present = {
+        str(row[0])
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
     parts: list[str] = []
     for spec in SYNC_TABLES:
+        if spec.name not in present:
+            continue
         pk_args = ", ".join(spec.pk)
         parts.append(
             f"SELECT '{spec.name}' AS table_name, json_array({pk_args}) AS row_pk, "
@@ -47,7 +54,7 @@ def _live_rows_union_sql() -> str:
     return " UNION ALL ".join(parts)
 
 
-def _candidate_query_sql() -> str:
+def _candidate_query_sql(conn: sqlite3.Connection) -> str:
     return f"""
     WITH latest AS (
         SELECT h.table_name, h.row_pk, h.updated_at AS changelog_updated_at
@@ -61,7 +68,7 @@ def _candidate_query_sql() -> str:
            AND h.seq = m.max_seq
     ),
     live AS (
-        {_live_rows_union_sql()}
+        {_live_rows_union_sql(conn)}
     )
     SELECT latest.table_name, latest.row_pk, live.updated_at, live.origin_device_id
     FROM latest
@@ -82,7 +89,7 @@ def _scan_stamp_mismatch_candidates(
     return [
         (str(table_name), str(row_pk), updated_at, origin)
         for table_name, row_pk, updated_at, origin in conn.execute(
-            _candidate_query_sql()
+            _candidate_query_sql(conn)
         ).fetchall()
     ]
 

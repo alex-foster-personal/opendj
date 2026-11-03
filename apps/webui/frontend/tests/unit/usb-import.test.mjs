@@ -10,10 +10,9 @@ import { describe, it } from 'node:test';
 
 describe('usb import contracts (LIBMX-13)', () => {
 	it('UsbSourceList has import button and uses importUsbVolume', () => {
-		const src = readFileSync(
-			new URL('../../src/lib/components/rb/browser/UsbSourceList.svelte', import.meta.url),
-			'utf8'
-		);
+		const src =
+			readFileSync(new URL('../../src/lib/components/rb/browser/UsbSourceList.svelte', import.meta.url), 'utf8') +
+			readFileSync(new URL('../../src/lib/components/rb/browser/UsbSourceListView.svelte', import.meta.url), 'utf8');
 		assert.match(src, /data-testid="usb-source-import"/);
 		assert.match(src, /importUsbVolume/);
 	});

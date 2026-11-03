@@ -316,6 +316,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(autouse=True)
+def _genre_keys_never_come_from_the_real_keychain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GENRE-09 reads provider keys from the login Keychain; a dev box with real keys
+    stored there would otherwise turn every "no key" test green-to-red (or bill)."""
+    monkeypatch.setenv("MDT_GENRE_KEYCHAIN_SERVICE", "com.opendj.genre.test-isolated")
+
+
+@pytest.fixture(autouse=True)
 def _stem_cache_budget_sees_a_roomy_disk(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the suite's result independent of this machine's free space.
 

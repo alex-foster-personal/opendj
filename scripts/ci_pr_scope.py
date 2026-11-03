@@ -115,7 +115,8 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   scores the whole tree, the openapi dump imports every router), so under the cap
 #:   they move to main entirely.
 #: - `frontend` (unit + check + build; 3.2 min) runs only when `apps/webui/frontend/**`
-#:   changes. Its unit tests also read a few files outside that tree (the Tauri shell,
+#:   or `apps/desktop/electron/**` changes (the job also runs the Electron shell's
+#:   `pnpm test`, which nothing else runs on a pull request). Its unit tests also read a few files outside that tree (the Tauri shell,
 #:   the entitlements resolver, perf helpers; tests/scripts/
 #:   test_ci_fixed_jobs_by_footprint.py keeps the list); a change there is caught on
 #:   main, by decision.
@@ -130,8 +131,8 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #: (private path).
 CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
     "contracts": (),
-    "frontend": ("apps/webui/frontend/**",),
-    "frontend-build": ("apps/webui/frontend/**",),
+    "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
+    "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
     "quality": (),
 }
 

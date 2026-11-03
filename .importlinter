@@ -30,7 +30,7 @@ type = layers
 containers =
     apps
 layers =
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
+    adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -72,7 +72,7 @@ layers =
     engine_core : opendj_cli
     webui
     transition_score
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+    adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
 ; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
 ; domain package imports back into it you get a cycle, and the domain package can
@@ -96,7 +96,6 @@ exhaustive = true
 ignore_imports =
     apps.webui.server.preflight_checks -> apps.engine_core.setup.detect
     apps.webui.server.preflight_checks -> apps.engine_core.setup.record
-    apps.webui.server.routes.settings -> apps.engine_core.host_info
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:apps-never-imports-scripts]
@@ -112,15 +111,13 @@ forbidden_modules =
 ; until round 12. tests/scripts/test_apps_scripts_import_audit.py guards the
 ; function-body form of the same edge with the same single exception.
 ;
-; DEBT (measured Tue 22 Sep 2026): apps.analysis_bench.controls and
-; scorers.beatgrid_lane read the beatgrid report from scripts/beatbench, which
-; imports apps.analysis_bench back at 19 sites; the pair is one unit split
-; across two trees and is not resolved by a move. Fix by homing
-; scripts/beatbench/report.py under apps/analysis_bench/, then delete the
-; lines below.
+; DEBT (measured Tue 22 Sep 2026, beatgrid_lane paid down): controls.py still
+; loads fixtures through scripts.beatbench.report. The report functions now
+; live in apps.analysis_bench.scorers.beatgrid_report, which
+; scripts.beatbench.report re-exports. Delete the line below when controls.py
+; imports that apps module directly.
 ignore_imports =
     apps.analysis_bench.controls -> scripts.beatbench.report
-    apps.analysis_bench.scorers.beatgrid_lane -> scripts.beatbench.report
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:production-code-never-imports-tests]
@@ -147,6 +144,7 @@ type = public_surface
 ; commit. To migrate a package: add apps/<pkg>/contract/, repoint its importers, move
 ; it from the frozen list to this one. There are no ignore_imports, on purpose.
 enforced =
+    ai_gateway_admin
     analysis_structure
     dedup
     library_wheel

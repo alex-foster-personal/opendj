@@ -45,6 +45,11 @@ import {
 	type AnalysisSourceRefreshDeck,
 	type DeckId as _RefreshDeckId
 } from './analysis-source-refresh';
+import {
+	refreshAnlzVocalsIfNeeded as _refreshAnlzVocalsIfNeededImpl,
+	type AnlzVocalsRefreshPorts
+} from './anlz-vocals-refresh';
+import type { AnlzWithVocals, Vocals } from '$lib/rb/api-rb';
 
 export type { AnalysisSourceRefreshDeck };
 
@@ -493,6 +498,31 @@ export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSi
 	};
 }
 
+/** Notified around a vocals-aware refresh of a track: `snapshot` before the
+ * bypass fetch starts, `publish` with the fresher payload and the vocals it
+ * replaced, so every loaded deck carrying that stable_id can adopt the new
+ * `vocals` field without a reload. Install-once, same contract as the grid
+ * sink above: this display-layer cache must not import audio-engine.svelte.ts
+ * (the deck side is createDeckVocalsSink in $lib/rb/deck-vocals-sink.ts). */
+export interface AuthoritativeAnlzVocalsSink {
+	snapshot: (stable_id: string) => void;
+	publish: (stable_id: string, data: AnlzWithVocals, previous: Vocals | null) => void;
+}
+let _authoritativeVocalsSink: AuthoritativeAnlzVocalsSink | null = null;
+
+export function installAuthoritativeAnlzVocalsSink(sink: AuthoritativeAnlzVocalsSink): () => void {
+	if (_authoritativeVocalsSink !== null) {
+		throw new Error('an authoritative anlz vocals sink is already installed');
+	}
+	_authoritativeVocalsSink = sink;
+	return () => {
+		if (_authoritativeVocalsSink !== sink) {
+			throw new Error('authoritative anlz vocals sink ownership changed');
+		}
+		_authoritativeVocalsSink = null;
+	};
+}
+
 /** Records an authoritative `RbApiError` for `stable_id` AND notifies any
  * deck currently loaded with it, so a source failure that settles after a
  * deck has already swapped in still invalidates that deck's grid instead of
@@ -867,6 +897,26 @@ export function evictAnlzCacheEntriesServingOtherSource(
  * that module's ports with this cache's own primitives so it never needs to
  * import this file back (see analysis-source-refresh.ts's own docstring for
  * why a reverse import would close a cycle). */
+/** Bypasses the browser HTTP cache for /anlz when hydrated library data reports
+ * a vocal status newer than the shared cache entry, then republishes through
+ * `refreshAnlzCacheEntry` and the installed vocals sink (issue #1031). */
+export function refreshAnlzVocalsIfNeeded(stable_id: string, observedStatus: Vocals['status']): void {
+	const ports: AnlzVocalsRefreshPorts = {
+		getReadyAnlz: (sid) => {
+			const entry = getAnlzEntry(sid);
+			return isAnlzEntryUsable(entry) ? entry.data : null;
+		},
+		refreshAnlzCacheEntry,
+		fetchAnlzBypassingHttpCache,
+		fetchAnlzUntilSourceConfirmed,
+		anlzMatchesConfirmedSource,
+		currentAnlzFetchGeneration,
+		snapshotVocalsRefreshGuard: (sid) => _authoritativeVocalsSink?.snapshot(sid),
+		notifyVocalsSink: (sid, data, previous) => _authoritativeVocalsSink?.publish(sid, data, previous)
+	};
+	_refreshAnlzVocalsIfNeededImpl(stable_id, observedStatus, ports);
+}
+
 export function refreshAnalysisSourceDecks(
 	deckIds: readonly _RefreshDeckId[],
 	decks: Record<_RefreshDeckId, AnalysisSourceRefreshDeck>,

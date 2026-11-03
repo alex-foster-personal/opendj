@@ -11,6 +11,8 @@
 	// CUEOUT-26: the same-device split badge is mounted here, directly after the
 	// banner, rather than in TopBar.svelte, which is at the import fan-out ceiling.
 	import SameDeviceSplitBadge from './SameDeviceSplitBadge.svelte';
+	// BTHFP-8319: same reason, the Bluetooth headset-mode warning mounts here too.
+	import BluetoothHeadsetModeBanner from './BluetoothHeadsetModeBanner.svelte';
 
 	let busy = $state(false);
 	let fixError = $state<string | null>(null);
@@ -61,6 +63,7 @@
 	</div>
 {/if}
 <SameDeviceSplitBadge />
+<BluetoothHeadsetModeBanner />
 
 <style>
 	.main-fault {

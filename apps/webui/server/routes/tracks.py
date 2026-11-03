@@ -35,6 +35,7 @@ from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 from .. import boot_grace, rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state, get_write_state
+from ..shell_output_health import data_dir_from_state_db
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
@@ -89,7 +90,7 @@ def _rb_mapping_and_artwork(stable_id: str) -> tuple[bool, bool | None]:
 
 
 def _data_dir_from_state_db(state_db_path: Path) -> Path:
-    return state_db_path.parent.parent
+    return data_dir_from_state_db(state_db_path)
 
 
 def _analysis_db_path(request: Request) -> Path:

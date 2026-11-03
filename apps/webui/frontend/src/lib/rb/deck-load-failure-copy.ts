@@ -17,6 +17,26 @@ function sentenceFor(code: string, words: string): string {
 	return `${words.charAt(0).toUpperCase()}${words.slice(1)}.`;
 }
 
+/**
+ * Expected play-refusals the DJ already saw. Token list locksteps
+ * ``EXPECTED_LIBRARY_REFUSAL_CODES`` in budget.py. AUDIO_FILE_MISSING is
+ * absent on purpose (iCloud stubs still ship to Sentry).
+ */
+const EXPECTED_LIBRARY_REFUSAL_TOKEN =
+	/(?:^|[\s:])(CLOUD_ASSET_UNAVAILABLE|AUDIO_NOT_ON_THIS_MACHINE|CLOUD_POLICY_UNCONFIGURED|CLOUD_HYDRATING|TRACK_NOT_FOUND|USB_STICK_NOT_MOUNTED|USB_FILE_MISSING|USB_TRACK_NOT_FOUND):/;
+
+const EXPECTED_LIBRARY_REFUSAL_SENTENCES: readonly string[] = [
+	"This file isn't on this computer.",
+	"This track's audio is not on this machine and could not be fetched.",
+	"Its audio isn't on this Mac (looked at "
+];
+
+/** True when the banner or escalated deck-error payload is an expected refusal. */
+export function isExpectedLibraryRefusalMessage(message: string): boolean {
+	if (EXPECTED_LIBRARY_REFUSAL_TOKEN.test(message)) return true;
+	return EXPECTED_LIBRARY_REFUSAL_SENTENCES.some((sentence) => message.includes(sentence));
+}
+
 /** A path the backend already named with `at '...'` or `at "..."`. */
 export function lookedAtPath(text: string): string | null {
 	const match = / at '([^']+)'/.exec(text) ?? / at "([^"]+)"/.exec(text);

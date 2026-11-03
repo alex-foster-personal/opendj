@@ -7,10 +7,16 @@ function source(relative) {
 	return readFileSync(fileURLToPath(new URL(`../../src/${relative}`, import.meta.url)), 'utf8');
 }
 
-const CHIP = source('lib/components/CloudSyncStatusChip.svelte');
-const QUICK = source('lib/components/cloudsync/CloudSyncQuickActions.svelte');
+// The chip is a container plus a props-only view; the pair is the component.
+const CHIP =
+	source('lib/components/CloudSyncStatusChip.svelte') + source('lib/components/CloudSyncStatusChipView.svelte');
+const QUICK =
+	source('lib/components/cloudsync/CloudSyncQuickActions.svelte') +
+	source('lib/components/cloudsync/CloudSyncQuickActionsView.svelte');
 const VIEW = source('lib/components/cloudsync/cloudsync-view.ts');
-const TAB = source('lib/components/cloudsync/CloudSyncStatusTab.svelte');
+const TAB =
+	source('lib/components/cloudsync/CloudSyncStatusTab.svelte') +
+	source('lib/components/cloudsync/CloudSyncStatusTabView.svelte');
 const LAYOUT = source('routes/+layout.svelte');
 const TOPBAR = source('lib/components/rb/TopBar.svelte');
 
@@ -68,7 +74,8 @@ test('the status tab uses shared error presentation and technical details disclo
 	assert.match(TAB, /presentCloudSyncResultError/);
 	assert.match(TAB, /data-testid="cloudsync-notice-details"/);
 	assert.match(TAB, /data-testid="cloudsync-last-result-details"/);
-	assert.match(TAB, /<summary>\{CLOUDSYNC_TECHNICAL_DETAILS_LABEL\}<\/summary>/);
+	assert.match(TAB, /technicalDetailsLabel=\{CLOUDSYNC_TECHNICAL_DETAILS_LABEL\}/);
+	assert.match(TAB, /<summary>\{technicalDetailsLabel\}<\/summary>/);
 	assert.doesNotMatch(TAB, /Sync failed: \$\{message\(exc\)\}/);
 	assert.doesNotMatch(
 		TAB,
@@ -96,7 +103,8 @@ test('the chip is a button trigger with an in-place quick-actions popover', () =
 	assert.doesNotMatch(CHIP, /recent_results/);
 	assert.match(VIEW, /export const CHIP_HREF = '\/cloudsync'/);
 	assert.match(QUICK, /data-testid="cloudsync-quick-actions-popover"/);
-	assert.match(QUICK, /data-testid="cloudsync-quick-advanced"[\s\S]*href=\{CHIP_HREF\}/);
+	assert.match(QUICK, /advancedHref=\{CHIP_HREF\}/);
+	assert.match(QUICK, /data-testid="cloudsync-quick-advanced"[\s\S]*href=\{advancedHref\}/);
 	assert.match(QUICK, /runCloudSyncNow/);
 	assert.match(QUICK, /syncNowRequest/);
 	assert.match(QUICK, /forceSyncNowRequest/);
@@ -145,7 +153,11 @@ test('the chip is rendered immediately beside the account bauble', () => {
 	// the bauble (`size`, plus `showLabel` since issue #2357), so requiring the
 	// literal `<UserBauble size={20} />` makes indexOf return -1 and the
 	// comparison pass for the wrong reason. The invariant under test is ORDER.
-	const chipInTopbar = TOPBAR.indexOf('<CloudSyncStatusChip');
+	// The top bar renders the chip through TopBarStatusChips (kept out of TopBar
+	// for the import fan-out ratchet), so follow that one hop.
+	const CHIPS = source('lib/components/rb/TopBarStatusChips.svelte');
+	assert.ok(CHIPS.includes('<CloudSyncStatusChip />'), 'TopBarStatusChips must render the CloudSync chip');
+	const chipInTopbar = TOPBAR.indexOf('<TopBarStatusChips');
 	const baubleInTopbar = TOPBAR.indexOf('<UserBauble');
 	assert.ok(chipInTopbar >= 0, 'the performance top bar must render the CloudSync status chip');
 	assert.ok(baubleInTopbar > chipInTopbar, 'the chip must sit beside and before the bauble');

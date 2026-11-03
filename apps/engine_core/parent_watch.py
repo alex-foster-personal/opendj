@@ -49,15 +49,25 @@ def _set_pdeathsig_linux() -> None:
     libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
 
 
+def _warn_parent_gone(pid: int) -> None:
+    """Best-effort warning: stderr is usually a pipe the dead shell was reading.
+
+    Python ignores SIGPIPE, so that write raises BrokenPipeError. Raised here it
+    would end the watch thread before the SIGTERM and orphan the engine
+    (INSTALL-42), so only the warning is dropped, never the stop.
+    """
+    try:
+        print(f"[WARN] parent pid {pid} is gone; stopping this engine", file=sys.stderr, flush=True)
+    except OSError:
+        return
+
+
 def _watch_loop(data_dir: Path, env_pid: int) -> None:
     while True:
         file_pid = _read_parent_file(data_dir)
         watched_pid = file_pid if file_pid is not None else env_pid
         if not pid_is_alive(watched_pid):
-            print(
-                f"[WARN] parent pid {watched_pid} is gone; stopping this engine",
-                file=sys.stderr,
-            )
+            _warn_parent_gone(watched_pid)
             os.kill(os.getpid(), signal.SIGTERM)
             return
         time.sleep(POLL_INTERVAL_S)

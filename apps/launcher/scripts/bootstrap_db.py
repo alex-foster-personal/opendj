@@ -2,13 +2,13 @@
 
 Preference order (matches ``apps/launcher/src-tauri/src/state.rs``):
 
-1. If ``data/state/state.db`` (Phase 5 shared-state) exists:
+1. If ``(private path)`` (Phase 5 shared-state) exists:
    a. Apply the launcher-scoped additive migration -- create
       ``tracks_fts`` and ``tracks_frecency`` if the launcher's palette
       needs them and Phase 5 hasn't shipped them (Phase 5 owns the core
       schema; we only ever add, never rename/drop).
    b. Print ``SHARED_STATE_READY`` + exit 0.
-2. Otherwise, build ``data/launcher-bootstrap.sqlite`` from:
+2. Otherwise, build ``(private path)`` from:
    * ``apps.shared.rekordbox_db.iter_tracks(open_db())`` when Rekordbox is
      readable;
    * ``apps.shared.djay_db.iter_tracks(paths.DJAY_WORKING_DB)`` when djay is
@@ -31,13 +31,38 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import os
 import sqlite3
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
+from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+SCRIPTS_DIR = Path(__file__).resolve().parent
+
+
+def _load_db_schema() -> ModuleType:
+    """Import ``db_schema.py`` from this scripts folder (not a Python package)."""
+    name = "_launcher_db_schema"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = SCRIPTS_DIR / "db_schema.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load launcher db schema from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_db_schema = _load_db_schema()
+BACKFILL_TRACKS_FTS_SQL = _db_schema.BACKFILL_TRACKS_FTS_SQL
+bootstrap_executescript = _db_schema.bootstrap_executescript
+tracks_frecency_plain_ddl = _db_schema.tracks_frecency_plain_ddl
+tracks_fts_virtual_ddl = _db_schema.tracks_fts_virtual_ddl
 DATA_DIR = REPO_ROOT / "data"
 SHARED_DB = DATA_DIR / "state" / "state.db"
 BOOTSTRAP_DB = DATA_DIR / "launcher-bootstrap.sqlite"
@@ -112,42 +137,6 @@ def stable_id_from_path(path: str) -> str:
     return h.hexdigest()[:16]
 
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS tracks (
-    stable_id    TEXT PRIMARY KEY,
-    path         TEXT NOT NULL,
-    title        TEXT,
-    artist       TEXT,
-    album        TEXT,
-    genre        TEXT,
-    key          TEXT,
-    bpm          REAL,
-    duration_ms  INTEGER,
-    isrc         TEXT,
-    source       TEXT
-);
-
--- Contentless FTS5 (the `tags` column has no matching tracks column --
--- reserved for Phase 6 tag unification -- so we can't use external-content
--- mode). We populate it explicitly via INSERT INTO tracks_fts(rowid, ...).
-CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
-    title, artist, album, genre, key, tags,
-    tokenize='unicode61 remove_diacritics 2'
-);
-
-CREATE TABLE IF NOT EXISTS tracks_frecency (
-    stable_id        TEXT PRIMARY KEY REFERENCES tracks(stable_id),
-    plays            INTEGER DEFAULT 0,
-    drags            INTEGER DEFAULT 0,
-    last_played_at   INTEGER,
-    last_dragged_at  INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_frecency_drags
-    ON tracks_frecency(drags DESC, last_dragged_at DESC);
-"""
-
-
 def build_db(dst: Path, rows: Iterable[dict]) -> int:
     """(Re)build ``dst`` with the Phase 17 schema + ``rows``. Returns count."""
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +144,7 @@ def build_db(dst: Path, rows: Iterable[dict]) -> int:
         dst.unlink()
     conn = sqlite3.connect(dst)
     try:
-        conn.executescript(SCHEMA)
+        conn.executescript(bootstrap_executescript())
         seen: set[str] = set()
         inserted = 0
         for row in rows:
@@ -172,10 +161,7 @@ def build_db(dst: Path, rows: Iterable[dict]) -> int:
                  row.get("source")),
             )
             inserted += 1
-        conn.execute(
-            """INSERT INTO tracks_fts(rowid, title, artist, album, genre, key, tags)
-               SELECT rowid, title, artist, album, genre, key, '' FROM tracks"""
-        )
+        conn.execute(BACKFILL_TRACKS_FTS_SQL)
         conn.commit()
         return inserted
     finally:
@@ -212,14 +198,7 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
         # used by BOOTSTRAP_DB above so the palette query path can treat
         # either DB interchangeably.
         had_fts = _table_exists(conn, "tracks_fts")
-        conn.execute(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
-                title, artist, album, genre, key, tags,
-                tokenize='unicode61 remove_diacritics 2'
-            )
-            """
-        )
+        conn.execute(tracks_fts_virtual_ddl(if_not_exists=True))
         result["tracks_fts_created"] = not had_fts
 
         # tracks_frecency: plain table keyed by stable_id (no FK -- Phase 5
@@ -227,23 +206,8 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
         # to an absent table in strict-FK mode without the parent existing
         # at statement time; we soft-link via launcher code instead).
         had_frec = _table_exists(conn, "tracks_frecency")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tracks_frecency (
-                stable_id        TEXT PRIMARY KEY,
-                plays            INTEGER DEFAULT 0,
-                drags            INTEGER DEFAULT 0,
-                last_played_at   INTEGER,
-                last_dragged_at  INTEGER
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_frecency_drags
-                ON tracks_frecency(drags DESC, last_dragged_at DESC)
-            """
-        )
+        conn.execute(tracks_frecency_plain_ddl())
+        conn.execute(_db_schema.FRECENCY_DRAGS_INDEX_DDL)
         result["tracks_frecency_created"] = not had_frec
         conn.commit()
 

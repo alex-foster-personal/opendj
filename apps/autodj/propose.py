@@ -544,20 +544,30 @@ def propose_transition(  # noqa: PLR0913 - keyword-only options of one entry poi
                         continue
                     bars = fitted
                 hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, fold)
+                pinned_moved = (
+                    in_window.pinned
+                    and hit.refused is None
+                    and hit.in_start_bar != in_window.start_bar
+                )
                 # Sentry #7818: two scored windows can move to one bass entry; dedupe on the window actually entered.
-                entered_bar = in_window.start_bar if hit.refused is not None else hit.in_start_bar
+                entered_bar = in_window.start_bar if (hit.refused is not None or pinned_moved) else hit.in_start_bar
                 key = (style_name, bars, out_window.start_bar, entered_bar)
                 if key in seen:
                     continue
                 seen.add(key)
-                if hit.refused is not None:
+                if hit.refused is not None or pinned_moved:
                     not_offered.append(
                         {
                             "style": style_name,
                             "bars": bars,
                             "out_bar": out_window.start_bar,
                             "in_bar": in_window.start_bar,
-                            "reason": hit.refused,
+                            "reason": hit.refused
+                            if hit.refused is not None
+                            else (
+                                f"in-window pinned at the transition-in cue (bar {in_window.start_bar}); "
+                                f"place_hit would move it to bar {hit.in_start_bar}"
+                            ),
                         }
                     )
                     continue

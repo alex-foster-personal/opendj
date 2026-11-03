@@ -7,7 +7,8 @@
 	 */
 	import { tick } from 'svelte';
 	import { filterHotkeys, type FilteredHotkey, type HighlightPiece } from './hotkeys-filter';
-	import { HOTKEY_REGISTRY } from './hotkeys-registry';
+	import { assistantSidebarEnabled } from '$lib/assistant/sidebar-flag';
+	import { availableHotkeys, HOTKEY_REGISTRY } from './hotkeys-registry';
 	import {
 		hideHotkeysOverlay,
 		hotkeysOverlay,
@@ -17,7 +18,9 @@
 
 	let searchEl = $state<HTMLInputElement | null>(null);
 
-	const filtered = $derived(filterHotkeys(HOTKEY_REGISTRY, hotkeysOverlay.query));
+	const filtered = $derived(
+		filterHotkeys(availableHotkeys(HOTKEY_REGISTRY, assistantSidebarEnabled()), hotkeysOverlay.query)
+	);
 	const grouped = $derived.by(() => {
 		const order: string[] = [];
 		const map = new Map<string, FilteredHotkey[]>();

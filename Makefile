@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture vocal-kpi-live-check ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check require-venv-py
+.PHONY: test test-optional-native test-full cov reqs reqs-check fixture vocal-kpi-live-check ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check require-venv-py
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -18,6 +18,18 @@ FRONTEND_NODE ?= node
 PYTEST_JOBS ?= auto
 PYTEST_COLLECT_FLOOR ?= 3700
 
+# Paths excluded from the portable release gate (must stay in sync with ci.yml
+# fast lane + tests/scripts/test_release_gate_scope.py).
+RELEASE_GATE_PYTEST_IGNORES ?= \
+  --ignore=tests/analysis \
+  --ignore=tests/vocals \
+  --ignore=tests/sync/usb \
+  --ignore=tests/sets
+
+# Floor for the core gate only. CI shard uses 3150; release-check historically
+# used 3700 for the FULL tree. Re-measure after recon; ratchet up only.
+RELEASE_GATE_COLLECT_FLOOR ?= 3150
+
 # PYTEST_BASETEMP is unset for a normal dev-machine run (pytest falls back to
 # its own default under the system temp dir). CI workflows pass it set to a
 # path under $RUNNER_TEMP, which GitHub wipes per job, so a shard killed by
@@ -31,16 +43,35 @@ PYTEST_COLLECT_FLOOR ?= 3700
 pytest_basetemp_flag = $(if $(PYTEST_BASETEMP),--basetemp=$(PYTEST_BASETEMP)-$@,)
 
 test:
-	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR) --ignore=(private path) $(pytest_basetemp_flag)
+	$(PYTEST) $(pytest_basetemp_flag) -q -n $(PYTEST_JOBS) --dist loadgroup \
+		--collect-floor $(RELEASE_GATE_COLLECT_FLOOR) \
+		$(RELEASE_GATE_PYTEST_IGNORES) \
+		--ignore=(private path)
+
+# Optional native / slow-edge suites excluded from the portable core gate.
+# Run locally before release on macOS (Quartz/cliclick agent) or with
+# requirements.txt extras (madmom, modal, soundfile). full-ci.yml covers
+# these on CI via periodic-checks.
+test-optional-native:
+	$(PYTEST) $(pytest_basetemp_flag) -q -n $(PYTEST_JOBS) --dist loadgroup \
+		tests/analysis tests/vocals tests/sync/usb tests/sets
+
+# Full tree with the historical floor (dispatch full-ci equivalent locally).
+test-full:
+	$(PYTEST) $(pytest_basetemp_flag) -q -n $(PYTEST_JOBS) --dist loadgroup \
+		--collect-floor $(PYTEST_COLLECT_FLOOR) \
+		--ignore=(private path)
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require
-# optional madmom, Quartz, or cliclick dependencies. Keep `release-check` as
-# the repository-wide release gate and run the dedicated performance
-# Playwright suite once real DB fixtures are available (tracked in #155).
+# optional madmom, Quartz, or cliclick dependencies. Optional-native suites:
+# `make test-optional-native` or full-ci.yml. The portable release gate is
+# `make release-check` (core slice via `make test`). Performance Playwright
+# suite awaits real DB fixtures (tracked in #155).
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
 	$(PYTEST) -q -m rb_parity $(pytest_basetemp_flag)
+	cd apps/webui/frontend && pnpm run check:unit-seams
 	cd apps/webui/frontend && $(FRONTEND_NODE) --experimental-strip-types --test --test-reporter=tap --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
@@ -89,12 +120,14 @@ clean:
 # ----- Pre-release checks -----------------------------------------------
 # `release-check` is the single command CI and humans run before cutting a
 # release tag. It runs the standard gates in sequence:
-#   1. test        -- full pytest suite
+#   1. test        -- portable core pytest slice (same --ignore set as ci.yml)
 #   2. quality     -- full enforced quality ratchet (absolute lint reports debt)
 #   3. build-dist  -- python -m build (wheel + sdist)
-#   4. reqs-check  -- verify reqs.json is fresh vs REQUIREMENTS.md
-#   5. prior-tag   -- best-effort `gh release view v1.0.1` sanity check (non-fatal)
-# Keep this target serial; failures should halt the pipeline immediately.
+#   4. waveform-native-verify -- wheel consumer smoke
+#   5. reqs-check  -- verify reqs.json is fresh vs REQUIREMENTS.md
+#   6. prior-tag   -- best-effort `gh release view v1.0.1` sanity check (non-fatal)
+# Optional native suites: `make test-optional-native` or full-ci.yml.
+# Full tree locally: `make test-full`. Keep this target serial.
 
 lint:
 	@# Runs the ruff pinned in ops/quality/requirements.txt against the rule

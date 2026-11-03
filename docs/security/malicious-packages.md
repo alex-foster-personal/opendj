@@ -1,6 +1,6 @@
 # Malicious and compromised packages (cooldowns and install-time controls)
 
-Part of [security.md](security.md). Status: **partly in place, rest is spec** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **partly in place, rest is spec** (Mon 14 Sep 2026).
 
 ## What it covers
 
@@ -17,7 +17,7 @@ Renovate `vulnerabilityAlerts`; see [autofixing.md](autofixing.md)).
 
 Cooldowns do not stop slow-burn typosquats (malicious crates sat on crates.io for four
 months in 2025). Behavioral scanners (Socket, Aikido Safe Chain) cover that; they are
-deferred to the store launch (see [security.md](security.md#paid-tools)).
+deferred to the store launch (see `(private path)`, paid tools).
 
 ## Current state (measured on main `8842bbf50`)
 

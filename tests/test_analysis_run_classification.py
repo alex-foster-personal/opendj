@@ -19,6 +19,8 @@ Regression lines:
   - if a backend setup failure is reported as a failed track then broken
   - if that failure reaches the caller as exit 1 rather than 5 then broken
   - if a read the process is denied is blamed on the file then broken
+  - if an analysis install with no librosa exits 5 rather than 4 then broken
+  - if that install hides a lost target from the drain then broken
 """
 from __future__ import annotations
 
@@ -419,4 +421,77 @@ def test_the_cli_reports_a_denied_read_with_the_systemic_status(
     assert code == run_mod.EXIT_INTERNAL_ERROR, (
         f"exited {code}; only a systemic status stops the chunk loop, and "
         f"{run_mod.EXIT_TRACK_FAILURES} is the one it may continue past"
+    )
+
+
+@pytest.fixture()
+def librosa_was_never_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Make this process an install without the ``analysis`` extra.
+
+    That is a real deployment shape, and the one a ``uv sync --extra dev``
+    checkout already is. A ``None`` entry in ``sys.modules`` makes the
+    backend's own ``import librosa`` raise the ImportError a missing package
+    raises, so the production ``_require_deps`` reaches its real
+    ``BackendNotAvailable`` and nothing about the backend is replaced. It
+    lands inside the JIT warm-up, which drives the backend before any track
+    (#1316); that is the path issue #8243 found reporting 5.
+    """
+    monkeypatch.setenv("MDT_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setitem(sys.modules, "librosa", None)
+
+
+@pytest.mark.requirement("PARITY-06")
+def test_an_install_without_librosa_exits_backend_unavailable(
+    librosa_was_never_installed, tmp_path: Path
+) -> None:
+    """A missing analyzer is a fact about this machine, so it is status 4.
+
+    5 also stops the drain, but it tells the user the run "came apart"; 4 is
+    the status the ingest worker turns into "install the analysis extra".
+    """
+    present = tmp_path / "here.mp3"
+    present.write_bytes(b"\x00" * 32)
+    handoff = tmp_path / "chunk.pairs.json"
+    handoff.write_text(json.dumps([["sid00020", str(present)]]))
+
+    code = run_mod.main([
+        "--backend", "librosa", "--all", "--pairs-json", str(handoff),
+    ])
+
+    assert code == run_mod.EXIT_BACKEND_UNAVAILABLE, (
+        f"exited {code}; a missing analysis extra is "
+        f"{run_mod.EXIT_BACKEND_UNAVAILABLE}, not an internal fault"
+    )
+
+
+@pytest.mark.requirement("PARITY-06")
+def test_a_lost_target_outranks_an_install_without_librosa(
+    librosa_was_never_installed, tmp_path: Path
+) -> None:
+    """The precedence above, for the failure the warm-up raises first.
+
+    ``test_a_lost_target_outranks_a_backend_that_could_not_run`` pins it for a
+    backend whose warm-up is a no-op, so its verdict arrives per track. The
+    shipped default backend fails in the warm-up instead, before any track,
+    and that exception used to escape to ``main()`` as 5: the ingest worker
+    then kept ``queue_signature`` and booked a snapshot whose lost target no
+    process ever attempted (#8243).
+    """
+    present = tmp_path / "here.mp3"
+    present.write_bytes(b"\x00" * 32)
+    handoff = tmp_path / "chunk.pairs.json"
+    handoff.write_text(json.dumps([
+        ["sid00021", str(present)],
+        ["sid00022", str(tmp_path / "gone.mp3")],
+    ]))
+
+    code = run_mod.main([
+        "--backend", "librosa", "--all", "--pairs-json", str(handoff),
+    ])
+
+    assert code == run_mod.EXIT_MISSING_TARGETS, (
+        f"exited {code}; only {run_mod.EXIT_MISSING_TARGETS} makes the ingest "
+        "worker clear the booking, so the lost target would never be retried"
     )

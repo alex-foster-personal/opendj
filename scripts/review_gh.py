@@ -19,8 +19,12 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Sequence
+from urllib.parse import quote
 
 from scripts.gh_version_guard import require_gh_min_version
+
+DEFAULT_REPO = "private_owner/music-dj-tools"
 
 #: A commit SHA GitHub renders in backtick-quoted code, e.g. the summary
 #: table's `` `7cbe749` `` Commit column or a review body's `` **Reviewed
@@ -94,6 +98,111 @@ class TriageError(RuntimeError):
     """Measurement failed. Never rendered as a verdict."""
 
 
+def _git_origin_repo() -> str | None:
+    proc = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    match = re.search(r"github\.com[:/]([^/]+)/([^/.]+)", proc.stdout.strip())
+    if not match:
+        return None
+    return f"{match.group(1)}/{match.group(2)}"
+
+
+def _gh_repo_env(value: str | None) -> str | None:
+    """OWNER/REPO from `GH_REPO` (`[HOST/]OWNER/REPO`, per `gh help environment`)."""
+    if not value or not value.strip():
+        return None
+    parts = value.strip().strip("/").split("/")
+    if len(parts) not in (2, 3) or not all(parts):
+        raise TriageError(f"GH_REPO={value!r} is not [HOST/]OWNER/REPO")
+    return "/".join(parts[-2:])
+
+
+def _resolve_repo(explicit: str | None) -> str:
+    """explicit > GH_REPO > origin > DEFAULT_REPO: the order `gh pr` honoured before GB-22."""
+    return explicit or _gh_repo_env(os.environ.get("GH_REPO")) or _git_origin_repo() or DEFAULT_REPO
+
+
+#: `gh pr view --json` field -> how to read it from a REST `pulls/{n}` payload.
+_PULL_FIELDS = {
+    "number": lambda pull: pull["number"],
+    "title": lambda pull: pull.get("title") or "",
+    "body": lambda pull: pull.get("body") or "",
+    "state": lambda pull: (pull.get("state") or "").upper(),
+    "headRefOid": lambda pull: pull["head"]["sha"],
+    "headRefName": lambda pull: pull["head"]["ref"],
+    "baseRefOid": lambda pull: pull["base"]["sha"],
+    "labels": lambda pull: [{"name": label["name"]} for label in pull.get("labels") or []],
+}
+
+
+def _pull_to_gh_view(pull: dict, field_names: Sequence[str]) -> dict:
+    """The `gh pr view --json` shape for `field_names`, read from a REST pull."""
+    unknown = [name for name in field_names if name not in _PULL_FIELDS]
+    if unknown:
+        raise TriageError(f"no REST mapping for gh pr view field(s) {unknown}")
+    return {name: _PULL_FIELDS[name](pull) for name in field_names}
+
+
+# The four `gh pr` helpers go through REST only: `gh pr` subcommands use
+# GraphQL, which cloud review lanes are denied (GB-22), and one path keeps the
+# repo resolution identical for reads and writes.
+
+
+def pr_view_json(pr: str, fields: Sequence[str], *, repo: str | None = None) -> dict:
+    """`gh pr view --json` fields for one PR, read from REST pulls/{n}."""
+    pull = json.loads(_gh(["api", f"repos/{_resolve_repo(repo)}/pulls/{pr}"]))
+    return _pull_to_gh_view(pull, fields)
+
+
+def pr_list_json(
+    *,
+    head: str,
+    state: str = "open",
+    fields: Sequence[str],
+    repo: str | None = None,
+) -> list[dict]:
+    """`gh pr list --json` rows for one head branch, read from REST pulls.
+
+    REST's `head=` filter needs the head OWNER, so it would drop a fork's PR;
+    `gh pr list --head` matched the branch name across owners, and so does this.
+    """
+    query = f"state={quote(state)}&per_page=100"
+    pulls = _paginated_json_list(f"repos/{_resolve_repo(repo)}/pulls?{query}")
+    return [_pull_to_gh_view(pull, fields) for pull in pulls_with_head_branch(pulls, head)]
+
+
+def pulls_with_head_branch(pulls: list[dict], branch: str) -> list[dict]:
+    """The pulls whose head branch is `branch`, whichever owner (fork or base) holds it."""
+    return [pull for pull in pulls if (pull.get("head") or {}).get("ref") == branch]
+
+
+def pr_post_comment(pr: str, body: str, *, repo: str | None = None) -> None:
+    """Post an issue comment on a PR (what `gh pr comment` does)."""
+    _gh(["api", f"repos/{_resolve_repo(repo)}/issues/{pr}/comments", "-f", f"body={body}"])
+
+
+def pr_edit_labels(
+    pr: str,
+    *,
+    remove: Sequence[str] = (),
+    add: Sequence[str] = (),
+    repo: str | None = None,
+) -> None:
+    """Remove then add PR labels (what `gh pr edit --remove-label/--add-label` does)."""
+    repo_name = _resolve_repo(repo)
+    for label in remove:
+        encoded = quote(label, safe="")
+        _gh(["api", "--method", "DELETE", f"repos/{repo_name}/issues/{pr}/labels/{encoded}"])
+    for label in add:
+        _gh(["api", f"repos/{repo_name}/issues/{pr}/labels", "-f", f"labels[]={label}"])
+
+
 def _run_gh(
     args: list[str], input_text: str | None, env: dict[str, str] | None
 ) -> subprocess.CompletedProcess[str]:
@@ -155,10 +264,10 @@ def _checks(pr: str) -> list[dict[str, str]]:
 
 
 def _head_sha(pr: str) -> str:
-    raw = _gh(["pr", "view", pr, "--json", "headRefOid", "-q", ".headRefOid"]).strip()
-    if not raw:
+    head = pr_view_json(pr, ("headRefOid",)).get("headRefOid")
+    if not head:
         raise TriageError(f"gh returned no headRefOid for PR {pr}")
-    return raw
+    return str(head)
 
 
 def _flatten_pages(pages: list[list[dict]]) -> list[dict]:

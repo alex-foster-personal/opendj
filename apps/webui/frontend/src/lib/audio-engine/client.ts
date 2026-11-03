@@ -54,7 +54,10 @@ export interface EngineState {
 	engine_time_ns: number;
 	decks: EngineDeckState[];
 	mixer: { crossfader: number; master_volume: number };
-	master: { muted: boolean };
+	/** `rms`: the master bus level over the engine's last meter window, after
+	 * the master volume and before the mute, where the Web Audio meter taps
+	 * (`apps/audio-engine/src/engine.rs` `Snapshot::master_rms`). */
+	master: { muted: boolean; rms: number };
 }
 
 export interface EngineResult {

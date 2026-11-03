@@ -26,6 +26,8 @@
 	import { openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import { librarySongCapacity } from '$lib/rb/library-song-capacity.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import CrossfadeCurveSelect from './mixer/CrossfadeCurveSelect.svelte';
@@ -45,6 +47,31 @@
 	 * persisted preference (also driven by Cmd/Ctrl+2/+4 via
 	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
 	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
+
+	/** Pin a00900579b7b: artwork that failed to load, keyed by stable id. */
+	let artworkFailed = $state<ReadonlySet<string>>(new Set());
+
+	function noteArtworkFailed(stableId: string): void {
+		if (artworkFailed.has(stableId)) return;
+		artworkFailed = new Set([...artworkFailed, stableId]);
+	}
+
+	/** Same play command as the deck transport, including Cmd/Ctrl quantize. */
+	function duplicatePlayPause(deck: DeckId, event: MouseEvent): void {
+		const deckState = getDeckState(deck);
+		if (deckState.stable_id === null) return;
+		const playing = !deckState.playing;
+		const quantize = event.metaKey || event.ctrlKey;
+		void runPerformanceCommandFromUi(
+			{
+				type: 'play',
+				deck,
+				playing,
+				...(quantize && playing ? { quantize: true } : {})
+			},
+			event.timeStamp
+		);
+	}
 
 	// #1475 M enforcement: audio-engine.svelte.ts is a hotspot file already at
 	// its frontend.max_fan_out ceiling, so it exposes setLevelCeiling(dbfs,
@@ -196,8 +223,10 @@
 			LESS
 		</button>
 	</div>
-	<div class="strips" class:less={deckLayoutLess}>
+	<div class="strips" class:less={deckLayoutLess} class:with-art={librarySongCapacity.showMixerColumnArt}>
 		{#each STRIP_ORDER as deck (deck)}
+			{@const channel = getDeckState(deck)}
+			{@const artId = channel.stable_id}
 			<!-- `inert`, not just `opacity: 0`. LESS mounts all four strips and
 			     hides 3/4 with opacity plus pointer-events, and NEITHER removes
 			     a descendant from sequential keyboard focus - so every control
@@ -212,6 +241,48 @@
 				class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}
 				inert={deckLayoutLess && (deck === 3 || deck === 4)}
 			>
+				{#if librarySongCapacity.showMixerColumnArt}
+					<div class="col-art" data-mixer-column-art={deck}>
+						{#if artId !== null && !artworkFailed.has(artId)}
+							<img
+								class="col-art-img"
+								src={deckArtworkUrl(artId, 's')}
+								alt=""
+								title="Track artwork"
+								draggable="false"
+								onerror={() => noteArtworkFailed(artId)}
+							/>
+						{:else}
+							<div
+								class="col-art-empty"
+								title={artId === null ? 'No track loaded' : 'No artwork found'}
+							></div>
+						{/if}
+						<button
+							type="button"
+							class="col-play"
+							class:playing={channel.playing}
+							disabled={artId === null}
+							aria-label={`play deck ${deck}`}
+							aria-pressed={channel.playing}
+							title={artId === null ? 'no track loaded' : channel.playing ? 'Pause' : 'Play'}
+							data-testid={`mixer-play-deck-${deck}`}
+							onclick={(event) => duplicatePlayPause(deck, event)}
+						>
+							{#if channel.playing}
+								<svg viewBox="0 0 16 16" class="col-play-glyph" aria-hidden="true">
+									<rect x="3.5" y="3" width="3" height="10" fill="currentColor" />
+									<rect x="9.5" y="3" width="3" height="10" fill="currentColor" />
+								</svg>
+							{:else}
+								<svg viewBox="0 0 16 16" class="col-play-glyph" aria-hidden="true">
+									<path d="M4.5 3 L13 8 L4.5 13 Z" fill="currentColor" />
+								</svg>
+							{/if}
+						</button>
+					</div>
+				{/if}
+				<div class="strip-fit">
 				<ChannelStrip
 					deckId={deck}
 					less={deckLayoutLess}
@@ -235,6 +306,7 @@
 					onStemMute={(stem) => handleStemMute(deck, stem)}
 					onStemSolo={(stem) => handleStemSolo(deck, stem)}
 				/>
+				</div>
 			</div>
 		{/each}
 	</div>
@@ -336,6 +408,75 @@
 	.strip-slot.collapsed {
 		opacity: 0;
 		pointer-events: none;
+	}
+	/* Pin a00900579b7b: artwork (40) + gap (2) + play button (22) = 64, the
+	 * same px +page.svelte adds to the deck row via --mixer-col-art-extra. */
+	.strip-fit {
+		min-width: 0;
+		min-height: 0;
+		height: 100%;
+	}
+	.strips.with-art .strip-slot {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
+	.strips.with-art .strip-fit {
+		flex: 1 1 auto;
+		min-height: 0;
+		height: auto;
+		display: flex;
+		flex-direction: column;
+	}
+	.strips.with-art .strip-fit :global(.strip) {
+		flex: 1 1 auto;
+		height: auto;
+		min-height: 0;
+	}
+	.col-art {
+		flex: 0 0 var(--mixer-col-art-extra, 64px);
+		height: var(--mixer-col-art-extra, 64px);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 2px;
+		overflow: hidden;
+	}
+	.col-art-img,
+	.col-art-empty {
+		width: 40px;
+		height: 40px;
+		display: block;
+		border-radius: 2px;
+		border: 1px solid var(--rb-border);
+		background: #101318;
+		object-fit: cover;
+	}
+	.col-play {
+		width: 40px;
+		height: 22px;
+		padding: 0;
+		border-radius: 3px;
+		border: 1px solid var(--rb-border);
+		background: #161b22;
+		color: var(--rb-text);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
+	.col-play:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.col-play.playing {
+		color: var(--rb-accent, #3d7bfd);
+		border-color: var(--rb-accent, #3d7bfd);
+	}
+	.col-play-glyph {
+		width: 10px;
+		height: 10px;
 	}
 	.lower {
 		flex: 0 0 auto;

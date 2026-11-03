@@ -46,6 +46,7 @@ from apps.shared.sync_runtime_gates import (
 )
 from apps.sync_hub import client as sync_client
 from apps.sync_hub import enrollment_credentials, maintenance, maintenance_enroll
+from apps.sync_hub.transport import is_wire_version_refusal
 from apps.sync_hub.scheduler_owed import mark_scheduler_owed
 from apps.sync_hub.single_flight import sync_lock_for
 from apps.webui.server.local_operator import local_operator_refusal
@@ -213,7 +214,8 @@ SYNC_RESPONSES: dict[int | str, dict[str, Any]] = {
         "before any hub I/O when force=false; NOT journaled. "
         "CLOUDSYNC_SYNC_REFUSED: the sync raised one of run_sync's declared "
         "refusals (digest mismatch, still moving, schema version mismatch, "
-        "apply or protocol error); journaled as error."
+        "apply or protocol error) or the hub answered HTTP 409 "
+        "SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION; journaled as error."
     ),
     500: {
         "description": (
@@ -372,6 +374,10 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
                 force=body.force,
             )
         except sync_client.SyncTransportError as exc:
+            if is_wire_version_refusal(exc):
+                raise _refuse(
+                    409, "CLOUDSYNC_SYNC_REFUSED", f"SyncVersionMismatch: {exc}"
+                ) from exc
             raise _refuse(502, "CLOUDSYNC_HUB_UNREACHABLE", str(exc)) from exc
         except DECLARED_SYNC_REFUSALS as exc:
             raise _refuse(409, "CLOUDSYNC_SYNC_REFUSED", f"{type(exc).__name__}: {exc}") from exc

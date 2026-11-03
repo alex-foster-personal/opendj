@@ -36,6 +36,11 @@ export const SIDEBAR_NAV_LINKS: readonly SidebarNavLink[] = [
 	{ href: '/library-wheel', label: 'Library wheel' },
 	{ href: '/sets', label: 'Sessions / REC' },
 	{ href: '/cloudsync', label: 'CloudSync' },
+	{
+		href: '/plugins',
+		label: 'Plugins',
+		title: 'Plugin store - optional modules such as B2B Link, plus opt-in labs experiments'
+	},
 	{ href: '/progress-tree', label: 'Progress', dev: true },
 	{ href: '/admin', label: 'Admin', dev: true },
 	{

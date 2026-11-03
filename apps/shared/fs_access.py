@@ -42,6 +42,12 @@ PROBE_DEADLINE_S: float = 2.0
 #: is answered as no-answer (``pending``) without starting a thread.
 MAX_PROBE_THREADS: int = 256
 
+#: Poll interval while waiting for sibling jobs to finish or for a stop Event.
+_WAIT_SLICE_S: float = 0.05
+
+#: Hang break only; matches ``tests.waits.THREAD_HANG_GUARD_S``.
+_HANG_GUARD_S: float = 120.0
+
 #: What a macOS operator has to do about a denied folder. Spelled once,
 #: served over HTTP, rendered verbatim -- a UI that says "access denied"
 #: without saying where to go is only half an answer.
@@ -249,6 +255,7 @@ def probe_all(
     *,
     deadline_s: float | None = PROBE_DEADLINE_S,
     max_threads: int = MAX_PROBE_THREADS,
+    give_up: threading.Event | None = None,
 ) -> list[AccessProbe]:
     """Probe each path once, in order, with duplicates dropped.
 
@@ -263,14 +270,30 @@ def probe_all(
     With a deadline, at most ``max_threads`` listings are alive at once across
     every caller; a path past that ceiling is reported no-answer without a
     thread. An import (no deadline) is not capped: it needs every answer.
+
+    ``give_up`` is a test seam; omit it outside tests. When omitted and
+    ``deadline_s`` is not None, an internal Event is armed with
+    ``threading.Timer(deadline_s, event.set)`` at entry (before the lock
+    acquire), so waiting on the lock spends the same budget as the listings
+    (Sol on #6825). When the caller passes ``give_up``, that Event is the sole
+    wait signal; ``deadline_s`` still names the budget (detail text, thread
+    ceiling).
     """
-    # One clock from entry, so waiting on the lock and starting threads spend
-    # the same budget as the listings do (Sol on #6825).
-    give_up_at = None if deadline_s is None else time.monotonic() + deadline_s
-    ordered = _unique(paths)
-    running = _start(ordered, give_up_at=give_up_at, max_threads=max_threads)
-    _wait(running, give_up_at)
-    return _collect(ordered, running, deadline_s, give_up_at)
+    stop: threading.Event | None = None
+    timer: threading.Timer | None = None
+    if deadline_s is not None:
+        stop = give_up if give_up is not None else threading.Event()
+        if give_up is None:
+            timer = threading.Timer(deadline_s, stop.set)
+            timer.start()
+    try:
+        ordered = _unique(paths)
+        running = _start(ordered, stop=stop, max_threads=max_threads)
+        _wait(running, stop)
+        return _collect(ordered, running, deadline_s, stop)
+    finally:
+        if timer is not None:
+            timer.cancel()
 
 
 def _unique(paths: list[Path]) -> list[Path]:
@@ -285,18 +308,32 @@ def _unique(paths: list[Path]) -> list[Path]:
     return ordered
 
 
-def _start(ordered: list[Path], *, give_up_at: float | None, max_threads: int) -> list[_InFlight | None]:
+def _start(ordered: list[Path], *, stop: threading.Event | None, max_threads: int) -> list[_InFlight | None]:
     """Reuse or start one listing per path; None for a path past the thread ceiling or the deadline."""
-    timeout = -1.0 if give_up_at is None else max(0.0, give_up_at - time.monotonic())
-    if not _IN_FLIGHT_LOCK.acquire(timeout=timeout):
-        return [None] * len(ordered)
+    if stop is None:
+        _IN_FLIGHT_LOCK.acquire()
+        acquired = True
+    else:
+        acquired = False
+        started = time.monotonic()
+        while True:
+            if stop.is_set():
+                return [None] * len(ordered)
+            if _IN_FLIGHT_LOCK.acquire(timeout=_WAIT_SLICE_S):
+                acquired = True
+                break
+            if time.monotonic() - started > _HANG_GUARD_S:
+                return [None] * len(ordered)
     running: list[_InFlight | None] = []
     try:
         alive = len(_IN_FLIGHT)  # finished listings remove themselves
         for path in ordered:
+            if stop is not None and stop.is_set():
+                running.append(None)
+                continue
             job = _IN_FLIGHT.get(path)
             if job is None:
-                if give_up_at is not None and alive >= max_threads:
+                if stop is not None and alive >= max_threads:
                     running.append(None)
                     continue
                 job = _InFlight(path)
@@ -305,23 +342,31 @@ def _start(ordered: list[Path], *, give_up_at: float | None, max_threads: int) -
                 alive += 1
             running.append(job)
     finally:
-        _IN_FLIGHT_LOCK.release()
+        if acquired:
+            _IN_FLIGHT_LOCK.release()
     return running
 
 
-def _wait(running: list[_InFlight | None], give_up_at: float | None) -> None:
-    """Join every listing, or as many as answer before the deadline."""
-    for job in running:
-        if job is None:
-            continue
-        if give_up_at is None:
-            job.thread.join()
-        else:
-            job.thread.join(timeout=max(0.0, give_up_at - time.monotonic()))
+def _wait(running: list[_InFlight | None], stop: threading.Event | None) -> None:
+    """Join every listing, or return when stop fires or every job has answered."""
+    if stop is None:
+        for job in running:
+            if job is not None:
+                job.thread.join()
+        return
+    started = time.monotonic()
+    while True:
+        if stop.is_set():
+            return
+        if not any(job is not None and job.thread.is_alive() for job in running):
+            return
+        if time.monotonic() - started > _HANG_GUARD_S:
+            return
+        stop.wait(timeout=_WAIT_SLICE_S)
 
 
 def _collect(
-    ordered: list[Path], running: list[_InFlight | None], deadline_s: float | None, give_up_at: float | None
+    ordered: list[Path], running: list[_InFlight | None], deadline_s: float | None, stop: threading.Event | None
 ) -> list[AccessProbe]:
     """Each path's answer, or the no-answer probe for one still blocked or never started."""
     probes: list[AccessProbe] = []
@@ -329,12 +374,13 @@ def _collect(
         if job is None:
             probes.append(_no_answer(path, deadline_s or 0.0, present=None))
             continue
-        if give_up_at is not None and job.thread.is_alive():
+        if job.result is not None:
+            probes.append(job.result)
+            continue
+        if stop is not None and job.thread.is_alive():
             probes.append(_no_answer(path, deadline_s or 0.0, present=job.present))
             continue
-        if job.result is None:
-            raise RuntimeError(f"the access probe for {path} ended without an answer")
-        probes.append(job.result)
+        raise RuntimeError(f"the access probe for {path} ended without an answer")
     return probes
 
 

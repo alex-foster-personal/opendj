@@ -120,6 +120,7 @@ from apps.shared.telemetry.live import (
     MIRROR_LIVE_MAX_AGE_S,
     MIRROR_RECEIVED_MONOTONIC_KEY,
     mirror_age_s,
+    mirror_decks_live,
     mirror_transport_live,
     set_live_transport_probe,
     transport_is_live,
@@ -360,7 +361,9 @@ def capture_browser_error(
 
     Returns the Sentry event id, or None when telemetry is off (the common
     case, and not a failure), when the error is a perf-event console mirror,
-    a Vite console line, or a transient fetch/abort TypeError (OBS-07),
+    a Vite console line, a transient fetch/abort TypeError (OBS-07),
+    an expected library play-refusal (OBS-5422), or a STATE-14
+    ``STATE_STORE_BUSY`` RbApiError (OBS-5454; token match only),
     when consent is not granted, when a deck is live, or when the quota
     budget refused it. Never raises: reporting an error must not become one.
 
@@ -462,6 +465,7 @@ __all__ = [
     "decide_telemetry",
     "init_telemetry",
     "mirror_age_s",
+    "mirror_decks_live",
     "mirror_transport_live",
     "reset_live_gate_for_tests",
     "scrub_event",

@@ -1,6 +1,6 @@
 /**
  * Pure lane packing for the main-waveform word overlay (build unit:
- * wavestack word lanes; specs/karaoke-lyrics-operational-plan.md).
+ * wavestack word lanes; (private path)).
  *
  * No DOM, no canvas, no runes: every function is a plain transform of REAL
  * aligner words (a structural subset of the LyricWord shape served at
@@ -22,7 +22,7 @@
  * scale - not on the window position. So assignLanes runs once per
  * (track, bucketPxPerS(pxPerS)) and sliceLanes does the per-frame work: one
  * binary search plus a walk over the visible words. Never re-assign per
- * frame in a rAF loop (docs/perf/performance-register.md, word-lanes table).
+ * frame in a rAF loop ((private path), word-lanes table).
  */
 
 /** One aligner word as consumed by the packer - a structural subset of the
@@ -45,8 +45,12 @@ export const LANE_FONT_PX = 11;
 export const LANE_CHAR_W_PX = 6.9;
 /** Clear pixels required between two labels sharing a lane. */
 export const LANE_WORD_GAP_PX = 5;
-/** Lanes over one waveform row; placed words alternate between them. */
-export const LANE_COUNT = 2;
+/** Rows the packer may use. The first two are the normal spread. Index 2
+ * opens only when a word's onset still overlaps both of those, so a dense
+ * passage keeps the word at its sung time instead of dropping it. */
+export const LANE_COUNT = 3;
+/** Rows used before the overflow row. Alternation stays inside this pair. */
+export const PRIMARY_LANE_COUNT = 2;
 /** px-per-second quantisation step for the memo key. Pitch moves pxPerS
  * continuously; a 1px/s bucket caps repacks at a handful per fader sweep
  * while keeping lane decisions visually indistinguishable. */
@@ -56,6 +60,19 @@ export const PX_PER_S_BUCKET = 1;
 export const MARKER_BAND_PX = 10;
 /** Vertical clearance between the two lyric lanes' text boxes. */
 export const LANE_V_GAP_PX = 2;
+
+/** Vertical centers, percent of the row, for the word overlay. Two rows keep
+ * the historical 32/68 spread. Three rows squeeze into the same row height
+ * (the 43px deck row cannot hold three 11px lines under the marker band, so
+ * the third row is a percent, not another lyricLaneYs baseline). */
+export const WORD_ROW_CENTER_PCT: { readonly 2: readonly number[]; readonly 3: readonly number[] } = {
+	2: [32, 68],
+	3: [18, 50, 82]
+};
+
+export function wordRowCenters(laneCount: 2 | 3): readonly number[] {
+	return WORD_ROW_CENTER_PCT[laneCount];
+}
 
 /** Text baselines for the two lyric lanes, tucked under the marker band. */
 export function lyricLaneYs(heightCss: number): [number, number] {
@@ -81,12 +98,14 @@ export interface LaneWord {
 
 /** Whole-track lane assignment - the memoisable unit. */
 export interface AssignedLanes {
-	/** Placed words only, time-ordered. Words that fit neither lane at this
-	 * scale are dropped whole (never clipped mid-glyph). */
+	/** Placed words only, time-ordered. A word that fits none of the three
+	 * rows at this scale is dropped whole (never clipped mid-glyph). */
 	laneWords: LaneWord[];
 	/** Widest label, used by sliceLanes for the left-edge lookback. */
 	maxWidthPx: number;
 	usedLane1: boolean;
+	/** True when at least one word needed the overflow row. */
+	usedLane2: boolean;
 }
 
 /** One placed word for one frame, x in CSS px from the window's left. */
@@ -120,12 +139,12 @@ export function bucketPxPerS(pxPerS: number): number {
  * Rules (all in absolute px at `pxPerS`, so the result is window-free):
  *   1. words with a null start_s cannot be placed and are skipped - an
  *      unaligned word has no honest position;
- *   2. placed words ALTERNATE lanes (first word lane 0, then 1, 0, ...), so
- *      neighbors never share a row (design record: re-skinning
- *      design-widgets, option G); a word whose turn-lane cursor (previous
- *      label's right edge + LANE_WORD_GAP_PX) is still ahead of its onset x
- *      is DROPPED whole and the next word takes that lane instead;
- *   3. cursors only advance, so within a lane no two labels can overlap by
+ *   2. each placed word stays at its onset x. The preferred row alternates
+ *      0, 1, 0, ... If that row's cursor is still ahead of the onset, the
+ *      other primary row is tried. The third row is used only when both
+ *      primary rows would overlap the word. If all three are busy the word
+ *      is DROPPED whole (never shifted off its onset, never clipped);
+ *   3. cursors only advance, so within a row no two labels can overlap by
  *      construction (the property the unit test sweeps).
  */
 export function assignLanes(
@@ -141,8 +160,9 @@ export function assignLanes(
 	const cursors = new Array<number>(LANE_COUNT).fill(-Infinity);
 	let maxWidthPx = 0;
 	let usedLane1 = false;
+	let usedLane2 = false;
 	let prevStart = -Infinity;
-	let lastLane = -1;
+	let lastPrimary = -1;
 	for (const word of words) {
 		if (word.start_s === null) continue;
 		if (word.start_s < prevStart) {
@@ -154,15 +174,23 @@ export function assignLanes(
 		prevStart = word.start_s;
 		const x = word.start_s * pxPerS;
 		const widthPx = estimateLabelWidthPx(word.word, charW);
-		const lane = (lastLane + 1) % LANE_COUNT;
-		if (x < cursors[lane]) continue; // dropped whole - its turn lane is still occupied
+		const preferred = (lastPrimary + 1) % PRIMARY_LANE_COUNT;
+		const other = preferred === 0 ? 1 : 0;
+		let lane: number | null = null;
+		if (x >= cursors[preferred]) lane = preferred;
+		else if (x >= cursors[other]) lane = other;
+		else if (x >= cursors[2]) lane = 2;
+		if (lane === null) continue; // dropped whole - every row still occupied
 		cursors[lane] = x + widthPx + LANE_WORD_GAP_PX;
-		lastLane = lane;
+		// Overflow does not steal the two-row rhythm: the next word still
+		// prefers the row this one could not take.
+		lastPrimary = lane === 2 ? preferred : lane;
 		if (widthPx > maxWidthPx) maxWidthPx = widthPx;
 		if (lane === 1) usedLane1 = true;
+		if (lane === 2) usedLane2 = true;
 		laneWords.push({ word, lane, widthPx });
 	}
-	return { laneWords, maxWidthPx, usedLane1 };
+	return { laneWords, maxWidthPx, usedLane1, usedLane2 };
 }
 
 /** First index in laneWords with start_s >= tSec (binary search; laneWords
@@ -244,8 +272,13 @@ export function laneWindow(args: {
 	pitch: number;
 	widthCss: number;
 	windowSeconds: number;
+	/** Where the playhead sits across the row, 0..1 (WAVEZOOM-6802c). Required. */
+	playheadFrac: number;
 }): { tLeftSec: number; pxPerS: number } {
-	const { positionMs, pitch, widthCss, windowSeconds } = args;
+	const { positionMs, pitch, widthCss, windowSeconds, playheadFrac } = args;
+	if (!Number.isFinite(playheadFrac) || playheadFrac < 0 || playheadFrac > 1) {
+		throw new Error(`laneWindow: playheadFrac must be within 0..1, got ${playheadFrac}`);
+	}
 	if (
 		!Number.isFinite(positionMs) ||
 		!Number.isFinite(pitch) ||
@@ -261,7 +294,7 @@ export function laneWindow(args: {
 	}
 	const windowSpanSec = windowSeconds * pitch;
 	return {
-		tLeftSec: positionMs / 1000 - windowSpanSec / 2,
+		tLeftSec: positionMs / 1000 - windowSpanSec * playheadFrac,
 		pxPerS: widthCss / windowSpanSec
 	};
 }

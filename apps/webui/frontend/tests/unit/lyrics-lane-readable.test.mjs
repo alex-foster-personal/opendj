@@ -86,7 +86,7 @@ test('left edge plus width never passes the next left edge', () => {
 	const starts = [1_000, 1_400, 4_000, 4_050, 9_000];
 	for (const positionMs of [0, 2_000, 8_500]) {
 		for (let i = 0; i < starts.length - 1; i += 1) {
-			const args = { positionMs, pitch: 1.06, windowSeconds: WINDOW_S };
+			const args = { positionMs, pitch: 1.06, windowSeconds: WINDOW_S, playheadFrac: 0.5 };
 			const left = lane.lyricLanePositionPercent({ lineStartMs: starts[i], ...args });
 			const nextLeft = lane.lyricLanePositionPercent({ lineStartMs: starts[i + 1], ...args });
 			const width = lane.lyricLaneWidthPercent({
@@ -115,7 +115,9 @@ test('the rendered line starts at the playhead and is capped to the next line on
 			},
 			loadError: null,
 			positionMs: 5_000,
-			pitch: 1
+			pitch: 1,
+			windowSeconds: 24,
+			playheadFrac: 0.5
 		}
 	}).body;
 	const spans = [...html.matchAll(/<span[^>]*class="lyric-line[^"]*"[^>]*>/g)].map((m) => m[0]);

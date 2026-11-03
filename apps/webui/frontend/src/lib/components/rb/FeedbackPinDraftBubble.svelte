@@ -346,10 +346,16 @@
 		max-height: 320px;
 		overflow-y: auto;
 		padding: 6px;
-		background: var(--rb-well, #0a0c0f);
-		border: 1px solid var(--rb-border);
+		/* Shell tokens, not --rb-*: this bubble is mounted on the app root,
+		   outside .perf-root, so the performance palette does not exist here.
+		   A hard-coded black card plus color: var(--rb-text) painted light-mode
+		   typing in near-black on black. --fg/--bg stay a readable pair in
+		   both themes. */
+		background: var(--surface, #121720);
+		border: 1px solid var(--border, #1c222c);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--fg, #e6e9ef);
 	}
 
 	.fb-bubble-text {
@@ -358,10 +364,12 @@
 		overflow-y: auto;
 		overflow-wrap: anywhere;
 		box-sizing: border-box;
-		background: var(--rb-inset);
-		border: 1px solid var(--rb-border);
+		background: var(--bg, #0b0d11);
+		border: 1px solid var(--border, #1c222c);
 		border-radius: 2px;
-		color: var(--rb-text);
+		color: var(--fg, #e6e9ef);
+		-webkit-text-fill-color: var(--fg, #e6e9ef);
+		caret-color: var(--fg, #e6e9ef);
 		font-family: var(--rb-font);
 		font-size: 10px;
 		padding: 3px 4px;
@@ -374,10 +382,10 @@
 	}
 
 	:global(.fb-mini) {
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
+		background: var(--surface-raised, #1a212c);
+		border: 1px solid var(--border, #1c222c);
 		border-radius: 2px;
-		color: var(--rb-text-dim);
+		color: var(--muted, #9aa4b2);
 		font-family: var(--rb-font);
 		font-size: 9px;
 		padding: 2px 6px;
@@ -385,7 +393,7 @@
 		cursor: pointer;
 	}
 	:global(.fb-mini:hover:not(:disabled)) {
-		color: var(--rb-text);
+		color: var(--fg, #e6e9ef);
 	}
 	:global(.fb-close) {
 		margin-left: auto;
@@ -394,7 +402,7 @@
 
 	:global(.fb-hint) {
 		margin: 2px 0 0;
-		color: var(--rb-text-dim);
+		color: var(--muted, #9aa4b2);
 	}
 
 	.fb-attachment-error {

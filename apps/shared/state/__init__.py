@@ -2,7 +2,7 @@
 
 Canonical, local projection of the user's music library. Stores open-dj
 stable_ids (OPEN-01b) and provenance-wrapped analysis fields (OPEN-01c) in
-a single SQLite file (``data/state/state.db``). This package is the first
+a single SQLite file (``(private path)``). This package is the first
 reference implementation of the open-dj v0 strawman in this repo.
 
 Modules:
@@ -20,12 +20,12 @@ Modules:
 from __future__ import annotations
 
 __all__ = [
-    "paths",
-    "schema",
     "db",
-    "ids",
-    "types",
-    "provenance",
     "events",
+    "ids",
+    "paths",
+    "provenance",
+    "schema",
+    "types",
     "writer",
 ]

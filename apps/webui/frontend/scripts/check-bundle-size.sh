@@ -3,14 +3,13 @@
 #
 # Runs after `pnpm build`. Thin wrapper so the CI invocation stays
 # `bash scripts/check-bundle-size.sh`; all the measurement lives in
-# scripts/bundle-budget.mjs, which documents each budget and its derivation.
+# scripts/bundle-budget.mjs.
 #
-# Three budgets are enforced (gzip, JS under build/_app/immutable/):
-# library (initial load of "/"), performance (/performance and children) and
-# other-lazy (every other route plus deferred shell chunks). The byte limits
-# are NOT restated here on purpose: the BUDGETS array in bundle-budget.mjs is
-# the single source of truth, and figures copied into this header drifted
-# stale twice (Tue 1 Sep and Sat 5 Sep 2026). Read them there.
+# One budget per surface (gzip, JS under build/_app/immutable/), one directory
+# each under budgets/: limit = budgets/<surface>/base.json plus the sum of
+# budgets/<surface>/charges/<pr>.json (budgets/README.md). The byte limits are
+# NOT restated here on purpose: figures copied into this header drifted stale
+# twice (Tue 1 Sep and Sat 5 Sep 2026). The gate prints them.
 # Plus a coverage assertion: an emitted chunk under no budget fails the run.
 #
 # Usage:

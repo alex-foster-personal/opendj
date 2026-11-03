@@ -1,6 +1,6 @@
 """Safe apply pass for Phase 3 playlist sync (SYNC-03).
 
-Consumes ``data/sync/playlist-plan.json`` produced by
+Consumes ``(private path)`` produced by
 ``apps.sync.playlist_diff`` and writes the RB-canonical diff into djay's
 ``MediaLibrary.db`` under the six-rail safety pattern established in
 Phase 1 (``apps/reconcile/remove_track.py``, ``apps/reconcile/apply.py``):
@@ -664,6 +664,7 @@ def main(argv: list[str] | None = None) -> int:
         _dry_run_print(plan, filter_)
         return 0
 
+    process_gate_overridden = False
     try:
         _assert_djay_quit()
         _assert_rekordbox_quit()
@@ -673,6 +674,7 @@ def main(argv: list[str] | None = None) -> int:
         # for sandboxes that genuinely lack pgrep.
         msg = str(exc)
         if args.force_no_pgrep and "pgrep" in msg:
+            process_gate_overridden = True
             sys.stderr.write(
                 f"[warn] {msg}\n"
                 "[warn] --force-no-pgrep: bypassing rail 2 process check.\n"
@@ -725,6 +727,7 @@ def main(argv: list[str] | None = None) -> int:
             playlist_filter=effective_filter,
             leaf_type_byte=args.leaf_type_byte,
             live=True,
+            safety_session=object() if process_gate_overridden else None,
         )
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"apply raised: {exc}\n")

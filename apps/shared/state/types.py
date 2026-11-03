@@ -58,4 +58,4 @@ class Event:
     actor: str | None = None
 
 
-__all__ = ["Source", "SOURCES", "ProvenanceValue", "Event"]
+__all__ = ["SOURCES", "Event", "ProvenanceValue", "Source"]

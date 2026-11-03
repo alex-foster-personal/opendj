@@ -1,8 +1,8 @@
 """Allocate numeric ADR ids at merge time (issue #3076).
 
-Feature branches author ``docs/decisions/ADR-NEW-<slug>.md`` placeholders.
+Feature branches author ``(private path)<slug>.md`` placeholders.
 The merge lane runs ``--finalize`` to assign monotonic ``ADR-NNNN-<slug>.md``
-names and regenerate ``docs/decisions/README.md``.
+names and regenerate ``(private path)``.
 
     python -m scripts.adr_allocate --check
     python -m scripts.adr_allocate --finalize
@@ -24,9 +24,12 @@ DEFAULT_README = DEFAULT_ADR_DIR / "README.md"
 _NUMERIC_RE = re.compile(r"^ADR-(\d{4})-")
 _NEW_RE = re.compile(r"^ADR-NEW-(.+)\.md$")
 _H1_RE = re.compile(r"^#\s+ADR-(?:NEW|\d{4}):\s*(.+)$", re.MULTILINE)
-_STATUS_INLINE_RE = re.compile(r"^Status:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
+_STATUS_CAPTURE = r"(superseded-by\s+\S+|\S+)"
+_STATUS_INLINE_RE = re.compile(
+    rf"^Status:\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE
+)
 _STATUS_HEADING_RE = re.compile(
-    r"^##\s+Status\s*\n+\s*(\S+)", re.MULTILINE | re.IGNORECASE
+    rf"^##\s+Status\s*\n+\s*{_STATUS_CAPTURE}", re.MULTILINE | re.IGNORECASE
 )
 _DATE_INLINE_RE = re.compile(
     r"^Date:\s*(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4})", re.MULTILINE
@@ -64,7 +67,9 @@ def _parse_title(text: str) -> str:
 
 def _parse_status(text: str) -> str:
     match = _STATUS_INLINE_RE.search(text) or _STATUS_HEADING_RE.search(text)
-    return match.group(1).strip() if match else "proposed"
+    if not match:
+        return "proposed"
+    return match.group(1).strip().rstrip(";")
 
 
 def _parse_date(text: str) -> str:
@@ -129,14 +134,14 @@ def _adr_rows(adr_dir: Path) -> list[tuple[str, str, str, str, str]]:
 
 
 def build_adr_index(adr_dir: Path, readme_path: Path) -> str:
-    """Regenerate the ``## Index`` block in ``docs/decisions/README.md``."""
+    """Regenerate the ``## Index`` block in ``(private path)``."""
     readme = readme_path.read_text(encoding="utf-8")
     marker = "## Index"
     if marker not in readme:
         raise ValueError(f"{readme_path} is missing a {marker!r} section")
 
     before, _rest = readme.split(marker, 1)
-    tail_marker = "When `docs/moc/README.md` lands"
+    tail_marker = "When `(private path)` lands"
     tail = ""
     if tail_marker in _rest:
         _, tail = _rest.split(tail_marker, 1)

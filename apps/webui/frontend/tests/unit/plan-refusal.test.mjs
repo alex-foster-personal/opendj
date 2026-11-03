@@ -114,7 +114,9 @@ test('the entitlement client never composes its own refusal sentence', () => {
 test('the bauble menu offers a route to account information', () => {
 	// ACCT-01: this menu offered only "Sign out", which left identity, plan and
 	// the local-data disclosure reachable by terminal only.
-	const source = read(join(SRC, 'lib/components/UserBauble.svelte'));
+	// Container plus its props-only view: the pair is the component.
+	const source =
+		read(join(SRC, 'lib/components/UserBauble.svelte')) + read(join(SRC, 'lib/components/UserBaubleView.svelte'));
 	assert.ok(
 		source.includes('openAccountOverlay'),
 		'UserBauble must open the account overlay'

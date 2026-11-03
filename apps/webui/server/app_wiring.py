@@ -102,7 +102,6 @@ from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import dj_transition as dj_transition_routes
 from .routes import dj_try as dj_try_routes
-from .routes import pair_transition as pair_transition_routes
 from .routes import energy as energy_routes
 from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
@@ -117,6 +116,7 @@ from .routes import find_replace as find_replace_routes
 from .routes import genres as genres_routes
 from .routes import grid_edit as grid_edit_routes
 from .routes import grid_provenance as grid_provenance_routes
+from .routes import tempo_stability as tempo_stability_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_cli_procs
@@ -130,6 +130,7 @@ from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
 from .routes import midi_maps as midi_maps_routes
 from .routes import mytag as mytag_routes
+from .routes import pair_transition as pair_transition_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
@@ -137,6 +138,7 @@ from .routes import performance_remote_speaker as performance_remote_speaker_rou
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
+from .routes import library_org as library_org_routes
 from .routes import playlist_sets as playlist_sets_routes
 from .routes import playlist_tree as playlist_tree_routes
 from .routes import playlist_write as playlist_write_routes
@@ -152,6 +154,7 @@ from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
+from .routes import track_locations as track_locations_routes
 from .routes import rescue_snapshots as rescue_snapshots_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
@@ -167,6 +170,7 @@ from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import sync_billing_proxy as sync_billing_proxy_routes
+from .routes import system_audio as system_audio_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import title_fix as title_fix_routes
@@ -640,6 +644,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         playlists_routes.router,
         playlist_write_routes.router,
         playlist_tree_routes.router,
+        library_org_routes.router,
         playlist_sets_routes.router,
         create_set_notes_router(get_write_state),
         playlist_history_routes.router,
@@ -659,6 +664,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         share_routes.router,
         rb_assets_routes.router,
         grid_provenance_routes.router,
+        tempo_stability_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
         grid_edit_routes.router,
@@ -678,6 +684,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         reconcile_routes.router,
         rekordbox_gate_routes.router,
         relocate_routes.router,
+        track_locations_routes.router,
         copilot_routes.router,
         analysis_routes.router,
         audio_output_health_routes.router,
@@ -725,6 +732,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         usb_eject_routes.router,
         usb_volumes_routes.router,
         usb_tracks_routes.router,
+        system_audio_routes.router,
     )
     for router in prefixed:
         app.include_router(router, prefix=api_prefix)

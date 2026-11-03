@@ -1,9 +1,24 @@
 """Which tests a pull request HEAD runs in the five pytest fast lane shards (DEVOPS-20).
 
 the maintainer, Thu 1 Oct 2026, answered in chat: "Go now, skip the trial". A PR head runs only the
-tests its change affects; every main push, every `workflow_dispatch` and every
-`ci:trunk-repair` PR keep running the FULL suite. Decision record:
-(private path).
+tests its change affects. Decision record: (private path).
+
+A push to main selects too (the maintainer, Tue 27 Oct 2026: "NEVER blast CI by running every test...
+on a PR, bundle or merge lane. Full-suite runs belong to scheduled nightly jobs and to a
+stated hypothesis, never to merging"; (private path)).
+It takes the same hard-capped selection over every file changed since the newest main commit
+whose `ci gate` passed, plus the `CI-Tests:` lines of the PRs merged since then; the scope job
+reads that range once (scripts/ci_main_push_range.py, CI_MAIN_PUSH_RANGE). When the range is
+unknown it tests HEAD's own change (HEAD^1..HEAD). Repo variable `CI_MAIN_PUSH_TEST_SELECTION`
+is its own revert: `full` keeps main pushes on the full suite; unset or `affected` selects.
+A `workflow_dispatch` and a `schedule` run keep the FULL suite: ci.yml's 02:00Z schedule and
+full-ci.yml's 03:11Z one are the nightly runs that catch what a selection missed.
+
+A `ci:trunk-repair` PR is a PR head like any other (the maintainer, Tue 3 Nov 2026; reversal of the
+Thu 1 Oct exemption, (private path)): it
+takes the same hard-capped selection, its `CI-Tests:` lines (the tests failing on main) rank
+at distance 0, and the push run after it lands selects them again from its body. The label keeps only
+its routing to the main-fix runners in ci.yml (`CI_RUNS_ON_MAIN_FIX`).
 
 Bundle merges (the maintainer, Tue 27 Oct 2026; (private path),
 (private path)): a Trunk merge-queue draft tests a bundle of PRs, and it selects
@@ -26,16 +41,18 @@ Selection happens ONLY when all of these hold, and the reason for the first one 
 not is logged and recorded:
   1. repo variable `CI_PR_TEST_SELECTION` equals `affected` (the kill switch; anything else,
      unset included, is the full suite);
-  2. the event is `pull_request`;
+  2. the event is `pull_request`, or a `push` to refs/heads/main while
+     `CI_MAIN_PUSH_TEST_SELECTION` is unset or `affected`;
   3. the head ref does not start with `trunk-merge/` (a Trunk queue draft), unless repo
-     variable `CI_QUEUE_TEST_SELECTION` also equals `affected`;
-  4. the PR does not carry the `ci:trunk-repair` label.
+     variable `CI_QUEUE_TEST_SELECTION` also equals `affected`.
 
-A PR head then falls back to FULL, never to an empty run, when a changed path is global
-(`GLOBAL_PATTERNS`), when the import graph cannot resolve a changed Python path (the
-UNKNOWN of `scripts.affected_tests`), when changed code is imported by a top-level
-conftest, or when the selection cannot be computed for any reason at all. Every fallback
-names its cause in the log, the job summary and the record.
+Without a hard cap, a PR head then falls back to FULL, never to an empty run, when a changed
+path is global (`GLOBAL_PATTERNS`), when the import graph cannot resolve a changed Python path
+(the UNKNOWN of `scripts.affected_tests`), when changed code is imported by a top-level
+conftest, or when the selection cannot be computed for any reason at all. Under the hard cap
+(`ci/test-budget.yml`, `cap: hard`) an unnarrowable change ranks the whole lane into the
+budget instead (`capped_full_selection`), and any other failure refuses (HardCapError) rather
+than run FULL. Every fallback names its cause in the log, the job summary and the record.
 
 What is selected, and why each rule exists: scripts/ci_test_selection_rules.py.
 
@@ -104,6 +121,10 @@ from scripts.ci_test_selection_rules import (
 
 SWITCH_VARIABLE = "CI_PR_TEST_SELECTION"
 QUEUE_SWITCH_VARIABLE = "CI_QUEUE_TEST_SELECTION"
+MAIN_SWITCH_VARIABLE = "CI_MAIN_PUSH_TEST_SELECTION"
+MAIN_SWITCH_OFF = "full"
+MAIN_RANGE_VARIABLE = "CI_MAIN_PUSH_RANGE"
+MAIN_REF = "refs/heads/main"
 BUNDLE_VARIABLE = "CI_BUNDLE_DECLARATIONS"
 SWITCH_ON = "affected"
 #: A Trunk queue draft is classified once, here, and the bundle collector imports it (Sol,
@@ -112,7 +133,6 @@ SWITCH_ON = "affected"
 #: caller-controlled, so a human's `trunk-merge/x` branch is an ordinary PR head.
 QUEUE_DRAFT_HEAD = re.compile(r"^trunk-(?:merge|temp)/pr-\d+/")
 TRUNK_LOGIN = "trunk-io[bot]"
-REPAIR_LABEL = "ci:trunk-repair"
 BY_NAME_VARIABLE = "CI_PR_SELECT_BY_NAME"
 BY_NAME_ON = "ci-config"
 DEMOTE_VARIABLE = "CI_PR_DEMOTE_WEAK_LINKS"
@@ -121,7 +141,8 @@ DEMOTE_VARIABLE = "CI_PR_DEMOTE_WEAK_LINKS"
 #: budget the run was fitted to, the planned minutes before and after, and the weak-link
 #: modules it dropped (scripts/ci_test_budget.py); None when `select` ran without `--budget`.
 #: Schema 4 adds `policy` and `demoted` (TEST-CUT items 2 and 3, (private path)).
-SCHEMA = 4
+#: Schema 5 (Tue 3 Nov 2026) adds `main_push_base`: the commit a main push diffed against.
+SCHEMA = 5
 RECORD_NAME = "selection.json"
 SHARD_MODULES_NAME = "shard-modules.txt"
 
@@ -143,15 +164,24 @@ class Event:
     #: True only for an authenticated Trunk queue draft (`is_queue_draft`).
     queue_draft: bool = False
 
+    @property
+    def main_push(self) -> bool:
+        """A push to main: `head_ref` is the pushed ref and `head_sha` the pushed commit."""
+        return self.name == "push" and self.head_ref == MAIN_REF
+
     @classmethod
     def from_payload(cls, name: str, payload: dict, repository: str) -> Event:
-        """`repository` is GITHUB_REPOSITORY, which authenticates a queue draft's head."""
+        """`repository` is GITHUB_REPOSITORY, which authenticates a queue draft's head.
+
+        A push payload has no `pull_request`: its `ref` and `after` are the head.
+        """
         pull_request = payload.get("pull_request") or {}
         head = pull_request.get("head") or {}
+        pushed = name == "push" and not pull_request
         return cls(
             name=name,
-            head_ref=str(head.get("ref") or ""),
-            head_sha=str(head.get("sha") or ""),
+            head_ref=str((payload.get("ref") if pushed else head.get("ref")) or ""),
+            head_sha=str((payload.get("after") if pushed else head.get("sha")) or ""),
             labels=tuple(str(label["name"]) for label in pull_request.get("labels") or ()),
             pr_number=pull_request.get("number"),
             body=str(pull_request.get("body") or ""),
@@ -171,21 +201,28 @@ def is_queue_draft(payload: dict, repository: str) -> bool:
     )
 
 
-def full_suite_reason(switch: str | None, event: Event, queue_switch: str | None = None) -> str | None:
-    """Why this run takes the full suite, or None when it is a PR head with selection on.
+def full_suite_reason(
+    switch: str | None, event: Event, queue_switch: str | None = None, main_switch: str | None = None
+) -> str | None:
+    """Why this run takes the full suite, or None when it is a PR head or a main push that selects.
 
     `queue_switch` is `CI_QUEUE_TEST_SELECTION`; None is the variable unset, which keeps a
-    queue draft on the full suite.
+    queue draft on the full suite. `main_switch` is `CI_MAIN_PUSH_TEST_SELECTION`: `full` keeps
+    a main push on the full suite, and any value but unset, empty or `affected` does too, named.
     """
-    if event.name != "pull_request":
-        return f"event `{event.name}` is not a pull request head; only PR heads select"
+    if event.main_push:
+        if (main_switch or "").strip() not in ("", SWITCH_ON):
+            return (
+                f"repo variable {MAIN_SWITCH_VARIABLE}={main_switch!r} keeps main pushes on the full "
+                f"suite; it selects only when unset or {SWITCH_ON!r}"
+            )
+    elif event.name != "pull_request":
+        return f"event `{event.name}` is not a pull request head or a push to main; only those select"
     if event.queue_draft and queue_switch != SWITCH_ON:
         return (
             f"head `{event.head_ref}` is a Trunk merge-queue draft; the queue runs everything "
             f"while repo variable {QUEUE_SWITCH_VARIABLE}={queue_switch!r} is not {SWITCH_ON!r}"
         )
-    if REPAIR_LABEL in event.labels:
-        return f"the PR carries `{REPAIR_LABEL}`; a trunk repair runs everything"
     if switch != SWITCH_ON:
         return f"repo variable {SWITCH_VARIABLE}={switch!r}; selection runs only when it equals {SWITCH_ON!r}"
     return None
@@ -304,8 +341,57 @@ def bundle_declarations(bundle_json: str | None) -> tuple[list[str], list[int], 
     return list(bundle["declared"]), list(bundle["prs"]), list(bundle["errors"])
 
 
-def run_declarations(event: Event, bundle_json: str | None) -> tuple[list[str], list[int], list[str]]:
-    """(declared modules, bundle PRs, declaration errors) for this run; FullSuite when unreadable."""
+def main_push_range(range_json: str | None) -> dict:
+    """The scope job's CI_MAIN_PUSH_RANGE record (scripts/ci_main_push_range.py), `{}` when unreadable.
+
+    Never FullSuite: a main push whose range is unknown tests HEAD's own change instead
+    (`main_push_base`), because merged PR bodies are not something main can fix.
+    """
+    try:
+        record = json.loads(range_json or "")
+    except json.JSONDecodeError:
+        return {}
+    return record if isinstance(record, dict) and record.get("main_push") is True else {}
+
+
+def main_push_base(root: Path, head_sha: str, record: dict) -> tuple[str, str]:
+    """(base sha, why) for a main push: the range's green base, else HEAD's first parent.
+
+    Raises FullSuite when the checkout is not the pushed commit: nothing it diffs is this push.
+    """
+    head = _git(root, "rev-parse", "HEAD")
+    if head != head_sha:
+        raise FullSuite(f"the checkout's HEAD is {head}, not the pushed commit {head_sha}")
+    base = record.get("base")
+    if isinstance(base, str) and base and record.get("head") == head_sha:
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base, head], cwd=root, capture_output=True, check=False
+        )
+        if ancestor.returncode == 0:
+            return base, f"since {base[:10]}, the newest main commit with a green `ci gate`"
+        problem = f"the range base {base[:10]} is not an ancestor of HEAD"
+    else:
+        problem = record.get("unknown") or f"{MAIN_RANGE_VARIABLE} is missing or names another head"
+    return _git(root, "rev-parse", "HEAD^1"), f"HEAD's own change only ({problem})"
+
+
+def range_changed_paths(root: Path, base: str) -> list[str]:
+    """Paths changed between `base` and the checked-out HEAD; `--no-renames` lists a rename's old path too."""
+    diff = _git(root, "diff", "--name-only", "--no-renames", base, "HEAD")
+    return [line for line in diff.splitlines() if line]
+
+
+def run_declarations(
+    event: Event, bundle_json: str | None, range_record: dict | None = None
+) -> tuple[list[str], list[int], list[str]]:
+    """(declared modules, bundle PRs, declaration errors) for this run; FullSuite when unreadable.
+
+    A main push's declarations are its merged PRs' (`range_record`), and their errors are
+    returned empty: a merged body cannot be fixed, so `decide` reports and drops them instead.
+    """
+    if event.main_push:
+        record = range_record or {}
+        return list(record.get("declared") or []), list(record.get("prs") or []), []
     if not event.queue_draft:
         paths, errors = parse_declarations(event.body)
         return paths, [], errors
@@ -418,6 +504,8 @@ class Record:
     policy: dict | None = None
     #: Modules selected only by a weak link and not run at this head, with their rules.
     demoted: dict[str, list[str]] = dataclass_field(default_factory=dict)
+    #: The commit a main push diffed against (`main_push_base`); None for every other run.
+    main_push_base: str | None = None
 
 
 class HardCapError(Exception):
@@ -452,20 +540,61 @@ def _precondition_problem(
     return None
 
 
+def _checked_declarations(
+    event: Event, declared: list[str], errors: list[str], never_run: list[str], range_record: dict
+) -> tuple[list[str], list[str], list[str]]:
+    """(declared, errors, dropped) once the never-run paths are known.
+
+    At a PR head a never-run path is an error the guard fails. A main push drops it, and its
+    merged PRs' malformed lines, and says so in its reason: a merged body cannot be fixed.
+    """
+    if not event.main_push:
+        never = [
+            f"`CI-Tests:` path this lane never runs (typo, deleted, or lane-ignored): {path}" for path in never_run
+        ]
+        return declared, errors + never, []
+    dropped = list(range_record.get("errors") or []) + [f"never runs: {path}" for path in never_run]
+    return [path for path in declared if path not in never_run], errors, dropped
+
+
+def _changed_paths(root: Path, event: Event, range_record: dict) -> tuple[list[str], str | None, str]:
+    """(changed paths, main push base or None, why that base) for this run."""
+    if event.main_push:
+        base, since = main_push_base(root, event.head_sha, range_record)
+        return range_changed_paths(root, base), base, since
+    return pr_changed_paths(root, event.head_sha), None, ""
+
+
+def _main_push_note(event: Event, since: str, prs: list[int], dropped: list[str]) -> str:
+    """The reason suffix a main push adds: its base, its merged PRs, and what it dropped."""
+    if not event.main_push:
+        return ""
+    note = f"; main push {since}, {len(prs)} merged PR(s)"
+    if dropped:
+        note += f"; {len(dropped)} merged `CI-Tests:` problem(s) ignored: " + "; ".join(dropped)
+    return note
+
+
 def _select_or_cap(
-    changed: list[str], ignores: list[str], root: Path, budget: BudgetConfig | None, policy: Policy | None
+    changed: list[str],
+    ignores: list[str],
+    root: Path,
+    budget: BudgetConfig | None,
+    policy: Policy | None,
+    main_push: bool = False,
 ) -> tuple[Selection, str | None]:
     """The narrowed selection, or under a hard cap the ranked whole lane with the reason it could not narrow.
 
     A hard cap has no full suite to fall back to (TEST-BUDGET round 5): the lane is ranked and
     cut instead, and the trunk checkpoint runs everything. Without a hard cap, or on an empty
     diff (indistinguishable from a failed one), the FullSuite propagates, and `decide` turns it into
-    HardCapError under a hard cap.
+    HardCapError under a hard cap. A main push's empty diff (a revert pair) is a real answer,
+    not a failed read, so it ranks the lane like any unnarrowable change.
     """
     try:
         return select_tests(changed, ignores, root, policy), None
     except FullSuite as unnarrowable:
-        if budget is None or not budget.hard or not changed:
+        if budget is None or not budget.hard or not (changed or main_push):
             raise
         return capped_full_selection(changed, ignores, root), str(unnarrowable)
 
@@ -482,6 +611,8 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     *,
     by_name: str | None = None,
     demote: str | None = None,
+    main_switch: str | None = None,
+    range_json: str | None = None,
 ) -> Record:
     """The whole decision for this run. Any failure is a FULL record, except under a hard cap.
 
@@ -489,7 +620,8 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     not an answer the cap can give. The switches (`full_suite_reason`) still keep a run FULL.
 
     `bundle_json` is CI_BUNDLE_DECLARATIONS; it is read only for a `trunk-merge/` head.
-    `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml).
+    `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml); a main
+    push is priced as a PR head. `range_json` is CI_MAIN_PUSH_RANGE, read only for a main push.
     """
     changed: list[str] = []
     policy: Policy | None = None
@@ -498,14 +630,16 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     bundle_prs: list[int] = []
     errors: list[str] = []
     declarations_unknown: str | None = None
+    range_record = main_push_range(range_json) if event.main_push else {}
+    base: str | None = None
+    since = ""
     try:
-        declared, bundle_prs, errors = run_declarations(event, bundle_json)
+        declared, bundle_prs, errors = run_declarations(event, bundle_json, range_record)
     except FullSuite as unreadable:
         declarations_unknown = str(unreadable)
-    errors = errors + [
-        f"`CI-Tests:` path this lane never runs (typo, deleted, or lane-ignored): {path}"
-        for path in undeclarable(declared, ignores, root)
-    ]
+    declared, errors, dropped_declarations = _checked_declarations(
+        event, declared, errors, undeclarable(declared, ignores, root), range_record
+    )
     #: Validated before every return, FULL ones included (Sol, PR #7598), so no path escapes the guard.
     declaration_error = "; ".join(errors) or None
 
@@ -539,9 +673,10 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
             budget=budget_block,
             policy=asdict(policy) if policy else None,
             demoted=selection.demoted if selection else {},
+            main_push_base=base,
         )
 
-    reason = full_suite_reason(switch, event, queue_switch)
+    reason = full_suite_reason(switch, event, queue_switch, main_switch)
     if reason:
         return record("full", reason)
     hard = budget is not None and budget.hard
@@ -552,8 +687,8 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     capped_over: str | None = None
     try:
         policy = policy_from(by_name, demote, root)
-        changed = pr_changed_paths(root, event.head_sha)
-        selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy)
+        changed, base, since = _changed_paths(root, event, range_record)
+        selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy, event.main_push)
         universe = lane_universe(selection.graph_paths, ignores, root)
         add_declared(selection, declared)
         ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))
@@ -575,6 +710,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
         _full_or_refuse(hard, f"selection could not be computed under the hard cap: {error!r}", error)
         return record("full", f"fell back to the full suite: selection could not be computed: {error!r}")
     demoted = f"; {len(selection.demoted)} weak-link module(s) not run at this head" if selection.demoted else ""
+    demoted += _main_push_note(event, since, bundle_prs, dropped_declarations)
     if capped_over:
         return record(
             "affected",
@@ -636,7 +772,7 @@ def report_lines(record: Record, shard: int, shards: int) -> list[str]:
     if mode == "empty":
         lines.append(
             "  ZERO affected tests for this shard: it reports success without running pytest. "
-            "The nightly FULL suite (full-ci.yml) still runs everything on main."
+            "The nightly FULL suites (ci.yml schedule, full-ci.yml) still run everything on main."
         )
     return lines
 
@@ -663,7 +799,7 @@ def summary_markdown(record: Record, shard: int, shards: int) -> str:
     if mode == "empty":
         rows.append(
             "Zero affected tests for this shard, so pytest did not start. The nightly full "
-            "suite (full-ci.yml) still runs everything on main."
+            "suites (ci.yml schedule, full-ci.yml) still run everything on main."
         )
     elif mode == "affected":
         rows.append("<details><summary>this shard's modules</summary>\n")
@@ -719,10 +855,11 @@ def _select(arguments: argparse.Namespace) -> int:
     switch = os.environ.get(SWITCH_VARIABLE)
     queue_switch = os.environ.get(QUEUE_SWITCH_VARIABLE)
     bundle_json = os.environ.get(BUNDLE_VARIABLE)
+    main_switch = os.environ.get(MAIN_SWITCH_VARIABLE)
     budget: BudgetConfig | None = None
-    # A run a switch, the repair label or its event keeps FULL never selects, so it never reads the
+    # A run a switch or its event keeps FULL never selects, so it never reads the
     # budget: a missing or broken budget file must not take the off-switch down with it.
-    selects = full_suite_reason(switch, event, queue_switch) is None
+    selects = full_suite_reason(switch, event, queue_switch, main_switch) is None
     if arguments.budget and selects:
         budget_path = Path(arguments.budget)
         if not budget_path.is_absolute():
@@ -746,6 +883,8 @@ def _select(arguments: argparse.Namespace) -> int:
             budget,
             by_name=os.environ.get(BY_NAME_VARIABLE),
             demote=os.environ.get(DEMOTE_VARIABLE),
+            main_switch=main_switch,
+            range_json=os.environ.get(MAIN_RANGE_VARIABLE),
         )
     except HardCapError as refused:
         print(f"[ERROR] HARD CAP REFUSED: {refused}", file=sys.stderr)

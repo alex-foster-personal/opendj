@@ -104,6 +104,8 @@ function anlz(phrases) {
 
 function frame(a, positionMs, showSections) {
 	return {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: 240, heightCss: 60, positionMs, durationMs: 120_000, anlz: a,
 		palette: PALETTE, pitch: 1, loop: null, showSections
 	};

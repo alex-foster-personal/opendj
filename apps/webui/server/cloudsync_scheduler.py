@@ -17,8 +17,10 @@ start (a split data-dir layout, an unreadable journal) logs at ERROR, journals
 an ``error`` result and stays off; the engine boots and plays regardless. A
 tick that fails in any way, expected or not, is logged, recorded and, when
 unexpected, journaled with its traceback in the log; the loop keeps going,
-because the next tick is how an offline machine catches up.
-``GET /feedback/sync/status`` reports all of this as ``scheduler``.
+because the next tick is how an offline machine catches up. A settled
+``SyncDigestMismatch`` is the exception: ADR 04 c6 is a loud halt, so this
+thread parks (CSSTATUS-5375) instead of ERROR-logging the same alarm every
+interval. ``GET /feedback/sync/status`` reports all of this as ``scheduler``.
 """
 from __future__ import annotations
 
@@ -33,8 +35,13 @@ from fastapi import FastAPI
 from apps.shared.events import publish
 from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import status as sync_status
+from apps.sync_hub.client import SyncDigestMismatch
 from apps.sync_hub.scheduler import next_delay_s
-from apps.sync_hub.transport import classify_transport_failure
+from apps.sync_hub.transport import (
+    SyncTransportError,
+    classify_transport_failure,
+    is_wire_version_refusal,
+)
 
 from .routes.feedback import _now
 from .routes.feedback_sync import (
@@ -160,6 +167,8 @@ class CloudSyncScheduler:
 
     def run_once(self) -> FeedbackSyncOut | None:
         """One tick. Returns the result, or None after logging and recording why not."""
+        if self._state == "halted":
+            return None
         self._ticks += 1
         try:
             result = sync_feedback_pins(
@@ -183,7 +192,17 @@ class CloudSyncScheduler:
                     )
                 return None
             # maintenance.sync has already journaled a failed round trip.
-            log.error("CloudSync scheduled sync failed [%s]: %s", exc.code, exc)
+            if isinstance(exc.__cause__, SyncDigestMismatch):
+                self._halt_on_digest_mismatch(exc)
+                return None
+            # Wire refusal is expected until an install; ERROR would page
+            # Sentry on every backoff tick (OPEN-DJ-BE-6S).
+            if isinstance(exc.__cause__, SyncTransportError) and is_wire_version_refusal(
+                exc.__cause__
+            ):
+                log.warning("CloudSync scheduled sync refused [%s]: %s", exc.code, exc)
+            else:
+                log.error("CloudSync scheduled sync failed [%s]: %s", exc.code, exc)
             self._record_error(f"[{exc.code}] {exc}")
             return None
         except Exception as exc:
@@ -210,8 +229,27 @@ class CloudSyncScheduler:
     def _loop(self) -> None:
         while not self._stop.is_set():
             self.run_once()
+            if self._state == "halted":
+                self._stop.wait()
+                return
             delay_s = self._next_wait_s()
             self._stop.wait(delay_s)
+
+    def _halt_on_digest_mismatch(self, exc: FeedbackSyncError) -> None:
+        """Stop ticking after a settled digest alarm (ADR 04 c6, CSSTATUS-5375).
+
+        The asyncio CloudSync scheduler already returns ``halted`` on
+        :class:`SyncDigestMismatch`. This thread used to log ERROR every 60s
+        for the same settled disagreement, which is the Sentry flood
+        OPEN-DJ-BE-79. One ERROR is the loud halt; later ticks are no-ops.
+        """
+        self._state = "halted"
+        self._reason = (
+            f"[{exc.code}] SyncDigestMismatch: scheduler HALTED, no repair "
+            f"attempted (ADR 04 c6): {exc}"
+        )
+        log.error("CloudSync scheduled sync HALTED [%s]: %s", exc.code, exc)
+        self._record_error(self._reason)
 
     def _next_wait_s(self) -> float:
         try:

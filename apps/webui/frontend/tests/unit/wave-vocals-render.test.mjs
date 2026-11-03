@@ -101,6 +101,8 @@ const PX_PER_S = 10;
 function paint(vocals, positionMs = POSITION_MS) {
 	const { ctx, calls } = recordingCtx();
 	render.drawWaveRow(ctx, {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: WIDTH,
 		heightCss: HEIGHT,
 		positionMs,
@@ -210,6 +212,8 @@ test('regions outside the visible window paint nothing, not zero-width bars', ()
 test('the vocal layer restores globalAlpha so later painters are not tinted', () => {
 	const { ctx, calls } = recordingCtx();
 	render.drawWaveRow(ctx, {
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: WIDTH,
 		heightCss: HEIGHT,
 		positionMs: POSITION_MS,
@@ -260,6 +264,8 @@ test('an anlz payload with no vocals key at all throws at paint time', () => {
 	assert.throws(
 		() =>
 			render.drawWaveRow(ctx, {
+				windowS: 24,
+				playheadFrac: 0.5,
 				widthCss: WIDTH,
 				heightCss: HEIGHT,
 				positionMs: POSITION_MS,

@@ -24,6 +24,13 @@
 		type Transition
 	} from './sets-api';
 	import { captureFailureMessage, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
+	import {
+		REC_STATUS_UNREACHABLE_GROUP,
+		REC_STATUS_UNREACHABLE_LIMIT,
+		recorderStatusRetryMs,
+		recorderStatusUnreachable,
+		recorderStatusUnreachableMessage
+	} from '$lib/sets/recorder-status-retry';
 
 	type SessionView = SessionDetail & { transitions: Transition[] };
 
@@ -183,8 +190,13 @@
 	// prompt or an input that fails mid-set never reads as "Recording".
 	let rail = $derived(recordRailState(recorder));
 
+	// OPEN-DJ-BE-4G: an unanswered status read keeps the last status and asks
+	// for another read (fresh object so the effect re-arms on equal delays).
+	let statusRetry = $state<{ after: number } | null>(null);
+	let unreachableReads = 0;
+
 	$effect(() => {
-		const after = rail.poll;
+		const after = statusRetry?.after ?? rail.poll;
 		if (after === null) return;
 		const timer = setTimeout(() => void refreshRecorder(), after);
 		return () => clearTimeout(timer);
@@ -200,8 +212,27 @@
 	async function refreshRecorder(): Promise<void> {
 		try {
 			recorder = await getRecorderStatus();
+			unreachableReads = 0;
+			statusRetry = null;
 		} catch (error) {
-			pushToast(`REC status failed: ${error}`, 'error');
+			if (!recorderStatusUnreachable(error)) {
+				unreachableReads = 0;
+				statusRetry = null;
+				pushToast(`REC status failed: ${error}`, 'error', undefined, error);
+				return;
+			}
+			unreachableReads += 1;
+			statusRetry = { after: recorderStatusRetryMs(unreachableReads) };
+			if (unreachableReads === REC_STATUS_UNREACHABLE_LIMIT) {
+				pushToast(
+					recorderStatusUnreachableMessage(unreachableReads, error),
+					'error',
+					undefined,
+					error,
+					{},
+					REC_STATUS_UNREACHABLE_GROUP
+				);
+			}
 		}
 	}
 

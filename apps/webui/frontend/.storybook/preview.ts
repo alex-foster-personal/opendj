@@ -1,6 +1,8 @@
 import type { Preview } from '@storybook/sveltekit';
 import { initialize, mswLoader } from 'msw-storybook-addon';
 
+import { applyUiSkinDom, UI_SKIN_CHOICES, UI_SKIN_DEFAULT, UI_SKIN_LABELS, type UiSkin } from '../src/lib/rb/ui-skin';
+
 import '../src/app.css';
 import '../src/lib/rb/theme.css';
 import './preview.css';
@@ -34,10 +36,35 @@ if (mswOn) initialize({
 	onUnhandledRequest: onUnhandledApiRequest
 });
 
+/**
+ * Skin toolbar: every story renders in each of the three skins the app
+ * ships (UI contract template rows S-11..S-13). The decorator goes through
+ * the app's own applyUiSkinDom, so a story sees exactly the html[data-skin]
+ * the running app would set. The `?globals=skin:light` URL form is what the
+ * preview capture script uses.
+ */
 const preview: Preview = {
 	loaders: mswOn ? [mswLoader] : [],
 	beforeEach: resetUnhandledApi,
 	afterEach: failOnUnhandledApi,
+	globalTypes: {
+		skin: {
+			description: 'Open DJ skin (html[data-skin])',
+			toolbar: {
+				title: 'Skin',
+				icon: 'paintbrush',
+				items: UI_SKIN_CHOICES.map((value) => ({ value, title: UI_SKIN_LABELS[value] })),
+				dynamicTitle: true
+			}
+		}
+	},
+	initialGlobals: { skin: UI_SKIN_DEFAULT },
+	decorators: [
+		(story, context) => {
+			applyUiSkinDom((context.globals.skin as UiSkin | undefined) ?? UI_SKIN_DEFAULT);
+			return story();
+		}
+	],
 	parameters: {
 		controls: { expanded: true },
 		docs: { toc: true }

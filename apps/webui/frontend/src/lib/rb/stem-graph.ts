@@ -21,6 +21,7 @@ import {
 import { awaitEagerStemDecodeSlot, eagerStemDecodeIsLive } from '$lib/rb/stem-decode-shed';
 import { assertUnitRange, stemLinearFromKnob } from '$lib/player/constants';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
+import { peakEnvelopeYielding, type PeakEnvelope } from '$lib/rb/silence-source-pcm';
 import {
 	StretchDeckProcessor,
 	type StretchAdapterOptions,
@@ -332,6 +333,7 @@ export class AlignedStemDeckProcessor {
 	readonly #latencySec: number;
 	readonly #layout: StemLayout;
 	readonly #parts: readonly StemPart[];
+	readonly #envelopes: Readonly<Partial<Record<StemPart, PeakEnvelope>>>;
 	#controls: StemControls = createDefaultStemControls();
 
 	private constructor(
@@ -339,7 +341,8 @@ export class AlignedStemDeckProcessor {
 		processors: Partial<Record<StemPart, StretchDeckProcessor>>,
 		gains: Partial<Record<StemPart, GainNode>>,
 		latencySec: number,
-		layout: StemLayout
+		layout: StemLayout,
+		envelopes: Partial<Record<StemPart, PeakEnvelope>>
 	) {
 		this.#context = context;
 		this.#processors = processors;
@@ -347,6 +350,13 @@ export class AlignedStemDeckProcessor {
 		this.#latencySec = latencySec;
 		this.#layout = layout;
 		this.#parts = STEM_LAYOUT_PARTS[layout];
+		this.#envelopes = Object.freeze({ ...envelopes });
+	}
+
+	/** Per-part block-peak envelopes taken before the PCM moved to the worklet:
+	 * the silence watchdog's only view of what each part holds (AUDIOLIVE-17). */
+	get sourcePeakEnvelopes(): Readonly<Partial<Record<StemPart, PeakEnvelope>>> {
+		return this.#envelopes;
 	}
 
 	get layout(): StemLayout {
@@ -369,8 +379,13 @@ export class AlignedStemDeckProcessor {
 		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
 		const gains: Partial<Record<StemPart, GainNode>> = {};
 		const handoffs: PcmHandoff[] = [];
+		const envelopes: Partial<Record<StemPart, PeakEnvelope>> = {};
 		try {
 			for (const part of parts) {
+				// AUDIOLIVE-17: the last moment this thread can read the part. ~30 ms
+				// per 6 min part ((private path)), so it is scanned
+				// in yielding slices: a live upgrade must not hold Class A controls.
+				envelopes[part] = await peakEnvelopeYielding(buffers[part] as AudioBuffer);
 				const processor = await StretchDeckProcessor.create(context, options);
 				// PERF-STEMDEC-05: `buffers` is CONSUMED. Nothing reads a stem
 				// AudioBuffer after its processor holds the PCM, so the channels
@@ -407,7 +422,7 @@ export class AlignedStemDeckProcessor {
 			}
 			return {
 				processor: new AlignedStemDeckProcessor(
-					context, processors, gains, latencySec, layout
+					context, processors, gains, latencySec, layout, envelopes
 				),
 				alignment,
 				pcmHandoff: handoffs.every((handoff) => handoff === 'transfer') ? 'transfer' : 'copy'

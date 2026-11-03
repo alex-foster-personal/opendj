@@ -11,6 +11,8 @@ import {
 } from '$lib/settings/compatible-filter-setting';
 import { parseWavePalettePref } from '$lib/rb/wave-palette';
 import { parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
+import { parseWavePlayheadMode, parseWaveZoom } from '$lib/rb/wave-zoom';
+import { parseTempoLaneScale } from '$lib/rb/tempo-lane-prefs';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -36,11 +38,17 @@ import {
 	setJogRadialWaveform,
 	setShowDevUi,
 	setShowStems,
+	setDeckHoverLink,
 	setShowSections,
+	setShowTempoLane,
+	setTempoLaneScale,
 	setWaveformDesign,
 	setWavePalette,
 	setUiSkin,
 	setWaveSplitMaster,
+	setWaveZoom,
+	setWaveZoomLinked,
+	setWaveZoomPlayhead,
 	setLibraryDensity,
 	setKeyNotation,
 	setLyricsDeckLine,
@@ -161,11 +169,17 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'deck_hover_link',
 	'show_sections',
+	'show_tempo_lane',
+	'tempo_lane_scale',
 	'waveform_design',
 	'wave_palette',
 	'ui_skin',
 	'wave_split_master',
+	'wave_zoom',
+	'wave_zoom_playhead',
+	'wave_zoom_linked',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -264,8 +278,14 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'deck_hover_link':
+			return uiPrefs.deck_hover_link;
 		case 'show_sections':
 			return uiPrefs.show_sections;
+		case 'show_tempo_lane':
+			return uiPrefs.show_tempo_lane;
+		case 'tempo_lane_scale':
+			return uiPrefs.tempo_lane_scale;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
 		case 'wave_palette':
@@ -274,6 +294,12 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.ui_skin;
 		case 'wave_split_master':
 			return uiPrefs.wave_split_master;
+		case 'wave_zoom':
+			return uiPrefs.wave_zoom;
+		case 'wave_zoom_playhead':
+			return uiPrefs.wave_zoom_playhead;
+		case 'wave_zoom_linked':
+			return uiPrefs.wave_zoom_linked;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -444,9 +470,21 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
 			return;
+		case 'deck_hover_link':
+			setDeckHoverLink(_asBool(value, key));
+			return;
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
 			return;
+		case 'show_tempo_lane':
+			setShowTempoLane(_asBool(value, key));
+			return;
+		case 'tempo_lane_scale': {
+			const scale = parseTempoLaneScale(value);
+			if (scale === undefined) throw new Error(`tempo_lane_scale must be fixed_10|relative, got ${String(value)}`);
+			setTempoLaneScale(scale);
+			return;
+		}
 		case 'waveform_design': {
 			const design = parseWaveformDesignPref(value);
 			if (design === undefined) {
@@ -469,6 +507,21 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setUiSkin(skin);
 			return;
 		}
+		case 'wave_zoom': {
+			const zoom = parseWaveZoom(value);
+			if (zoom === undefined) throw new Error(`wave_zoom must be 4|8|16|32|64|whole, got ${String(value)}`);
+			setWaveZoom(zoom);
+			return;
+		}
+		case 'wave_zoom_playhead': {
+			const mode = parseWavePlayheadMode(value);
+			if (mode === undefined) throw new Error(`wave_zoom_playhead must be elastic|center, got ${String(value)}`);
+			setWaveZoomPlayhead(mode);
+			return;
+		}
+		case 'wave_zoom_linked':
+			setWaveZoomLinked(_asBool(value, key));
+			return;
 		case 'wave_split_master': {
 			const mode = parseWaveSplitMaster(value);
 			if (mode === undefined) throw new Error(`wave_split_master must be auto|on|off, got ${String(value)}`);

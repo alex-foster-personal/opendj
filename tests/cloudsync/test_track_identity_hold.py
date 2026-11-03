@@ -65,6 +65,7 @@ def _incoming_playlist(
         origin_device_id=origin,
         deleted_at=None,
         forbid_duplicates=0,
+        kind="playlist",
     )
     member_columns = protocol.table_columns(conn, protocol.MEMBERSHIP_TABLE)
     bundle: list[dict[str, Any]] = []

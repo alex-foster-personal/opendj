@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -36,6 +38,99 @@ def _flac(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"fLaC-not-a-real-frame-but-a-real-file")
     return path
+
+
+def test_ordered_playable_candidates_first_path_matches_pick_playable(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] legacy and location copies exist [then] ordered helper matches pick_playable, [else stop]."""
+    fixture = Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
+    legacy = tmp_path / "legacy.mp3"
+    location = tmp_path / "location.mp3"
+    shutil.copyfile(fixture, legacy)
+    shutil.copyfile(fixture, location)
+    writer = _init_track(state_conn, file_path=str(legacy))
+    try:
+        writer.upsert_track_location(
+            stable_id=SID, kind="local", file_path=str(location),
+        )
+        picked = locations.pick_playable(state_conn, SID)
+        ordered = locations.ordered_playable_candidates(state_conn, SID)
+    finally:
+        writer.close()
+    assert picked is not None
+    assert ordered
+    assert str(ordered[0].path) == str(picked.path)
+
+
+def test_analysis_candidates_keep_aac_that_playback_cannot_serve(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] the only copy is .aac [then] analysis still gets it, playback does not, [else stop]."""
+    aac = tmp_path / "only.aac"
+    aac.write_bytes(b"\xff\xf1-adts-bytes")
+    writer = _init_track(state_conn, file_path=str(aac))
+    try:
+        playback = locations.ordered_playable_candidates(state_conn, SID)
+        analysis = locations.ordered_playable_candidates(state_conn, SID, for_analysis=True)
+    finally:
+        writer.close()
+    assert playback == []
+    assert [str(p.path) for p in analysis] == [str(aac)]
+
+
+def test_analysis_candidates_append_the_copies_playback_filters_out(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] playback keeps one copy [then] analysis gets it first plus the rest, [else stop]."""
+    fixture = Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
+    legacy = tmp_path / "legacy.mp3"
+    shutil.copyfile(fixture, legacy)
+    flac = _flac(tmp_path / "copy.flac")
+    writer = _init_track(state_conn, file_path=str(legacy))
+    try:
+        writer.upsert_track_location(stable_id=SID, kind="local", file_path=str(flac))
+        playback = [str(p.path) for p in locations.ordered_playable_candidates(state_conn, SID)]
+        analysis = [
+            str(p.path)
+            for p in locations.ordered_playable_candidates(state_conn, SID, for_analysis=True)
+        ]
+    finally:
+        writer.close()
+    assert analysis[: len(playback)] == playback
+    assert sorted(analysis) == sorted({str(legacy), str(flac)})
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs POSIX FIFOs (os.mkfifo)")
+def test_analysis_candidates_exclude_a_fifo(state_conn, tmp_path: Path) -> None:
+    """[if] the only path is a FIFO [then] analysis gets no candidate, [else stop]."""
+    fifo = tmp_path / "live.mp3"
+    os.mkfifo(fifo)
+    writer = _init_track(state_conn, file_path=str(fifo))
+    try:
+        analysis = locations.ordered_playable_candidates(state_conn, SID, for_analysis=True)
+    finally:
+        writer.close()
+    assert analysis == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs POSIX FIFOs (os.mkfifo)")
+def test_ordered_playable_candidates_includes_fifo_named_like_audio(
+    state_conn, tmp_path: Path,
+) -> None:
+    """[if] a FIFO has an audio suffix [then] ordered helper matches pick_playable, [else stop]."""
+
+    fifo = tmp_path / "live.mp3"
+    os.mkfifo(fifo)
+    writer = _init_track(state_conn, file_path=str(fifo))
+    try:
+        picked = locations.pick_playable(state_conn, SID)
+        ordered = locations.ordered_playable_candidates(state_conn, SID)
+    finally:
+        writer.close()
+    assert picked is not None
+    assert ordered
+    assert str(ordered[0].path) == str(picked.path)
 
 
 def test_pick_prefers_working_local_over_remote(state_conn, tmp_path: Path) -> None:

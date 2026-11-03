@@ -13,6 +13,7 @@ import {
 	Engine,
 	EngineError,
 	LogSink,
+	SHUTDOWN_GRACE_MS,
 	STRIPPED_ENV,
 	audioEngineEnv,
 	buildProfileFor,
@@ -117,11 +118,17 @@ test('shutdown waits out the SIGTERM grace, then escalates to SIGKILL', async ()
 	const engine = spawnEngine(fakePayload(dir, 'ignore-term'), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
 	await engine.waitUntilHealthy(10_000);
 	const started = Date.now();
-	await engine.shutdown();
+	await engine.shutdown(2_000);
 	const elapsed = Date.now() - started;
-	assert.ok(elapsed >= 5_000, `must wait the 5 s grace before SIGKILL, took ${elapsed} ms`);
-	assert.ok(elapsed < 10_000, `SIGKILL should end it promptly, took ${elapsed} ms`);
+	assert.ok(elapsed >= 2_000, `must wait the 2 s grace it was given before SIGKILL, took ${elapsed} ms`);
+	assert.ok(elapsed < 7_000, `SIGKILL should end it promptly, took ${elapsed} ms`);
 	assert.equal(engine.tryReap()?.signal, 'SIGKILL');
+});
+
+// - if the default grace drops below the Tauri shell's 25 s then a quit
+//   SIGKILLs the engine mid-reap and its job workers outlive the app -> broken
+test('the default stop grace is the Tauri shell\'s 25 s', () => {
+	assert.equal(SHUTDOWN_GRACE_MS, 25_000);
 });
 
 test('an engine that honors SIGTERM is not escalated (the opposite direction)', async () => {

@@ -440,6 +440,8 @@ def test_claim_replaces_its_stale_reserved_pair_when_a_listener_owns_it(
 
     first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stale_engine:
+        # Bind like the real servers (uvicorn, Vite): SO_REUSEADDR on.
+        stale_engine.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         stale_engine.bind(("127.0.0.1", first.backend))
         stale_engine.listen()
 
@@ -468,6 +470,8 @@ def test_claim_keeps_its_pair_while_its_matching_engine_is_running(
         lambda ports: ports == first,
     )
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as engine:
+        # Bind like the real servers (uvicorn, Vite): SO_REUSEADDR on.
+        engine.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         engine.bind(("127.0.0.1", first.backend))
         engine.listen()
         assert claim_ports(repo_root=repo_root, common_dir=common_dir, environ={}) == first
@@ -529,6 +533,10 @@ def test_claim_keeps_the_configured_pair_when_its_own_server_already_holds_it(
     )
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vite:
+
+        # Bind like the real servers (uvicorn, Vite): SO_REUSEADDR on.
+
+        vite.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         vite.bind(("127.0.0.1", configured.frontend))
         vite.listen()
         claimed = claim_ports(
@@ -568,6 +576,10 @@ def test_claim_moves_off_the_configured_pair_when_a_foreign_process_holds_it(
     )
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as foreign:
+
+        # Bind like the real servers (uvicorn, Vite): SO_REUSEADDR on.
+
+        foreign.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         foreign.bind(("127.0.0.1", configured.frontend))
         foreign.listen()
         claimed = claim_ports(
@@ -1142,3 +1154,71 @@ def test_ownership_marker_functions_are_a_no_op_without_os_getuid(
 
     released = release_ports(repo_root=repo_root, common_dir=common_dir)
     assert released is True
+
+
+def _leave_time_wait_on(port: int) -> None:
+    """Serve one connection on ``port`` and close the server side first.
+
+    This is what stopping the engine or Vite under a connected browser leaves
+    behind: nothing listens any more, but the server's half of each closed
+    connection sits in TIME_WAIT on that local port for about 30 s.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", port))
+        server.listen()
+        with socket.create_connection(("127.0.0.1", port)) as client:
+            accepted, _ = server.accept()
+            accepted.close()
+            client.recv(1)
+
+
+def _strict_bind_fails(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return True
+    return False
+
+
+@pytest.mark.requirement("INFRA-6578")
+def test_claim_keeps_its_pair_through_time_wait_after_a_restart(tmp_path: Path) -> None:
+    """[if] a restart leaves only TIME_WAIT on the claimed pair [then] claim_ports keeps that pair, [else stop].
+
+    Hit live Mon 12 Oct 2026: every restart of the B2B gig stack alternated
+    between two pairs, because the bind probe ran without SO_REUSEADDR and so
+    refused a port that only held TIME_WAIT sockets from the stopped server,
+    which uvicorn and Vite (both SO_REUSEADDR) bind without trouble.
+    """
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    _leave_time_wait_on(first.backend)
+    _leave_time_wait_on(first.frontend)
+    # Precondition, so this cannot pass vacuously: the old strict probe refuses both ports.
+    assert _strict_bind_fails(first.backend) and _strict_bind_fails(first.frontend)
+
+    assert claim_ports(repo_root=repo_root, common_dir=common_dir, environ={}) == first
+    assert claim_ports(
+        repo_root=repo_root, common_dir=common_dir, environ={}, requested=first
+    ) == first
+
+
+@pytest.mark.requirement("INFRA-6578")
+def test_claim_still_moves_off_a_pair_a_wildcard_listener_holds(tmp_path: Path) -> None:
+    """[if] a wildcard listener holds one port of the pair [then] claim_ports moves off that pair, [else stop]."""
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as leaked:
+        leaked.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        leaked.bind(("0.0.0.0", first.frontend))
+        leaked.listen()
+        replacement = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    assert replacement.frontend != first.frontend

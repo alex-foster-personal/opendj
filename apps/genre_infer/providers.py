@@ -36,12 +36,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from . import taxonomy
+from . import keystore, taxonomy
 from .probability import unit_probability as _prob
 
 # ----------------------------------------------------------------- config
 OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
 SERPER_KEY_ENV = "SERPER_API_KEY"
+KEY_NAMES = (OPENROUTER_KEY_ENV, SERPER_KEY_ENV)
 # Where calls go. The overrides exist so tests point the providers at a real
 # local HTTP server instead of the internet.
 OPENROUTER_ROOT_ENV = "MDT_GENRE_OPENROUTER_ROOT"
@@ -90,7 +91,10 @@ class ProviderUnavailable(RuntimeError):
     """A provider cannot run at all (no key). ``key_env`` names what to set."""
 
     def __init__(self, key_env: str) -> None:
-        super().__init__(f"{key_env} is not set: genre inference needs it (set it in the engine's environment)")
+        super().__init__(
+            f"{key_env} is not set: genre inference needs it "
+            f"(set it with `python -m apps.genre_infer keys set {key_env}` or in the engine's environment)"
+        )
         self.key_env = key_env
 
 
@@ -104,15 +108,14 @@ class ResponseInvalid(ProviderCallError):
 
 def require_key(env: str, environ: Mapping[str, str] | None = None) -> str:
     """The non-blank value of ``env``; a blank value is someone clearing the key."""
-    value = (environ if environ is not None else os.environ).get(env, "").strip()
+    value = keystore.resolve(env, environ)
     if not value:
         raise ProviderUnavailable(env)
     return value
 
 
 def missing_keys(environ: Mapping[str, str] | None = None) -> list[str]:
-    env = environ if environ is not None else os.environ
-    return [k for k in (OPENROUTER_KEY_ENV, SERPER_KEY_ENV) if not env.get(k, "").strip()]
+    return [k for k in KEY_NAMES if not keystore.resolve(k, environ)]
 
 
 # ------------------------------------------------------------------- http
@@ -347,6 +350,7 @@ __all__ = [
     "DEEPSEEK_MODEL",
     "DEEPSEEK_SURE",
     "JEV_MODEL",
+    "KEY_NAMES",
     "OPENROUTER_KEY_ENV",
     "PROMPT_VERSION",
     "QUERY_VERSION",

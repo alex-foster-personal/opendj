@@ -50,11 +50,31 @@ import {
 } from '$lib/rb/wave-palette';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
+	WAVE_ZOOM_PREF_DEFAULTS,
+	deckWaveZoom,
+	parseWavePlayheadMode,
+	parseWaveZoom,
+	stepWaveZoom,
+	validateWaveZoomPrefFields,
+	type WavePlayheadMode,
+	type WaveZoom,
+	type WaveZoomPrefsState
+} from './wave-zoom';
+import type { DeckId } from '$lib/player/constants';
+// Re-exported for the performance IPC, which is at its import fan-out limit.
+export { deckWaveZoom, parseWavePlayheadMode, parseWaveZoom, type WavePlayheadMode, type WaveZoom };
+import {
 	SECTION_OVERLAY_PREF_DEFAULTS,
 	makeSectionOverlaySetters,
 	validateSectionOverlayPrefFields,
 	type SectionOverlayPrefsState
 } from './section-overlay-prefs';
+import {
+	TEMPO_LANE_PREF_DEFAULTS,
+	makeTempoLaneSetters,
+	validateTempoLanePrefFields,
+	type TempoLanePrefsState
+} from './tempo-lane-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
 	makeLibraryFilterSetters,
@@ -195,7 +215,9 @@ export interface RbUiPrefs
 		DevUiPrefs,
 		TopbarViewPrefsState,
 		DeckDefaultPrefs,
-		SectionOverlayPrefsState {
+		SectionOverlayPrefsState,
+		TempoLanePrefsState,
+		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -285,6 +307,8 @@ export interface RbUiPrefs
 	show_agent_pins: boolean;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** DECKUX-5917b: hovering a deck, wavestack row or mixer strip highlights its linked panels. Default on. */
+	deck_hover_link: boolean;
 	/** Compatible-filter range knobs (LIBUX-32). */
 	compatible_filter: CompatibleFilterPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
@@ -395,6 +419,7 @@ const DEFAULTS: RbUiPrefs = {
 	jog_radial_waveform: false,
 	show_agent_pins: true,
 	show_stems: false,
+	deck_hover_link: true,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_key_filter: [],
 	library_watcher_folders: [],
@@ -419,6 +444,8 @@ const DEFAULTS: RbUiPrefs = {
 	horizontal_wheel_knob: 'filter',
 	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
 	...SECTION_OVERLAY_PREF_DEFAULTS,
+	...TEMPO_LANE_PREF_DEFAULTS,
+	...WAVE_ZOOM_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
@@ -745,6 +772,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.deck_hover_link !== undefined && typeof parsed.deck_hover_link !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (deck_hover_link is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 }
 
 function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckPrefsParsed {
@@ -896,6 +929,7 @@ function _assembleLoadedPrefs(
 		radial_off_pending: radialOff.radial_off_pending,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		...skinLook,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...confirm },
@@ -917,6 +951,10 @@ function _assembleLoadedPrefs(
 				: validateDragSensitivity(parsed.drag_sensitivity, STORAGE_KEY),
 		...SECTION_OVERLAY_PREF_DEFAULTS,
 		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
+		...TEMPO_LANE_PREF_DEFAULTS,
+		...validateTempoLanePrefFields(parsed, STORAGE_KEY),
+		...WAVE_ZOOM_PREF_DEFAULTS,
+		...validateWaveZoomPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...LYRICS_PREF_DEFAULTS,
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -1218,6 +1256,13 @@ export const { setShowSections, toggleShowSections } = makeSectionOverlaySetters
 	(patch) => void _syncDiskPrefs(patch)
 );
 
+/** Tempo-change lane (PR #8342): lane visibility and curve scale (default on, fixed_10). */
+export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
 /** Persist the agent-pin layer through both local state and its HTTP twin. */
 export function setShowAgentPins(next: boolean): void {
 	uiPrefs.show_agent_pins = next;
@@ -1229,6 +1274,12 @@ export function setShowStems(next: boolean): void {
 	uiPrefs.show_stems = next;
 	_persist();
 	void _syncDiskPrefs({ show_stems: next });
+}
+
+export function setDeckHoverLink(next: boolean): void {
+	uiPrefs.deck_hover_link = next;
+	_persist();
+	void _syncDiskPrefs({ deck_hover_link: next });
 }
 
 /** 'auto' follows the active skin; a concrete design overrides it. */
@@ -1522,6 +1573,37 @@ export function cycleUiSkin(): UiSkin {
 export function setWaveSplitMaster(next: WaveSplitMaster): void {
 	if (parseWaveSplitMaster(next) === undefined) throw new Error('wave_split_master must be set, got undefined');
 	uiPrefs.wave_split_master = next;
+	_persist();
+}
+
+/** WAVEZOOM-6802: the main waveform's zoom step. With no deck, or while the
+ * zoom is linked, it sets the shared step; an unlinked deck keeps its own. */
+export function setWaveZoom(next: WaveZoom, deck?: DeckId): void {
+	if (parseWaveZoom(next) === undefined) throw new Error('wave_zoom must be set, got undefined');
+	if (deck === undefined || uiPrefs.wave_zoom_linked) uiPrefs.wave_zoom = next;
+	else uiPrefs.wave_zoom_decks = { ...uiPrefs.wave_zoom_decks, [`${deck}`]: next };
+	_persist();
+}
+
+/** WAVEZOOM-6802b: one ladder step in or out, for every deck or (unlinked) one. */
+export function stepWaveZoomPref(direction: 'in' | 'out', deck?: DeckId): void {
+	const from = deck === undefined ? uiPrefs.wave_zoom : deckWaveZoom(uiPrefs, deck);
+	setWaveZoom(stepWaveZoom(from, direction === 'in' ? 1 : -1), deck);
+}
+
+/** WAVEZOOM-6802c: where the playhead sits once zoomed far out. */
+export function setWaveZoomPlayhead(next: WavePlayheadMode): void {
+	if (parseWavePlayheadMode(next) === undefined) throw new Error('wave_zoom_playhead must be set, got undefined');
+	uiPrefs.wave_zoom_playhead = next;
+	_persist();
+}
+
+/** WAVEZOOM-6802d: one zoom for every deck (true) or one per deck (false).
+ * Unlinking starts every deck at the shared step. */
+export function setWaveZoomLinked(next: boolean): void {
+	if (typeof next !== 'boolean') throw new Error(`wave_zoom_linked must be a boolean, got ${String(next)}`);
+	if (!next && uiPrefs.wave_zoom_linked) uiPrefs.wave_zoom_decks = {};
+	uiPrefs.wave_zoom_linked = next;
 	_persist();
 }
 

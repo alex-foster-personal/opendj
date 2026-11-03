@@ -257,6 +257,31 @@ test('accepting records the current terms version and then loads the loader, mas
 	assert.ok(chunkMiss, 'a missing SPA chunk is still an error');
 	assert.equal(consent.isTransientNetworkError('Load failed'), true);
 	assert.equal(consent.isTransientNetworkError('Failed to fetch dynamically imported module'), false);
+	assert.equal(
+		options.beforeSend({
+			exception: {
+				values: [
+					{
+						type: 'RbApiError',
+						value: 'STATE_STORE_BUSY: state store is busy: database is locked'
+					}
+				]
+			}
+		}),
+		null,
+		'STATE_STORE_BUSY RbApiError stays local (OBS-5454 / OPEN-DJ-FE-P)'
+	);
+	assert.equal(
+		options.beforeSend({ message: 'RbApiError: STATE_STORE_BUSY: state store is busy: database is locked' }),
+		null,
+		'STATE_STORE_BUSY combined message stays local'
+	);
+	const bareLock = options.beforeSend({ message: 'database is locked' });
+	assert.ok(bareLock, 'bare database is locked still ships');
+	assert.equal(consent.isExpectedStateStoreBusy('STATE_STORE_BUSY: state store is busy: database is locked'), true);
+	assert.equal(consent.isExpectedStateStoreBusy('database is locked'), false);
+	assert.equal(consent.isExpectedStateStoreBusy('STATE_STORE_BUSYNESS overflow'), false);
+	assert.equal(consent.STATE_STORE_BUSY_TOKEN, 'STATE_STORE_BUSY');
 });
 
 test('the live watcher stops the replay at once and discards the tail, ahead of any poll', async () => {

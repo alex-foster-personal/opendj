@@ -32,26 +32,19 @@ export function shellArgument(value: string): string {
 }
 
 /** `command`, run under the test-process guard owned by this Playwright runner. */
-export function guardedWebServerCommand(name: string, command: string): string {
+export function guardedWebServerCommand(
+	name: string,
+	command: string | readonly string[]
+): string {
 	if (!existsSync(VENV_PYTHON)) {
 		throw new Error(
 			`guardedWebServerCommand: ${VENV_PYTHON} is missing; run \`uv sync --extra dev\` at ${REPOSITORY_ROOT}`
 		);
 	}
+	const argv = typeof command === 'string' ? ['/bin/sh', '-c', command] : [...command];
 	// `exec` so the guard REPLACES Playwright's detached shell and leads the
 	// webServer's process group; the guard refuses to start otherwise.
-	return `exec ${[
-		VENV_PYTHON,
-		GUARD,
-		'--owner-pid',
-		String(process.pid),
-		'--name',
-		name,
-		'--',
-		'/bin/sh',
-		'-c',
-		command
-	]
+	return `exec ${[VENV_PYTHON, GUARD, '--owner-pid', String(process.pid), '--name', name, '--', ...argv]
 		.map(shellArgument)
 		.join(' ')}`;
 }

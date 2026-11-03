@@ -1211,7 +1211,7 @@ def cmd_bench(args: argparse.Namespace) -> None:
                 raise SystemExit(
                     f"error: harness excerpt missing: {path}. Do not regenerate "
                     "before checking bifrost2:D:/asset-store/shootout (see "
-                    "LARGE-ARTIFACTS.md and scripts/bench/CLAUDE.md) -- the "
+                    "(private path) and scripts/bench/CLAUDE.md) -- the "
                     "6-track shootout excerpts are very likely already archived."
                 )
         jobs.append((track, mix_path, truth_path))

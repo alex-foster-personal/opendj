@@ -41,7 +41,7 @@ _SAMPLE_TOKENS = (
     "1", "8", "true", "false", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
-    "phase-meter", "smooth", "tone",
+    "phase-meter", "smooth", "in", "elastic", "tone", "sections",
 )
 
 

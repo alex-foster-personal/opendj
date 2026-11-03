@@ -12,7 +12,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { sleep, sweepOrphanedGroup } from './engine';
+import { SHUTDOWN_GRACE_MS, sleep, sweepOrphanedGroup } from './engine';
 import { appendShellLog } from './shell-log';
 
 const LOCK_FILE_NAME = '.engine.lock';
@@ -220,12 +220,12 @@ function signalHolder(pid: number, signal: NodeJS.Signals): void {
 	}
 }
 
-/** SIGTERM then SIGKILL a holder pid, using its group when it leads one. */
-export async function stopHolderPid(pid: number): Promise<void> {
+/** SIGTERM then SIGKILL a holder pid, using its group when it leads one, with the spawned engine's grace. */
+export async function stopHolderPid(pid: number, graceMs: number = SHUTDOWN_GRACE_MS): Promise<void> {
 	appendShellLog('shutdown', `stopping adopted engine pid ${pid}: SIGTERM`);
 	const sent = Date.now();
 	signalHolder(pid, 'SIGTERM');
-	while (Date.now() - sent < 5_000) {
+	while (Date.now() - sent < graceMs) {
 		if (!pidAlive(pid)) {
 			appendShellLog('shutdown', `adopted engine pid ${pid} exited ${Date.now() - sent}ms after SIGTERM`);
 			sweepOrphanedGroup(pid, 'adopted engine');

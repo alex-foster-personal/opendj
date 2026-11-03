@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { quickDrawClaimsContextMenu } from '$lib/components/rb/quick-draw-target';
 	/**
 	 * Lazy mount point for the performance quick-draw menu (PR #4011).
 	 *
@@ -42,7 +43,7 @@
 		// Once loaded, the menu owns its own window listener.
 		if (QuickDrawMenuComponent !== null) return;
 		const t = e.target;
-		if (!(t instanceof Element) || t.closest('.perf-root') === null) return;
+		if (!(t instanceof Element) || !quickDrawClaimsContextMenu(t)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		if (loadError !== null) {

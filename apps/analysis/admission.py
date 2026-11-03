@@ -259,7 +259,7 @@ def memory_model_from_stored(raw: object) -> MemoryModel:
     non-blank strings. Empty provenance is not invented.
     """
     if not isinstance(raw, dict):
-        raise ValueError(f"stored memory model must be an object; got {raw!r}")
+        raise TypeError(f"stored memory model must be an object; got {raw!r}")
     backend = _required_text(raw, "backend")
     producer_version = _required_text(raw, "producer_version")
     measured_on = _required_text(raw, "measured_on")
@@ -267,8 +267,13 @@ def memory_model_from_stored(raw: object) -> MemoryModel:
     try:
         floor = raw["floor_mb"]
         slope = raw["slope_mb_per_min"]
-        if isinstance(floor, bool) or isinstance(slope, bool):
-            raise TypeError("floor and slope must be numbers")
+    except KeyError as exc:
+        raise ValueError(
+            f"stored memory model cannot recompute a peak: {raw!r}"
+        ) from exc
+    if isinstance(floor, bool) or isinstance(slope, bool):
+        raise TypeError("floor and slope must be numbers")
+    try:
         return MemoryModel(
             backend=backend,
             producer_version=producer_version,
@@ -277,7 +282,7 @@ def memory_model_from_stored(raw: object) -> MemoryModel:
             measured_on=measured_on,
             source=source,
         )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError(
             f"stored memory model cannot recompute a peak: {raw!r}"
         ) from exc
@@ -585,12 +590,12 @@ __all__ = [
     "Refused",
     "admit",
     "band_for_longest",
-    "memory_model_for",
-    "predicted_peak_mb",
     "highest_predicted_peak_mb",
+    "memory_model_for",
     "memory_model_from_stored",
+    "predicted_peak_mb",
     "register_memory_model",
-    "runnable_budget_peak_mb",
     "resolve_workers",
+    "runnable_budget_peak_mb",
     "workers_for_longest",
 ]

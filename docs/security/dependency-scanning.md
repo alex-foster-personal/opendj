@@ -1,6 +1,6 @@
 # Dependency vulnerability scanning (SCA)
 
-Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026).
+Part of `(private path)`. Status: **spec, not wired** (Mon 14 Sep 2026).
 
 ## What it covers
 
@@ -94,4 +94,4 @@ API over both `Cargo.lock` files (503 + 28 crates, with a positive control):
   (desktop).
 - crates.io: rustls, pyo3, glib, proc-macro-error, 5x `unic-*`.
 
-Prioritized fixes live in [security.md](security.md#patch-priority).
+Prioritized fixes live in `(private path)` (patch priority).

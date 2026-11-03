@@ -322,19 +322,6 @@
       "reason": "New on main via #5685 (DECKUX-40, merged Tue 6 Oct 2026), caught by this audit after the W34 branch merged main: an empty deck's gutter number is drawn in var(--rb-border) on purpose (the maintainer: \"Empty state should be less messy - just show nothing\"), worst mono-dev \"3\" #2a2a2a on #282828 = 1.03:1 (needs 3:1). WaveGutter.svelte. It is a placeholder for an unloaded deck, not content; listed on #5638 for a design call on whether it should meet 3:1."
     },
     {
-      "el": "stems > span.status.busy",
-      "skins": [
-        "light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Light \"CHECKING STEMS\" #4aa3ff on #fffdf8 = 2.59:1 (needs 4.5:1), StemRow.svelte. Light defines no --rb-blue, so the #4aa3ff fallback paints on the cream panel. Optional: it renders only while a deck's stems are still loading, so a run that finishes loading first never sees it. Found by the W34 audit on CI (Wed 7 Oct 2026); reported on #5638, fix belongs to the owning component, not this measure-only PR.",
-      "optional": true
-    },
-    {
       "el": "rb-deck > span.secondary-load",
       "skins": [
         "light",
@@ -403,28 +390,6 @@
       "optional": true
     },
     {
-      "el": "header-body > span.deck-num",
-      "skins": [
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"2\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
-      "el": "clocks > span.elapsed",
-      "skins": [
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"00:00.0\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
       "el": "dkl-row > span.dkl-tag",
       "skins": [
         "theme-light"
@@ -434,39 +399,6 @@
       ],
       "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"NO LYRIC DATA\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Optional: it depends on deck load state (stems, lyrics, analysis) at audit time, and CI on d48e76455 rendered it in only some skins.",
       "optional": true
-    },
-    {
-      "el": "loop-cluster > span.column-label",
-      "skins": [
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"LOOP\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
-      "el": "beat-jump > span.column-label",
-      "skins": [
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"JUMP\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
-      "el": "stems > span.mute",
-      "skins": [
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"MUTE\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
     },
     {
       "el": "stems > span.status",

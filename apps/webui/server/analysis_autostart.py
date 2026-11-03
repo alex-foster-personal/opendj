@@ -59,6 +59,7 @@ from dataclasses import dataclass
 
 from apps.analysis import backends
 from apps.analysis.backlog import Backlog
+from apps.shared.env_on_off import read_on_off_environ
 
 log = logging.getLogger(__name__)
 
@@ -169,13 +170,12 @@ TICK_OUTCOMES: tuple[str, ...] = (
 
 def enabled_from_environ(environ: Mapping[str, str]) -> bool:
     """Read ``MUSIC_DJ_AUTO_ANALYZE``. Fail fast on anything but on/off."""
-    raw = environ.get(AUTO_ANALYZE_ENV, "on")
-    if raw not in AUTO_ANALYZE_VALUES:
-        raise ValueError(
-            f"{AUTO_ANALYZE_ENV}={raw!r} is not valid; "
-            f"expected one of {list(AUTO_ANALYZE_VALUES)}"
-        )
-    return raw == "on"
+    return read_on_off_environ(
+        environ,
+        env_key=AUTO_ANALYZE_ENV,
+        allowed=AUTO_ANALYZE_VALUES,
+        default="on",
+    )
 
 
 def arm_from_environ(environ: Mapping[str, str]) -> bool:

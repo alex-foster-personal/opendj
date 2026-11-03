@@ -1,11 +1,12 @@
 """The INVENTORY of features an entitlement can be asked about.
 
-Deliberately EMPTY today, and that is the finding this whole layer rests on:
-openDJ has no paid features, so there is nothing to gate.  The catalog exists
-so that the first one is added HERE, in one reviewable place, rather than as
-an ``if`` somewhere in a route.
+openDJ has no paid features yet, so nothing here is sold today.  The catalog
+exists so that each gateable feature is added HERE, in one reviewable place,
+rather than as an ``if`` somewhere in a route.  The first entry,
+``ai.assistant``, is enforced by the gateway Worker itself; billing that moves
+an install between its plans is the BILL-02 seam, not wired.
 
-``server_side`` is not decoration.  ``specs/saas-spec.md`` BILL-01 makes it the
+``server_side`` is not decoration.  ``(private path)`` BILL-01 makes it the
 admission test for the catalog: a feature is only sellable if it needs a
 server we run, because then the server refusing work IS the enforcement.  A
 purely local feature cannot be enforced against a user holding the source, so
@@ -41,9 +42,20 @@ class Feature:
     note: str
 
 
-#: Every gateable feature.  Empty because there are no paid features; see the
-#: module docstring before adding one.
-FEATURES: tuple[Feature, ...] = ()
+#: Every gateable feature.  See the module docstring before adding one.
+FEATURES: tuple[Feature, ...] = (
+    Feature(
+        feature_id="ai.assistant",
+        label="AI assistant via the Open DJ gateway",
+        server_side=True,
+        note=(
+            "Model calls through the hosted gateway Worker (apps/ai_gateway_worker), "
+            "which holds the provider key and refuses work per install token: plan "
+            "model allow-list, output-token cap and daily spend cap. Bringing your "
+            "own OPENROUTER_API_KEY bypasses the gateway and is not gated."
+        ),
+    ),
+)
 
 FEATURES_BY_ID: dict[str, Feature] = {
     feature.feature_id: feature for feature in FEATURES
@@ -60,7 +72,7 @@ def assert_sellable(feature: Feature) -> None:
         raise ValueError(
             f"feature {feature.feature_id!r} is marked server_side=False, so "
             "the only thing standing between a user and it is a boolean in "
-            "source they already have. Per specs/saas-spec.md BILL-01 a paid "
+            "source they already have. Per (private path) BILL-01 a paid "
             "feature MUST need a server we run, so that the server refusing "
             "work is the enforcement. Either move the enforced part "
             "server-side or do not sell it."

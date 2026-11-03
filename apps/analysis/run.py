@@ -54,7 +54,7 @@ import hashlib
 import json
 import logging
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,7 +65,8 @@ from apps.shared.state import analysis_stale
 
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends import DEFAULT_BACKEND, get_backend
-from .backends.base import BackendNonshippable, TrackVanished
+from .backends.base import BackendNonshippable, BackendNotAvailable, TrackVanished
+from .bpm_status import bpm_status_for
 from .jit_warmup import warm_backend_jit
 from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
@@ -86,6 +87,11 @@ class TrackRef:
 
     stable_id: str
     path: Path
+    alternate_paths: tuple[Path, ...] = ()
+
+    @property
+    def candidate_paths(self) -> tuple[Path, ...]:
+        return (self.path, *self.alternate_paths)
 
 
 def stable_id_from_path(path: Path) -> str:
@@ -114,10 +120,11 @@ def build_queue(
         if not p.exists():
             log.warning("skip (missing): %s", p)
             continue
-        if strategy == "sha256":
-            sid = stable_id_from_audio_bytes(p)
-        else:
-            sid = stable_id_from_path(p)
+        sid = (
+            stable_id_from_audio_bytes(p)
+            if strategy == "sha256"
+            else stable_id_from_path(p)
+        )
         refs.append(TrackRef(stable_id=sid, path=p))
         if limit and len(refs) >= limit:
             break
@@ -203,6 +210,30 @@ def backend_never_ran(summary: RunSummary) -> bool:
     )
 
 
+def build_queue_from_candidates(
+    entries: Iterable[tuple[str, Sequence[str]]],
+) -> list[TrackRef]:
+    """Queue from caller-supplied canonical ``(stable_id, [path, ...])`` lists."""
+    refs: list[TrackRef] = []
+    for sid, paths in entries:
+        if not sid:
+            raise ValueError("empty stable_id in candidates input")
+        if not paths:
+            raise ValueError(f"empty candidate list for {sid!r}")
+        ordered = [Path(p) for p in paths]
+        if not any(p.exists() for p in ordered):
+            log.warning("skip (missing): all candidates for %s", sid)
+            continue
+        refs.append(
+            TrackRef(
+                stable_id=sid,
+                path=ordered[0],
+                alternate_paths=tuple(ordered[1:]),
+            )
+        )
+    return refs
+
+
 def build_queue_from_pairs(pairs: Iterable[tuple[str, str]]) -> list[TrackRef]:
     """Queue from caller-supplied canonical ``(stable_id, path)`` pairs.
 
@@ -260,7 +291,7 @@ class RunSummary:
     errors: list[tuple[str, str]] = field(default_factory=list)
 
 
-def run(
+def run(  # noqa: C901, PLR0912
     queue: list[TrackRef],
     *,
     backend_name: str = DEFAULT_BACKEND,
@@ -330,14 +361,24 @@ def run(
     if workers > 1:
         rows.extend(
             run_pool(
-                ((r.stable_id, str(r.path)) for r in queue),
+                (
+                    (r.stable_id, str(r.path), tuple(str(p) for p in r.alternate_paths))
+                    for r in queue
+                ),
                 backend=backend,
                 workers=workers,
             )
         )
     else:
-        for r in queue:
-            rows.append(analyze_one(backend, r.stable_id, str(r.path)))
+        rows.extend(
+            analyze_one(
+                backend,
+                r.stable_id,
+                str(r.path),
+                tuple(str(p) for p in r.alternate_paths),
+            )
+            for r in queue
+        )
 
     table = Table(title="analysis run")
     table.add_column("stable_id")
@@ -374,9 +415,10 @@ def run(
                     summary.analysed += 1
             else:
                 summary.analysed += 1
+            bpm_status, _ = bpm_status_for(rec.bpm, rec.duration_s, rec.features_blob)
             table.add_row(
                 sid[:14],
-                f"{rec.bpm:.1f}",
+                f"{rec.bpm:.1f}" if bpm_status == "ok" else bpm_status,
                 rec.key_camelot,
                 str(rec.energy),
                 f"{rec.duration_s:.1f}",
@@ -440,6 +482,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "state-layer stable_ids (no derivation)."
         ),
     )
+    source.add_argument(
+        "--candidates-json", type=Path,
+        help=(
+            "JSON file [[stable_id, [path, ...]], ...] carrying ordered "
+            "decode candidates for each canonical stable_id."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -460,6 +509,35 @@ def _is_pair(entry: object) -> bool:
         and len(entry) == 2
         and all(isinstance(member, str) for member in entry)
     )
+
+
+def _is_candidate_entry(entry: object) -> bool:
+    """A canonical stable_id plus a non-empty list of path strings."""
+    return (
+        isinstance(entry, list)
+        and len(entry) == 2
+        and isinstance(entry[0], str)
+        and isinstance(entry[1], list)
+        and len(entry[1]) >= 1
+        and all(isinstance(path, str) for path in entry[1])
+    )
+
+
+def _queue_from_candidates(candidates_json: Path) -> tuple[list[TrackRef], int]:
+    try:
+        raw = json.loads(candidates_json.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        log.error("--candidates-json %s: %s", candidates_json, exc)
+        raise SystemExit(EXIT_USAGE) from exc
+    if not isinstance(raw, list) or not all(_is_candidate_entry(e) for e in raw):
+        log.error(
+            "--candidates-json %s: expected [[stable_id, [path, ...]], ...]",
+            candidates_json,
+        )
+        raise SystemExit(EXIT_USAGE)
+    entries = [(sid, paths) for sid, paths in raw]
+    queue = build_queue_from_candidates(entries)
+    return queue, len(entries) - len(queue)
 
 
 def _queue_from_pairs(pairs_json: Path) -> tuple[list[TrackRef], int]:
@@ -523,22 +601,43 @@ def _dispatch(args: argparse.Namespace) -> int:
     except (KeyError, BackendNonshippable) as exc:
         log.error("--backend %r: %s", args.backend, exc.args[0])
         raise SystemExit(EXIT_USAGE) from exc
-    if args.pairs_json is not None:
+    if args.candidates_json is not None:
+        queue, dropped = _queue_from_candidates(args.candidates_json)
+    elif args.pairs_json is not None:
         queue, dropped = _queue_from_pairs(args.pairs_json)
     else:
         queue = build_queue(
             [Path(p) for p in args.files], strategy=args.stable_id_strategy
         )
         dropped = 0
-    summary = run(
-        queue,
-        backend_name=args.backend,
-        dry_run=args.dry_run,
-        limit=args.limit,
-        workers=args.workers,
-        only_missing=args.only_missing,
-        verbose=args.verbose,
-    )
+    try:
+        summary = run(
+            queue,
+            backend_name=args.backend,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            workers=args.workers,
+            only_missing=args.only_missing,
+            verbose=args.verbose,
+        )
+    except BackendNotAvailable as exc:
+        # The JIT warm-up drives the backend once in the parent before any
+        # track (#1316), so a broken analysis install now arrives HERE, as an
+        # exception, instead of as a per-track BackendNotAvailable verdict.
+        # Same fact, so it gets the same status, and the same precedence
+        # under a lost target. Left to main() it read as 5, which outranked
+        # EXIT_MISSING_TARGETS and booked a queue nothing attempted (#8243).
+        log.error(
+            "the %r backend could not run at all (%s), so nothing here was "
+            "analyzed; this is a capability failure on this machine, not a "
+            "property of these files, and the caller must stop rather than "
+            "retry per chunk",
+            args.backend, exc,
+        )
+        if dropped:
+            _log_missing_targets(dropped, 0, dropped + len(queue))
+            return EXIT_MISSING_TARGETS
+        return EXIT_BACKEND_UNAVAILABLE
     # Admission shortfall outranks the verdict on the targets that WERE
     # admitted, and the order matters because only EXIT_MISSING_TARGETS makes
     # the ingest worker clear `queue_signature`. A chunk that lost a target
@@ -556,12 +655,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     # watcher answers `unchanged` for a track nothing ever analyzed.
     vanished = vanished_count(summary)
     if dropped or vanished:
-        log.error(
-            "%d of %d target(s) were gone before they could be analyzed "
-            "(%d never admitted, %d lost after admission); the caller must "
-            "retry rather than record this queue as attempted",
-            dropped + vanished, dropped + len(queue), dropped, vanished,
-        )
+        _log_missing_targets(dropped, vanished, dropped + len(queue))
         return EXIT_MISSING_TARGETS
     if backend_never_ran(summary):
         log.error(
@@ -573,6 +667,15 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_BACKEND_UNAVAILABLE
     return 0 if summary.failed == 0 else EXIT_TRACK_FAILURES
+
+
+def _log_missing_targets(dropped: int, vanished: int, requested: int) -> None:
+    log.error(
+        "%d of %d target(s) were gone before they could be analyzed "
+        "(%d never admitted, %d lost after admission); the caller must "
+        "retry rather than record this queue as attempted",
+        dropped + vanished, requested, dropped, vanished,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

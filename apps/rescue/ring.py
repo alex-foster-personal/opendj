@@ -31,6 +31,7 @@ __all__ = [
 ]
 
 _SCHEMA = 1
+_SLOT_RANGE = f"0..{RING_SIZE - 1}"
 
 
 def _compact_json(payload: dict[str, Any]) -> str:
@@ -88,10 +89,10 @@ def _parse_index(raw: dict[str, Any]) -> RescueIndex:
         raise RescueSnapshotInvalidError("index schema must be 1")
     newest_slot = raw.get("newest_slot")
     if not isinstance(newest_slot, int) or not 0 <= newest_slot < RING_SIZE:
-        raise RescueSnapshotInvalidError("index newest_slot must be 0..7")
+        raise RescueSnapshotInvalidError(f"index newest_slot must be {_SLOT_RANGE}")
     slots_raw = raw.get("slots")
     if not isinstance(slots_raw, list) or len(slots_raw) != RING_SIZE:
-        raise RescueSnapshotInvalidError("index slots must list 8 entries")
+        raise RescueSnapshotInvalidError(f"index slots must list {RING_SIZE} entries")
     slots: list[RescueSlotMeta] = []
     for entry in slots_raw:
         if not isinstance(entry, dict):
@@ -100,7 +101,7 @@ def _parse_index(raw: dict[str, Any]) -> RescueIndex:
         captured_at_ms = entry.get("captured_at_ms")
         bytes_ = entry.get("bytes")
         if not isinstance(slot, int) or not 0 <= slot < RING_SIZE:
-            raise RescueSnapshotInvalidError("index slot must be 0..7")
+            raise RescueSnapshotInvalidError(f"index slot must be {_SLOT_RANGE}")
         if not isinstance(captured_at_ms, int) or captured_at_ms < 0:
             raise RescueSnapshotInvalidError("index captured_at_ms must be a non-negative int")
         if not isinstance(bytes_, int) or bytes_ < 0:

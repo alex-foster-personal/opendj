@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.review_gh import TriageError, _gh
+from scripts.review_gh import TriageError, pr_edit_labels, pr_list_json, pr_post_comment, pr_view_json
 from scripts.review_lane import pinned_head
 
 REVIEWER_PREFIX = "reviewer:"
@@ -109,26 +109,13 @@ def lease_from_pr_view(pr: str, labels: Sequence[Any], head_sha: str) -> Reviewe
 
 
 def fetch_lease(pr: str) -> ReviewerLease | None:
-    raw = _gh(["pr", "view", pr, "--json", "labels,number"])
-    data = json.loads(raw)
+    data = pr_view_json(pr, ("labels", "number"))
     head = pinned_head(pr)
     return lease_from_pr_view(str(data.get("number", pr)), data.get("labels", []), head)
 
 
 def fetch_lease_for_branch(branch: str) -> ReviewerLease | None:
-    raw = _gh(
-        [
-            "pr",
-            "list",
-            "--head",
-            branch,
-            "--state",
-            "open",
-            "--json",
-            "number,labels,headRefOid",
-        ]
-    )
-    rows = json.loads(raw)
+    rows = pr_list_json(head=branch, state="open", fields=("number", "labels", "headRefOid"))
     if not rows:
         return None
     if len(rows) > 1:
@@ -200,7 +187,7 @@ def emergency_notify(pr: str, lease: ReviewerLease, intended_head: str) -> None:
         body_lines.extend(f"- {line}" for line in slices)
     else:
         body_lines.append("- (no new commits between lease head and intended head)")
-    _gh(["pr", "comment", pr, "--body", "\n".join(body_lines)])
+    pr_post_comment(pr, "\n".join(body_lines))
 
 
 # ----- handoff --------------------------------------------------------------
@@ -210,17 +197,7 @@ def handoff(pr: str, fleet: str, comment_file: str | None) -> None:
     if fleet not in FLEETS:
         raise TriageError(f"unknown fleet {fleet!r}; expected one of {sorted(FLEETS)}")
     label = f"{REVIEWER_PREFIX}{fleet}"
-    _gh(
-        [
-            "pr",
-            "edit",
-            pr,
-            "--remove-label",
-            label,
-            "--add-label",
-            HANDOFF_LABEL,
-        ]
-    )
+    pr_edit_labels(pr, remove=(label,), add=(HANDOFF_LABEL,))
     after = fetch_lease(pr)
     if after is not None:
         raise TriageError(
@@ -228,7 +205,7 @@ def handoff(pr: str, fleet: str, comment_file: str | None) -> None:
         )
     if comment_file:
         body = open(comment_file, encoding="utf-8").read()
-        _gh(["pr", "comment", pr, "--body", body])
+        pr_post_comment(pr, body)
 
 
 # ----- check paths ----------------------------------------------------------

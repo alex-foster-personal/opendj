@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from .. import config as _analysis_config
+from ..bpm_status import bpm_status_for
 from ..record import AnalysisRecord
 from . import register
 from .base import (
@@ -260,6 +261,22 @@ def _decode_failure_is_about_this_file(exc: BaseException) -> bool:
     return isinstance(exc, _file_scoped_decode_errors())
 
 
+def _attach_bpm_status(
+    features_blob: dict[str, Any], bpm: float, duration_s: float, name: str
+) -> None:
+    """Name why a record has no tempo, so no reader shows the 0.0 sentinel (#5986).
+
+    A tracker that found no tempo leaves ``bpm`` at its 0.0 storage sentinel;
+    the record carries the reason instead.
+    """
+    bpm_status, bpm_reason = bpm_status_for(bpm, duration_s)
+    features_blob["bpm_status"] = bpm_status
+    if bpm_reason is None:
+        return
+    features_blob["bpm_reason"] = bpm_reason
+    log.info("%s: no tempo measured (%s): %s", name, bpm_status, bpm_reason)
+
+
 class LibrosaBackend:
     """Portable default backend. See module docstring for feature sources."""
 
@@ -341,6 +358,9 @@ class LibrosaBackend:
             bpm=bpm,
             downbeat_tracking=bool(downbeats_s),
         )
+        # A tracker that found no tempo leaves bpm at its 0.0 storage
+        # sentinel; the record names why, so no reader shows 0 (#5986).
+        _attach_bpm_status(features_blob, bpm, duration_s, path.name)
 
         return AnalysisRecord(
             stable_id=stable_id,

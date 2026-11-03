@@ -12,6 +12,7 @@ import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
 import { createFrameBackstop, notePositionSample } from '$lib/rb/engine-clock-reports';
+import { noteEngineMasterRms } from '$lib/rb/master-silence-report';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import {
@@ -346,6 +347,12 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 		case 'fader':
 			mixerState.channels[command.deck].fader = command.value;
 			break;
+		case 'stem_gain':
+			deckStates[command.deck].stems.controls[command.stem].gain = command.value;
+			break;
+		case 'stem_eq_mode':
+			mixerState.channels[command.deck].stem_eq_mode = command.enabled;
+			break;
 		case 'assign':
 			mixerState.channels[command.deck].assign = command.assign;
 			break;
@@ -393,6 +400,9 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 /** Transport truth from the engine: play state, tempo, loop, length, key. */
 export function mirrorEngineState(s: EngineState): void {
 	link.lastState = s;
+	// The master meter, off the state feed rather than a frame clock, so a
+	// hidden or occluded window keeps a live reading (ui-mirror audio_health).
+	noteEngineMasterRms(s.master.rms, Date.now());
 	let masterStopped: { deck: DeckId; stableId: string; generation: number } | null = null;
 	for (const d of s.decks) {
 		const deck = d.deck as DeckId;

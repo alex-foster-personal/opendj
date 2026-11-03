@@ -45,6 +45,7 @@ from apps.shared.state.events import EventBus
 from apps.shared.state.types import Event
 
 from . import queue_store
+from .bpm_status import bpm_status_for
 from .canonical import canonical_pointer, refresh_for_record
 from .lane_enums import LANE_STATUSES
 from .lane_payloads_shared import bar_phase_untrusted
@@ -250,6 +251,8 @@ def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
     if "lanes" not in data:
         return None
     lanes = data["lanes"]
+    if lanes is None:
+        raise StoredRecordError(f"{label} has explicit null lanes")
     if not isinstance(lanes, dict):
         raise StoredRecordError(f"{label} has lanes of type {type(lanes).__name__}, not an object")
     if "beatgrid" not in lanes:
@@ -582,6 +585,13 @@ def upsert_record(
     # The persisted record, not the argument: see UpsertResult.record.
     record = result.record
     if not result.unchanged:
+        # The ``bpm`` column keeps its 0.0 storage sentinel for a track with no
+        # tempo, so the event names the status and reason beside it: a
+        # subscriber or audit reader must never read the sentinel as a
+        # measured tempo (issue #5986).
+        bpm_status, bpm_reason = bpm_status_for(
+            record.bpm, record.duration_s, record.features_blob
+        )
         publish(
             event_type="analyze",
             payload={
@@ -590,6 +600,8 @@ def upsert_record(
                 "backend_version": record.backend_version,
                 "analyzed_at": datetime_to_utc_iso(record.analyzed_at),
                 "bpm": record.bpm,
+                "bpm_status": bpm_status,
+                "bpm_reason": bpm_reason,
                 "key_camelot": record.key_camelot,
                 "energy": record.energy,
                 "inserted": result.inserted,

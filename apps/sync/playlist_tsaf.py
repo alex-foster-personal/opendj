@@ -10,8 +10,10 @@ a best-guess placeholder pending the live-fixture capture tracked as D4 in
 
 Contract:
 
-* :func:`build_page_data` / :func:`parse_page_data` are exact inverses and
-  are the sole supported serialisation for ``view_mediaItemPlaylistView_page.data``.
+* :func:`build_page_data` and the re-exported :func:`parse_page_data` (from
+  ``apps.shared.djay_page_data``) are exact inverses and are the sole supported
+  serialisation for ``view_mediaItemPlaylistView_page.data``. This module remains
+  the supported sync serialization façade for page data.
 * :func:`new_page_key` mints a fresh opaque YapDatabase identifier.
 * :func:`build_playlist_blob` emits a minimal ``ADCMediaItemPlaylist`` TSAF
   blob. ``kind="root"`` uses the observed ``0x2d 0x00`` enum; ``kind="leaf"``
@@ -34,6 +36,8 @@ import uuid as _uuid
 from pathlib import Path
 from typing import Literal
 
+from apps.shared.djay_page_data import parse_page_data
+
 _log = logging.getLogger(__name__)
 
 
@@ -45,19 +49,6 @@ def build_page_data(rowids: list[int]) -> bytes:
     if not rowids:
         return b""
     return struct.pack(f"<{len(rowids)}q", *rowids)
-
-
-def parse_page_data(data: bytes | None) -> list[int]:
-    """Inverse of :func:`build_page_data`. Returns ``[]`` on malformed input."""
-    if not data:
-        return []
-    n = len(data)
-    if n % 8 != 0:
-        return []
-    count = n // 8
-    if count == 0:
-        return []
-    return list(struct.unpack(f"<{count}q", data))
 
 
 def new_page_key() -> str:

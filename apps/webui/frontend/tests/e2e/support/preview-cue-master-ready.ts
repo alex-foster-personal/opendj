@@ -1,5 +1,11 @@
 import { AUDIO_CONTEXT_IO_TIMEOUT_MS } from '../../../src/lib/rb/audio-context-io-timeout';
-import { CONTEXT_RESUME_BACKOFF_MS } from '../../../src/lib/rb/audio-context-watchdog';
+
+/**
+ * The watchdog's resume backoff, copied as a literal because Playwright cannot resolve
+* the watchdog's `$lib` imports (see destination-audio-tap.ts). The unit test
+* tests/unit/preview-cue-master-ready-backoff.test.mjs pins it to the live product constant.
+ */
+const CONTEXT_RESUME_BACKOFF_MS: readonly number[] = [0, 150, 400, 1_000, 2_500, 5_000];
 
 /**
  * #4140-class flake: `play()` can hand a deck an AudioContext that is still

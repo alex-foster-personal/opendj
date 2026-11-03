@@ -2,12 +2,16 @@
 
 Both :mod:`apps.database.agents_md` (markdown table reference) and
 :mod:`apps.database.generate_agents_md` (YAML sidecar) introspect the same
-live file and must apply the same exclusions: sqlite-internal tables and the
-opaque fts5 shadow tables SQLite creates beside every virtual fts5 table.
+live file. They share sqlite-internal exclusion (``sqlite_%``) and live
+``CREATE VIRTUAL TABLE`` discovery. They do not share a shadow filter:
+``agents_md`` omits every ``<vtab>_*`` engine table (prefix), while
+``generate_agents_md`` omits only the five fts5 suffixes. Callers pass
+``is_shadow``; there is no default.
 """
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 
 # Suffixes SQLite attaches to an fts5 virtual table name (``<vtab>_data``,
 # ``<vtab>_idx``, ...). They hold index internals, not application columns.
@@ -42,12 +46,29 @@ def is_fts5_shadow_table(name: str, virtual_tables: frozenset[str]) -> bool:
     )
 
 
+def is_virtual_table_shadow(name: str, virtual_tables: frozenset[str]) -> bool:
+    """True when ``name`` is engine storage for a virtual table (``<vtab>_*``).
+
+    Prefix match, not exact fts5 suffixes. The virtual table itself is not a
+    shadow: ``tracks_fts`` does not start with ``tracks_fts_``.
+    """
+    if not virtual_tables:
+        return False
+    prefixes = tuple(f"{vtab}_" for vtab in virtual_tables)
+    return name.startswith(prefixes)
+
+
 def documentable_table_names(
     conn: sqlite3.Connection,
     *,
     owned_tables: frozenset[str] | None = None,
+    is_shadow: Callable[[str, frozenset[str]], bool],
 ) -> list[str]:
-    """Live table names to document, excluding sqlite internals and fts5 shadows.
+    """Live table names to document, excluding sqlite internals and shadows.
+
+    ``is_shadow`` is required (no hidden default). Pass
+    :func:`is_virtual_table_shadow` (prefix) or :func:`is_fts5_shadow_table`
+    (exact fts5 suffixes).
 
     When ``owned_tables`` is set, names outside that set are omitted (the
     ``open_rw`` path that passes ``schema.ALL_KNOWN_TABLES``).
@@ -59,7 +80,7 @@ def documentable_table_names(
             "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
         )
         if not is_sqlite_internal_table(row[0])
-        and not is_fts5_shadow_table(row[0], virtual_tables)
+        and not is_shadow(row[0], virtual_tables)
     ]
     if owned_tables is not None:
         names = [name for name in names if name in owned_tables]
@@ -71,5 +92,6 @@ __all__ = [
     "documentable_table_names",
     "is_fts5_shadow_table",
     "is_sqlite_internal_table",
+    "is_virtual_table_shadow",
     "virtual_table_names",
 ]

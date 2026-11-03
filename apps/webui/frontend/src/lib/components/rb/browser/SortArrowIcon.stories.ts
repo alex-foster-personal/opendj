@@ -3,8 +3,11 @@ import type { Meta, StoryObj } from '@storybook/sveltekit';
 import { contracts } from './SortArrowIcon.contract';
 import SortArrowIcon from './SortArrowIcon.svelte';
 
-// Literal title (Storybook's indexer reads it statically); the twin uses the same one.
-const meta = { title: 'Contracts/Browser/SortArrowIcon', component: SortArrowIcon } satisfies Meta<typeof SortArrowIcon>;
+const meta = {
+	title: 'Contracts/Browser/SortArrowIcon',
+	component: SortArrowIcon,
+	tags: ['autodocs']
+} satisfies Meta<typeof SortArrowIcon>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

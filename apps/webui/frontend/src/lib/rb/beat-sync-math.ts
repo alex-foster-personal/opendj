@@ -1459,6 +1459,15 @@ export interface BeatSyncNotice<D extends number> {
 	events: BeatSyncNoticeEvent<D>[];
 }
 
+/**
+ * P1 (Codex, #5822): a folded `sync_to_out` launch prepares its incoming deck while paused, so the
+ * engine's own notice path never runs for it. The page raises the same orange notice here, from the
+ * fold the compiled plan names. An unfolded launch raises nothing.
+ */
+export function foldedLaunchNotices<D extends number>(deck: D, master: D, normalization: 0.5 | 2): BeatSyncNotice<D>[] {
+	return beatSyncOutcomeNotices([{ deck, plan: { mode: 'bar', tempoNormalization: normalization } }], [], master);
+}
+
 /** The slice of a planned follower these notices read. */
 export interface PlannedFollower<D extends number> {
 	deck: D;

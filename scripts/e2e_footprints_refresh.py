@@ -82,7 +82,13 @@ GATES: dict[str, tuple[str, tuple[str, ...]]] = {
     "rekordbox": ("playwright.rekordbox-gate.config.ts", ()),
     "comment-hotkey": ("playwright.comment-hotkey-gate.config.ts", ()),
     "autoplay": ("playwright.autoplay-stall-gate.config.ts", ()),
-    "headphone": ("playwright.performance.config.ts", ("tests/e2e/performance-headphone-device-probe.spec.ts",)),
+    "headphone": (
+        "playwright.performance.config.ts",
+        (
+            "tests/e2e/performance-headphone-device-probe.spec.ts",
+            "tests/e2e/performance-library-panels.spec.ts",
+        ),
+    ),
     "library-jobs": ("playwright.library-jobs.config.ts", ()),
     "preflight": ("playwright.preflight-gate.config.ts", ()),
 }

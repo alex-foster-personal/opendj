@@ -29,6 +29,7 @@ from typing import Any, Literal
 
 from apps.shared.state.ids import normalise_isrc
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
+from apps.shared.text import as_text
 from apps.sync_hub import protocol
 from apps.sync_hub.engine_common import (
     CHANGELOG_TABLES,
@@ -74,13 +75,6 @@ def _ident(name: str) -> str:
     return name
 
 
-def _as_text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
 def _incoming_beats(change: RowChange, stored_key: tuple[str, str], stored_pk: str) -> bool:
     """Same LWW rule as natural-key duplicates: sort key, then smaller PK."""
     if change.sort_key != stored_key:
@@ -95,12 +89,12 @@ def _signals_conflict(incoming: Mapping[str, Any], stored: StoredMatch) -> bool:
     normalizable ISRC with two ``content_hash`` values. Either is a silent
     dup or a silent collapse if we guessed.
     """
-    incoming_hash = _as_text(incoming.get("content_hash"))
-    stored_hash = _as_text(stored.content_hash)
-    incoming_audio_hash = _as_text(incoming.get("audio_hash"))
-    stored_audio_hash = _as_text(stored.audio_hash)
-    incoming_isrc = normalise_isrc(_as_text(incoming.get("isrc")))
-    stored_isrc = normalise_isrc(_as_text(stored.isrc))
+    incoming_hash = as_text(incoming.get("content_hash"))
+    stored_hash = as_text(stored.content_hash)
+    incoming_audio_hash = as_text(incoming.get("audio_hash"))
+    stored_audio_hash = as_text(stored.audio_hash)
+    incoming_isrc = normalise_isrc(as_text(incoming.get("isrc")))
+    stored_isrc = normalise_isrc(as_text(stored.isrc))
     if (incoming_hash and stored_hash and incoming_hash == stored_hash) or (
         incoming_audio_hash and stored_audio_hash and incoming_audio_hash == stored_audio_hash
     ):
@@ -112,15 +106,15 @@ def _signals_conflict(incoming: Mapping[str, Any], stored: StoredMatch) -> bool:
 
 def _find_matches(conn: sqlite3.Connection, change: RowChange) -> list[StoredMatch]:
     incoming_pk = change.pk[0]
-    content_hash = _as_text(change.values.get("content_hash"))
-    audio_hash = _as_text(change.values.get("audio_hash"))
+    content_hash = as_text(change.values.get("content_hash"))
+    audio_hash = as_text(change.values.get("audio_hash"))
     if content_hash or audio_hash:
         matches = matches_by_hash(conn, incoming_pk, content_hash, audio_hash)
         if matches:
             return matches
-    isrc = normalise_isrc(_as_text(change.values.get("isrc")))
+    isrc = normalise_isrc(as_text(change.values.get("isrc")))
     if isrc:
-        return matches_by_isrc(conn, incoming_pk, isrc, _as_text(change.values.get("isrc")))
+        return matches_by_isrc(conn, incoming_pk, isrc, as_text(change.values.get("isrc")))
     return []
 
 
@@ -206,7 +200,7 @@ def rewrite_incoming_change(change: RowChange, remap: Mapping[str, str]) -> RowC
     values = dict(change.values)
     pk = list(change.pk)
     rewritten = False
-    old = _as_text(values.get("stable_id"))
+    old = as_text(values.get("stable_id"))
     if old is not None and old in remap:
         survivor = _follow_remap(remap, old)
         values["stable_id"] = survivor
@@ -221,7 +215,7 @@ def rewrite_incoming_change(change: RowChange, remap: Mapping[str, str]) -> RowC
         new_members: list[dict[str, Any]] = []
         for member in members:
             item = dict(member)
-            member_id = _as_text(item.get("stable_id"))
+            member_id = as_text(item.get("stable_id"))
             if member_id is not None and member_id in remap:
                 item["stable_id"] = _follow_remap(remap, member_id)
                 rewritten = True
@@ -241,11 +235,11 @@ def names_held_parent(change: RowChange, held: set[str]) -> bool:
     """True when this row (or its membership bundle) names a held track PK."""
     if not held:
         return False
-    sid = _as_text(change.values.get("stable_id"))
+    sid = as_text(change.values.get("stable_id"))
     if sid is not None and sid in held:
         return True
     if change.members:
-        return any((_as_text(member.get("stable_id")) or "") in held for member in change.members)
+        return any((as_text(member.get("stable_id")) or "") in held for member in change.members)
     return False
 
 
@@ -387,6 +381,10 @@ def _remap_locations(conn: sqlite3.Connection, loser: str, survivor: str) -> Non
                 "DELETE FROM track_locations WHERE location_id = ?",
                 (location_id,),
             )
+            # Same vacuum as _drop_superseded: the UNIQUE index cannot hold
+            # both twins, and a leftover changelog entry is Sentry OPEN-DJ-BE-7H
+            # (spoke_push skips it with ADR 04 c4's hard-delete ERROR).
+            _rekey_child_changelog(conn, "track_locations", [((location_id,), None)])
             continue
         conn.execute(
             "UPDATE track_locations SET stable_id = ? WHERE location_id = ?",
@@ -408,9 +406,20 @@ def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> N
             (playlist_id, survivor),
         ).fetchone()
         if already is not None:
+            discarded = [
+                (str(row[0]), str(row[1]))
+                for row in conn.execute(
+                    "SELECT playlist_id, position FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND stable_id = ?",
+                    (playlist_id, loser),
+                )
+            ]
             conn.execute(
                 "DELETE FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ?",
                 (playlist_id, loser),
+            )
+            _rekey_child_changelog(
+                conn, MEMBERSHIP_TABLE, [(pk, None) for pk in discarded]
             )
             continue
         conn.execute(
@@ -489,7 +498,7 @@ def unsyncable_inferred_pks(conn: sqlite3.Connection) -> tuple[str, ...]:
           AND (audio_hash IS NULL OR audio_hash = '')
         """
     ).fetchall()
-    return tuple(str(pk) for pk, isrc in rows if normalise_isrc(_as_text(isrc)) is None)
+    return tuple(str(pk) for pk, isrc in rows if normalise_isrc(as_text(isrc)) is None)
 
 
 def hub_library_size(conn: sqlite3.Connection) -> int:

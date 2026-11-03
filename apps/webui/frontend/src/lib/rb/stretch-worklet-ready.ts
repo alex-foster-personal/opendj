@@ -76,24 +76,28 @@ function _loadStretchFactory(): Promise<CreateSignalsmithStretch> {
 async function _awaitAddModule(context: AudioContext, moduleUrl: string): Promise<void> {
 	let pending = addModuleMemos.get(context);
 	if (pending === undefined) {
-		pending = (async () => {
-			try {
-				if (injectedAddModuleFailures > 0) {
-					injectedAddModuleFailures -= 1;
-					throw new StretchProcessorError('Signalsmith addModule failed: injected fault (bug #58 drill)');
-				}
-				await withStretchAddModuleTimeout(
-					context.audioWorklet!.addModule(moduleUrl),
-					addModuleTimeoutMs
-				);
-			} catch (error) {
+		// Memoize the browser addModule promise, not the 15s waiter. Timing
+		// out the waiter used to delete this memo and start a second compile
+		// while the first was still running (Sentry OPEN-DJ-BE-6V). A retry
+		// must join the in-flight load. Forget only when addModule itself
+		// rejects, so a hard failure can retry.
+		if (injectedAddModuleFailures > 0) {
+			injectedAddModuleFailures -= 1;
+			pending = Promise.reject(
+				new StretchProcessorError('Signalsmith addModule failed: injected fault (bug #58 drill)')
+			).catch((error: unknown) => {
 				addModuleMemos.delete(context);
 				throw error;
-			}
-		})();
+			});
+		} else {
+			pending = context.audioWorklet!.addModule(moduleUrl).catch((error: unknown) => {
+				addModuleMemos.delete(context);
+				throw error;
+			});
+		}
 		addModuleMemos.set(context, pending);
 	}
-	await pending;
+	await withStretchAddModuleTimeout(pending, addModuleTimeoutMs);
 }
 
 async function withStretchAddModuleTimeout(

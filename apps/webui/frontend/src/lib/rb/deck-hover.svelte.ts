@@ -9,6 +9,18 @@ export function setHoveredDeck(deckId: DeckId | null): void {
 	deckHoverUi.deckId = deckId;
 }
 
+/**
+ * The deck whose linked panels (deck, wavestack row, mixer strip, library
+ * row) draw the hover highlight, or null when `enabled` (the caller's
+ * `uiPrefs.deck_hover_link`) is off. Read this for visuals only:
+ * `deckHoverUi.deckId` keeps tracking the pointer either way, because hotkeys
+ * and playhead logic depend on it. The pref is passed in rather than imported
+ * so this module adds no importer to prefs.svelte.ts (frontend.max_fan_in).
+ */
+export function deckHoverLinkId(enabled: boolean): DeckId | null {
+	return enabled ? deckHoverUi.deckId : null;
+}
+
 // -------------------------------------------------------------- enter/leave
 // RECOVERED, not designed. `Deck.svelte` has imported these three since
 // cfbfe55 ("wip(spike)", Fri 24 Jul 2026 01:19) but they were never committed

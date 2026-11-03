@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from apps.shared.state.ids import normalise_isrc
+from apps.shared.text import as_text
 
 
 @dataclass(frozen=True)
@@ -12,13 +13,6 @@ class HashPendingPage:
     stable_ids: tuple[str, ...]
     total: int
     next_cursor: str | None
-
-
-def _as_text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
 
 
 def _tracks_columns(conn: sqlite3.Connection) -> set[str]:
@@ -48,7 +42,7 @@ def count_hash_pending(conn: sqlite3.Connection) -> int:
     return sum(
         1
         for (isrc,) in rows
-        if normalise_isrc(_as_text(isrc)) is None
+        if normalise_isrc(as_text(isrc)) is None
     )
 
 
@@ -79,7 +73,7 @@ def list_hash_pending(
     ).fetchall()
     stable_ids: list[str] = []
     for stable_id, isrc in rows:
-        if normalise_isrc(_as_text(isrc)) is None:
+        if normalise_isrc(as_text(isrc)) is None:
             stable_ids.append(str(stable_id))
         if len(stable_ids) >= limit:
             break

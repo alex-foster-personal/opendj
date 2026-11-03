@@ -53,7 +53,9 @@ STATUS_UNKNOWN = "unknown"
 # Trusted human or agent sources outrank our own guess; the library's existing
 # rekordbox or file tag is the last resort (owner, Mon 12 Oct 2026: the library
 # shows one genre in the Beatport taxonomy, which our guess supplies).
-DEFAULT_PRECEDENCE: tuple[str, ...] = (PROVIDER_USER, "beatport", PROVIDER_FUSED, PROVIDER_LIBRARY_TAG)
+# GENRE-09: a genre the user already has (typed, or in their files/library) outranks
+# every inferred one; inference only fills tracks that have none.
+DEFAULT_PRECEDENCE: tuple[str, ...] = (PROVIDER_USER, PROVIDER_LIBRARY_TAG, "beatport", PROVIDER_FUSED)
 
 _ID_CHUNK = 500
 
@@ -376,7 +378,8 @@ def import_search_cache(conn: sqlite3.Connection, path: Path, query_version: str
 @dataclass(frozen=True)
 class GenreConfig:
     precedence: tuple[str, ...] = DEFAULT_PRECEDENCE
-    auto_infer: bool = False
+    # GENRE-09: on by default, so new tracks get genres with no agent help.
+    auto_infer: bool = True
     write_file_tags: bool = False
     write_roots: tuple[str, ...] = ()
 

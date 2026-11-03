@@ -1,8 +1,8 @@
-"""Generate specs/parity-checklist.md from reqs.json (v1 scope).
+"""Generate (private path) from reqs.json (v1 scope).
 
 Rebuild lane agentB: the generated file is the parity-MVP acceptance list for
 the toolchain surface. Performance-mode UI parity is tracked separately in
-PARITY-TODO.md (Working now / Partial / TODO tables) and gates T2/T4.
+PARITY-TODO.md (Working now / Partial / full-parity tables) and gates T2/T4.
 
 Run: uv run --no-sync python scripts/build_parity_checklist.py
 """
@@ -32,7 +32,7 @@ def main() -> None:
         "(shipped in v1) is reproduced on the new chassis AND PARITY-TODO.md's",
         "Working-now table is fully green on it. Unchecked rows were not shipped in",
         "v1 and are NOT parity obligations. Contract changes follow the protocol in",
-        ".planning/rebuild-clean-room-take-fable.md s15 T0.",
+        "(private path) s15 T0.",
         "",
     ]
     total = shipped = 0

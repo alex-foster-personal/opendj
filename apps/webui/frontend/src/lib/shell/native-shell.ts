@@ -80,7 +80,11 @@ export async function pickFolder(
 	throw new Error('no desktop shell: this page is running in a browser tab');
 }
 
-/** Open a URL in the system browser (Google sign-in needs passkeys outside the webview). */
+/**
+ * Open a URL in the system browser. OAuth and other interactive sign-in flows
+ * use this path in desktop shells; loopback polling or device-code completion
+ * belongs to the sign-in module, not this bridge.
+ */
 export async function openExternal(url: string, scope: Scope = globalThis): Promise<void> {
 	const electron = electronBridge(scope);
 	if (electron !== null) return electron.openExternal(url);

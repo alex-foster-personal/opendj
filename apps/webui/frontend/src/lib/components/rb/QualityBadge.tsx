@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 import type { TrackQuality } from '$lib/rb/library-types';
-import { gradeView, hoverIsFresh, hoverTitle, type LoadedHover } from '$lib/rb/quality-grade';
+import { gradeView } from '$lib/rb/quality-grade';
 
 import './QualityBadge.react.css';
 
@@ -39,8 +39,8 @@ function _title(q: TrackQuality | null): string {
 }
 
 export default function QualityBadge({ quality, showContainer = true, compact = false, loadHover }: QualityBadgeProps) {
-	// The loaded hover is tied to the grade it describes (see the Svelte original).
-	const [loaded, setLoaded] = useState<LoadedHover | null>(null);
+	const [hoverText, setHoverText] = useState<string | null>(null);
+	const [hoverKey, setHoverKey] = useState<string | null>(null);
 	const gradeKey = JSON.stringify(quality?.grade ?? null);
 	const currentKey = useRef(gradeKey);
 	currentKey.current = gradeKey;
@@ -51,16 +51,19 @@ export default function QualityBadge({ quality, showContainer = true, compact = 
 	if (quality?.grade) {
 		const graded = gradeView(quality.grade, compact);
 		const requestHover = () => {
-			if (loadHover === undefined || hoverIsFresh(loaded, gradeKey, Date.now())) return;
+			if (loadHover === undefined) return;
 			const key = gradeKey;
 			void loadHover().then((text) => {
-				if (key === currentKey.current) setLoaded({ key, at: Date.now(), text });
+				if (key === currentKey.current) {
+					setHoverText(text);
+					setHoverKey(key);
+				}
 			});
 		};
 		return (
 			<span
 				className={graded.classes}
-				title={hoverTitle(loaded, gradeKey, graded.title)}
+				title={hoverKey === gradeKey && hoverText ? hoverText : graded.title}
 				data-venue={rung}
 				data-grade={graded.dataGrade}
 				onMouseEnter={requestHover}

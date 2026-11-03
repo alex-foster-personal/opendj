@@ -1,14 +1,19 @@
-"""The setup assistant's HTTP surface -- an OpenRouter proxy, nothing more.
+"""The assistant's HTTP surface: a model proxy (/chat) and a tool loop (/agent).
 
 The first run of Open DJ is a long wait: rekordbox is being snapshotted,
-decrypted and ingested while the user watches a progress bar. This is the
-chat that sits beside that bar. It is a PROXY, deliberately: the engine
-holds no conversation state, runs no prompt chain and stores no history.
+decrypted and ingested while the user watches a progress bar. /chat is the
+chat that sits beside that bar. Both routes are stateless, deliberately: the
+engine holds no conversation state and stores no history; the client resends it.
 Refresh the page and the conversation is gone, because the alternative is
 a chat log in state.db that nobody asked for.
 
-    GET  /api/v1/assistant/status   is a key configured, and which model
+    GET  /api/v1/assistant/status   is an upstream configured, and which model
+    POST /api/v1/assistant/instant/preview   would a draft run with no model
     POST /api/v1/assistant/chat     stream one completion
+    POST /api/v1/assistant/agent    the tool-using loop (agent.py), NDJSON events
+
+The upstream is the user's own OpenRouter key or the Open DJ gateway, never
+both and never a fallback from one to the other (upstream.py).
 
 AGENT-NATIVE PARITY: both are plain curl. The system prompt lives HERE
 rather than in the sidebar, so an agent posting to /chat gets the same
@@ -29,56 +34,54 @@ names the missing environment variable.
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import AsyncIterator
-from typing import Any, Literal
+from typing import Literal
 
-import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from apps.engine_core.assistant.agent import Turn, complete, held_calls, run_agent
+from apps.engine_core.assistant.agent_contract import (
+    AGENT_MEDIA_TYPE,
+    AGENT_ROUTE,
+    AgentIn,
+    ChooseTier,
+    ToolContext,
+    ToolFailure,
+    ToolSpec,
+)
+from apps.engine_core.assistant.core_tools import CORE_TOOLS, read_audible
+from apps.engine_core.assistant.machine_tools import MACHINE_TOOLS
+from apps.engine_core.assistant.tiers import (
+    DEFAULT_MODEL,
+    MODEL_ENV,
+    Intent,
+    TierModels,
+    apply_override,
+    choose_tier,
+)
+from apps.engine_core.assistant.upstream import Upstream, UpstreamMode, UpstreamUnconfigured, resolve_upstream
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 # ----- configuration ------------------------------------------------------
-#: Which model to call. Overridable because the maintainer named two candidates
-#: (an OpenRouter-hosted Terra agent and Gemini Flash 3.7) and OpenRouter
-#: serves both behind one API -- switching is an env var, not a code change.
-MODEL_ENV: str = "MDT_ASSISTANT_MODEL"
-
-#: The credential. Absent = the endpoint refuses; see the module docstring.
-OPENROUTER_KEY_ENV: str = "OPENROUTER_API_KEY"
-
-#: Where to send the completion. Exists so the tests can point the proxy at
-#: a real local HTTP server instead of the internet.
-OPENROUTER_BASE_ENV: str = "MDT_OPENROUTER_BASE_URL"
-
-#: Gemini Flash 3.7's OpenRouter slug, read off
-#: https://openrouter.ai/api/v1/models on Wed 19 Aug 2026 -- listed there as
-#: "Google: Gemini 3.7 Flash", canonical_slug google/gemini-3.7-flash-20260813,
-#: 1,048,576-token context. NOT guessed from the product name: OpenRouter's
-#: slugs invert Google's marketing order (gemini-3.7-flash, not
-#: gemini-flash-3.7) and a wrong slug is a 404 on every single request.
-DEFAULT_MODEL: str = "google/gemini-3.7-flash"
-
-DEFAULT_BASE_URL: str = "https://openrouter.ai/api/v1"
-
-#: No retry policy on purpose. A retried completion is a second charge and a
-#: second wait, and the caller -- who can see the error -- is better placed
-#: to decide than a hidden loop is.
-_TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=10.0)
+#: Every tool the agent may call: engine tools, then machine tools.
+ALL_TOOLS: tuple[ToolSpec, ...] = CORE_TOOLS + MACHINE_TOOLS
 
 #: Refusal codes. The frontend branches on these, so they are values, not
 #: prose: `{"detail": {"code", "message"}}` is this repo's error envelope.
-KEY_MISSING_CODE: str = "assistant_key_missing"
-UPSTREAM_ERROR_CODE: str = "assistant_upstream_error"
+#: KEY_MISSING_CODE (409) and its siblings come from upstream.py; the
+#: agent's terminal error event code, UPSTREAM_ERROR_CODE, from agent.py.
+BAD_HISTORY_CODE: str = "assistant_bad_history"
 
-KEY_MISSING_MESSAGE: str = (
-    f"the assistant has no API key: set {OPENROUTER_KEY_ENV} in the engine's "
-    "environment and restart it. Nothing is answered without one -- this "
-    "endpoint will not invent a reply."
-)
+#: Longest draft /instant/preview checks; every instant command is far shorter.
+MAX_PREVIEW_CHARS: int = 2000
+
+#: Unspecified bind addresses are not dialable on every platform (Windows
+#: refuses a connect to 0.0.0.0), so a tool reaches the engine on loopback.
+_DIAL_HOST: dict[str, str] = {"0.0.0.0": "127.0.0.1", "::": "::1"}
 
 #: What the model is told it is. Short and factual on purpose: a long
 #: persona would encourage it to perform expertise about a library it cannot
@@ -117,6 +120,22 @@ class AssistantStatusOut(BaseModel):
 
     configured: bool
     model: str
+    #: Which upstream answers: the user's own key or the Open DJ gateway.
+    mode: UpstreamMode | None = None
+    #: Why not configured (the refusal code /chat and /agent would return).
+    code: str | None = None
+
+
+class InstantPreviewIn(BaseModel):
+    text: str = Field(max_length=MAX_PREVIEW_CHARS)
+
+
+class InstantPreviewOut(BaseModel):
+    """Whether ``text`` is an instant command, which /agent answers with no model or key."""
+
+    instant: bool
+    #: The rule that matched, e.g. ``rule: play command``; None when not instant.
+    reason: str | None = None
 
 
 # ----- helpers ------------------------------------------------------------
@@ -124,35 +143,29 @@ def _model() -> str:
     return os.environ.get(MODEL_ENV, "").strip() or DEFAULT_MODEL
 
 
-def _base_url() -> str:
-    configured = os.environ.get(OPENROUTER_BASE_ENV, "").strip()
-    return (configured or DEFAULT_BASE_URL).rstrip("/")
+def _upstream() -> Upstream:
+    """The configured upstream, or the 409 refusal naming what is missing."""
+    try:
+        return resolve_upstream()
+    except UpstreamUnconfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
-def _api_key() -> str | None:
-    """The key, or None. An empty/whitespace value counts as absent.
+def _own_origin(request: Request) -> str:
+    """This engine's origin, from the socket the request arrived on.
 
-    `OPENROUTER_API_KEY=` in a .env file is someone clearing the key, not
-    setting it to the empty string, and treating it as present would turn a
-    clear 409 into a baffling upstream 401.
+    Never the Host header: that is client-controlled, and a tool must not be
+    steerable to another origin by whoever sent the request.
     """
-    return os.environ.get(OPENROUTER_KEY_ENV, "").strip() or None
-
-
-def _upstream_failure(message: str, upstream_status: int | None) -> HTTPException:
-    """502, because this endpoint IS a gateway and the gateway is what failed.
-
-    `upstream_status` rides along as its own field so a caller can branch on
-    402-out-of-credit versus 429-rate-limited without parsing the sentence.
-    """
-    return HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={
-            "code": UPSTREAM_ERROR_CODE,
-            "message": message,
-            "upstream_status": upstream_status,
-        },
-    )
+    server = request.scope.get("server")
+    if not server or server[1] is None:
+        raise HTTPException(status_code=500, detail="the engine cannot see its own bound socket")
+    host = _DIAL_HOST.get(server[0], server[0])
+    # nosemgrep: python.flask.security.audit.directly-returned-format-string.directly-returned-format-string
+    return f"http://{f'[{host}]' if ':' in host else host}:{server[1]}"
 
 
 def _wire_messages(messages: list[ChatMessage]) -> list[dict[str, str]]:
@@ -168,61 +181,39 @@ def _wire_messages(messages: list[ChatMessage]) -> list[dict[str, str]]:
     return [{"role": "system", "content": SETUP_ASSISTANT_SYSTEM_PROMPT}, *wire]
 
 
-def _delta_text(data: str) -> str:
-    """The token text in one SSE data payload, or "" when it carries none.
-
-    Raises rather than skipping on anything unrecognised. A parser that
-    shrugged at a malformed chunk would silently drop part of a reply, and a
-    reply with a hole in it is worse than no reply.
-    """
-    try:
-        payload: dict[str, Any] = json.loads(data)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"OpenRouter sent a non-JSON SSE payload: {data[:200]!r}"
-        ) from exc
-    error = payload.get("error")
-    if error is not None:
-        raise RuntimeError(f"OpenRouter reported an error mid-stream: {error}")
-    choices = payload.get("choices") or []
-    if not choices:
-        # Usage-only and role-only frames are normal and carry no text.
-        return ""
-    return (choices[0].get("delta") or {}).get("content") or ""
-
-
-async def _stream_completion(
-    client: httpx.AsyncClient, upstream: httpx.Response
-) -> AsyncIterator[bytes]:
+async def _stream_text(target: Upstream, messages: list[dict[str, str]]) -> AsyncIterator[bytes]:
     """Upstream's SSE, flattened to the plain text the sidebar appends.
 
     Decoded here rather than forwarded verbatim so the browser does not have
-    to carry an SSE parser and a JSON decoder to render a paragraph. Failing
-    mid-stream aborts the chunked response, which every HTTP client surfaces
-    as a broken read -- deliberately louder than a truncated 200.
+    to carry an SSE parser and a JSON decoder to render a paragraph. Any
+    upstream failure, including a refusal before the first token, aborts the
+    chunked response, which every HTTP client surfaces as a broken read --
+    deliberately louder than a truncated 200.
     """
-    try:
-        async for line in upstream.aiter_lines():
-            # Blank separators and `: OPENROUTER PROCESSING` keep-alives, plus
-            # SSE's own event:/id: fields. All framing, none of it content.
-            if not line or line.startswith(":") or not line.startswith("data:"):
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                return
-            text = _delta_text(data)
-            if text:
-                yield text.encode("utf-8")
-    finally:
-        await upstream.aclose()
-        await client.aclose()
+    async for delta in complete(target, _model(), messages, (), Turn()):
+        yield delta.encode("utf-8")
 
 
 # ----- routes -------------------------------------------------------------
 @router.get("/status", response_model=AssistantStatusOut)
 async def assistant_status() -> AssistantStatusOut:
     """Whether a chat can work at all, and which model would answer it."""
-    return AssistantStatusOut(configured=_api_key() is not None, model=_model())
+    try:
+        upstream = resolve_upstream()
+    except UpstreamUnconfigured as exc:
+        return AssistantStatusOut(configured=False, model=_model(), code=exc.code)
+    return AssistantStatusOut(configured=True, model=_model(), mode=upstream.mode)
+
+
+@router.post("/instant/preview", response_model=InstantPreviewOut)
+async def assistant_instant_preview(payload: InstantPreviewIn) -> InstantPreviewOut:
+    """Whether a draft would run as an instant command, asked before Send.
+
+    The same rules /agent applies, so a keyless composer can say up front
+    which drafts work without a model, and the grammar lives only in tiers.py.
+    """
+    intent = Intent.of_text(payload.text)
+    return InstantPreviewOut(instant=intent is not None, reason=intent.reason if intent else None)
 
 
 @router.post(
@@ -233,65 +224,87 @@ async def assistant_status() -> AssistantStatusOut:
             "content": {"text/plain": {}},
             "description": "The completion, streamed as plain UTF-8 text.",
         },
-        409: {"description": f"No {OPENROUTER_KEY_ENV} is configured."},
-        502: {"description": "OpenRouter refused or could not be reached."},
+        409: {"description": "No upstream is configured, or it is ambiguous (detail.code)."},
     },
 )
 async def assistant_chat(payload: ChatIn) -> StreamingResponse:
-    """Stream one completion from OpenRouter, or explain why there is none.
+    """Stream one completion from the upstream, or explain why there is none.
 
-    The upstream status is checked BEFORE the response starts, so a refusal
-    arrives as a real HTTP error with a code rather than as a 200 whose body
-    turns out to be empty.
+    A missing or ambiguous upstream is refused BEFORE the response starts, as
+    a real 409 with a code. Anything the upstream itself does wrong arrives
+    after the 200 and breaks the stream (see ``_stream_text``).
     """
-    key = _api_key()
-    if key is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": KEY_MISSING_CODE, "message": KEY_MISSING_MESSAGE},
-        )
-
-    base = _base_url()
-    client = httpx.AsyncClient(timeout=_TIMEOUT)
-    request = client.build_request(
-        "POST",
-        f"{base}/chat/completions",
-        json={
-            "model": _model(),
-            "messages": _wire_messages(payload.messages),
-            "stream": True,
-        },
-        headers={
-            "Authorization": f"Bearer {key}",
-            # OpenRouter's app-attribution headers; they show which app the
-            # spend came from on the account's activity page.
-            "X-Title": "Open DJ",
-            "HTTP-Referer": "https://github.com/former-work-account/music-dj-tools",
-        },
-    )
-    try:
-        upstream = await client.send(request, stream=True)
-    except httpx.HTTPError as exc:
-        await client.aclose()
-        raise _upstream_failure(
-            f"could not reach OpenRouter at {base}: {exc!r}", None
-        ) from exc
-
-    if upstream.status_code != 200:
-        body = (await upstream.aread()).decode("utf-8", errors="replace")
-        await upstream.aclose()
-        await client.aclose()
-        raise _upstream_failure(
-            f"OpenRouter returned {upstream.status_code} for model "
-            f"{_model()}: {body[:600]}",
-            upstream.status_code,
-        )
-
+    target = _upstream()
     return StreamingResponse(
-        _stream_completion(client, upstream),
+        _stream_text(target, _wire_messages(payload.messages)),
         media_type="text/plain; charset=utf-8",
         # Nothing between here and the browser may buffer the body: a
         # buffered stream arrives as one block and the whole point of
         # streaming -- the wait feeling shorter -- is lost.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+# ----- agent plug-ins (tests swap these via dependency_overrides) ----------
+def get_choose_tier() -> ChooseTier:
+    return choose_tier
+
+
+def get_agent_tools() -> tuple[ToolSpec, ...]:
+    return ALL_TOOLS
+
+
+@router.post(
+    AGENT_ROUTE,
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {AGENT_MEDIA_TYPE: {}},
+            "description": "One AgentEvent JSON object per line (agent_contract.py).",
+        },
+        409: {"description": "No upstream is configured, or it is ambiguous (detail.code)."},
+        422: {"description": f"The history is not one this endpoint streamed ({BAD_HISTORY_CODE})."},
+        502: {"description": "The engine could not read its own performance state."},
+    },
+)
+async def assistant_agent(
+    payload: AgentIn,
+    request: Request,
+    choose_tier: ChooseTier = Depends(get_choose_tier),  # noqa: B008  # FastAPI DI
+    tools: tuple[ToolSpec, ...] = Depends(get_agent_tools),  # FastAPI DI
+) -> StreamingResponse:
+    """Run the tool-using loop, streaming NDJSON events.
+
+    Everything that can refuse without a model call refuses here, before the
+    stream opens, in the same envelope /chat uses. Once the stream is open an
+    upstream failure is a terminal ``error`` event instead.
+    """
+    try:
+        held = held_calls(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": BAD_HISTORY_CODE, "message": str(exc)},
+        ) from exc
+    choice = apply_override(choose_tier(payload.messages), payload.tier, TierModels.from_env(os.environ))
+    upstream = None if choice.intent is not None else _upstream()
+    base_url = _own_origin(request)
+    try:
+        audible = await read_audible(ToolContext(base_url=base_url, audible=False))
+    except ToolFailure as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    return StreamingResponse(
+        run_agent(
+            payload,
+            held=held,
+            choice=choice,
+            upstream=upstream,
+            tools=tools,
+            ctx=ToolContext(base_url=base_url, audible=audible),
+        ),
+        media_type=AGENT_MEDIA_TYPE,
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

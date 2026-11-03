@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import review_lane, review_pr_diff
+from scripts import review_gh, review_lane, review_pr_diff
 from scripts.review_gh import TriageError
 
 REPO = "example/repo"
@@ -70,14 +70,18 @@ def _github(monkeypatch: pytest.MonkeyPatch, pr_repo: dict, diff_failure: str) -
         calls.append(args)
         if args[0] == "api" and args[1].endswith("/pulls/9"):
             raise TriageError(diff_failure)
-        if args[:2] == ["pr", "view"]:
-            return json.dumps({"headRefOid": pr_repo["head"], "baseRefOid": pr_repo["base_tip"]})
         if args[0] == "api" and "/compare/" in args[1]:
             assert args[1].endswith(f"{pr_repo['base_tip']}...{pr_repo['head']}")
             return f"{pr_repo['merge_base']}\n"
         raise AssertionError(f"unexpected gh call: {args}")
 
+    def pull_view(args: list[str], payload: dict | None = None, *, as_human: bool = False) -> str:
+        calls.append(args)
+        assert args == ["api", "repos/example/repo/pulls/9"], args
+        return json.dumps({"head": {"sha": pr_repo["head"], "ref": "b"}, "base": {"sha": pr_repo["base_tip"]}})
+
     monkeypatch.setattr(review_pr_diff, "_gh", gh)
+    monkeypatch.setattr(review_gh, "_gh", pull_view)
     return calls
 
 

@@ -119,6 +119,13 @@ def _one_track(tmp_path: Path, attrs: str, marks: str = "") -> Path:
     return path
 
 
+@pytest.mark.parametrize(("attr", "field", "expected"), [('PlayCount="7,0"', "play_count", 7), ('Rating="153,0"', "rating", 3)])
+def test_a_comma_decimal_whole_number_is_read_as_that_whole_number(tmp_path: Path, attr: str, field: str, expected: int) -> None:
+    """[if] a whole-number field is written with a comma decimal, such as 7,0 [then] it reads as that whole number, not an abort, [else stop]."""
+    (track,) = read_rekordbox_xml(_one_track(tmp_path, attr)).library.tracks
+    assert getattr(track, field) == expected
+
+
 @pytest.mark.parametrize(
     ("attrs", "marks", "named"),
     [
@@ -127,6 +134,12 @@ def _one_track(tmp_path: Path, attrs: str, marks: str = "") -> Path:
         ("", '<POSITION_MARK Type="0" Start="1,5,6" Num="0"/>', "Start='1,5,6'"),
         ('Rating="153.9"', "", "Rating='153.9' is not a whole number"),
         ('PlayCount="-3"', "", "PlayCount='-3' is negative"),
+        ('PlayCount="1e30"', "", "PlayCount='1e30' is too large to store"),
+        ('PlayCount="1e1000000"', "", "PlayCount='1e1000000' is too large to store"),
+        ('PlayCount="9223372036854775808"', "", "PlayCount='9223372036854775808' is too large to store"),
+        ('PlayCount="7.0000000000000001"', "", "PlayCount='7.0000000000000001' is not a whole number"),
+        ('TotalTime="1e100"', "", "TotalTime='1e100' is too large to store"),
+        ('TotalTime="1e308"', "", "TotalTime='1e308' is too large to store"),
         ("", '<POSITION_MARK Type="0" Start="1" Num="2.9"/>', "Num='2.9' is not a whole number"),
         ("", '<POSITION_MARK Type="0" Start="1" Num="1" Red="40.5" Green="0" Blue="0"/>', "Red='40.5' is not a whole number"),
         ("", '<POSITION_MARK Type="0" Start="1" Num="1" Red="40"/>', "Red, Green and Blue must be given together"),
@@ -170,6 +183,27 @@ def test_blank_numbers_are_missing_not_errors(tmp_path: Path) -> None:
     assert (track.bpm, track.rating, track.color_rgb, track.play_count) == (None, None, None, 0)
 
 
+@pytest.mark.parametrize(
+    ("seconds", "ms"),
+    [
+        ("9223372036854775", 9223372036854775000),  # 2**63 - 1 ms bound: converting to float first rounded this past the limit
+        ("1.2345", 1234),
+        ("1.2355", 1236),  # ties round to even, as the float path did
+        ("0,5", 500),
+    ],
+)
+def test_a_time_near_the_store_limit_is_scaled_exactly(tmp_path: Path, seconds: str, ms: int) -> None:
+    """[if] TotalTime is a large but storable number of seconds [then] it scales to milliseconds exactly, [else stop]."""
+    (track,) = read_rekordbox_xml(_one_track(tmp_path, f'TotalTime="{seconds}"')).library.tracks
+    assert track.duration_ms == ms
+
+
+def test_a_zero_with_a_large_exponent_reads_as_zero(tmp_path: Path) -> None:
+    """[if] a whole number is zero with a large exponent [then] it reads as 0, not as too large, [else stop]."""
+    (track,) = read_rekordbox_xml(_one_track(tmp_path, 'PlayCount="0e1000000"')).library.tracks
+    assert track.play_count == 0
+
+
 def test_whole_numbers_written_as_decimals_still_read(tmp_path: Path) -> None:
     """[if] a whole number is written as 2.0 [then] it reads as 2, so the integral check does not overshoot, [else stop]."""
     (track,) = read_rekordbox_xml(
@@ -177,6 +211,13 @@ def test_whole_numbers_written_as_decimals_still_read(tmp_path: Path) -> None:
     ).library.tracks
     assert (track.rating, track.play_count) == (3, 7)
     assert [(c.type, c.index) for c in track.cues] == [("hot", 2)]
+
+
+@pytest.mark.parametrize("count", [2**53 + 1, 2**63 - 1])
+def test_a_whole_number_past_float_precision_keeps_every_digit(tmp_path: Path, count: int) -> None:
+    """[if] a whole number is past 2**53 but within what the store holds [then] it reads exactly, never rounded or rejected, [else stop]."""
+    (track,) = read_rekordbox_xml(_one_track(tmp_path, f'PlayCount="{count}"')).library.tracks
+    assert track.play_count == count
 
 
 def test_a_hot_cue_with_no_pad_number_is_a_memory_cue(tmp_path: Path) -> None:

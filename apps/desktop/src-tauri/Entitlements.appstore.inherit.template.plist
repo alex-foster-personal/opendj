@@ -13,6 +13,14 @@
   invalid rather than more permissive: the child gets the parent's network
   entitlement through inheritance already.
 
+  NO HARDENED RUNTIME ON THESE BINARIES (INSTALL-3287). scripts/ship_appstore.sh
+  signs the payload without the hardened runtime option. Open DJ's analysis
+  JITs through numba, which the hardened runtime kills unless the process's
+  OWN signature allows unsigned executable memory, and that key is not
+  inherited from the parent. Measured, with the alternatives, in
+  scripts/lib/sandboxed_jit_smoke.sh. The store does not require the hardened
+  runtime; notarization does.
+
   WHY THIS FILE EXISTS AT ALL, rather than signing the whole bundle in one
   pass: codesign's "deep" flag walks into Resources and re-signs the payload
   with the PARENT's entitlements, which would hand a full sandbox profile to a

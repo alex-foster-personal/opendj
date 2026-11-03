@@ -39,7 +39,9 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	await page.goto(`${CLOUDSYNC_UI_ORIGIN}/cloudsync`);
 
 	// 1. Nothing configured, no heartbeat: the chip and the panel both say off.
-	await expect(await chip(page)).toHaveText('sync: off');
+	// useInnerText: the chip renders a full and a short label and CSS hides
+	// one per viewport; textContent concatenates both ('sync: off off').
+	await expect(await chip(page)).toHaveText('sync: off', { useInnerText: true });
 	await expect(page.getByTestId('cloudsync-status-running')).toHaveText('no');
 	await expect(page.getByTestId('cloudsync-status-configured')).toHaveText('no');
 	await expect(page.getByTestId('cloudsync-sync-now')).toBeDisabled();
@@ -95,9 +97,9 @@ test('config, Sync now, journal row, fleet, then a live heartbeat lights the chi
 	// step 1) WITHOUT a reload: the save's status-changed event fired before the
 	// first beat, and Refresh does not signal the chip, so only the chip's own
 	// poll (CHIP_POLL_MS, 30s) can bring this in.
-	await expect(await chip(page)).not.toHaveText('sync: off', { timeout: 40_000 });
+	await expect(await chip(page)).not.toHaveText('sync: off', { timeout: 40_000, useInnerText: true });
 	await page.reload();
-	await expect(await chip(page)).not.toHaveText('sync: off');
+	await expect(await chip(page)).not.toHaveText('sync: off', { useInnerText: true });
 
 	// The reload re-runs machines self-registration AFTER the spoke took its
 	// configured name; it must keep that name, not collide back to hostname.

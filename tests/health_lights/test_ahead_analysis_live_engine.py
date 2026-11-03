@@ -52,6 +52,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -81,6 +82,8 @@ FIXTURE_CONTRACT_VERSION = 1
 BOOT_BUDGET_S: float = 90.0
 IMPORT_BUDGET_S: float = 120.0
 DRAIN_BUDGET_S: float = 600.0
+_BIND_ATTEMPTS = 3
+_BIND_COLLISION_TEXT = ("address already in use", "only one usage of each socket address")
 NEXT_UP_GRID_BUDGET_S: float = 300.0
 XRUN_QUIET_S: float = 15.0
 #: How often the stand-in page re-sends its mirror. The real page publishes
@@ -98,6 +101,125 @@ def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+@dataclass(frozen=True)
+class _SpawnedEngine:
+    origin: str
+    proc: subprocess.Popen[Any]
+    log_path: Path
+    port: int
+
+
+def _logged_boot_id(log_path: Path) -> str | None:
+    """The boot_id this engine printed on its `[OK] opendj engine` line, once it has."""
+    for line in engine_log_text(log_path).splitlines():
+        if line.startswith("[OK] opendj engine ") and " boot_id=" in line:
+            return line.split(" boot_id=", 1)[1].split()[0]
+    return None
+
+
+def _answers_health(spawned: _SpawnedEngine) -> bool:
+    """True only when THIS engine answers: health must carry the boot_id it logged.
+
+    A 200 alone is not enough. PR #7574 CI run 40472894070 (issue #7582) and main
+    push CI run 40413411224 (Mon 26 Oct 2026, shard 3) both booted a process whose
+    free port another runner had already taken: that other process answered health,
+    so the boot passed, and the real engine then exited with "address already in
+    use" or 404'd a job id it never had. Matching the boot_id keeps waiting on an
+    impostor's answer until this engine exits, which `_live_engine` then retries
+    as a lost port race.
+    """
+    if spawned.proc.poll() is not None:
+        raise AssertionError(
+            f"engine exited {spawned.proc.returncode}: {engine_log_text(spawned.log_path)[-2000:]}"
+        )
+    boot_id = _logged_boot_id(spawned.log_path)
+    if boot_id is None:
+        return False
+    try:
+        with urllib.request.urlopen(f"{spawned.origin}/api/v1/health", timeout=2) as resp:
+            if resp.status != 200:
+                return False
+            body = json.loads(resp.read())
+    except (OSError, ValueError):
+        return False
+    return isinstance(body, dict) and body.get("boot_id") == boot_id
+
+
+def _lost_port_race(spawned: _SpawnedEngine) -> bool:
+    """True only when the engine exited because its own port was already bound.
+
+    One log line must carry both the collision text and the exact endpoint the
+    engine was given, so an unrelated failure that merely mentions a bound address
+    is raised as it is rather than retried. The exit status is not matched: the
+    same refused bind exits 3 in main CI run 39004860947 and 1 on a cloud host.
+    """
+    if spawned.proc.poll() is None:
+        return False
+    return any(
+        f"('127.0.0.1', {spawned.port})" in line
+        and any(text in line.lower() for text in _BIND_COLLISION_TEXT)
+        for line in engine_log_text(spawned.log_path).splitlines()
+    )
+
+
+def _start_engine(data_dir: Path, port: int, log_path: Path, env: dict[str, str]) -> _SpawnedEngine:
+    with log_path.open("w", encoding="utf-8", newline="\n") as log_file:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "apps.engine_core",
+                "serve",
+                "--data-dir",
+                str(data_dir),
+                "--port",
+                str(port),
+            ],
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+    return _SpawnedEngine(
+        origin=f"http://127.0.0.1:{port}",
+        proc=proc,
+        log_path=log_path,
+        port=port,
+    )
+
+
+def _stop_engine(spawned: _SpawnedEngine) -> None:
+    spawned.proc.terminate()
+    try:
+        spawned.proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        spawned.proc.kill()
+        spawned.proc.wait()
+
+
+def _own_job(spawned: _SpawnedEngine, base: str, job_id: str) -> dict[str, Any]:
+    if spawned.proc.poll() is not None:
+        raise AssertionError(
+            f"engine exited {spawned.proc.returncode} while waiting on job {job_id}: "
+            f"{engine_log_text(spawned.log_path)[-2000:]}"
+        )
+    try:
+        return _http("GET", f"{base}/jobs/{job_id}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            health: Any
+            try:
+                health = _http("GET", f"{base}/health")
+            except OSError as health_exc:
+                health = health_exc
+            raise AssertionError(
+                f"folder import job {job_id} is unknown to the responding server "
+                f"(HTTP 404); engine.poll()={spawned.proc.poll()!r}; "
+                f"health={health!r}; log tail:\n{engine_log_text(spawned.log_path)[-2000:]}"
+            ) from exc
+        raise
 
 
 def _http(method: str, url: str, body: dict[str, Any] | None = None, *, lease: str | None = None) -> Any:
@@ -251,12 +373,6 @@ def _live_engine(tmp_path: Path, *, provision_beatgrid: bool = False) -> Iterato
     music.mkdir()
     for n, src in enumerate(audio):
         shutil.copy2(src, music / f"track-{n:02d}{src.suffix}")
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    port = _free_port()
-    origin = f"http://127.0.0.1:{port}"
-    base = f"{origin}/api/v1"
-    log_path = tmp_path / "engine.log"
     env = {
         **os.environ,
         aa.AHEAD_ENV: "on",
@@ -271,20 +387,50 @@ def _live_engine(tmp_path: Path, *, provision_beatgrid: bool = False) -> Iterato
         # This path is the no-checkpoint host. A developer override must not
         # turn the attempt assertion into a real model run.
         env.pop(beatgrid_weights.WEIGHTS_PATH_ENV, None)
-    with log_path.open("w", encoding="utf-8", newline="\n") as log_file:
-        engine = subprocess.Popen(
-            [sys.executable, "-m", "apps.engine_core", "serve", "--data-dir", str(data_dir), "--port", str(port)],
-            cwd=REPO_ROOT, env=env, stdout=log_file, stderr=subprocess.STDOUT,
-        )
+    lost: list[int] = []
+    spawned: _SpawnedEngine | None = None
+    data_dir: Path | None = None
     try:
-        _wait_for("engine health", BOOT_BUDGET_S, lambda: _http("GET", f"{base}/health"))
+        for _attempt in range(_BIND_ATTEMPTS):
+            port = _free_port()
+            data_dir = tmp_path / f"data-{_attempt}"
+            data_dir.mkdir()
+            log_path = tmp_path / "engine.log"
+            spawned = _start_engine(data_dir, port, log_path, env)
+            try:
+                _wait_for(
+                    "engine health",
+                    BOOT_BUDGET_S,
+                    lambda current=spawned: _answers_health(current),
+                )
+            except AssertionError as exc:
+                if not _lost_port_race(spawned):
+                    raise AssertionError(
+                        f"{exc}\n{engine_log_text(spawned.log_path)[-2000:]}"
+                    ) from exc
+                lost.append(port)
+                _stop_engine(spawned)
+                spawned = None
+                continue
+            break
+        else:
+            raise AssertionError(f"lost the loopback port race {len(lost)} times: ports {lost}")
+        assert spawned is not None and data_dir is not None
+        base = f"{spawned.origin}/api/v1"
         job = _http("POST", f"{base}/setup/import/folder", {"folders": [str(music)]})
         print(f"[INFO] folder import job {job.get('id')} {job.get('status')}")
-        done = _wait_for(
-            "the folder import job to finish",
-            IMPORT_BUDGET_S,
-            lambda: (row := _http("GET", f"{base}/jobs/{job['id']}"))["status"] in TERMINAL_STATUSES and row,
-        )
+        try:
+            done = _wait_for(
+                "the folder import job to finish",
+                IMPORT_BUDGET_S,
+                lambda: (row := _own_job(spawned, base, job["id"]))["status"] in TERMINAL_STATUSES
+                and row,
+            )
+        except AssertionError as exc:
+            raise AssertionError(
+                f"{exc}\nengine.poll()={spawned.proc.poll()!r}\n"
+                f"{engine_log_text(spawned.log_path)[-2000:]}"
+            ) from exc
         assert done["status"] == "succeeded", f"folder import ended {done['status']}: {done.get('error')}"
         db = data_dir / "state" / "state.db"
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
@@ -293,15 +439,11 @@ def _live_engine(tmp_path: Path, *, provision_beatgrid: bool = False) -> Iterato
         finally:
             conn.close()
         assert len(ids) > aa.LANE_CHUNK, f"only {len(ids)} rows imported; need more than one lane chunk"
-        yield LiveEngine(origin=origin, base=base, db=db, ids=ids)
+        yield LiveEngine(origin=spawned.origin, base=base, db=db, ids=ids)
     finally:
-        engine.terminate()
-        try:
-            engine.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            engine.kill()
-            engine.wait()
-        print(engine_log_text(log_path)[-3000:])
+        if spawned is not None:
+            _stop_engine(spawned)
+            print(engine_log_text(spawned.log_path)[-3000:])
 
 
 def _end_boot_grace(engine: LiveEngine) -> None:

@@ -28,7 +28,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from scripts.review_gh import TriageError, _gh
+from scripts.review_gh import TriageError, _gh, pr_view_json
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +73,7 @@ def pr_diff_at(repo: str, pr: str, sha: str, repo_root: Path = REPO_ROOT) -> str
     the current head alone. The merge base is the compare API's, for the reason
     `_diff_endpoints` gives, and the commit must already be in the checkout.
     """
-    view = json.loads(_gh(["pr", "view", pr, "--repo", repo, "--json", "baseRefOid"]))
+    view = pr_view_json(pr, ("baseRefOid",), repo=repo)
     base = view.get("baseRefOid")
     if not base:
         raise TriageError(f"PR #{pr} reported no base commit: {view}")
@@ -92,7 +92,7 @@ def _diff_endpoints(repo: str, pr: str) -> tuple[str, str]:
     not computed locally: a shallow checkout answers `git merge-base` with a
     wrong commit or none, and this repo's clones are shallow.
     """
-    view = json.loads(_gh(["pr", "view", pr, "--repo", repo, "--json", "headRefOid,baseRefOid"]))
+    view = pr_view_json(pr, ("headRefOid", "baseRefOid"), repo=repo)
     head, base = view.get("headRefOid"), view.get("baseRefOid")
     if not head or not base:
         raise TriageError(f"PR #{pr} reported no head or base commit: {view}")

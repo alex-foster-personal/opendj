@@ -27,6 +27,24 @@ from scripts.build_engine_payload import (
     tree_bytes,
 )
 from scripts.payload_beatgrid import RUNNER_SITE_RELATIVE
+from scripts.payload_output_probe import OUTPUT_PROBE_RELATIVE
+
+
+def _refresh_output_probe(body: dict[str, Any], payload_dir: Path, before: dict[str, Any]) -> None:
+    """codesign rewrites the macOS output-probe helper too (ELECTRON-6272).
+
+    Its build-time digest then no longer names the shipped bytes: re-hash it
+    and keep the build value in the provenance block."""
+    probe = body.get("output_probe")
+    if not (isinstance(probe, dict) and probe.get("staged") is True):
+        return
+    if probe.get("path") != OUTPUT_PROBE_RELATIVE:
+        raise ValueError("unexpected output probe path")
+    helper = payload_dir / OUTPUT_PROBE_RELATIVE
+    if helper.is_symlink() or not helper.is_file():
+        raise ValueError("output probe must be a regular file")
+    before["output_probe_sha256"] = probe["sha256"]
+    probe["sha256"] = sha256_file(helper)
 
 
 def refresh_payload_manifest(payload_dir: Path) -> dict[str, Any]:
@@ -64,6 +82,7 @@ def refresh_payload_manifest(payload_dir: Path) -> dict[str, Any]:
         "audio_engine_sha256": body["audio_engine"]["sha256"],
         "beatgrid_runner_site_bytes": body["beatgrid_runner"]["bytes"]["site"],
     }
+    _refresh_output_probe(body, payload_dir, before)
     body["sha256"] = {
         name: sha256_tree(payload_dir / name) for name in ("runtime", "pylib", "app")
     }

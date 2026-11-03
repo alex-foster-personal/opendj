@@ -169,12 +169,14 @@ test('BrowserPanel auto-collapses Next/Recommended at the same 799px breakpoint 
 });
 
 test('playlist history list is hover-only popover, not a permanent tree chrome row', () => {
-	const tree = readFileSync(
-		fileURLToPath(
-			new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url)
-		),
-		'utf8'
-	);
+	const tree = ['PlaylistTree.svelte', 'PlaylistTreeView.svelte']
+		.map((file) =>
+			readFileSync(
+				fileURLToPath(new URL(`../../src/lib/components/rb/browser/${file}`, import.meta.url)),
+				'utf8'
+			)
+		)
+		.join('\n');
 	const tabs = readFileSync(LIBRARY_TABS_PATH, 'utf8');
 	assert.doesNotMatch(tree, /PlaylistHistoryPanel/);
 	assert.match(tabs, /history-popover/);

@@ -203,6 +203,97 @@ def test_markers2_written_by_this_codec_is_laid_out_as_serato_writes_it() -> Non
     assert encode_markers2(Markers2(cues=(cue,))) == _serato_frame(_CUE)
 
 
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_an_unreadable_id3_tag_raises_by_default_and_is_empty_only_when_not_strict(tmp_path) -> None:
+    """[if] an MP3's ID3 tag does not parse [then] read_geob_frames raises by default, and returns an empty bundle
+    only with strict=False, [else stop]."""
+    from apps.adapters.serato.geob import read_geob_frames
+    from apps.shared.id3v2 import Id3Error
+
+    broken = tmp_path / "Invented Broken.mp3"
+    broken.write_bytes(b"ID3\x03\x00\x00\x00\x00\x20\x00" + b"\x00" * 16)
+    assert read_geob_frames(broken, strict=False).opaque_frames == {}
+    with pytest.raises(Id3Error):
+        read_geob_frames(broken)
+    frameless = tmp_path / "Invented Frameless.mp3"
+    frameless.write_bytes(b"ID3\x03\x00\x00\x00\x00\x00\x0a" + b"\x00" * 10 + b"\xff\xfb\x90\x00" * 4)
+    assert read_geob_frames(frameless, strict=False).opaque_frames == {}
+    with pytest.raises(Id3Error, match="no frames"):
+        read_geob_frames(frameless)  # a tag that holds no frame is a counted loss, not a clean tag
+    untagged = tmp_path / "Invented Clean.mp3"
+    untagged.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 16)
+    assert read_geob_frames(untagged).opaque_frames == {}  # no tag is not an error
+
+
+def test_bytes_after_the_markers2_entry_list_terminator_make_it_undecodable() -> None:
+    """[if] a decoded Markers2 body has bytes after its entry-list NUL [then] it is undecodable, not clean, [else stop]."""
+    import base64
+    import struct
+
+    from apps.adapters.serato.geob import parse_markers2
+
+    cue = b"CUE\x00" + struct.pack(">I", 13) + b"\x00" * 13  # a complete, valid CUE entry
+    body = b"\x01\x01\x00" + cue  # the entry list ends at the NUL, and a whole CUE follows it
+    payload = b"\x01\x01" + base64.b64encode(body)
+    assert [name for name, _ in parse_markers2(payload).unknown_tags] == ["__raw__"]
+
+
+@pytest.mark.parametrize("name_entry", ["CUE", "LOOP"])
+@pytest.mark.parametrize("name", [b"Bad\xff\x00", b"Bad", b"Bad\x00HIDDEN"], ids=["not-utf8", "no-nul", "bytes-after-nul"])
+def test_a_markers2_name_that_is_not_utf8_or_unterminated_makes_the_frame_undecodable(name_entry: str, name: bytes) -> None:
+    """[if] a CUE or LOOP name is not valid UTF-8 or has no NUL terminator [then] the frame is undecodable, not read as complete, [else stop]."""
+    from apps.adapters.serato.geob import parse_markers2
+
+    if name_entry == "CUE":
+        payload = b"\x00\x02" + (61_250).to_bytes(4, "big") + b"\x00" + b"\xcc\x88\x00" + b"\x00\x00" + name
+    else:
+        payload = (
+            b"\x00\x01" + (1_000).to_bytes(4, "big") + (3_086).to_bytes(4, "big") + b"\xff" * 4
+            + b"\x00" + b"\x27\xaa\xe1" + b"\x00" + b"\x01" + name
+        )
+    decoded = parse_markers2(_serato_frame(_entry(name_entry, payload)))
+    assert [tag for tag, _ in decoded.unknown_tags] == ["__raw__"]
+    assert not decoded.cues and not decoded.loops
+
+
+def test_non_nul_bytes_after_the_markers2_text_make_it_undecodable() -> None:
+    """[if] a Markers2 frame has non-NUL bytes after its base64 text [then] it is read as undecodable, [else stop]."""
+    import base64
+
+    from apps.adapters.serato.geob import parse_markers2
+
+    payload = b"\x01\x01" + base64.b64encode(b"\x01\x01\x00") + b"\x00CORRUPT"  # a valid empty entry list, then junk
+    assert [name for name, _ in parse_markers2(payload).unknown_tags] == ["__raw__"]
+
+
+def test_a_markers2_body_without_its_inner_header_is_undecodable() -> None:
+    """[if] a Markers2 frame's decoded body lacks its inner 01 01 header [then] it is read as undecodable, not as an entry list, [else stop]."""
+    import base64
+
+    from apps.adapters.serato.geob import parse_markers2
+
+    payload = b"\x01\x01" + base64.b64encode(b"\x00")  # only the entry-list NUL, no inner header
+    assert [name for name, _ in parse_markers2(payload).unknown_tags] == ["__raw__"]
+
+
+
+@pytest.mark.requirement("DJIMPORT-6039")
+def test_a_markers2_loop_whose_end_is_not_after_its_start_is_counted_as_lost() -> None:
+    """[if] a Markers2 LOOP ends at or before its start [then] it is not kept as a zero-length loop and is counted
+    as backwards, and a loop that runs forward reads as before, [else stop]."""
+    backwards = _entry(
+        "LOOP",
+        b"\x00\x01" + (3_086).to_bytes(4, "big") + (1_000).to_bytes(4, "big") + b"\xff" * 4
+        + b"\x00" + b"\x27\xaa\xe1" + b"\x00" + b"\x01" + b"Build\x00",
+    )
+    control = parse_markers2(_serato_frame(_COLOR + _LOOP))
+    assert control.backwards_loops == 0  # control: the forward loop reads
+    assert len(control.loops) == 1
+    parsed = parse_markers2(_serato_frame(_COLOR + backwards))
+    assert parsed.loops == ()
+    assert parsed.backwards_loops == 1
+
+
 # ---- Serato Markers_ (legacy, ID3 layout) built byte by byte ---------------
 # serato-tags docs/serato_markers_.md: 02 05, uint32 count 14, then 14 entries
 # of 22 bytes (5 cues then 9 loops), then a 4-byte track color. An entry is

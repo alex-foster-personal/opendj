@@ -553,8 +553,8 @@ class _PlaylistWriterMixin:
 
 
 __all__ = [
-    "_PlaylistWriterMixin",
     "PlaylistNotDeletedError",
     "PlaylistNotFoundError",
+    "_PlaylistWriterMixin",
 ]
 

@@ -9,6 +9,7 @@
 		type HandoffApp,
 		type HandoffAppId
 	} from '$lib/rb/api-track-handoff';
+	import TrackActionsView from './TrackActionsView.svelte';
 
 	let { stableId }: { stableId: string } = $props();
 
@@ -35,36 +36,16 @@
 			outcome = { text: err instanceof Error ? err.message : String(err), error: true };
 		}
 	}
+
+	const handoffButtons = $derived(
+		HANDOFF_BUTTONS.map(({ app, label }) => ({ app, label, ...handoffButtonState(app, probe) }))
+	);
 </script>
 
-<p class="track-actions">
-	<button type="button" title={REVEAL_TRACK_TITLE} onclick={() => void runRevealTracks([stableId])}>
-		Show in Finder
-	</button>
-	{#each HANDOFF_BUTTONS as { app, label } (app)}
-		{@const state = handoffButtonState(app, probe)}
-		<button
-			type="button"
-			disabled={state.disabled}
-			title={state.title}
-			aria-label={state.disabled ? `${label} - ${state.title}` : label}
-			onclick={() => void openIn(app, label)}>{label}</button
-		>
-	{/each}
-	{#if outcome}
-		<span class="handoff-outcome" class:error={outcome.error} role={outcome.error ? 'alert' : 'status'}
-			>{outcome.text}</span
-		>
-	{/if}
-</p>
-
-<style>
-	.handoff-outcome {
-		margin-left: 0.5rem;
-		font-size: 0.85em;
-		color: var(--muted);
-	}
-	.handoff-outcome.error {
-		color: var(--danger);
-	}
-</style>
+<TrackActionsView
+	revealTitle={REVEAL_TRACK_TITLE}
+	onReveal={() => void runRevealTracks([stableId])}
+	buttons={handoffButtons}
+	onOpenIn={(app, label) => void openIn(app, label)}
+	{outcome}
+/>

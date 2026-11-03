@@ -1654,7 +1654,7 @@ message={job.message}
 	.su-chip,
 	.su-incomplete {
 		position: fixed;
-		right: 1rem;
+		right: calc(1rem + var(--assistant-dock-width, 0px));
 		bottom: 1.75rem;
 		z-index: 370;
 		display: flex;

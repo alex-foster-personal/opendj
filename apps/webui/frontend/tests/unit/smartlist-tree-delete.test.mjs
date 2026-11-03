@@ -14,7 +14,9 @@ test('TreeContextMenu exposes smartlist context menu with Delete enabled', () =>
 });
 
 test('TreeSmartlistSection wires smartlist rows for delete', () => {
-	const src = source('src/lib/components/rb/browser/TreeSmartlistSection.svelte');
+	const src =
+		source('src/lib/components/rb/browser/TreeSmartlistSection.svelte') +
+		source('src/lib/components/rb/browser/TreeSmartlistSectionView.svelte');
 	assert.match(src, /data-testid="smartlist-row"/);
 	assert.match(src, /oncontextmenu/);
 	assert.match(src, /Delete smartlist/);
@@ -27,7 +29,9 @@ test('tree-smartlists removes deleted rows locally', () => {
 });
 
 test('PlaylistTree no longer inlines the smartlists each loop', () => {
-	const src = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	const src =
+		source('src/lib/components/rb/browser/PlaylistTree.svelte') +
+		source('src/lib/components/rb/browser/PlaylistTreeView.svelte');
 	assert.doesNotMatch(src, /\{#each smartlists\.rows/);
 	assert.doesNotMatch(src, /TreeSmartlistSection/);
 });

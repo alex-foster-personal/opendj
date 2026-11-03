@@ -101,7 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor, presentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, bindAudioEngineSilenceProbes, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor, presentationTickFailure } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -144,6 +144,7 @@ import {
 	getAnlzEntry,
 	installAuthoritativeAnlzGridSink,
 	installAuthoritativeAnlzErrorSink,
+	installAuthoritativeAnlzVocalsSink,
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
 	revalidateAnlz,
@@ -611,6 +612,7 @@ export function deckPcmEstimatedBytes(): number {
 	);
 }
 export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
+bindAudioEngineSilenceProbes({ deckRuntime: (deck) => _rt[deck], graph: () => ({ ctx: _ctx, masterAnalyser: _masterAnalyser, externalRouteAnalyser: _externalRouteAnalyser, profile: _djOutputProfileActive }) });
 
 // ---------------------------------------------------------------- _helpers
 
@@ -1104,6 +1106,7 @@ import {
 	type DeckControlSettings,
 	type PausedDeckControlUpdate
 } from './audio-engine-guards';
+import { createDeckVocalsSink } from './deck-vocals-sink';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
 	runAutomaticRejoin as _automaticRejoinRunner,
@@ -1192,7 +1195,7 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 }
 
 function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
-	const beats = st.anlz?.beatgrid.beats;
+	const beats = st.anlz?.beatgrid?.beats;
 	return effectiveQuantize(st) && beats !== undefined ? beats : null;
 }
 
@@ -1584,12 +1587,26 @@ async function _scheduleDeckSerial(
 	const processorLeadSec = _transportLeadSec(deck);
 	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
 	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
-	const earliestWhen = supersedingScheduleTime(minimumSafeWhen, latestPending?.startContextTime ?? null, minimumSafeWhen);
+	const latestPendingStart = latestPending?.startContextTime ?? null;
+	const earliestWhen = supersedingScheduleTime(minimumSafeWhen, latestPendingStart, minimumSafeWhen);
 	const requestedWhen = typeof when === 'function' ? when(earliestWhen) : when;
 	const safeRequestedWhen = Math.max(requestedWhen, minimumSafeWhen);
+	// A re-anchor ramp is a sequence of future rate steps. Treating each tail
+	// step as a superseding command pulls it back onto the first step's time
+	// (min(requested, pending)), so every step fires at once, the
+	// phase-compensation shortfall is never consumed, and a 1.00 -> 1.10
+	// master rate leaves the ~10 ms offset LATENCY-06 exists to remove
+	// (issue #5993 / #4071). A later ramp step has no earlier pending to
+	// replace: pass null so the requested offset stands.
+	const pendingBoundary =
+		reanchorGeneration !== undefined &&
+		latestPendingStart !== null &&
+		safeRequestedWhen > latestPendingStart
+			? null
+			: latestPendingStart;
 	const effectiveWhen = supersedingScheduleTime(
 		safeRequestedWhen,
-		latestPending?.startContextTime ?? null,
+		pendingBoundary,
 		minimumSafeWhen
 	);
 	// LATENCY-03: scheduled_offset_ms is THE number the Class A budget turns on,
@@ -2049,7 +2066,7 @@ function _publishPresentedTransport(
 			})
 		) {
 			const nextLoop = phaseLockedSafetyLoop(
-				st.anlz?.beatgrid.beats ?? [],
+				st.anlz?.beatgrid?.beats ?? [],
 				safety!,
 				rt.durationSec * 1000
 			);
@@ -2667,7 +2684,7 @@ const _phaseLock = createWebAudioPhaseLock({ // NAE-19; bookkeeping lives in pha
 	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
 	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
 	desiredTempo: (deck) => _rt[deck].pending.at(-1)?.tempoRatio ?? _rt[deck].controlTempoRatio,
-	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
+	beats: (deck) => deckStates[deck].anlz?.beatgrid?.beats ?? [], positionSec: _projectPositionAt,
 	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
 	keyLocked: (deck) => _rt[deck].pending.at(-1)?.masterTempoEnabled ?? _rt[deck].controlMasterTempoEnabled,
 	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
@@ -2693,6 +2710,17 @@ reinstallAcrossHotUpdates(import.meta.hot, 'authoritativeAnlzGridSink', () =>
 );
 reinstallAcrossHotUpdates(import.meta.hot, 'authoritativeAnlzErrorSink', () =>
 	installAuthoritativeAnlzErrorSink(_beatgridGuards.adoptAuthoritativeError)
+);
+reinstallAcrossHotUpdates(import.meta.hot, 'authoritativeAnlzVocalsSink', () =>
+	installAuthoritativeAnlzVocalsSink(
+		createDeckVocalsSink({
+			deckIds: DECK_IDS,
+			deckLoadToken: (deck) => _rt[deck].loadToken,
+			deckStableId: (deck) => deckStates[deck].stable_id,
+			deckAnlz: (deck) => deckStates[deck].anlz,
+			publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = rawAnlz(anlz))
+		})
+	)
 );
 export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner
 
@@ -3477,7 +3505,7 @@ class RbAudioEngine implements AudioEngine {
 		});
 		if (needsScheduledMutation) {
 			const when = _ctx === null ? 0 : _futureScheduleTime(deck); // phase at the effective time
-			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
+			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid?.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
 			const landing = (at: number): number => phaseKeepingLandingSec(grid, _projectPositionAt(deck, at), jumpBeats ?? null, targetMs / 1000, durMs / 1000);
 			const activeMaster = _beatSyncMaster();
 			const syncPlan = planSeekSync({

@@ -8,7 +8,6 @@
 	// as the smartlist self-fetch below.
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import { formatMostlyBrokenTooltip } from '$lib/rb/runtime-policy.svelte';
-	import { PENCIL_PATH } from '$lib/ui/icon-glyphs';
 	import ColumnBrowser from './ColumnBrowser.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
 	import {
@@ -21,20 +20,14 @@
 	import { trackDrag } from '$lib/rb/track-drag.svelte';
 	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
-	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import { TreeFoldTracker } from './tree-fold-tracker.svelte';
 	import { TreePlaylistRename } from './tree-playlist-rename.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import RecentlyDeletedFolder from './RecentlyDeletedFolder.svelte';
-	import MissingTracksFolder from './MissingTracksFolder.svelte';
-	import { MISSING_TRACKS_ID, missingTracksNode } from './missing-tracks';
-	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
-	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
+	import { missingTracksNode } from './missing-tracks';
+	import PlaylistTreeView from './PlaylistTreeView.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
-	import { allTracksBadge } from './all-tracks-badge';
-	import { collapse } from '$lib/motion/collapse';
-
 	let {
 		nodes,
 		mode = 'tree',
@@ -193,7 +186,6 @@
 	$effect(() => {
 		if (mode === 'column') columnMounted = true;
 	});
-	let playlistsOpen = $state(true);
 
 	const allNode = $derived<PlaylistNode>({
 		playlist_id: 'all',
@@ -203,22 +195,6 @@
 		kind: 'all_tracks',
 		children: []
 	});
-
-	// #3934: the same playable predicate as the playlist badges below it.
-	const allBadge = $derived(allTracksBadge(allTracksCount, allTracksBrokenCount, allTracksAvailability));
-
-	function _allTracksCountTitle(): string {
-		if (allTracksError !== null) return `track count unavailable: ${allTracksError}`;
-		return allBadge.title;
-	}
-
-	function _playlistCountTitle(node: PlaylistNode): string {
-		return `${node.track_count - node.broken_count} non-broken tracks, ${node.broken_count} broken tracks`;
-	}
-
-	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
-		if (event.key === 'Enter') onselect(node);
-	}
 
 	$effect(() => {
 		rename.checkPending();
@@ -244,386 +220,69 @@
 	const foldTracker = new TreeFoldTracker();
 </script>
 
-<div class="tree-root" data-testid="playlist-tree-panel">
+{#snippet contextMenu()}
 	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} {onsortplaylists} />
-	{#if columnMounted}
-		<div
-			class="tree-scroll column-mode"
-			class:hidden={mode !== 'column'}
-			data-testid="playlist-column-view"
-		>
-			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
-		</div>
-	{/if}
-	<div
-		class="tree-scroll"
-		class:hidden={mode === 'column'}
-		class:has-fold={foldTracker.current !== null}
-		class:folder-drop-target={folderDropActive}
-		bind:this={foldTracker.scrollEl}
-		bind:clientHeight={foldTracker.viewportHeight}
-		onscroll={foldTracker.onScroll}
-		ondragover={_onFolderDragOver}
-		ondragleave={_onFolderDragLeave}
-		ondrop={_onFolderDrop}
-	>
-		<TreeCurrentFold fold={foldTracker.current} onjump={() => foldTracker.jumpToCurrent()} />
-		<div
-			class="row"
-			class:selected={selectedId === 'all'}
-			data-testid="playlist-all-tracks"
-			role="button"
-			tabindex="0"
-			onclick={() => onselect(allNode)}
-			onkeydown={(e) => _rowKeydown(e, allNode)}
-		>
-			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-				<path
-					d="M6 3l7-1v8.5a2 2 0 1 1-1-1.73V4.2L7 5v6.5a2 2 0 1 1-1-1.73z"
-					fill="currentColor"
-				/>
-			</svg>
-			<span class="name">All Tracks</span>
-			<span class="count" title={_allTracksCountTitle()}>{allTracksError === null && allBadge.error === null ? allBadge.count ?? '...' : '!'}</span>
-		</div>
-		<div
-			class="row folder"
-			data-testid="playlist-folder"
-			role="button"
-			tabindex="0"
-			aria-expanded={playlistsOpen}
-			onclick={() => (playlistsOpen = !playlistsOpen)}
-			onkeydown={(e) => {
-				if (e.key === 'Enter') playlistsOpen = !playlistsOpen;
-				treeContextMenu?.openFromKeyboard(e, 'folder');
-			}}
-			oncontextmenu={(e) => treeContextMenu?.open(e, 'folder')}
-		>
-			<span class="disclosure" class:open={playlistsOpen}>&#9656;</span>
-			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
-			</svg>
-			<span class="name">Playlists</span>
-			{#if oncreateplaylist}
-				<button
-					type="button"
-					class="pl-action"
-					title="Create playlist"
-					onclick={(e) => {
-						e.stopPropagation();
-						void rename.createAndRename();
-					}}
-				>
-					+
-				</button>
-			{/if}
-		</div>
-		{#if playlistsOpen}
-			<div class="collapse" in:collapse out:collapse>
-				<div class="collapse-inner">
-					<PlaylistFolderStates
-						nodeCount={nodes.length}
-						{playlistsLoading}
-						{playlistsError}
-						{hiddenBrokenPlaylistCount}
-						oncreate={oncreateplaylist ? () => void rename.createAndRename() : undefined}
-					/>
-					{#each nodes as node (node.playlist_id)}
-						<div
-							class="row child"
-							data-testid="playlist-row"
-							class:selected={selectedId === node.playlist_id}
-							class:broken={node.mostly_broken}
-							title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
-							class:drop-target={dropTargetId === node.playlist_id}
-							class:drop-before={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'before'}
-							class:drop-after={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'after'}
-							class:moving={movingPlaylistId === node.playlist_id}
-							class:tint-deck={_tintOf(node) === 'deck'}
-							class:tint-multi={_tintOf(node) === 'multi'}
-							role="button"
-							tabindex="0"
-							draggable="true"
-							use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
-							onpointerenter={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
-							onpointerdown={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
-							onclick={() => onselect(node)}
-							onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
-							oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}
-							ondragstart={(e) => _onPlaylistDragStart(e, node)}
-							ondragover={(e) => _onTrackDragOver(e, node)}
-							ondragleave={() => _onTrackDragLeave(node)}
-							ondrop={(e) => _onTrackDrop(e, node)}
-							ondragend={_endReorderDrag}
-						>
-							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-								<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
-							</svg>
-							{#if rename.editingId === node.playlist_id}
-								<input
-									bind:this={rename.inputEl}
-									class="rename-input"
-									type="text"
-									value={rename.editDraft}
-									aria-label="Rename playlist"
-									onclick={(e) => e.stopPropagation()}
-									onmousedown={(e) => e.stopPropagation()}
-									oninput={(e) => (rename.editDraft = e.currentTarget.value)}
-									onkeydown={(e) => rename.onKeydown(e)}
-									onblur={() => void rename.commit()}
-								/>
-							{:else}
-								<span class="name" title={node.mostly_broken ? formatMostlyBrokenTooltip() : node.name}>{node.name}</span>
-							{/if}
-							{#if onrenameplaylist}
-								<button
-									type="button"
-									class="pl-action dim"
-									title="Rename playlist"
-									aria-label="Rename playlist"
-									onclick={(e) => {
-										e.stopPropagation();
-										void rename.begin(node);
-									}}
-								>
-									<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-										<path d={PENCIL_PATH} fill="none" stroke="currentColor" stroke-width="2" />
-									</svg>
-								</button>
-							{/if}
-							{#if ondeleteplaylist}
-								<button
-									type="button"
-									class="pl-action dim"
-									title="Delete playlist"
-									onclick={(e) => {
-										e.stopPropagation();
-										ondeleteplaylist(node);
-									}}
-								>
-									×
-								</button>
-							{/if}
-							{#if selectedId === node.playlist_id}
-								<span class="badge badge-plus" aria-hidden="true">+</span>
-							{/if}
-							<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
-						</div>
-						{#if rename.createdId === node.playlist_id && node.track_count === 0}
-							<div class="row child hint" data-testid="playlist-new-hint">
-								Drag tracks or a folder here to add music
-							</div>
-						{/if}
-					{/each}
-					<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
-				</div>
-			</div>
-		{/if}
-		<RecentlyDeletedFolder />
-		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
-		<MissingTracksFolder
-			brokenCount={allTracksBrokenCount}
-			error={allTracksError}
-			selected={selectedId === MISSING_TRACKS_ID}
-			onselect={() => onselect(missingTracksNode(allTracksBrokenCount ?? 0))}
-		/>
-	</div>
-</div>
+{/snippet}
 
-<style>
-	.tree-root {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		min-height: 0;
-		height: 100%;
-	}
-	/* Pin 2ac3a0: deck-membership tints for a non-selected playlist row - the
-	 * selection colour (.row.selected) always wins over both, and the darker
-	 * multi-tab tint outranks the lighter loaded-deck tint (see
-	 * playlistTintOf's precedence in pane-contract.svelte.ts). */
-	.row.child.tint-deck:not(.selected) {
-		background: color-mix(in srgb, var(--rb-accent) 14%, transparent);
-	}
-	.row.child.tint-multi:not(.selected) {
-		background: color-mix(in srgb, var(--rb-accent) 30%, transparent);
-	}
-	.row.child.tint-deck:not(.selected):hover,
-	.row.child.tint-multi:not(.selected):hover {
-		background: color-mix(in srgb, var(--rb-accent) 40%, transparent);
-	}
-	.tree-scroll {
-		position: relative;
-		flex: 1;
-		min-height: 0;
-		overflow-y: auto;
-		padding: 2px 0;
-		z-index: 1;
-	}
-	.tree-scroll.has-fold {
-		padding-top: 26px;
-	}
-	.tree-scroll.column-mode {
-		/* ColumnBrowser owns its own column padding/scroll regions. */
-		padding: 0;
-		overflow: hidden;
-	}
-	/* Both tree-scroll blocks stay mounted once ColumnBrowser has first
-	 * activated (see columnMounted) - toggling visibility this way instead
-	 * of {#if}/{:else} keeps ColumnBrowser's fetched rows/selection alive
-	 * across repeated view switches. */
-	.tree-scroll.hidden {
-		display: none;
-	}
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-		height: 20px;
-		padding: 0 6px;
-		color: var(--rb-text);
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.row:hover {
-		background: var(--rb-panel-raised);
-	}
-	.row.selected {
-		background: var(--rb-select);
-	}
-	.row.broken {
-		color: var(--rb-text-dim);
-	}
-	.row.drop-target {
-		box-shadow: inset 0 0 0 1px var(--rb-accent);
-	}
-	/* LIBTREE-01: where a dragged playlist will land. */
-	.row.drop-before {
-		box-shadow: inset 0 2px 0 var(--rb-accent);
-	}
-	.row.drop-after {
-		box-shadow: inset 0 -2px 0 var(--rb-accent);
-	}
-	.row.moving {
-		opacity: 0.5;
-	}
-	.tree-scroll.folder-drop-target {
-		box-shadow: inset 0 0 0 2px var(--rb-accent);
-	}
-	.row svg {
-		flex: none;
-		color: var(--rb-text-dim);
-	}
-	.row.child {
-		padding-left: 22px;
-	}
-	.row.hint {
-		color: var(--rb-text-dim);
-		font-style: italic;
-		cursor: default;
-		pointer-events: none;
-	}
-	.row.hint:hover {
-		background: transparent;
-	}
-	.name {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.rename-input {
-		flex: 1;
-		min-width: 0;
-		height: 16px;
-		margin: 0;
-		padding: 0 2px;
-		border: 1px solid var(--rb-accent);
-		background: var(--rb-panel);
-		color: var(--rb-text);
-		font: inherit;
-		outline: none;
-	}
-	.pl-action {
-		flex: none;
-		border: none;
-		background: transparent;
-		color: var(--rb-text);
-		font-size: 12px;
-		line-height: 1;
-		padding: 0 3px;
-		cursor: pointer;
-		opacity: 0.75;
-	}
-	.pl-action.dim {
-		opacity: 0;
-	}
-	.row:hover .pl-action.dim,
-	.row.selected .pl-action.dim {
-		opacity: 0.7;
-	}
-	.pl-action:hover {
-		opacity: 1 !important;
-		color: var(--rb-accent);
-	}
-	.count {
-		flex: none;
-		min-width: 4ch;
-		align-self: stretch;
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		color: var(--rb-text-dim);
-		font-variant-numeric: tabular-nums;
-	}
-	/* Shared collapse rule ($lib/motion/collapse.ts): the transition animates
-	 * this grid's single row from 0fr to 1fr; the inner block clips while it does. */
-	.collapse {
-		display: grid;
-	}
-	.collapse-inner {
-		min-height: 0;
-		overflow: hidden;
-	}
-	.disclosure {
-		flex: none;
-		display: inline-block;
-		width: 8px;
-		color: var(--rb-text-dim);
-		transition: transform 0.1s;
-	}
-	.disclosure.open {
-		transform: rotate(90deg);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.disclosure {
-			transition: none;
-		}
-	}
-	.badge {
-		flex: none;
-		font-size: 8px;
-		line-height: 1.3;
-		border-radius: 2px;
-		padding: 0 3px;
-	}
-	.badge-plus {
-		color: var(--rb-on-accent, #fff);
-		background: var(--rb-accent);
-		font-weight: 600;
-	}
-	.row.rb-inert {
-		opacity: 0.5;
-		cursor: default;
-	}
-	.row.rb-inert:hover {
-		background: transparent;
-	}
-	.name.dim,
-	.name.error {
-		color: var(--rb-text-dim);
-	}
-	.gear {
-		flex: none;
-	}
-</style>
+{#snippet columnBrowser()}
+	<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
+{/snippet}
+
+{#snippet recentlyDeleted()}
+	<RecentlyDeletedFolder />
+{/snippet}
+
+<PlaylistTreeView
+	{nodes}
+	{mode}
+	{playlistsLoading}
+	{playlistsError}
+	{hiddenBrokenPlaylistCount}
+	{allTracksCount}
+	{allTracksBrokenCount}
+	{allTracksError}
+	{allTracksAvailability}
+	{allNode}
+	{selectedId}
+	mostlyBrokenTitle={formatMostlyBrokenTooltip()}
+	tintOf={_tintOf}
+	{columnMounted}
+	{dropTargetId}
+	{folderDropActive}
+	foldCurrent={foldTracker.current}
+	bind:scrollEl={foldTracker.scrollEl}
+	bind:viewportHeight={foldTracker.viewportHeight}
+	selectedRowAction={foldTracker.bindSelectedRow}
+	{movingPlaylistId}
+	{reorderTarget}
+	onrowdragend={_endReorderDrag}
+	editingId={rename.editingId}
+	editDraft={rename.editDraft}
+	createdId={rename.createdId}
+	bind:renameInputEl={rename.inputEl}
+	cancreate={oncreateplaylist !== undefined}
+	canrename={onrenameplaylist !== undefined}
+	{ondeleteplaylist}
+	{onselect}
+	onselectmissing={() => onselect(missingTracksNode(allTracksBrokenCount ?? 0))}
+	oncreate={() => void rename.createAndRename()}
+	onbeginrename={(node) => void rename.begin(node)}
+	oneditdraft={(value) => (rename.editDraft = value)}
+	onrenamekeydown={(e) => rename.onKeydown(e)}
+	onrenamecommit={() => void rename.commit()}
+	onmenu={(e, kind, node) => treeContextMenu?.open(e, kind, node)}
+	onmenukey={(e, kind, node) => treeContextMenu?.openFromKeyboard(e, kind, node)}
+	onprefetch={prefetchPlaylistFirstPage}
+	onscroll={foldTracker.onScroll}
+	onjump={() => foldTracker.jumpToCurrent()}
+	onfolderdragover={_onFolderDragOver}
+	onfolderdragleave={_onFolderDragLeave}
+	onfolderdrop={_onFolderDrop}
+	onrowdragstart={_onPlaylistDragStart}
+	onrowdragover={_onTrackDragOver}
+	onrowdragleave={_onTrackDragLeave}
+	onrowdrop={_onTrackDrop}
+	{contextMenu}
+	{columnBrowser}
+	{recentlyDeleted}
+/>

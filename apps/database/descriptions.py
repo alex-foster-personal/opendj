@@ -272,6 +272,15 @@ TABLES: dict[str, str] = {
         "`deleted_at` so peers stop hydrating the words too."
     ),
     # ----- feedback --------------------------------------------------------
+    "playlist_section": "A visual separator inside a playlist or set; it does nothing functional.",
+    "tag_type": "A kind of tag (general, instrument, mood) and where it shows.",
+    "tag_meta": "Type and colour for one tag name. Tag values stay in My Tag.",
+    "tag_synonym": "A term that should suggest an existing tag.",
+    "work": "A musical work that groups versions of a track.",
+    "work_member": "One track or virtual edit linked to a work.",
+    "work_dismissal": "A pair the user said is not a version of each other.",
+    "work_pref": "Which member a work shows first. Display only.",
+    "undo_journal": "Before and after snapshots of library organization writes, per undo session. Machine-local.",
     "feedback_pins": (
         "One in-app feedback comment pin, shared across every machine on "
         "the same CloudSync hub. `doc` is the pin exactly as "
@@ -309,6 +318,12 @@ TABLES: dict[str, str] = {
     "playlist_sets_schema_meta": (
         "Migration bookkeeping for the playlist_sets tables (SET-05)."
     ),
+    "playlist_component_slots": "One slot (opener, main, ending...) in a playlist's route order.",
+    "playlist_components": "A named, tagged run of tracks inside a playlist (SET-6586 component).",
+    "playlist_component_entries": "One track position within a playlist component.",
+    "playlist_component_tags": "One free user tag on a playlist component (not MyTag).",
+    "playlist_set_parts": "One component on a playlist set's route, in order.",
+    "playlist_set_run_entries": "One track a playlist set run actually played, frozen at record time.",
     # ----- spotify -------------------------------------------------------
     "spotify_playlist_links": "One mapping between a local playlist and a Spotify playlist.",
     "spotify_playlist_meta": "One Spotify playlist's cached metadata (name, owner, snapshot id).",

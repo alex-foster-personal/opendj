@@ -312,6 +312,10 @@ function _watchPlan(): void {
 	_reset();
 }
 
+export function setAutoPlayNextIntent(intent: TransitionIntent): void {
+	autoPlayNextState.intent = intent;
+}
+
 /**
  * Arm AutoPlay Next: ask the planner for a transition and run it on the plan runner; with no pick, fall back to the
  * featurette. Refuses (returns false, toasts why) rather than guessing when no pair of decks can hand over.

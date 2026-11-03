@@ -75,6 +75,17 @@ test('post-await schedule ack is guarded by re-anchor generation', () => {
 	);
 });
 
+test('a later re-anchor ramp step does not inherit the first step pending boundary', () => {
+	const body = engineBlockAfter(SCHEDULE_DECK_SERIAL_ANCHOR);
+	assert.match(
+		body,
+		/reanchorGeneration !== undefined[\s\S]*safeRequestedWhen > latestPendingStart[\s\S]*pendingBoundary/,
+		'if later ramp steps still pass the previous start as pendingBoundary then ' +
+			'supersedingScheduleTime collapses every step onto the first time'
+	);
+	assert.match(body, /const effectiveWhen = supersedingScheduleTime\(/);
+});
+
 test('ramp owner is released only for the captured generation', () => {
 	const releaseBody = engineBlockAfter('function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {');
 	assert.match(releaseBody, /if \(rt\.reanchorRampOwnerGeneration === generation\)/);

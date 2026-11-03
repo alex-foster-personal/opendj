@@ -59,7 +59,7 @@ def test_p13_f02_auto_still_falls_through_to_empty() -> None:
 # -- P14-F03 --------------------------------------------------------------
 
 
-# VOICE-02 does not exist: .planning/phases/14-voice-commands/14-CONTEXT.md
+# VOICE-02 does not exist: (private path)
 # reserves "VOICE-02+" for future backlog items. The shipped requirement
 # this CLI-flag test defends is VOICE-01.
 @pytest.mark.requirement("VOICE-01")
@@ -158,7 +158,7 @@ def test_p17_02_frecency_decay_uses_max_timestamp() -> None:
     assert "last_dragged.or(last_played)" not in live, (
         "frecency decay must use the most-recent of the two timestamps"
     )
-    assert "p.max(d)" in live
+    assert "last_played_at.max(last_dragged_at)" in live
 
 
 @pytest.mark.requirement("LAUNCH-02")

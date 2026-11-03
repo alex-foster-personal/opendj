@@ -11,13 +11,13 @@
 		validateWatcherFoldersExist
 	} from '$lib/rb/library-watcher-folders';
 	import { setLibraryWatcherFolders, uiPrefs } from '$lib/rb/prefs.svelte';
+	import WatcherFoldersEditorView from './WatcherFoldersEditorView.svelte';
 
 	let { def }: { def: SettingDef } = $props();
 
 	let draft = $state(formatWatcherFolderLines(uiPrefs.library_watcher_folders));
 	let busy = $state(false);
 	let msg = $state<string | null>(null);
-	const notice = $derived(def.control.kind === 'path_lines' ? def.control.notice : '');
 
 	async function apply(): Promise<void> {
 		busy = true;
@@ -36,20 +36,4 @@
 	}
 </script>
 
-<div class="so-path-lines" title={def.title}>
-	<p class="so-v2-notice" title={notice}>
-		{notice}
-	</p>
-	<textarea aria-label={def.label} rows={3} bind:value={draft}></textarea>
-	<button
-		type="button"
-		disabled={busy}
-		title="Validate paths exist on disk, then save"
-		onclick={() => void apply()}
-	>
-		{busy ? 'Saving…' : 'Apply'}
-	</button>
-	{#if msg}
-		<span class="so-path-lines-msg" title={msg}>{msg}</span>
-	{/if}
-</div>
+<WatcherFoldersEditorView {def} bind:draft {busy} {msg} onApply={() => void apply()} />

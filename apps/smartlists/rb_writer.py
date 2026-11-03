@@ -36,7 +36,6 @@ single copy.
 from __future__ import annotations
 
 import datetime
-import datetime as _dt
 import hashlib
 import json
 import shutil
@@ -59,6 +58,13 @@ from apps.shared.rekordbox_writeback import require_writeback_enabled
 # playlist mutations. Mirrors apps.reconcile.apply's backup location so
 # operators have one place to look.
 DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "reconcile" / "backups"
+
+
+def _ordered_playlist_songs(playlist: Any) -> list[Any]:
+    """Return a playlist's songs sorted by native ``TrackNo``."""
+    songs = list(getattr(playlist, "Songs", []) or [])
+    songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
+    return songs
 
 
 def _resolve_rb_id(state_conn: sqlite3.Connection, stable_id: str) -> str | None:
@@ -117,7 +123,7 @@ def _backup_rb_db(
     file ends up empty (indicates a copy failure).
     """
     backup_dir.mkdir(parents=True, exist_ok=True)
-    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     dst = backup_dir / f"master.{ts}.smartlists.db"
     shutil.copy2(live_db, dst)
     size = dst.stat().st_size
@@ -391,10 +397,8 @@ class RBPlaylistWriter:
         pl = self._find_playlist(name)
         if pl is None:
             raise RuntimeError(f"rekordbox: playlist {name!r} not found")
-        songs = list(getattr(pl, "Songs", []) or [])
-        songs.sort(key=lambda s: (getattr(s, "TrackNo", 0) or 0))
         members: list[str] = []
-        for s in songs:
+        for s in _ordered_playlist_songs(pl):
             content_id = getattr(s, "ContentID", None)
             if content_id is None:
                 continue
@@ -407,10 +411,8 @@ class RBPlaylistWriter:
         playlist = self._find_playlist_by_id(playlist_id)
         if playlist is None:
             raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
-        songs = list(getattr(playlist, "Songs", []) or [])
-        songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
         members: list[str] = []
-        for song in songs:
+        for song in _ordered_playlist_songs(playlist):
             content_id = getattr(song, "ContentID", None)
             if content_id is None:
                 raise RuntimeError(f"rekordbox: target {playlist_id!r} has a member without ContentID")
@@ -444,9 +446,10 @@ class RBPlaylistWriter:
                     before_playlist = self._find_playlist_by_id(playlist_id)
                     if before_playlist is None:
                         raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
-                    before_songs = list(getattr(before_playlist, "Songs", []) or [])
-                    before_songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
-                    native_before = [str(song.ContentID) for song in before_songs]
+                    native_before = [
+                        str(song.ContentID)
+                        for song in _ordered_playlist_songs(before_playlist)
+                    ]
                     actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": before}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                     if actual != expected_target_revision:
                         raise WritebackConflict("rekordbox: target revision changed before transaction")

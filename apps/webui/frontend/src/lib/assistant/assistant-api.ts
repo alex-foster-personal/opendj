@@ -27,10 +27,12 @@
  */
 
 import { API_BASE } from '$lib/api/base';
+import type { components } from '$lib/api-types';
 
 /** The two endpoints, spelled once. */
 export const ASSISTANT_STATUS_PATH = '/api/v1/assistant/status';
 export const ASSISTANT_CHAT_PATH = '/api/v1/assistant/chat';
+export const ASSISTANT_INSTANT_PREVIEW_PATH = '/api/v1/assistant/instant/preview';
 
 /** The env var the engine reads its key from. Named in the UI verbatim so a
  * user can act on the message without hunting through docs. Mirrors
@@ -49,6 +51,10 @@ export interface AssistantStatus {
 	configured: boolean;
 	/** The OpenRouter slug that would answer, e.g. `google/gemini-3.7-flash`. */
 	model: string;
+	/** Who answers: the user's own key or the Open DJ gateway; null when not configured. */
+	mode?: 'byok' | 'gateway' | null;
+	/** Why not configured (the refusal code chat would return); null when configured. */
+	code?: string | null;
 }
 
 /** A turn. `system` is deliberately absent: the engine supplies the system
@@ -73,7 +79,7 @@ export class AssistantError extends Error {
 }
 
 /** Decode `{"detail": {code, message, upstream_status}}` off a failed response. */
-async function _refusal(response: Response): Promise<AssistantError> {
+export async function assistantRefusal(response: Response): Promise<AssistantError> {
 	let detail: unknown = null;
 	try {
 		detail = ((await response.json()) as { detail?: unknown }).detail;
@@ -104,8 +110,20 @@ export async function getAssistantStatus(signal?: AbortSignal): Promise<Assistan
 	const response = await fetch(`${API_BASE}${ASSISTANT_STATUS_PATH}`, {
 		signal: signal ?? null
 	});
-	if (!response.ok) throw await _refusal(response);
+	if (!response.ok) throw await assistantRefusal(response);
 	return (await response.json()) as AssistantStatus;
+}
+
+/** Whether `text` would run as an instant command: the engine's own rules, no model or key. */
+export async function previewInstant(text: string, signal: AbortSignal): Promise<boolean> {
+	const response = await fetch(`${API_BASE}${ASSISTANT_INSTANT_PREVIEW_PATH}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ text }),
+		signal
+	});
+	if (!response.ok) throw await assistantRefusal(response);
+	return ((await response.json()) as components['schemas']['InstantPreviewOut']).instant;
 }
 
 /**
@@ -124,7 +142,7 @@ export async function* streamChat(
 		body: JSON.stringify({ messages }),
 		signal
 	});
-	if (!response.ok) throw await _refusal(response);
+	if (!response.ok) throw await assistantRefusal(response);
 	if (!response.body) {
 		throw new AssistantError(
 			'assistant_no_stream',

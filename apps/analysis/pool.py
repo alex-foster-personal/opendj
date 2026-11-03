@@ -34,9 +34,12 @@ Row = tuple[str, AnalysisRecord | None, str | None]
 
 
 def analyze_one(
-    backend: str | type[AnalyzerBackend], stable_id: str, path_str: str
+    backend: str | type[AnalyzerBackend],
+    stable_id: str,
+    path_str: str,
+    alternate_paths: tuple[str, ...] = (),
 ) -> Row:
-    """Analyze one track, or say why this FILE could not be.
+    """Analyze one track, trying alternate paths only on input decode failure.
 
     Only failures a backend has declared to be about the input are turned
     into a per-track error here. Everything else propagates: a broad catch at
@@ -60,13 +63,33 @@ def analyze_one(
     """
     if isinstance(backend, str):
         backend = get_backend(backend)
-    try:
-        rec = backend.analyze(Path(path_str), stable_id)
-    except (
-        BackendNotAvailable, TrackTooLong, TrackUnreadable, TrackVanished
-    ) as exc:
-        return stable_id, None, f"{type(exc).__name__}: {exc}"
-    return stable_id, rec, None
+    paths = (path_str, *alternate_paths)
+    last_unreadable: str | None = None
+    last_vanished: str | None = None
+    attempted_decode = False
+    for candidate in paths:
+        path = Path(candidate)
+        if not path.exists():
+            last_vanished = f"{TrackVanished.__name__}: {candidate}"
+            continue
+        attempted_decode = True
+        try:
+            rec = backend.analyze(path, stable_id)
+        except TrackUnreadable as exc:
+            last_unreadable = f"{TrackUnreadable.__name__}: {exc}"
+        except TrackVanished as exc:
+            last_vanished = f"{TrackVanished.__name__}: {exc}"
+        except (
+            BackendNotAvailable, TrackTooLong
+        ) as exc:
+            return stable_id, None, f"{type(exc).__name__}: {exc}"
+        else:
+            return stable_id, rec, None
+    if attempted_decode and last_unreadable is not None:
+        return stable_id, None, last_unreadable
+    if last_vanished is not None:
+        return stable_id, None, last_vanished
+    return stable_id, None, f"{TrackUnreadable.__name__}: no candidates"
 
 
 class AnalysisProcessPoolExecutor(ProcessPoolExecutor):
@@ -101,7 +124,7 @@ def spawn_pool(workers: int) -> ProcessPoolExecutor:
 
 
 def run_pool(
-    targets: Iterable[tuple[str, str]],
+    targets: Iterable[tuple[str, str, tuple[str, ...]]],
     *,
     backend: str | type[AnalyzerBackend],
     workers: int,
@@ -138,12 +161,14 @@ def run_pool(
     try:
         try:
             futures = []
-            for stable_id, path_str in targets:
+            for stable_id, path_str, alternate_paths in targets:
                 # Submission is inside the same guard as collection: a worker
                 # can die while the queue is still being submitted, and that
                 # path raises BrokenProcessPool out of ``submit`` itself.
                 futures.append(
-                    pool.submit(analyze_one, backend, stable_id, path_str)
+                    pool.submit(
+                        analyze_one, backend, stable_id, path_str, alternate_paths,
+                    )
                 )
                 _snapshot_workers()
             for fut in as_completed(futures):

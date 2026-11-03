@@ -144,6 +144,14 @@ def test_cli_health_exits_no_engine_when_lock_missing(
     monkeypatch.delenv("MUSIC_DJ_BACKEND_PORT", raising=False)
     monkeypatch.delenv("MUSIC_DJ_FRONTEND_PORT", raising=False)
     monkeypatch.setattr(port_config, "WEBUI_ENV_FILE", tmp_path / "no.env")
+
+    def _no_ports(*, environ=None, dotenv_path=port_config.WEBUI_ENV_FILE):
+        raise port_config.PortConfigError("worktree ports disabled for test")
+
+    from apps.opendj_cli import api_cli
+
+    monkeypatch.setattr(port_config, "resolve_ports", _no_ports)
+    monkeypatch.setattr(api_cli, "resolve_ports", _no_ports)
     missing = tmp_path / "absent" / ".engine.lock"
     assert main(["--lock", str(missing), "audio_output_health"]) == EXIT_NO_ENGINE
     assert str(missing) in capsys.readouterr().err

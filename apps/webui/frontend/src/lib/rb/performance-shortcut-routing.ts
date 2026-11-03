@@ -7,6 +7,7 @@ export type PerformanceShortcutAction =
 	| { kind: 'm' }
 	| { kind: 'loop-resize'; factor: 0.5 | 2 }
 	| { kind: 'loop-exit' }
+	| { kind: 'wave-zoom'; direction: 'in' | 'out' }
 	| { kind: 'grid-jump'; bars: number; repeat: boolean };
 
 export interface PerformanceShortcutKeyEvent {
@@ -40,6 +41,8 @@ export interface PerformanceShortcutHandlers {
 	resizeLast: (factor: 0.5 | 2) => void;
 	exitLast: () => void;
 	armPinPlacement: () => void;
+	/** WAVEZOOM-6802b: one main-waveform zoom step. */
+	waveZoomStep: (direction: 'in' | 'out') => void;
 	gridJump?: (bars: number) => void;
 }
 
@@ -81,6 +84,10 @@ export function resolvePerformanceShortcutAction(
 	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
 	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
+	// WAVEZOOM-6802b: - and = already halve and double the loop, so zoom takes
+	// the bracket pair: [ shows more of the track, ] shows less.
+	if (e.key === '[') return { kind: 'wave-zoom', direction: 'out' };
+	if (e.key === ']') return { kind: 'wave-zoom', direction: 'in' };
 	return null;
 }
 
@@ -124,6 +131,9 @@ export function handlePerformanceShortcutKeydown(
 			break;
 		case 'm':
 			handlers.armPinPlacement();
+			break;
+		case 'wave-zoom':
+			handlers.waveZoomStep(action.direction);
 			break;
 		case 'grid-jump':
 			// One tap is one jump: a held key never runs through the track.

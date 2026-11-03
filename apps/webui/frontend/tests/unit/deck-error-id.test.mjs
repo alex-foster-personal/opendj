@@ -149,6 +149,24 @@ test('the same message raised again after a dismissal is a NEW incident, not the
 	assert.equal(capture.calls.error.length, 2, 'the second raising was not logged as its own row');
 });
 
+test('[if] a banner is CLOUD_ASSET_UNAVAILABLE [then] the ring row is warn, [else stop].', async () => {
+	const mod = await _load();
+	const capture = _captureConsole();
+	try {
+		mod.noteDeckError(
+			1,
+			"Calling Out (feat. Dames Brown) - 7' Edit: CLOUD_ASSET_UNAVAILABLE: " +
+				"track_locations row '3ef4ffbdca201c67c899e1058711778b' marked unavailable (available=0)"
+		);
+	} finally {
+		capture.restore();
+	}
+	assert.equal(capture.calls.error.length, 0, 'an expected play refusal must not escalate');
+	assert.equal(capture.calls.warn.length, 1, 'the refusal still has a durable warn row');
+	assert.ok(capture.calls.warn[0].includes('Calling Out'));
+	assert.ok(capture.calls.warn[0].includes('CLOUD_ASSET_UNAVAILABLE'));
+});
+
 test('dismissing clears the id, so no stale id outlives its banner', async () => {
 	const mod = await _load();
 	const capture = _captureConsole();

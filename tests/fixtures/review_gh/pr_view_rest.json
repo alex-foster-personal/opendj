@@ -1,0 +1,21 @@
+{
+  "repo": "private_owner/music-dj-tools",
+  "pull_number": "1234",
+  "pull": {
+    "number": 1234,
+    "state": "open",
+    "title": "fixture PR",
+    "body": "body text",
+    "head": {
+      "ref": "af--fixture-branch",
+      "sha": "abcdef0123456789abcdef0123456789abcdef01"
+    },
+    "base": {
+      "ref": "main",
+      "sha": "1111111111111111111111111111111111111111"
+    },
+    "labels": [
+      {"name": "reviewer:codex"}
+    ]
+  }
+}

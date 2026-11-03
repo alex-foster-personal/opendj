@@ -261,6 +261,32 @@ export function resetMasterSilenceWatch(): void {
 }
 
 /**
+ * Record a master-bus level measured outside the page's Web Audio graph: the
+ * Rust engine's own meter (`EngineState.master.rms`), on every state frame.
+ *
+ * In Rust engine mode (the Electron default) there is no AudioContext, so
+ * `_tick` never runs and `noteMasterSilence` is never called: the mirror's
+ * meter stayed `fresh: false` for the whole session while audio played. This
+ * writes the same two fields that `noteMasterSilence` writes from the
+ * analyser, so `masterSilenceState()` and the mirror read the engine's level
+ * exactly as they read the page's, stamped when the frame arrived. It does
+ * not run the silence fold: that watchdog is still Web Audio only.
+ *
+ * A frame without a finite, non-negative `rms` (an engine build older than the
+ * meter) is no reading at all: the level and its stamp are cleared, never kept
+ * from an earlier frame or defaulted to silence.
+ */
+export function noteEngineMasterRms(rms: unknown, atMs: number): void {
+	if (typeof rms === 'number' && Number.isFinite(rms) && rms >= 0) {
+		_lastMasterRms = rms;
+		_lastMasterRmsAtMs = atMs;
+	} else {
+		_lastMasterRms = null;
+		_lastMasterRmsAtMs = null;
+	}
+}
+
+/**
  * Real master-bus reading and watchdog verdict for the agent UI mirror.
  *
  * `at_ms` is load bearing. The RAF loop that calls `noteMasterSilence` stops

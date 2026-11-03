@@ -6,7 +6,6 @@
 	// iTunes, file browser, Beatport, video, cloud lock and the Collection /
 	// iTunes / Devices text tabs) are gone.
 	import { plannedTitle } from '$lib/rb/planned-explainers';
-	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 
 	interface RailIcon {
 		tip?: string;
@@ -27,7 +26,8 @@
 		recordingWaiting = false,
 		recordingTip = null,
 		onrecord = () => {},
-		recordable = true
+		recordable = true,
+		recordingAvailable = true
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
@@ -42,6 +42,8 @@
 		onrecord?: () => void;
 		/** False hides REC whatever the recording flag says (Library mode). */
 		recordable?: boolean;
+		/** Whether the build allows recording (the sets.recording flag). The parent reads the flag, so this component never touches the backend while it renders. */
+		recordingAvailable?: boolean;
 	} = $props();
 
 	const ICONS: RailIcon[] = [
@@ -89,7 +91,7 @@
 </script>
 
 <nav class="rail" aria-label="browser sources" data-menu-target="library-source">
-	{#each ICONS.filter((entry) => entry.action !== 'record' || (recordable && setRecordingEnabled())) as icon, i (i)}
+	{#each ICONS.filter((entry) => entry.action !== 'record' || (recordable && recordingAvailable)) as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
 		{@const isHome = icon.action === 'collection'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}

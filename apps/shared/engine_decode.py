@@ -29,7 +29,7 @@ the user has installed ffmpeg themselves. The engine decodes with symphonia
 (MPL-2.0), in-process, with the MP4 edit list applied; measured against
 ffmpeg 6.1 on Thu 1 Oct 2026 it matched sample-for-sample in time on WAV,
 AIFF, FLAC, ALAC, MP3, Vorbis and AAC m4a. See
-``research/audio-decode/2026-10-01-packaging-audio-decode.md``.
+``(private path)``.
 
 The resolver mirrors ``apps.engine_core.audio_engine.resolve_binary`` rather
 than importing it, because ``apps.shared`` is the stable core and may not

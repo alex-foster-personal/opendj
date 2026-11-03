@@ -25,12 +25,22 @@ function recordingCtx(width, height) {
 	};
 }
 
+test('the stem row requires the main row geometry instead of drawing at a guessed scale', () => {
+	const rec = recordingCtx(100, 12);
+	const frame = { envelope: [1, 1, 1], scrollPx: 0, durationMs: 10_000, pitch: 1, width: rec.width, height: rec.height, color: '#fff' };
+	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, playheadFrac: 0.5 }), RangeError, 'windowS is required');
+	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24 }), RangeError, 'playheadFrac is required');
+	assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...frame, windowS: 24, playheadFrac: 2 }), RangeError);
+});
+
 test('drawStemWaveRow paints non-empty bars from a fixture envelope', () => {
 	const envelope = Array.from({ length: 100 }, (_, i) => (i === 50 ? 1 : 0));
 	const rec = recordingCtx(100, 12);
 	render.drawStemWaveRow(rec.ctx, {
 		envelope,
 		scrollPx: 50,
+		windowS: 24,
+		playheadFrac: 0.5,
 		durationMs: 100 * 240,
 		pitch: 1,
 		width: rec.width,
@@ -63,6 +73,8 @@ function paintedColumns({ positionS, spikeS, pitch = 1, durationS = 180 }) {
 	render.drawStemWaveRow(rec.ctx, {
 		envelope: spikeAt(durationS, spikeS),
 		scrollPx,
+		windowS: 24,
+		playheadFrac: 0.5,
 		durationMs: durationS * 1000,
 		pitch,
 		width: rec.width,
@@ -108,6 +120,8 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 		render.drawStemWaveRow(rec.ctx, {
 			envelope: Array.from({ length: 10 }, () => 1),
 			scrollPx: 0,
+			windowS: 24,
+			playheadFrac: 0.5,
 			durationMs,
 			pitch,
 			width: rec.width,
@@ -121,6 +135,8 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 	render.drawStemWaveRow(rec.ctx, {
 		envelope: Array.from({ length: 10 }, () => 1),
 		scrollPx: 0,
+		windowS: 24,
+		playheadFrac: 0.5,
 		durationMs: 10_000,
 		pitch: 1,
 		width: rec.width,

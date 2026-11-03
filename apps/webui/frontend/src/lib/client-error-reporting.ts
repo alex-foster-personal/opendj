@@ -123,10 +123,20 @@ function truncate(value: string, length: number): string {
 	return value.length <= length ? value : value.slice(0, length);
 }
 
+/** The message as reported. An error carrying a typed daemon `code` (ApiError)
+ * leads with `CODE: `, as RbApiError's own message already does, so the engine's
+ * expected-refusal filter (OBS-5422) reads the code whichever class raised it. */
+function messageWithTypedCode(cause: Error): string {
+	const message = cause.message || String(cause);
+	const code = (cause as { code?: unknown }).code;
+	if (typeof code !== 'string' || code === '' || message.startsWith(`${code}: `)) return message;
+	return `${code}: ${message}`;
+}
+
 function describe(cause: unknown): { message: string; name: string | null; stack: string | null } {
 	if (cause instanceof Error) {
 		return {
-			message: truncate(cause.message || String(cause), 4096),
+			message: truncate(messageWithTypedCode(cause), 4096),
 			name: truncate(cause.name || 'Error', 256),
 			stack: cause.stack ? truncate(cause.stack, 32768) : null
 		};

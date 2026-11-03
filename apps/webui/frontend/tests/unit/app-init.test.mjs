@@ -231,10 +231,17 @@ test('startAppInstruments wires silence source PCM reader', () => {
 		'utf8'
 	);
 	assert.match(source, /setSilenceSourceReader\(readSilenceSourceDeckSnaps\)/);
+	// The gain and stem laws themselves are proven behaviorally through the
+	// same builder in tests/e2e/silence-expected-audible.spec.ts (real audio path); this pins the wiring.
 	assert.match(
 		source,
-		/master_path_gain: _silenceMasterPathGain\(id\)/,
+		/silenceSourceDeckSnap\(\{[^}]*channel: mixerState\.channels\[id\]/,
 		'each source snapshot must carry its mixer gain to the master (AUDIOLIVE-12)'
+	);
+	assert.match(
+		source,
+		/stem_envelopes: deckStemEnvelopes\(id\)/,
+		'a stem deck must be read through its parts, not its mix (AUDIOLIVE-17)'
 	);
 	assert.match(
 		source,

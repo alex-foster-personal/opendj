@@ -1,7 +1,7 @@
 """Store requirements that live in the Tauri config, pinned.
 
 These are not a test of the publishing pipeline, which is deliberately out of
-CI (see .agents/skills/ship-appstore/SKILL.md). They pin the two facts in
+CI (see (private path)). They pin the two facts in
 ``tauri.conf.json`` that App Store Connect refuses a build over, because both
 are one-line reverts away and neither failure is visible until an upload is
 rejected 20 minutes into a release.
@@ -19,6 +19,7 @@ rejected 20 minutes into a release.
 from __future__ import annotations
 
 import json
+import os
 import plistlib
 import re
 import shutil
@@ -68,9 +69,7 @@ def test_minimum_system_version_matches_the_shipped_architecture(
         ("Entitlements.appstore.inherit.template.plist", "com.apple.security.inherit"),
     ],
 )
-def test_entitlements_templates_are_present_and_are_templates(
-    name: str, expected_key: str
-) -> None:
+def test_entitlements_templates_are_present_and_are_templates(name: str, expected_key: str) -> None:
     """Both templates parse as plists and carry their defining key.
 
     Parsed rather than grepped so a malformed plist fails here instead of at
@@ -103,9 +102,7 @@ def test_the_inherit_template_carries_exactly_one_entitlement() -> None:
     the engine, which is the process that actually binds the port) produces an
     INVALID signature rather than a more permissive one.
     """
-    data = plistlib.loads(
-        (TAURI_DIR / "Entitlements.appstore.inherit.template.plist").read_bytes()
-    )
+    data = plistlib.loads((TAURI_DIR / "Entitlements.appstore.inherit.template.plist").read_bytes())
     assert list(data) == ["com.apple.security.inherit"], (
         "the inherited-sandbox template must carry com.apple.security.inherit "
         f"and nothing else, got {sorted(data)}. A child of a sandboxed app "
@@ -148,9 +145,7 @@ SIGN_DEVELOPER_ID = REPO_ROOT / "scripts/sign_macos_developer_id.sh"
 # The old, defective predicate, kept verbatim as a control. It must still
 # find the files it always found -- a probe that finds nothing proves
 # nothing -- while missing exactly the interpreter.
-EXTENSION_ONLY_PREDICATE = (
-    "find \"$1\" -type f \\( -name '*.so' -o -name '*.dylib' \\) -print0"
-)
+EXTENSION_ONLY_PREDICATE = "find \"$1\" -type f \\( -name '*.so' -o -name '*.dylib' \\) -print0"
 
 # The fixtures are real, loadable Mach-O files captured from Apple's linker
 # and verified against a manifest checksum, not constructed headers: AGENTS.md
@@ -206,9 +201,7 @@ def _macho_files(payload: Path) -> list[str]:
         check=True,
     )
     return sorted(
-        str(Path(p).relative_to(payload))
-        for p in result.stdout.decode().split("\0")
-        if p
+        str(Path(p).relative_to(payload)) for p in result.stdout.decode().split("\0") if p
     )
 
 
@@ -255,15 +248,10 @@ def test_the_old_predicate_missed_only_the_interpreter(payload: Path) -> None:
         capture_output=True,
         check=True,
     )
-    old = sorted(
-        str(Path(p).relative_to(payload))
-        for p in result.stdout.decode().split("\0")
-        if p
-    )
+    old = sorted(str(Path(p).relative_to(payload)) for p in result.stdout.decode().split("\0") if p)
     assert old, "the control predicate found nothing at all; the fixture is broken"
     assert "runtime/lib/libpython3.11.dylib" in old, (
-        f"the control predicate cannot find a .dylib, so it is not measuring "
-        f"anything: {old}"
+        f"the control predicate cannot find a .dylib, so it is not measuring anything: {old}"
     )
     assert "runtime/bin/python3.11" not in old, (
         "the control predicate found the interpreter, which it cannot do by "
@@ -316,6 +304,7 @@ def test_the_interpreter_symlink_is_not_signed_twice(payload: Path) -> None:
 #   [if] it counts by extension, it reports 0 for a real payload
 #        -> test_the_payload_check_counts_the_interpreter
 
+
 def _run_check_payload(tmp_path: Path, payload: Path | None) -> subprocess.CompletedProcess[str]:
     """Run check_payload out of the real script, against a payload of our own.
 
@@ -343,23 +332,17 @@ def _run_check_payload(tmp_path: Path, payload: Path | None) -> subprocess.Compl
     staged.mkdir(parents=True)
     if payload is not None:
         shutil.copytree(payload, staged, dirs_exist_ok=True, symlinks=True)
-    return subprocess.run(
-        ["bash", str(harness)], capture_output=True, text=True, check=False
-    )
+    return subprocess.run(["bash", str(harness)], capture_output=True, text=True, check=False)
 
 
-def test_the_payload_check_survives_a_staged_payload(
-    tmp_path: Path, payload: Path
-) -> None:
+def test_the_payload_check_survives_a_staged_payload(tmp_path: Path, payload: Path) -> None:
     """A staged payload is the normal state, and it used to abort every mode."""
     result = _run_check_payload(tmp_path, payload)
     assert "unbound variable" not in result.stderr, result.stderr
     assert result.returncode == 0, f"exit {result.returncode}: {result.stderr}"
 
 
-def test_the_payload_check_counts_the_interpreter(
-    tmp_path: Path, payload: Path
-) -> None:
+def test_the_payload_check_counts_the_interpreter(tmp_path: Path, payload: Path) -> None:
     """The number preflight prints must be the number --build will sign."""
     result = _run_check_payload(tmp_path, payload)
     assert "payload staged, 3 Mach-O" in result.stdout, (
@@ -392,7 +375,296 @@ def test_both_signing_scripts_use_the_shared_helper(script: Path) -> None:
     assert "macho_files" in body, f"{script.name} never calls macho_files"
 
 
-@pytest.mark.parametrize("script", [MACHO_LIB, SHIP_APPSTORE, SIGN_DEVELOPER_ID])
+@pytest.mark.parametrize(
+    "script",
+    [MACHO_LIB, SHIP_APPSTORE, SIGN_DEVELOPER_ID, REPO_ROOT / "scripts/lib/sandboxed_jit_smoke.sh"],
+)
 def test_the_signing_scripts_parse(script: Path) -> None:
     """bash -n, because none of this path runs in CI to find a typo for us."""
     subprocess.run(["bash", "-n", str(script)], check=True, capture_output=True)
+
+
+# ----- the engine JIT under the App Store signing (INSTALL-3287) ------------
+#
+# Measured Wed 16 Sep 2026 with this repo's payload under a sandboxed parent:
+# an inherit-signed interpreter under the hardened runtime is SIGKILLed the
+# moment numba JITs (CODESIGNING, Invalid Page, in llvmlite), and putting
+# allow-unsigned-executable-memory on the PARENT does not help because
+# hardened-runtime keys are not inherited. The fix signs the payload without
+# the hardened runtime, which the store does not require.
+#
+#   [if] the payload is signed with the hardened runtime again, Open DJ's own
+#        analysis dies in every store install
+#        -> test_the_payload_is_signed_without_the_hardened_runtime
+#   [if] the build stops proving the JIT before sealing, the regression ships
+#        -> test_the_build_proves_a_sandboxed_jit_before_sealing_the_bundle
+#   [if] the verdict accepts a kill, an unsandboxed run, a child that died
+#        after JIT_OK, or an unmeasured probe, the proof passes without
+#        proving
+#        -> test_the_verdict_*
+#   [if] the probe can only sign with the store distribution identity, which
+#        can refuse to launch locally, every real --build aborts UNKNOWN
+#        -> test_the_probe_*identity*, test_the_probe_re_signs_the_clone_*
+
+JIT_SMOKE_LIB = REPO_ROOT / "scripts/lib/sandboxed_jit_smoke.sh"
+
+# Real probe output from the measurement, verbatim apart from the version.
+PROBE_JIT_RAN_SANDBOXED = "JIT_OK 0.65.1 sandboxed=True\nCHILD_EXIT 0"
+PROBE_CHILD_KILLED = "CHILD_SIGNAL 9"
+PROBE_JIT_RAN_UNSANDBOXED = "JIT_OK 0.65.1 sandboxed=False\nCHILD_EXIT 0"
+PROBE_PARENT_NEVER_RAN = ""
+# Not observed: constructed from the parent's two report shapes, for a runtime
+# that prints JIT_OK and then dies on the way out.
+PROBE_JIT_RAN_THEN_CRASHED = "JIT_OK 0.65.1 sandboxed=True\nCHILD_SIGNAL 11"
+PROBE_JIT_RAN_THEN_EXITED_NONZERO = "JIT_OK 0.65.1 sandboxed=True\nCHILD_EXIT 3"
+
+
+def _build_body() -> str:
+    body = SHIP_APPSTORE.read_text()
+    return body[body.index("\nbuild() {") : body.index("\n#----- package")]
+
+
+def _payload_signing_command(body: str) -> str:
+    start = body.index('macho_files "$payload" | xargs -0 -n 1')
+    return body[start : body.index("\n    ok ", start)]
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_payload_is_signed_without_the_hardened_runtime() -> None:
+    """[if] the payload regains runtime or the outer bundle loses it [then] fail, [else stop]."""
+    body = _build_body()
+    payload_signing = _payload_signing_command(body)
+    assert "Entitlements.inherit.plist" in payload_signing, payload_signing
+    assert "--options runtime" not in payload_signing, (
+        "the payload is signed with the hardened runtime, which kills numba's "
+        "JIT under the App Store signing (INSTALL-3287)"
+    )
+    outer = body[body.index("# The outer bundle LAST") :]
+    assert "--options runtime" in outer.split('ok "signed the app bundle"')[0], (
+        "the fix is scoped to the payload; the outer bundle keeps the hardened runtime"
+    )
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_build_proves_a_sandboxed_jit_before_sealing_the_bundle() -> None:
+    """[if] the seal precedes the static check or fatal JIT proof [then] fail, [else stop]."""
+    body = _build_body()
+    signed = body.index('macho_files "$payload" | xargs -0 -n 1')
+    static = body.index("grep -q 'flags=.*runtime' <<<\"$interpreter_signature\"")
+    proof = body.index('prove_sandboxed_engine_can_jit "$payload" "$MDT_MAS_APP_CERT"')
+    sealed = body.index("# The outer bundle LAST")
+    assert signed < static < proof < sealed
+    call = body[proof : body.index("\n", body.index("\n", proof) + 1)]
+    assert "|| exit 1" in call
+    # The store identity goes in as the PAYLOAD's identity, and the inherit
+    # entitlements go in so a clone re-sign carries the same shape.
+    assert '"$BUILD_DIR/Entitlements.inherit.plist"' in call, call
+    assert '. "$REPO_ROOT/scripts/lib/sandboxed_jit_smoke.sh"' in SHIP_APPSTORE.read_text()
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_probe_strips_only_keys_a_profile_must_authorize() -> None:
+    """Too few and the probe cannot launch; too many and it stops being the
+    app's sandbox. Each stripped key must really be in the app template.
+
+    [if] the stripped set is not exactly the two profile-authorized keys [then] fail, [else stop].
+    """
+    lib = JIT_SMOKE_LIB.read_text()
+    keys = re.search(r"SANDBOXED_JIT_PROFILE_KEYS=\(([^)]*)\)", lib).group(1).split()
+    assert keys == ["com.apple.application-identifier", "com.apple.developer.team-identifier"]
+    template = plistlib.loads((TAURI_DIR / "Entitlements.appstore.template.plist").read_bytes())
+    assert set(keys) <= set(template)
+    assert template["com.apple.security.app-sandbox"] is True
+
+
+def _verdict(out: str, rc: int) -> subprocess.CompletedProcess[str]:
+    script = f'set -euo pipefail; . "{JIT_SMOKE_LIB}"; sandboxed_jit_verdict "$1" "$2"'
+    return subprocess.run(
+        ["bash", "-c", script, "verdict", out, str(rc)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_verdict_passes_a_jit_that_ran_inside_the_sandbox() -> None:
+    """[if] JIT_OK sandboxed=True and CHILD_EXIT 0 are printed [then] pass, [else stop]."""
+    result = _verdict(PROBE_JIT_RAN_SANDBOXED, 0)
+    assert result.returncode == 0, result.stderr
+    assert "(0.65.1)" in result.stdout
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_verdict_fails_a_killed_child() -> None:
+    """[if] the child is killed before any JIT_OK [then] fail, naming the runtime, [else stop]."""
+    result = _verdict(PROBE_CHILD_KILLED, 137)
+    assert result.returncode == 1
+    assert "hardened runtime killing it" in result.stderr
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_verdict_fails_a_jit_that_ran_outside_the_sandbox() -> None:
+    """An unsandboxed run measures the Developer ID case, not the store's.
+
+    [if] JIT_OK reports sandboxed=False [then] the verdict fails, [else stop].
+    """
+    assert _verdict(PROBE_JIT_RAN_UNSANDBOXED, 0).returncode == 1
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_verdict_reports_an_unmeasured_probe_as_unknown() -> None:
+    """[if] no CHILD_/SPAWN_ line was printed [then] UNKNOWN, exit 2, never a pass, [else stop]."""
+    result = _verdict(PROBE_PARENT_NEVER_RAN, 137)
+    assert result.returncode == 2
+    assert "UNKNOWN" in result.stderr
+
+
+@pytest.mark.requirement("INSTALL-3287")
+@pytest.mark.parametrize(
+    ("out", "rc"),
+    [
+        pytest.param(PROBE_JIT_RAN_THEN_CRASHED, 139, id="killed-after-jit"),
+        pytest.param(PROBE_JIT_RAN_THEN_EXITED_NONZERO, 3, id="exited-3-after-jit"),
+        pytest.param(PROBE_JIT_RAN_SANDBOXED, 1, id="parent-exit-1-with-child-exit-0"),
+    ],
+)
+def test_the_verdict_fails_a_jit_whose_child_did_not_exit_clean(out: str, rc: int) -> None:
+    """A runtime that prints JIT_OK and then dies is not release evidence.
+
+    [if] JIT_OK is sandboxed but CHILD_EXIT 0 is missing or rc is nonzero [then] fail, [else stop].
+    """
+    result = _verdict(out, rc)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "did not exit 0" in result.stderr
+    assert "[OK]" not in result.stdout
+
+
+# ----- which identity the probe signs with -------------------------------
+
+
+def _probe_identity(
+    tmp_path: Path, payload_identity: str, keychain: str, env_extra: dict[str, str] | None = None
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    """Resolve the probe identity against a fake `security` that records its calls.
+
+    Returns the process and how many times find-identity was consulted.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp_path / "security.calls"
+    log.write_text("")
+    identities = tmp_path / "identities"
+    identities.write_text(keychain)
+    fake = bin_dir / "security"
+    fake.write_text(
+        '#!/bin/sh\necho "$*" >> "$FAKE_SECURITY_LOG"\ncat "$FAKE_SECURITY_IDENTITIES"\n'
+    )
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "MDT_MAS_PROBE_CERT"}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["FAKE_SECURITY_LOG"] = str(log)
+    env["FAKE_SECURITY_IDENTITIES"] = str(identities)
+    env.update(env_extra or {})
+    script = f'set -euo pipefail; . "{JIT_SMOKE_LIB}"; sandboxed_jit_probe_identity "$1"'
+    result = subprocess.run(
+        ["bash", "-c", script, "identity", payload_identity],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return result, log.read_text().count("find-identity")
+
+
+DISTRIBUTION = "Apple Distribution: Dev Name (TEAM123456)"
+DEVELOPMENT = "Apple Development: Dev Name (TEAM123456)"
+DEVELOPER_ID = "Developer ID Application: Dev Name (TEAM123456)"
+KEYCHAIN_WITH_DEVELOPMENT = (
+    f'  1) 0A1B "{DISTRIBUTION}"\n  2) 2C3D "{DEVELOPMENT}"\n     2 valid identities found\n'
+)
+KEYCHAIN_STORE_ONLY = f'  1) 0A1B "{DISTRIBUTION}"\n     1 valid identities found\n'
+
+
+def _identity_and_reason(result: subprocess.CompletedProcess[str]) -> tuple[str, str]:
+    assert result.returncode == 0, result.stderr
+    identity, _, reason = result.stdout.rstrip("\n").partition("\t")
+    return identity, reason
+
+
+@pytest.mark.requirement("INSTALL-3287")
+@pytest.mark.parametrize(
+    "store_identity",
+    [DISTRIBUTION, "3rd Party Mac Developer Application: Dev Name (TEAM123456)"],
+)
+def test_the_probe_signs_with_a_development_identity_under_a_store_certificate(
+    tmp_path: Path, store_identity: str
+) -> None:
+    """Says which identity it chose and why.
+
+    [if] a store identity plus a Development one in the keychain [then] sign with it, [else stop].
+    """
+    result, consulted = _probe_identity(tmp_path, store_identity, KEYCHAIN_WITH_DEVELOPMENT)
+    identity, reason = _identity_and_reason(result)
+    assert identity == DEVELOPMENT
+    assert "refuse to launch locally" in reason
+    assert consulted == 1
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_probe_falls_back_to_ad_hoc_when_only_the_store_identity_exists(
+    tmp_path: Path,
+) -> None:
+    """Says which identity it chose and why.
+
+    [if] a store identity and no Development one in the keychain [then] sign ad-hoc, [else stop].
+    """
+    result, consulted = _probe_identity(tmp_path, DISTRIBUTION, KEYCHAIN_STORE_ONLY)
+    identity, reason = _identity_and_reason(result)
+    assert identity == "-"
+    assert "ad-hoc" in reason
+    assert consulted == 1
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_probe_keeps_an_identity_that_launches_locally(tmp_path: Path) -> None:
+    """[if] the payload identity runs locally [then] sign with it, keychain unread, [else stop]."""
+    result, consulted = _probe_identity(tmp_path, DEVELOPER_ID, KEYCHAIN_WITH_DEVELOPMENT)
+    identity, reason = _identity_and_reason(result)
+    assert identity == DEVELOPER_ID
+    assert "runs locally" in reason
+    assert consulted == 0, "the Developer ID measurements in the PR must keep signing byte for byte"
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_an_explicit_probe_certificate_wins(tmp_path: Path) -> None:
+    """[if] MDT_MAS_PROBE_CERT is set [then] sign with it over any keychain, [else stop]."""
+    result, consulted = _probe_identity(
+        tmp_path,
+        DISTRIBUTION,
+        KEYCHAIN_WITH_DEVELOPMENT,
+        {"MDT_MAS_PROBE_CERT": "Mac Developer: Other (T)"},
+    )
+    identity, reason = _identity_and_reason(result)
+    assert identity == "Mac Developer: Other (T)"
+    assert "MDT_MAS_PROBE_CERT" in reason
+    assert consulted == 0
+
+
+@pytest.mark.requirement("INSTALL-3287")
+def test_the_probe_re_signs_the_clone_in_the_store_shape_and_only_the_clone() -> None:
+    """[if] a re-sign gains runtime, drops inherit or hits the payload [then] fail, [else stop]."""
+    lib = JIT_SMOKE_LIB.read_text()
+    start = lib.index("prove_sandboxed_engine_can_jit() {")
+    body = lib[start : lib.index("\n}\n", start)]
+    guard = body.index('[ "$identity" != "$payload_identity" ]')
+    resign = body.index('codesign --force --sign "$identity"', guard)
+    command = body[resign : body.index("\n", resign)]
+    assert "--options runtime" not in command, command
+    assert '--entitlements "$inherit_entitlements"' in command, command
+    resign_target = body[body.rindex("macho_files ", guard, resign) : resign]
+    assert '"$probe/Contents/Resources/payload"' in resign_target, resign_target
+    assert 'macho_files "$payload"' not in body
+    # The parent's signing stays on the same resolved identity.
+    parent = body[body.index("codesign --force --options runtime --sign") :]
+    assert parent.startswith('codesign --force --options runtime --sign "$identity"')

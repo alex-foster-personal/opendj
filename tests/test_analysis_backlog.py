@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -567,6 +568,54 @@ def test_a_stale_legacy_path_falls_back_to_the_local_location(state_db, tmp_path
         "materialized local copy was sitting in track_locations"
     )
     assert [item.file_path for item in result.pending] == [str(audio)]
+
+
+@pytest.mark.requirement("PARITY-06")
+def test_corrupt_legacy_and_valid_location_queue_playback_winner(
+    state_db, tmp_path,
+):
+    """[if] corrupt legacy plus valid location [then] queue names playback winner [else stop]."""
+    from apps.shared.state import locations as locations_mod
+
+    fixture_root = Path(__file__).resolve().parent / "fixtures" / "phase7-dedup"
+    fixture = fixture_root / "src-128.mp3"
+    corrupt = tmp_path / "corrupt-legacy.mp3"
+    valid = tmp_path / "valid-location.mp3"
+    shutil.copyfile(fixture, valid)
+    corrupt.write_bytes(fixture.read_bytes()[:128])
+    sid = "corrupt001"
+    _add_track(state_db, sid, corrupt)
+    _add_location(state_db, sid, valid)
+
+    with sqlite3.connect(state_db) as conn:
+        result = backlog_mod.scan(conn)
+        picked = locations_mod.pick_playable(conn, sid)
+
+    assert picked is not None
+    item = result.pending[0]
+    assert item.file_path == str(picked.path)
+    assert item.candidate_paths[0] == str(picked.path)
+    assert str(valid) in item.candidate_paths
+
+
+@pytest.mark.requirement("PARITY-06")
+def test_signature_includes_every_candidate_path(state_db, tmp_path):
+    """[if] two materialized copies exist [then] signature includes every candidate [else stop]."""
+    fixture_root = Path(__file__).resolve().parent / "fixtures" / "phase7-dedup"
+    fixture = fixture_root / "src-128.mp3"
+    legacy = tmp_path / "legacy.mp3"
+    alternate = tmp_path / "alternate.mp3"
+    shutil.copyfile(fixture, legacy)
+    shutil.copyfile(fixture, alternate)
+    sid = "dual0001"
+    _add_track(state_db, sid, legacy)
+    _add_location(state_db, sid, alternate)
+
+    before = _scan(state_db)
+    alternate.write_bytes(alternate.read_bytes() + b"\x00")
+    after = _scan(state_db)
+    assert after.signature != before.signature
+    assert _scan(state_db).signature == after.signature
 
 
 # ----- a record retired by an audio rewrite is not analyzed (NATIVE-30) ------

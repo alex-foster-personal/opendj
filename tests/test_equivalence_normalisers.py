@@ -32,6 +32,7 @@ from apps.equivalence.normalisers import (
     REGISTERED_UNITS,
     Key,
     NormaliseError,
+    format_canonical,
     is_comparable_unit,
     normalise,
     normalise_key,
@@ -274,3 +275,11 @@ def test_bool_is_not_a_measurement():
     # True == 1 in Python, so a bool would sail through float() as a rating.
     with pytest.raises(NormaliseError):
         normalise_numeric(True, "rating", "stars_0_5")
+
+
+def test_format_canonical_key_and_numeric():
+    key = normalise_key("8A", "camelot")
+    assert isinstance(key, Key)
+    assert format_canonical(key) == "8A"
+    assert format_canonical(key, detailed_key=True) == key.display(detailed=True)
+    assert format_canonical(124.0) == "124"

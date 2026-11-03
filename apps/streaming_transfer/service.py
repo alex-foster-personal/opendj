@@ -189,6 +189,19 @@ def _ungradable(
     )
 
 
+def _scored_row(
+    source: SpotifyTrack,
+    target: SoundCloudTrack,
+) -> tuple[float, tuple[str, ...], SoundCloudTrack]:
+    confidence, signals = score_spotify_candidate(source, _target_as_local(target))
+    if not math.isfinite(confidence):
+        raise TransferContractError(
+            f"candidate confidence must be finite: "
+            f"{source.spotify_uri!r} -> {target.urn!r} ({confidence!r})"
+        )
+    return confidence, signals, target
+
+
 def plan_transfer(
     source: SpotifyPlaylist,
     *,
@@ -230,10 +243,7 @@ def plan_transfer(
         if not target_rows:
             ungradable.append(_ungradable(track, "no_target_candidates", duration_tolerance_ms))
             continue
-        scored = [
-            (*score_spotify_candidate(track, _target_as_local(target)), target)
-            for target in target_rows
-        ]
+        scored = [_scored_row(track, target) for target in target_rows]
         confidence, signals, best = sorted(
             scored,
             key=lambda row: (-row[0], row[2].urn),

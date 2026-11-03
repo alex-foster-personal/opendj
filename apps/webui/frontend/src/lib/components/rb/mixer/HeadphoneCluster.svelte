@@ -87,6 +87,40 @@
 		})
 	);
 
+	// Pin 3cfdec80ba0a: the preferred mic is not a choice. Calibration will not
+	// start until the operator picks the mic that can hear the speakers.
+	let calibrationMicId = $state('');
+	/** Shown in AUDIO IN immediately, before the headphone command lands. */
+	let audioInPendingId = $state<string | null>(null);
+	const audioInValue = $derived(audioInPendingId ?? headphoneState.selected_input_device_id ?? '');
+
+	async function chooseCalibrationMic(deviceId: string): Promise<void> {
+		if (deviceId.trim() === '') return;
+		calibrationMicId = deviceId;
+		audioInPendingId = deviceId;
+		try {
+			await oninput(deviceId);
+		} finally {
+			// IOPIN-16: once the pick settles, AUDIO IN shows what the router
+			// holds, so a refused pick does not stay on screen as pending.
+			if (audioInPendingId === deviceId) audioInPendingId = null;
+		}
+	}
+
+	function selectValue(event: Event): string {
+		const select = event.currentTarget;
+		return select instanceof HTMLSelectElement ? select.value : '';
+	}
+
+	$effect(() => {
+		if (calibrationMicId !== '' && !headphoneState.inputs.some((input) => input.id === calibrationMicId)) {
+			calibrationMicId = '';
+		}
+		if (audioInPendingId !== null && headphoneState.selected_input_device_id === audioInPendingId) {
+			audioInPendingId = null;
+		}
+	});
+
 	// IOPIN-17: the mode is named by how many outputs it uses. "MAIN" names
 	// only the room output (the MASTER / MAIN pick), never a mode.
 	const modeLabel = $derived(
@@ -668,10 +702,37 @@
 				</section>
 			{/if}
 			<section class="hp-section hp-calibration-section" aria-label="Calibration">
+				<label class="hp-cal-mic">
+					<span>Microphone for calibration</span>
+					<select
+						aria-label="calibration microphone"
+						value={calibrationMicId}
+						onchange={(event) => chooseCalibrationMic(selectValue(event))}
+					>
+						<option value="" disabled={calibrationMicId !== ''}>Choose a microphone</option>
+						{#each headphoneState.inputs as input (input.id)}
+							<option value={input.id}>{input.label || input.id}</option>
+						{/each}
+					</select>
+				</label>
+				{#if headphoneState.inputs.length === 0}
+					<p class="hp-warn" role="status">No microphones are listed. Allow microphone access, then choose the mic that can hear the speakers. A loud room on the wrong mic still reads as silence.</p>
+					<button type="button" onclick={onacquire}>Allow microphone access</button>
+				{:else if calibrationMicId === ''}
+					<p class="hp-context">Choose a microphone before starting. Calibration will not run until you do.</p>
+				{:else}
+					<p class="hp-context">Calibration listens on this microphone only.</p>
+				{/if}
 				<button type="button" class="hp-calibrate-button" aria-label="CALIBRATE CUE ALIGNMENT" data-performance-control="cue-calibrate" disabled={!calibrateEnabled} onclick={oncalibrate}>CALIBRATE</button>
 				<p class="hp-context">{calibrateBullets[0]}</p>
 				{#if cueAlignModal.open}
-					<CueAlignModal headphones={headphoneState} onmode={onAlignmentMode} embedded={true} />
+					<CueAlignModal
+						headphones={headphoneState}
+						onmode={onAlignmentMode}
+						embedded={true}
+						calibrationMicId={calibrationMicId}
+						onPickMic={chooseCalibrationMic}
+					/>
 				{/if}
 			</section>
 		</div>
@@ -727,10 +788,10 @@
 				<span class="hp-pick-row">
 					<select
 						aria-label="audio input device"
-						value={headphoneState.selected_input_device_id ?? ''}
-						onchange={(event) => pickThenMirror(event.currentTarget, oninput, () => headphoneState.selected_input_device_id)}
+						value={audioInValue}
+						onchange={(event) => pickThenMirror(event.currentTarget, chooseCalibrationMic, () => headphoneState.selected_input_device_id)}
 					>
-						<option value="" disabled>choose input</option>
+						<option value="" disabled={audioInValue !== ''}>choose input</option>
 						{#each headphoneState.inputs as input (input.id)}
 							<option value={input.id}>{input.label || input.id}</option>
 						{/each}
@@ -739,6 +800,9 @@
 				</span>
 			</span>
 		</ControlExplainer>
+		{#if headphoneState.inputs.length === 0}
+			<p class="hp-warn" role="status">AUDIO IN has no microphones yet. Allow microphone access, then pick one. The menu stays empty until that grant.</p>
+		{/if}
 		{#if testNote !== null}<p class="hp-context" role="status">{testNote}</p>{/if}
 		{#if inputMeterError !== null}<p class="hp-context" role="status" data-input-meter-error>Live input meter unavailable: {inputMeterError}</p>{/if}
 		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
@@ -982,6 +1046,22 @@
 	}
 	.hp-vmeter.hot .hp-vmeter-fill {
 		background: var(--rb-red, #e5484d);
+	}
+	.hp-cal-mic {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0 0 8px;
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		color: var(--rb-text-dim, #838990);
+	}
+	.hp-cal-mic select {
+		width: 100%;
+		max-width: none;
+		font-size: 12px;
+		padding: 4px 6px;
+		box-sizing: border-box;
 	}
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);

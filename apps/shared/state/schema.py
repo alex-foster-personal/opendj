@@ -23,6 +23,7 @@ drift-tripwire table/view tuples below.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import UTC, datetime
 
@@ -45,8 +46,9 @@ from .migrations_v22 import _V22
 from .migrations_v23 import _V23
 from .migrations_v24 import _V24
 from .migrations_v25 import _V25
+from .migrations_v26 import _V26
 
-SCHEMA_VERSION: int = 25
+SCHEMA_VERSION: int = 26
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -77,6 +79,7 @@ MIGRATIONS: list[list[str]] = [
     _V23,
     _V24,
     _V25,
+    _V26,
 ]
 
 
@@ -94,6 +97,22 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
 def _current_version(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_meta").fetchone()
     return int(row[0]) if row is not None else 0
+
+
+_ADD_COLUMN_RE = re.compile(r"^\s*ALTER TABLE (\w+) ADD COLUMN (\w+)", re.IGNORECASE)
+
+
+def _column_already_added(conn: sqlite3.Connection, stmt: str) -> bool:
+    """True for an ``ADD COLUMN`` whose column exists: the one DDL with no IF NOT EXISTS.
+
+    Only v26 relies on it, for a data dir the reverted #7886 already stamped
+    (see :mod:`apps.shared.state.migrations_v26`). Any other statement runs.
+    """
+    match = _ADD_COLUMN_RE.match(stmt)
+    if match is None:
+        return False
+    table, column = match.groups()
+    return any(str(row[1]) == column for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
 def apply_migrations(conn: sqlite3.Connection) -> int:
@@ -122,6 +141,8 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
             statements = MIGRATIONS[step_idx]
             target_version = step_idx + 1
             for stmt in statements:
+                if _column_already_added(conn, stmt):
+                    continue
                 conn.execute(stmt)
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
@@ -181,6 +202,16 @@ TABLES: tuple[str, ...] = (
     "sync_write_tokens",
     # v25 (transition memory, ADR-0129). Machine-local.
     "pair_transitions",
+    # v26 (Library Organization PRD s6). undo_journal is machine-local.
+    "playlist_section",
+    "tag_type",
+    "tag_meta",
+    "tag_synonym",
+    "work",
+    "work_member",
+    "work_dismissal",
+    "work_pref",
+    "undo_journal",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
@@ -261,6 +292,13 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "playlist_set_entries",
     "playlist_set_runs",
     "playlist_sets_schema_meta",
+    # SET-6586 set routes (playlist_sets schema v2)
+    "playlist_component_slots",
+    "playlist_components",
+    "playlist_component_entries",
+    "playlist_component_tags",
+    "playlist_set_parts",
+    "playlist_set_run_entries",
     # apps/genre_infer/findings.py :: ensure_schema (GENRE-03, machine-local)
     "genre_findings",
     "genre_vectors",

@@ -10,6 +10,8 @@ import type { TrackHit } from "../types";
  * "no tracks match" means something different on each side of this line. */
 export const FTS_MIN_QUERY_CHARS = 4;
 
+const RECENT_MATCH_KEYS = ["title", "artist"] as const;
+
 /** What the result list is, and what an EMPTY one means.
  *
  * A bare `TrackHit[]` collapses three different situations into the same value:
@@ -50,7 +52,7 @@ export function useSearch<T extends TrackHit>(
     if (q.length < FTS_MIN_QUERY_CHARS) {
       setState({
         status: "ready",
-        hits: matchSorter(frecencyTop, q, { keys: ["title", "artist"] }),
+        hits: matchSorter(frecencyTop, q, { keys: [...RECENT_MATCH_KEYS] }),
       });
       return;
     }
@@ -71,7 +73,7 @@ export function useSearch<T extends TrackHit>(
         setState({
           status: "failed",
           error: tauriInvokeErrorMessage(err),
-          hits: matchSorter(frecencyTop, q, { keys: ["title", "artist"] }),
+          hits: matchSorter(frecencyTop, q, { keys: [...RECENT_MATCH_KEYS] }),
         });
       }
     }, 80);

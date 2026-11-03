@@ -1,5 +1,6 @@
 import { expect, within } from 'storybook/test';
 
+import { WAVE_WINDOW_S } from './render';
 import type { LyricLine } from './lyrics-lane';
 
 /**
@@ -9,7 +10,14 @@ import type { LyricLine } from './lyrics-lane';
  * See src/react/README.md.
  */
 
-type Args = { lyrics: { lines: LyricLine[] } | null; loadError: Error | null; positionMs: number; pitch: number };
+type Args = {
+	lyrics: { lines: LyricLine[] } | null;
+	loadError: Error | null;
+	positionMs: number;
+	pitch: number;
+	windowSeconds: number;
+	playheadFrac: number;
+};
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
 const LINES: LyricLine[] = [
@@ -31,7 +39,7 @@ export const contracts = {
 	 * that start past it (Far) are not drawn.
 	 */
 	Playing: {
-		args: { lyrics: { lines: LINES }, loadError: null, positionMs: 20000, pitch: 1 } satisfies Args,
+		args: { lyrics: { lines: LINES }, loadError: null, positionMs: 20000, pitch: 1, windowSeconds: WAVE_WINDOW_S, playheadFrac: 0.5 } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			const lane = within(canvasElement).getByLabelText('Synced lyrics');
 			await expect(lane).toHaveClass('lyrics-lane');
@@ -52,7 +60,7 @@ export const contracts = {
 	},
 	/** At double pitch the window covers twice the track time, so Far comes on screen and the active line moves. */
 	DoublePitch: {
-		args: { lyrics: { lines: LINES }, loadError: null, positionMs: 40000, pitch: 2 } satisfies Args,
+		args: { lyrics: { lines: LINES }, loadError: null, positionMs: 40000, pitch: 2, windowSeconds: WAVE_WINDOW_S, playheadFrac: 0.5 } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			const drawn = spans(canvasElement);
 			await expect(drawn.map((s) => s.textContent)).toEqual(['early', 'A / B', 'Now', 'Next', 'Far']);
@@ -62,7 +70,7 @@ export const contracts = {
 	},
 	/** A load error replaces the lane with an error tag that carries the message on hover. */
 	LoadError: {
-		args: { lyrics: { lines: LINES }, loadError: new Error('lyrics cache 503'), positionMs: 0, pitch: 1 } satisfies Args,
+		args: { lyrics: { lines: LINES }, loadError: new Error('lyrics cache 503'), positionMs: 0, pitch: 1, windowSeconds: WAVE_WINDOW_S, playheadFrac: 0.5 } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			const err = within(canvasElement).getByText('LYRICS ERROR');
 			await expect(err).toHaveClass('lyrics-error');
@@ -74,7 +82,7 @@ export const contracts = {
 	NoLyrics: {
 		// Story parity: the end state draws nothing visible (EMPTY, not BLANK).
 		tags: ['flat-frame'],
-		args: { lyrics: null, loadError: null, positionMs: 0, pitch: 1 } satisfies Args,
+		args: { lyrics: null, loadError: null, positionMs: 0, pitch: 1, windowSeconds: WAVE_WINDOW_S, playheadFrac: 0.5 } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			await expect(canvasElement.querySelector('.lyrics-lane')).toBeNull();
 			await expect(canvasElement.querySelector('.lyrics-error')).toBeNull();

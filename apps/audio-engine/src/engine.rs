@@ -18,6 +18,13 @@ use crate::mixer::{self, Assign};
 pub const MAX_DECKS: usize = 4;
 /// Largest block `render` processes in one pass; longer requests are chunked.
 pub const MAX_BLOCK: usize = 1024;
+/// Window of the master output meter, in frames. The page's Web Audio meter
+/// reads an AnalyserNode's time-domain buffer of `fftSize` = 2048 FRAMES at
+/// whatever rate the device runs (about 43 ms at 48 kHz, 46 ms at 44.1 kHz;
+/// `master-silence-report.ts` `_masterRms`); a tumbling window of the same
+/// frame count gives the state feed the same reading at every device rate,
+/// without depending on how the device chunks its blocks.
+pub const METER_WINDOW_FRAMES: u64 = 2048;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorCode {
@@ -207,6 +214,38 @@ pub struct Snapshot {
     pub crossfader: f64,
     pub master_volume: f64,
     pub master_muted: bool,
+    /// RMS of the master bus over the last complete `METER_WINDOW_FRAMES`, after
+    /// the master volume and BEFORE the master mute, mono-downmixed as
+    /// (L + R) / 2: where the page's Web Audio meter taps (`_masterAnalyser`
+    /// hangs off `_masterGain`, ahead of `_masterMuteGain`, and an
+    /// AnalyserNode downmixes stereo that way). 0 before the first window.
+    pub master_rms: f32,
+}
+
+/// Tumbling-window RMS of the master bus. Accumulates on the audio thread;
+/// `rms` is the last completed window, so a snapshot reads it without `&mut`.
+#[derive(Clone, Copy, Debug)]
+struct MasterMeter {
+    window_frames: u64,
+    sum_sq: f64,
+    frames: u64,
+    rms: f32,
+}
+
+impl MasterMeter {
+    fn new() -> MasterMeter {
+        MasterMeter { window_frames: METER_WINDOW_FRAMES, sum_sq: 0.0, frames: 0, rms: 0.0 }
+    }
+
+    fn add(&mut self, mono: f32) {
+        self.sum_sq += (mono as f64) * (mono as f64);
+        self.frames += 1;
+        if self.frames == self.window_frames {
+            self.rms = (self.sum_sq / self.frames as f64).sqrt() as f32;
+            self.sum_sq = 0.0;
+            self.frames = 0;
+        }
+    }
 }
 
 pub struct Engine {
@@ -221,6 +260,7 @@ pub struct Engine {
     /// first frame.
     mute_gain: f64,
     frame: u64,
+    meter: MasterMeter,
 }
 
 impl Engine {
@@ -235,6 +275,7 @@ impl Engine {
             master_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
             mute_gain: 1.0,
             frame: 0,
+            meter: MasterMeter::new(),
         };
         // The page's default assign matrix (`_defaultChannel`): odd decks on
         // A, even decks on B. The strips start at the gain that gives, with
@@ -419,7 +460,9 @@ impl Engine {
     /// Master gain and the frame count, shared by both render paths.
     fn finish_block(&mut self, out: &mut [f32]) {
         for o in out.chunks_exact_mut(2) {
-            let g = (self.master_gain.tick() * self.mute_gain) as f32;
+            let master = self.master_gain.tick() as f32;
+            self.meter.add((o[0] + o[1]) * 0.5 * master);
+            let g = master * self.mute_gain as f32;
             o[0] *= g;
             o[1] *= g;
         }
@@ -475,6 +518,7 @@ impl Engine {
             crossfader: self.crossfader,
             master_volume: self.master_volume,
             master_muted: self.master_muted,
+            master_rms: self.meter.rms,
         }
     }
 
@@ -641,6 +685,53 @@ mod tests {
         assert!((f - 1080.0).abs() < 0.5, "tempo 1.08 measured {f}");
         let pos = e.snapshot().decks[0].position_ms;
         assert!((pos - 1080.0).abs() < 1e-6, "position {pos}");
+    }
+
+    /// RMS of the (L + R) / 2 downmix over frames `from..to` of a stereo buffer.
+    fn mono_rms(buf: &[f32], from: usize, to: usize) -> f32 {
+        let s: f64 = buf[from * 2..to * 2].chunks_exact(2).map(|c| (((c[0] + c[1]) * 0.5) as f64).powi(2)).sum();
+        (s / (to - from) as f64).sqrt() as f32
+    }
+
+    #[test]
+    fn master_meter_window_is_2048_frames_at_44_1_khz_like_the_pages_analyser() {
+        // fftSize is a frame count, so at 44.1 kHz the page still reads 2048
+        // frames; a seconds-based window would give about 1882 here.
+        let mut e = playing_tone(440.0, 44100);
+        let w = METER_WINDOW_FRAMES as usize;
+        let mut buf = vec![0.0f32; 11 * w * 2];
+        e.render(&mut buf);
+        let want = mono_rms(&buf, 10 * w, 11 * w);
+        let got = e.snapshot().master_rms;
+        assert!(want > 0.05, "the tone reaches the bus: {want}");
+        assert!((got - want).abs() < want * 1e-4, "meter {got} vs the 11th 2048-frame window {want}");
+    }
+
+    #[test]
+    fn master_meter_reads_the_bus_like_the_pages_analyser_and_ignores_the_mute() {
+        // Control: no window has completed, so there is no level yet.
+        assert_eq!(Engine::new(48000).snapshot().master_rms, 0.0);
+        let mut e = playing_tone(440.0, 48000);
+        let w = METER_WINDOW_FRAMES as usize;
+        assert_eq!(w, 2048, "the window is the AnalyserNode's 2048 frames");
+        let mut buf = vec![0.0f32; 24000 * 2];
+        e.render(&mut buf);
+        // 24000 frames hold 11 whole windows: the meter reads the 11th.
+        let want = mono_rms(&buf, 10 * w, 11 * w);
+        let got = e.snapshot().master_rms;
+        assert!(want > 0.05, "the tone reaches the bus: {want}");
+        assert!((got - want).abs() < want * 1e-4, "meter {got} vs the bus {want}");
+        // Muted: the device gets silence, the meter still reads the bus,
+        // as the page's analyser sits ahead of its mute node.
+        e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
+        e.render(&mut buf);
+        assert!(buf.iter().all(|&x| x == 0.0), "the mute silences the output");
+        assert!(e.snapshot().master_rms > 0.05, "a mute is not a dropout: {}", e.snapshot().master_rms);
+        // Paused: the bus goes quiet and the meter reads it.
+        e.apply(EngineCmd::MasterMute { muted: false }).unwrap();
+        e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+        e.render(&mut buf);
+        assert!(e.snapshot().master_rms < 1e-6, "paused meter {}", e.snapshot().master_rms);
     }
 
     /// Frequency of the left channel after the stretcher's start-up.

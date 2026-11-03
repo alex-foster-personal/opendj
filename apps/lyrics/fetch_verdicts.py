@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.lyrics.json_parse import non_empty_string
 from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 FETCH_VERDICT_SCHEMA = 1
@@ -95,7 +96,8 @@ def _parse(value: Any, path: Path) -> FetchVerdict:
         raise TypeError(f"lyrics-fetch entry {path} must be a JSON object")
     if value.get("schema") != FETCH_VERDICT_SCHEMA:
         raise ValueError(f"lyrics-fetch entry {path} has unsupported schema")
-    stable_id = _non_empty_string(value, "stable_id", path)
+    label = "lyrics-fetch entry"
+    stable_id = non_empty_string(value, "stable_id", path, entry_label=label)
     outcome = value.get("outcome")
     if outcome not in ("cached", "instrumental", "no_source"):
         raise ValueError(f"lyrics-fetch entry {path} has invalid outcome")
@@ -116,7 +118,7 @@ def _parse(value: Any, path: Path) -> FetchVerdict:
     language_iso3 = value.get("language_iso3")
     if language_iso3 is not None and not isinstance(language_iso3, str):
         raise ValueError(f"lyrics-fetch entry {path} has invalid language_iso3")
-    recorded_at = _non_empty_string(value, "recorded_at", path)
+    recorded_at = non_empty_string(value, "recorded_at", path, entry_label=label)
     return FetchVerdict(
         stable_id=stable_id,
         outcome=outcome,
@@ -127,13 +129,6 @@ def _parse(value: Any, path: Path) -> FetchVerdict:
         language_iso3=language_iso3,
         recorded_at=recorded_at,
     )
-
-
-def _non_empty_string(entry: dict[str, Any], field: str, path: Path) -> str:
-    value = entry.get(field)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"lyrics-fetch entry {path} has invalid {field}")
-    return value
 
 
 __all__ = [

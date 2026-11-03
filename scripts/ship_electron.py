@@ -30,9 +30,25 @@ runs none of them):
    shell built it, deletes exactly that bundle and nothing else, copies the new one to
    ``/Applications``, clears quarantine (unsigned only), and reads the
    installed stamp back.
+8. Post-install, as a Tauri rollout does (``scripts/electron_post_install.py``):
+   the installed-app acceptance (OPS-58) on demon-llama, or the Air with
+   ``--acceptance-on air``, never silver; a scrubbed relaunch (OPS-32) on every
+   installed Mac; then the engine health probe, which also reads the RUNNING
+   build stamp back from ``/api/v1/build-info``. A failed acceptance or health
+   probe finishes the remaining steps and exits 1: installed but NOT shipped.
 
-Not done here: relaunch and the engine health probe, ``opendj install-cli``,
-signing, notarization, a dmg, and building on another machine.
+Not done here: ``opendj install-cli``, signing, notarization, a dmg, and
+building on another machine.
+
+``--local-fast`` (Mon 2 Nov 2026, mirrors ``ship_dmg.sh --local-fast``, #8225)
+is the one signed path: a build installed ONLY on this Mac, Developer ID
+signed with the hardened runtime and not notarized, so macOS privacy grants
+survive a rebuild. It signs the staged payload with
+``scripts/sign_macos_developer_id.sh payload`` (engine entitlements, the
+numba JIT proof), refreshes the payload manifest's signed digests, signs the
+app inside out with ``apps/desktop/electron/entitlements.mac.plist``
+(``scripts/electron_local_sign.py``) and proves the signature before and
+after the install. It refuses ``--unsigned`` and any ``--machine`` but this one.
 
 Acceptance:
 
@@ -41,11 +57,21 @@ Acceptance:
 - [if] ``--dry-run --unsigned`` is given [then] the plan names every command a
   live run would run, installs only ``Open DJ.app``, and runs none
   of them [else stop].
+- [if] the acceptance fails, or no acceptance host was installed without
+  ``--no-acceptance``, or an installed engine is unhealthy [then] the run
+  exits 1 after relaunching and probing every machine [else stop].
+- [if] ``--local-fast`` is given with ``--unsigned``, or with a ``--machine``
+  that is not this Mac (or none, which means all three) [then] the run exits 2
+  and runs nothing [else stop].
+- [if] ``--local-fast --dry-run`` is given [then] the plan names the payload
+  signing, the manifest refresh, the app signing and both signature checks,
+  and runs none of them [else stop].
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -62,9 +88,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 try:
-    from scripts import electron_payload
+    from scripts import electron_local_sign, electron_payload
+    from scripts import electron_post_install as post
 except ImportError:  # run as a file: scripts/ship_electron.py
+    import electron_local_sign  # type: ignore[no-redef,import-not-found]
     import electron_payload  # type: ignore[no-redef,import-not-found]
+    import electron_post_install as post  # type: ignore[no-redef,import-not-found]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ELECTRON_DIR_REL = "apps/desktop/electron"
@@ -113,7 +142,8 @@ SIGNING_REFUSAL = (
     "[ERROR] signing needs the owner's Apple credentials: signing and notarizing the "
     "Electron app is not implemented yet (plan E2 stops before it). Nothing was "
     "built or installed. Re-run with --unsigned (or MDT_SHIP_UNSIGNED=1) for a "
-    "deliberately unsigned build."
+    "deliberately unsigned build, or with --local-fast --machine <this Mac> for a "
+    "Developer ID signed, un-notarized build installed on this Mac only."
 )
 
 
@@ -264,6 +294,9 @@ class Options:
     machines: list[str]
     no_close: bool
     local: str
+    no_acceptance: bool = False
+    acceptance_on: list[str] = field(default_factory=list)
+    local_fast: bool = False
 
 
 def parse_args(argv: Sequence[str], env: dict) -> Options:
@@ -275,7 +308,7 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
     parser.add_argument(
         "--unsigned",
         action="store_true",
-        help="build deliberately unsigned (also MDT_SHIP_UNSIGNED=1). Required: signing is not implemented.",
+        help="build deliberately unsigned (also MDT_SHIP_UNSIGNED=1). Required unless --local-fast.",
     )
     parser.add_argument(
         "--sha", default="HEAD", help="target git ref; the checkout must already be at it (default HEAD)"
@@ -286,6 +319,23 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
     parser.add_argument(
         "--no-close", action="store_true", help="wait for the operator to quit the app instead of asking it to"
     )
+    parser.add_argument(
+        "--no-acceptance",
+        action="store_true",
+        help="skip the installed-app acceptance (OPS-58); loud: the build is then NOT accepted",
+    )
+    parser.add_argument(
+        "--acceptance-on",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="also run the acceptance on NAME after its install (air; silver is refused)",
+    )
+    parser.add_argument(
+        "--local-fast",
+        action="store_true",
+        help="Developer ID sign (hardened runtime, not notarized) and install on THIS Mac only; needs --machine <this Mac>",
+    )
     args, unknown = parser.parse_known_args(list(argv))
     if unknown:
         not_here = [a for a in unknown if a.split("=")[0] in ("--lane", "--build-on", "--requested-at")]
@@ -293,6 +343,9 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
             parser.exit(EXIT_USAGE, f"[ERROR] {not_here[0].split('=')[0]} is not supported with --shell electron\n")
         parser.exit(EXIT_USAGE, f"[ERROR] unrecognized arguments: {' '.join(unknown)}\n")
     machines = list(dict.fromkeys(args.machine)) or list(MACHINES)
+    refusal = post.acceptance_refusal(args.acceptance_on)
+    if refusal is not None:
+        parser.exit(EXIT_USAGE, refusal + "\n")
     return Options(
         dry_run=args.dry_run,
         unsigned=args.unsigned or env.get("MDT_SHIP_UNSIGNED", "") == "1",
@@ -300,7 +353,24 @@ def parse_args(argv: Sequence[str], env: dict) -> Options:
         machines=machines,
         no_close=args.no_close,
         local=local_machine_name(env),
+        no_acceptance=args.no_acceptance,
+        acceptance_on=list(dict.fromkeys(args.acceptance_on)),
+        local_fast=args.local_fast,
     )
+
+
+def local_fast_refusal(opts: Options) -> str | None:
+    """Why a --local-fast run may not start, or None. Checked before anything runs."""
+    if not opts.local_fast:
+        return None
+    if opts.unsigned:
+        return "[ERROR] --local-fast signs the app; it cannot be combined with --unsigned or MDT_SHIP_UNSIGNED=1"
+    if opts.machines != [opts.local]:
+        return (
+            f"[ERROR] --local-fast installs on this Mac only: pass exactly --machine {opts.local} "
+            f"(got {', '.join(opts.machines)}). A signed but un-notarized app is never copied to another Mac."
+        )
+    return None
 
 
 def _q(path: str) -> str:
@@ -534,8 +604,76 @@ class Build:
         for line in verify_packed_app(self.app, self.target_sha):
             print(line)
 
+    # ----- --local-fast only -------------------------------------------------
+    def sign_payload(self, identity: str) -> None:
+        env = {**os.environ, electron_local_sign.IDENTITY_ENV: identity}
+        self.runner.local_run(
+            ["bash", electron_local_sign.PAYLOAD_SIGN_SCRIPT_REL, "payload", str(self.stage)], env=env
+        )
 
-def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner) -> list[Step]:
+    def sign_app(self, identity: str) -> None:
+        payload = self.app / "Contents" / "Resources" / "payload"
+        self.runner.local_run(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "--no-sync",
+                "python",
+                "-m",
+                "scripts.payload_signed_manifest",
+                "--payload",
+                str(payload),
+            ]
+        )
+        entitlements = REPO_ROOT / electron_local_sign.ELECTRON_ENTITLEMENTS_REL
+        signed = electron_local_sign.sign_app(self.app, identity, entitlements)
+        print(f"[OK] signed {signed} pieces of nested code inside out, the app last", flush=True)
+        for line in electron_local_sign.verify_signed_app(self.app):
+            print(line, flush=True)
+
+
+def _local_fast_steps(build: Build, identity: str) -> tuple[Step, Step]:
+    """The two signing steps --local-fast adds: the payload after it is built, the app after the payload swap."""
+    payload_in_app = PACKED_APP_REL + "/Contents/Resources/payload"
+    who = f"{electron_local_sign.IDENTITY_ENV}={_q(identity)}"
+    sign_payload = Step(
+        "sign the staged payload: Developer ID, hardened runtime, engine entitlements, numba JIT proof",
+        [f"{who} bash {electron_local_sign.PAYLOAD_SIGN_SCRIPT_REL} payload {PAYLOAD_STAGE_REL}"],
+        lambda: build.sign_payload(identity),
+    )
+    sign_app = Step(
+        "refresh the payload manifest's signed digests, then sign the app inside out and prove it",
+        [
+            f"uv run --locked --no-sync python -m scripts.payload_signed_manifest --payload {_q(payload_in_app)}",
+            f"codesign --force --options runtime --timestamp=none --sign {_q(identity)} <each loose Mach-O, framework, "
+            f"helper app (+ --entitlements {electron_local_sign.ELECTRON_ENTITLEMENTS_REL})>  # inside out, payload excluded",
+            f"codesign --force --options runtime --timestamp=none --sign {_q(identity)} "
+            f"--entitlements {electron_local_sign.ELECTRON_ENTITLEMENTS_REL} {_q(PACKED_APP_REL)}",
+            f"codesign --verify --deep --strict {_q(PACKED_APP_REL)}  # then: runtime flag, Developer ID authority, entitlements",
+        ],
+        lambda: build.sign_app(identity),
+    )
+    return sign_payload, sign_app
+
+
+def _installed_signature_step(machine: str) -> Step:
+    installed = f"{APPLICATIONS}/{APP_NAME}"
+
+    def act() -> None:
+        for line in electron_local_sign.verify_signed_app(Path(installed)):
+            print(f"[OK] {machine}: {line.removeprefix('[OK] ')}", flush=True)
+
+    return Step(
+        f"prove the installed signature on {machine}",
+        [
+            f"codesign --verify --deep --strict {_q(installed)}  # then: runtime flag, Developer ID authority, entitlements"
+        ],
+        act,
+    )
+
+
+def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, identity: str | None = None) -> list[Step]:
     build = Build(opts, target_sha, runner)
     payload_in_app = _q(PACKED_APP_REL + "/Contents/Resources/payload")
     steps = [
@@ -586,7 +724,13 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner) -> l
             build.verify,
         ),
     ]
+    if identity is not None:
+        sign_payload, sign_app = _local_fast_steps(build, identity)
+        steps.insert(3, sign_payload)  # after the payload build, before the pack
+        steps.insert(6, sign_app)  # after the payload swap, before the stamp check
     steps.extend(_install_step(machine, opts, target_sha, run_id, runner) for machine in opts.machines)
+    if identity is not None:
+        steps.extend(_installed_signature_step(machine) for machine in opts.machines)
     return steps
 
 
@@ -845,21 +989,150 @@ def _read_back(runner: Runner, machine: str, script: InstallScript, target_sha: 
     print(f"[OK] {machine}: {installed} at {sha[:12]}, {BUNDLE_ID}")
 
 
+# ----- post-install (acceptance, relaunch, health) -----------------------
+
+
+def post_install_steps(
+    opts: Options, target_sha: str, run_id: str, runner: Runner, outcome: post.Outcome
+) -> list[Step]:
+    """ship_dmg.sh's order: per machine the acceptance (app still closed) then
+    the relaunch; then the health phase on every machine. No step raises on a
+    failed check: it records into `outcome`, and main exits 1 at the end."""
+    installed = f"{APPLICATIONS}/{APP_NAME}"
+    steps: list[Step] = []
+    for machine in opts.machines:
+        on = "" if machine == opts.local else f"ssh {' '.join(SSH_OPTS)} {MACHINES[machine]} "
+        if post.acceptance_wanted(machine, opts.acceptance_on, opts.no_acceptance or opts.local_fast):
+            steps.append(_acceptance_step(machine, opts, target_sha, run_id, installed, outcome))
+        elif opts.local_fast:
+            steps.append(Step(f"acceptance on {machine}: SKIPPED for --local-fast; a local-fast build is never accepted"))
+        elif opts.no_acceptance:
+            steps.append(Step(f"acceptance on {machine}: SKIPPED by --no-acceptance; the build is NOT accepted"))
+        relaunch = post.relaunch_command(installed)
+        steps.append(
+            Step(
+                f"relaunch {installed} on {machine} with a scrubbed environment (OPS-32)",
+                [f"{on}{relaunch}"],
+                functools.partial(_relaunch, runner, machine, relaunch),
+            )
+        )
+    for machine in opts.machines:
+        on = "" if machine == opts.local else f"ssh {' '.join(SSH_OPTS)} {MACHINES[machine]} "
+        steps.append(
+            Step(
+                f"engine health on {machine}: healthy, clean environment, running build {target_sha[:12]}",
+                [
+                    f"{on}{post.engine_probe_command(installed)}  # every {post.HEALTH_POLL_S}s for up to "
+                    f"{post.HEALTH_WAIT_S}s; health status + state_db, no {' '.join(post.FORBIDDEN_ENV_PREFIXES)} "
+                    f"keys with HOME present, build-info source=payload sha={target_sha}"
+                ],
+                functools.partial(_health, runner, machine, installed, target_sha, outcome),
+            )
+        )
+    return steps
+
+
+def acceptance_result_path(machine: str, run_id: str) -> Path:
+    return REPO_ROOT / "ops" / "logs" / f"acceptance-{machine}-{run_id}.json"
+
+
+def _acceptance_step(
+    machine: str, opts: Options, target_sha: str, run_id: str, installed: str, outcome: post.Outcome
+) -> Step:
+    result = acceptance_result_path(machine, run_id)
+    planned = post.acceptance_argv(
+        REPO_ROOT, post.KNOWN_BASHES[0], machine, opts.local, MACHINES[machine], installed, target_sha, result
+    )
+
+    def act() -> None:
+        try:
+            argv = [post.known_bash(), *planned[1:]]
+        except FileNotFoundError as exc:
+            note = post.record_acceptance(outcome, machine, 2, result)
+            print(f"[ERROR] {machine}: acceptance could not start: {exc} ({note})", flush=True)
+            return
+        print(f"[RUN] {' '.join(_q(a) for a in argv)}", flush=True)
+        returncode = subprocess.run(argv, check=False, cwd=str(REPO_ROOT)).returncode
+        note = post.record_acceptance(outcome, machine, returncode, result)
+        print(f"[{'OK' if returncode == 0 else 'ERROR'}] acceptance {note}; result {result}", flush=True)
+
+    return Step(
+        f"installed-app acceptance on {machine} (OPS-58), before the relaunch while the app is closed",
+        [" ".join(_q(a) for a in planned) + "  # a FAIL does not stop the relaunch; the run exits 1 at the end"],
+        act,
+    )
+
+
+def _relaunch(runner: Runner, machine: str, command: str) -> None:
+    out = runner.shell(machine, command, check=False)
+    if out.returncode != 0:
+        print(f"[WARN] {machine}: relaunch exited {out.returncode}: {(out.stderr or out.stdout).strip()}", flush=True)
+
+
+def _health(
+    runner: Runner,
+    machine: str,
+    installed: str,
+    target_sha: str,
+    outcome: post.Outcome,
+    *,
+    wait_s: float = post.HEALTH_WAIT_S,
+    poll_s: float = post.HEALTH_POLL_S,
+) -> None:
+    deadline = time.monotonic() + wait_s
+    last = "no engine of this bundle answered"
+    while True:
+        out = runner.shell(machine, post.engine_probe_command(installed), check=False)
+        if out.returncode == 0:
+            probe = post.parse_probe(out.stdout)
+            problems = post.health_problems(probe, target_sha)
+            if not problems:
+                print(f"[HEALTH] {machine}: {post.health_summary(probe)}, clean environment, running {target_sha[:12]}")
+                return
+            last = "; ".join(problems)
+        elif out.returncode == post.PROBE_NO_ENGINE_EXIT:
+            last = f"no engine process from {installed} is running"
+        elif out.returncode == post.PROBE_NO_PORT_EXIT:
+            last = "the engine process has no listening port yet"
+        else:
+            last = f"the probe exited {out.returncode} (UNKNOWN): {(out.stderr or out.stdout).strip()[:200]}"
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(poll_s)
+    outcome.unhealthy.append(machine)
+    print(f"[ERROR] {machine}: UNHEALTHY after {wait_s:.0f}s: {last}", flush=True)
+
+
 def print_plan(steps: Sequence[Step], opts: Options, target_sha: str) -> None:
-    print(f"[PLAN] shell: electron, unsigned, target {target_sha}")
+    signing = "Developer ID signed, NOT notarized (local-fast)" if opts.local_fast else "unsigned"
+    print(f"[PLAN] shell: electron, {signing}, target {target_sha}")
     print(f"[PLAN] this machine: {opts.local}; install targets: {', '.join(opts.machines)}")
-    print(f"[PLAN] installs only {APPLICATIONS}/{APP_NAME}, replacing whichever shell built it; no other Open DJ bundle is quit or deleted")
+    print(
+        f"[PLAN] installs only {APPLICATIONS}/{APP_NAME}, replacing whichever shell built it; no other Open DJ bundle is quit or deleted"
+    )
     for number, step in enumerate(steps, 1):
         print(f"[PLAN] {number}. {step.title}")
         for command in step.commands:
             print(f"[PLAN]      $ {command}")
-    print("[PLAN] not done: signing, notarization, relaunch, engine health, opendj install-cli")
+    not_done = "notarization" if opts.local_fast else "signing, notarization"
+    print(f"[PLAN] not done: {not_done}, opendj install-cli")
 
 
 def main(argv: Sequence[str] | None = None, env: dict | None = None) -> int:
     env = dict(os.environ) if env is None else env
     opts = parse_args(sys.argv[1:] if argv is None else argv, env)
-    if not opts.unsigned:
+    refusal = local_fast_refusal(opts)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return EXIT_USAGE
+    identity: str | None = None
+    if opts.local_fast:
+        try:
+            identity = electron_local_sign.resolve_signing_identity(env)
+        except electron_local_sign.LocalSignError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return EXIT_FAILED
+    elif not opts.unsigned:
         print(SIGNING_REFUSAL, file=sys.stderr)
         return EXIT_SIGNING_UNIMPLEMENTED
     try:
@@ -869,10 +1142,15 @@ def main(argv: Sequence[str] | None = None, env: dict | None = None) -> int:
         return EXIT_FAILED
     run_id = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + f".{os.getpid()}"
     runner = Runner(opts.local)
-    steps = build_plan(opts, target_sha, run_id, runner)
-    print(
-        "[WARN] UNSIGNED Electron build: Gatekeeper refuses it on a downloaded copy; quarantine is cleared on install."
-    )
+    steps = build_plan(opts, target_sha, run_id, runner, identity)
+    outcome = post.Outcome()
+    steps.extend(post_install_steps(opts, target_sha, run_id, runner, outcome))
+    if identity is None:
+        print(
+            "[WARN] UNSIGNED Electron build: Gatekeeper refuses it on a downloaded copy; quarantine is cleared on install."
+        )
+    else:
+        print(f"[WARN] LOCAL-FAST: signed by {identity}, NOT notarized; installed on this Mac only, never shipped.")
     print_plan(steps, opts, target_sha)
     if opts.dry_run:
         print("[DRY-RUN] nothing was built, deleted or installed")
@@ -882,11 +1160,25 @@ def main(argv: Sequence[str] | None = None, env: dict | None = None) -> int:
         try:
             if step.action is not None:
                 step.action()
-        except (ShipError, subprocess.CalledProcessError, OSError) as exc:
+        except (ShipError, electron_local_sign.LocalSignError, subprocess.CalledProcessError, OSError) as exc:
             print(f"[ERROR] step {number} ({step.title}) FAILED: {exc}", file=sys.stderr)
             return EXIT_FAILED
+    # A local-fast build is never accepted, as in ship_dmg.sh.
+    failures = outcome.failures(installed=True, no_acceptance=opts.no_acceptance or opts.local_fast)
+    accepted = " ".join(outcome.acceptance_notes) or ("SKIPPED by --no-acceptance" if opts.no_acceptance else "none")
+    how = f"signed by {identity}, not notarized" if identity is not None else "unsigned"
+    if failures:
+        for reason in failures:
+            print(f"[ERROR] {reason}", file=sys.stderr)
+        print(
+            f"[ERROR] {APP_NAME} is installed on {', '.join(opts.machines)} at {target_sha[:12]} but NOT shipped. "
+            f"Acceptance: {accepted}. Results: {REPO_ROOT / 'ops' / 'logs'}/acceptance-*-{run_id}.json",
+            file=sys.stderr,
+        )
+        return EXIT_FAILED
     print(
-        f"[DONE] {APP_NAME} installed on {', '.join(opts.machines)} at {target_sha[:12]}, unsigned. Launch it by hand."
+        f"[DONE] {APP_NAME} installed, relaunched and healthy on {', '.join(opts.machines)} at {target_sha[:12]}, "
+        f"{how}. Acceptance: {accepted}."
     )
     return 0
 

@@ -1,7 +1,7 @@
 """Test-suite census: per-test coverage redundancy, unmeasured share and time concentration.
 
 A report, never a gate. It answers "which tests could go, and which are slow" with evidence,
-for the test-cull workstream (``specs/test-cull/test-cull-spec.md``) and its nightly run on
+for the test-cull workstream (``(private path)``) and its nightly run on
 nucbox (fleet-af ``tenants/open-dj``).
 
 ``run`` executes pytest under coverage with one context per test (``--cov-context=test``),
@@ -108,6 +108,26 @@ def _load_arcs(db: Path) -> tuple[dict[str, set[Arc]], set[Arc], int]:
     if not by_test:
         raise CensusUnknown(f"{db}: no per-test contexts recorded ({len(contexts)} contexts total)")
     return by_test, import_arcs, child_contexts
+
+
+def load_module_reach(db: Path) -> dict[str, set[str]]:
+    """Measured source path -> the tests that ran an arc in it, import-time arcs excluded.
+
+    The same arcs ``analyze`` buckets, keyed by file instead of by test, so the mutation scorer
+    (``scripts.suite_census_mutation``) reuses the census's coverage data rather than a second
+    index of its own.
+    """
+    by_test, import_arcs, _ = _load_arcs(db)
+    con = sqlite3.connect(db)
+    try:
+        paths = dict(con.execute("select id, path from file"))
+    finally:
+        con.close()
+    reach: dict[str, set[str]] = defaultdict(set)
+    for test, arcs in by_test.items():
+        for file_id in {arc[0] for arc in arcs - import_arcs}:
+            reach[paths[file_id]].add(test)
+    return dict(reach)
 
 
 def _junit_test_id(case: ET.Element) -> str:

@@ -110,6 +110,7 @@ test('addModule is awaited once per context and memoized', async () => {
 	assert.equal(addCalls, 1);
 });
 
+// REQ: STRETCH-02
 test('addModule rejection names addModule and clears the memo for retry', async () => {
 	let addCalls = 0;
 	const ctx = fakeContext({
@@ -147,6 +148,37 @@ test('addModule hang rejects with addModule timed out, not processor creation', 
 		assert.doesNotMatch(error.message, /processor creation/);
 		return true;
 	});
+});
+
+// REQ: STRETCH-02
+test('addModule timeout keeps the in-flight memo so a retry joins it', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	let resolveAdd;
+	let addCalls = 0;
+	const ctx = fakeContext({
+		audioWorklet: {
+			addModule: () => {
+				addCalls += 1;
+				return new Promise((resolve) => {
+					resolveAdd = resolve;
+				});
+			}
+		}
+	});
+	const first = ready.addStretchWorkletModule(ctx, '/stretch.mjs');
+	await new Promise((resolve) => queueMicrotask(resolve));
+	mock.timers.tick(15_000);
+	await assert.rejects(first, (error) => {
+		assert.equal(error.name, 'StretchProcessorError');
+		assert.match(error.message, /addModule timed out/);
+		return true;
+	});
+	assert.equal(addCalls, 1);
+	const second = ready.addStretchWorkletModule(ctx, '/stretch.mjs');
+	await new Promise((resolve) => queueMicrotask(resolve));
+	resolveAdd();
+	await second;
+	assert.equal(addCalls, 1);
 });
 
 test('ready module source does not contain processor creation timed out', () => {

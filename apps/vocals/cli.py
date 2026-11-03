@@ -1440,17 +1440,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from apps.vocals.errors import UnknownPlaylistError
+    from apps.vocals.playlist_cli_main import run_playlist_aware_cli
 
-    try:
-        args = build_parser().parse_args(argv)
-        return int(args.func(args))
-    except UnknownPlaylistError as exc:
-        raise SystemExit(  # noqa: B904
-            2,
-            f"error: unknown playlist {exc.name!r}. "
-            f"Known: {', '.join(exc.known) or '(none)'}",
-        )
+    return run_playlist_aware_cli(build_parser, argv=argv)
 
 
 if __name__ == "__main__":

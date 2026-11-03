@@ -74,6 +74,8 @@ const ANLZ = {
 
 test('the flipped bottom half keeps band tints and drops section names; the top keeps both', () => {
 	const half = () => ({
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: 240, heightCss: 30, positionMs: 30_000, durationMs: 120_000, anlz: ANLZ,
 		palette: PALETTE, pitch: 1, loop: null, showSections: true
 	});

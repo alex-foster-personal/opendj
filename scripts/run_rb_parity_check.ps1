@@ -111,10 +111,14 @@ if (Test-Path -LiteralPath $PytestBaseTemp) {
     Remove-Item -LiteralPath $PytestBaseTemp -Recurse -Force
 }
 
-# Half the logical CPUs, not auto: at 14 workers on bifrost1 the warm-index wall-clock
-# ratchet in tests/webui/test_track_index.py took 3.4 s against its 1.5 s bound.
-$XdistWorkers = [Math]::Max(2, [int][Math]::Floor([Environment]::ProcessorCount / 2))
-Write-Output "[INFO] pytest-xdist workers: $XdistWorkers of $([Environment]::ProcessorCount) logical CPUs"
+# Half the logical CPUs, floor of two, never more workers than logical CPUs.
+# Not auto: at 14 workers on bifrost1 the warm-index wall-clock ratchet in
+# tests/webui/test_track_index.py took 3.4 s against its 1.5 s bound. Floor of
+# two keeps a 2-CPU fallback runner off the 24m42s serial path; Min(cpu, ...)
+# stops Max(2, Floor(cpu/2)) oversubscribing a 1-CPU box.
+$CpuCount = [Environment]::ProcessorCount
+$XdistWorkers = [Math]::Min($CpuCount, [Math]::Max(2, [int][Math]::Floor($CpuCount / 2)))
+Write-Output "[INFO] pytest-xdist workers: $XdistWorkers of $CpuCount logical CPUs"
 $PytestArgs = @(
     "-m", "pytest", "-q", "-m", "rb_parity", "--no-coverage-matrix",
     # Parallel: serial, the full webui suite took 24m42s on windows-latest

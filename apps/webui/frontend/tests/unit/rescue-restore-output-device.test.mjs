@@ -7,6 +7,11 @@
 // [if] the bifrost1 ring (legacy snapshot, id only, new origin) is restored [then] nothing throws; master reported not_found
 // [if] a snapshot is captured with a selected sink [then] the enumerated label is saved beside the id
 // [if] a sink is picked while nothing plays in gig posture [then] the pick alone writes a ring snapshot
+// requirement: AUDIO-DEVICE-07
+// [if] the Mac app relaunches with a saved MAIN [then] no headphone_master_select is dispatched (the macOS output is left alone)
+// [if] the Mac app relaunches with a saved MAIN and CUE [then] the CUE is still restored and MAIN reports system_output, no toast
+// [if] the Mac app relaunches with only a saved MAIN [then] nothing is enumerated or selected at all
+// [if] the shell announced a native sink [then] mainFollowsSystemOutput is true, and false in a browser tab
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -478,6 +483,88 @@ test('restore: no saved sink means no enumeration dispatch and no toast (common 
 		master: { outcome: 'none', device_id: null, notice: null }
 	});
 	assert.deepEqual(h.toasts, []);
+});
+
+//------------------------------------------------------------------ AUDIO-DEVICE-07
+
+// silver, Tue 3 Nov 2026: the maintainer picked his Sony headphones in Control Center at
+// 16:53; each relaunch at 16:57, 17:41, 18:07 and 18:15 replayed the ring's MAIN
+// and set the macOS output back to HYPERBOOM, so Open DJ played nowhere he could hear.
+const SILVER_OUTPUTS = [
+	{ id: 'native:10-94-97-1C-C6-43:output', label: 'HYPERBOOM' },
+	{ id: 'native:CC-98-8B-4A-58-E3:output', label: 'af-sony-fun' },
+	{ id: 'native:BuiltInSpeakerDevice', label: 'Mac Studio Speakers' }
+];
+
+test('AUDIO-DEVICE-07: a Mac app relaunch never re-selects the saved MAIN', async () => {
+	const h = _harness({ outputs: SILVER_OUTPUTS });
+	const result = await restoreMod.executeRescueRestore(
+		{
+			snapshot: _snapshot({
+				selected_output_device_id: null,
+				selected_master_output_device_id: 'native:10-94-97-1C-C6-43:output',
+				selected_master_output_device_label: 'HYPERBOOM'
+			}),
+			mode: 'layout'
+		},
+		{ ...h.opts, mainIsSystemOutput: true }
+	);
+	assert.deepEqual(_selects(h.log), [], 'a relaunch must not move the macOS output');
+	assert.equal(h.log.some((c) => c.type === 'headphone_outputs_refresh'), false);
+	assert.deepEqual(result.sinks.master, { outcome: 'system_output', device_id: null, notice: null });
+	assert.deepEqual(h.toasts, []);
+	assert.equal(_pauses(h.log).length, 4, 'the decks still restore');
+});
+
+test('AUDIO-DEVICE-07: the saved CUE is still restored while MAIN stays on the macOS output', async () => {
+	const h = _harness({ outputs: SILVER_OUTPUTS });
+	const result = await restoreMod.executeRescueRestore(
+		{
+			snapshot: _snapshot({
+				selected_output_device_id: 'native:CC-98-8B-4A-58-E3:output',
+				selected_output_device_label: 'af-sony-fun',
+				selected_master_output_device_id: 'native:10-94-97-1C-C6-43:output',
+				selected_master_output_device_label: 'HYPERBOOM'
+			}),
+			mode: 'layout'
+		},
+		{ ...h.opts, mainIsSystemOutput: true }
+	);
+	assert.deepEqual(_selects(h.log), [
+		{ type: 'headphone_output_select', device_id: 'native:CC-98-8B-4A-58-E3:output' }
+	]);
+	assert.equal(result.sinks.cue.outcome, 'restored');
+	assert.equal(result.sinks.master.outcome, 'system_output');
+	assert.equal(h.log.some((c) => c.type === 'headphone_master_select'), false);
+});
+
+test('AUDIO-DEVICE-07: in a browser tab the saved MAIN is still restored (RESCUE-05 unchanged)', async () => {
+	const h = _harness({ outputs: SILVER_OUTPUTS });
+	const result = await restoreMod.executeRescueRestore(
+		{
+			snapshot: _snapshot({
+				selected_output_device_id: null,
+				selected_master_output_device_id: 'native:10-94-97-1C-C6-43:output',
+				selected_master_output_device_label: 'HYPERBOOM'
+			}),
+			mode: 'layout'
+		},
+		{ ...h.opts, mainIsSystemOutput: false }
+	);
+	assert.deepEqual(_selects(h.log), [
+		{ type: 'headphone_master_select', device_id: 'native:10-94-97-1C-C6-43:output' }
+	]);
+	assert.equal(result.sinks.master.outcome, 'restored');
+});
+
+test('AUDIO-DEVICE-07: mainFollowsSystemOutput is true only when the shell announced a native sink', async () => {
+	const sinkMod = await loadTypeScriptModule('src/lib/player/cue-native-sink.ts');
+	assert.equal(sinkMod.mainFollowsSystemOutput({}), false);
+	assert.equal(
+		sinkMod.mainFollowsSystemOutput({ OPENDJ_CUE_SINK: { url: 'ws://127.0.0.1:4321/cue', token: 't' } }),
+		true
+	);
+	assert.throws(() => sinkMod.mainFollowsSystemOutput({ OPENDJ_CUE_SINK: { url: 'http://x', token: 't' } }));
 });
 
 //------------------------------------------------------------------ capture

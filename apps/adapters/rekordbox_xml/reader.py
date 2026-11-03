@@ -40,6 +40,7 @@ import math
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -409,11 +410,26 @@ def _float(raw: str | None, name: str) -> float | None:
 
 
 def _int(raw: str | None, name: str) -> int | None:
-    """Like ``_float``, but a fractional value is malformed, never truncated."""
-    value = _float(raw, name)
-    if value is None:
+    """Like ``_float``, but a fractional value is malformed, never truncated.
+
+    Parsed as a decimal, not a float, so a count past 2**53 keeps every digit.
+    """
+    if raw is None or not raw.strip():
         return None
-    if not value.is_integer():
+    try:
+        value = Decimal(raw.strip().replace(",", "."))
+    except InvalidOperation:
+        raise ValueError(f"{name}={raw!r} is not a number") from None
+    if not value.is_finite():
+        raise ValueError(f"{name}={raw!r} is not a finite number")
+    # Magnitude first, read from the exponent: abs() and to_integral_value() apply
+    # the decimal context, which overflows on an exponent such as 1e1000000.
+    # Zero is exempt: 0e1000000 has a large adjusted exponent but is exactly zero.
+    if not value.is_zero() and (
+        value.copy_abs().adjusted() >= len(str(_STORE_INT_MAX)) or value.copy_abs() > _STORE_INT_MAX
+    ):
+        raise ValueError(f"{name}={raw!r} is too large to store")  # before int(), which would expand the digits
+    if value != value.to_integral_value():
         raise ValueError(f"{name}={raw!r} is not a whole number")
     return int(value)
 
@@ -441,13 +457,30 @@ def _count(raw: str | None, name: str) -> int:
 
 
 def _ms(seconds: str | None, name: str) -> int | None:
-    """Seconds to milliseconds. Blank is missing; a negative time is malformed."""
-    value = _float(seconds, name)
-    if value is None:
+    """Seconds to milliseconds, scaled as an exact decimal: a float would round a value near the
+    store's limit across it. Blank is missing; a negative time is malformed."""
+    if seconds is None or not seconds.strip():
         return None
+    try:
+        value = Decimal(seconds.strip().replace(",", "."))
+    except InvalidOperation:
+        raise ValueError(f"{name}={seconds!r} is not a number") from None
+    if not value.is_finite():
+        raise ValueError(f"{name}={seconds!r} is not a finite number")
     if value < 0:
         raise ValueError(f"{name}={seconds!r} is negative")
-    return round(value * 1000)
+    # Checked from the exponent first, so the scaling below cannot overflow the decimal context.
+    if not value.is_zero() and value.adjusted() >= len(str(_STORE_INT_MAX)):
+        raise ValueError(f"{name}={seconds!r} is too large to store")
+    exact = Context(prec=len(seconds) + 8)
+    ms = value.scaleb(3, context=exact).to_integral_value(rounding=ROUND_HALF_EVEN, context=exact)
+    if ms > _STORE_INT_MAX:  # 9223372036854775.8 seconds rounds past the limit, so this is checked after rounding
+        raise ValueError(f"{name}={seconds!r} is too large to store")
+    return int(ms)
+
+
+# The largest integer the store (SQLite) holds.
+_STORE_INT_MAX = 2**63 - 1
 
 
 def _stars(raw: str | None, name: str) -> int | None:

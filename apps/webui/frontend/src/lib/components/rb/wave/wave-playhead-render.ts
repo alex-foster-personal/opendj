@@ -12,7 +12,14 @@ export interface MasterDownbeatOverlay {
 	followerPitch: number;
 }
 
-/** Fixed center playhead. Always drawn (busy waveforms + empty decks).
+/** Canvas column of the playhead core. A fraction of 1 (the reference's exact
+ * end in whole-track mode) lands on the first column past the canvas, which
+ * is clipped, so the core clamps to the last drawable column. */
+export function playheadCenterX(w: number, playheadFrac: number): number {
+	return Math.min(Math.max(w - 1, 0), Math.max(0, Math.round(w * playheadFrac)));
+}
+
+/** The playhead: centered, or wherever the elastic zoom puts it (playheadFrac). Always drawn (busy waveforms + empty decks).
  * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red).
  * Colours are supplied by the caller (render.ts owns PLAYHEAD_COLORS) rather
  * than imported, so this module never imports back from render.ts. */
@@ -22,9 +29,10 @@ export function drawPlayheadWithColors(
 	h: number,
 	colors: Record<string, string>,
 	tone: string = 'now',
-	timeMs: number = 0
+	timeMs: number = 0,
+	playheadFrac: number = 0.5
 ): void {
-	const centerX = Math.round(w / 2);
+	const centerX = playheadCenterX(w, playheadFrac);
 	if (tone === 'masterSynced') {
 		_drawPlayheadGlow(ctx, colors.master, centerX - 1, h);
 		_drawPlayheadGlow(ctx, colors.synced, centerX, h);
@@ -69,6 +77,22 @@ export function drawGhostSeekPlayhead(
 	ctx.restore();
 }
 
+function _masterBeatX(
+	beatT: number,
+	overlay: MasterDownbeatOverlay,
+	tLeft: number,
+	pxPerS: number,
+	w: number
+): number | null {
+	const { masterPositionSec, followerPositionSec, masterPitch, followerPitch } = overlay;
+	if (masterPitch <= 0 || followerPitch <= 0) return null;
+	const ratio = followerPitch / masterPitch;
+	const followerT = followerPositionSec + (beatT - masterPositionSec) * ratio;
+	const x = (followerT - tLeft) * pxPerS;
+	if (x < -2 || x > w + 2) return null;
+	return x;
+}
+
 export function drawMasterDownbeatOverlay(
 	ctx: CanvasRenderingContext2D,
 	overlay: MasterDownbeatOverlay,
@@ -77,18 +101,42 @@ export function drawMasterDownbeatOverlay(
 	w: number,
 	h: number
 ): void {
-	const { masterBeats, masterPositionSec, followerPositionSec, masterPitch, followerPitch } = overlay;
-	if (masterPitch <= 0 || followerPitch <= 0) return;
-	const ratio = followerPitch / masterPitch;
 	ctx.save();
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
 	ctx.lineWidth = 1;
-	for (const beat of masterBeats) {
+	for (const beat of overlay.masterBeats) {
 		if (beat.n !== 1) continue;
-		const delta = beat.t - masterPositionSec;
-		const followerT = followerPositionSec + delta * ratio;
-		const x = (followerT - tLeft) * pxPerS;
-		if (x < -2 || x > w + 2) continue;
+		const x = _masterBeatX(beat.t, overlay, tLeft, pxPerS, w);
+		if (x === null) continue;
+		ctx.beginPath();
+		ctx.moveTo(x, 0);
+		ctx.lineTo(x, h);
+		ctx.stroke();
+	}
+	ctx.restore();
+}
+
+/** The master's beat grid drawn very faint across another deck row, so the
+ * master's pulse reads as a click track through the lanes. Downbeats are a
+ * little stronger than the off-beats. `includeDownbeats` is false when the
+ * Beat Sync Max overlay is about to paint those lines itself. */
+export function drawMasterGridGhost(
+	ctx: CanvasRenderingContext2D,
+	overlay: MasterDownbeatOverlay,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number,
+	includeDownbeats: boolean
+): void {
+	ctx.save();
+	ctx.lineWidth = 1;
+	for (const beat of overlay.masterBeats) {
+		const downbeat = beat.n === 1;
+		if (downbeat && !includeDownbeats) continue;
+		const x = _masterBeatX(beat.t, overlay, tLeft, pxPerS, w);
+		if (x === null) continue;
+		ctx.strokeStyle = downbeat ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.07)';
 		ctx.beginPath();
 		ctx.moveTo(x, 0);
 		ctx.lineTo(x, h);

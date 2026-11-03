@@ -16,7 +16,7 @@ from pathlib import Path
 from apps.shared.harmonic import TrackFeature
 from apps.shared.paths import STATE_DB
 from apps.shared.play_orders.schema import apply_play_order_migrations
-from apps.shared.state import db as state_db
+from apps.shared.state.migrated_open import open_rw_migrated
 
 from .pinning import PinUnsatisfiableError
 from .play_it import InsufficientDataError, play_it
@@ -26,17 +26,8 @@ from .suggester import suggest_next
 
 
 def _open_conn(db: Path) -> sqlite3.Connection:
-    """Open the state DB via Phase 5's :func:`open_rw` and layer the
-    play-order schema on top.
-
-    Routing through :func:`apps.shared.state.db.open_rw` ensures the
-    Phase 5 WAL + busy_timeout + foreign_keys pragmas and core schema
-    migrations run first; :func:`apply_play_order_migrations` then
-    creates the additive play-order tables idempotently.
-    """
-    conn = state_db.open_rw(db)
-    apply_play_order_migrations(conn)
-    return conn
+    """Open via :func:`open_rw_migrated` with play-order schema on top."""
+    return open_rw_migrated(db, apply_play_order_migrations)
 
 
 def _load_tracks_from_json(path: Path) -> list[TrackFeature]:

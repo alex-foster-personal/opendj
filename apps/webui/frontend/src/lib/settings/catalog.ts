@@ -19,8 +19,10 @@ import { AUTO_GAIN_ENABLED_SETTING, AUTO_GAIN_TARGET_SETTING } from './auto-gain
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
+import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
+import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -315,6 +317,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	AUTO_GAIN_ENABLED_SETTING,
 	AUTO_GAIN_TARGET_SETTING,
 	SHOW_SECTIONS_SETTING,
+	...TEMPO_LANE_SETTINGS,
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',
@@ -323,6 +326,16 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		title: 'Show per-stem mini-waveforms under deck waveforms',
 		detail:
 			'When on, each loaded deck paints one mini-waveform row per stem control (VOCAL, INST, DRUMS) using server peak envelopes. Default off. Same path as the show_stems performance command.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_hover_link',
+		label: 'Deck hover link highlight',
+		group: 'performance',
+		keywords: ['hover', 'mixer', 'tick'],
+		title: 'Hovering a deck marks its waveform, mixer and library rows',
+		detail: "Off hides the accent tick on the hovered deck's panels.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -350,6 +363,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	WAVE_PALETTE_SETTING,
 	UI_SKIN_SETTING,
 	WAVE_SPLIT_MASTER_SETTING,
+	...WAVE_ZOOM_SETTINGS,
 	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
@@ -623,12 +637,12 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'lyrics_waveform_overlay',
-		label: 'Waveform lyrics',
+		label: 'Word-aligned waveform lyrics',
 		group: 'performance',
-		keywords: ['lyrics', 'waveform', 'overlay', 'deck', 'karaoke', 'lanes'],
-		title: 'Word lanes over the main deck waveforms',
+		keywords: ['lyrics', 'waveform', 'overlay', 'deck', 'karaoke', 'lanes', 'alignment', 'words', 'zoom'],
+		title: 'Words on the main waveforms, each at its sung time',
 		detail:
-			'Draws upcoming words over each deck waveform, wrapping to a second lane when words overlap. Per-deck toggle lives on the waveform gutter; this is the global default.',
+			'Places each word on the deck waveform at its sung onset. Words spread over two rows, and a third row only when two rows would overlap. The default waveform zoom keeps that spacing on the row width you have. This switch is the global default.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

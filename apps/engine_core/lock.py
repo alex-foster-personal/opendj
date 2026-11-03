@@ -25,6 +25,14 @@ from apps.shared import file_lock
 # refusal, with a different message.
 HEARTBEAT_TTL_S: float = 120.0
 
+# The holder record is always this many bytes: the JSON, padded with spaces.
+# Readers (the CLI, the Electron and Tauri shells) read the file by path without
+# taking the flock, so a write must never expose a half-written or empty file.
+# The file cannot be replaced by rename, because the flock lives on its inode,
+# so every write overwrites one fixed-size record in place and the file never
+# shrinks below it. Trailing spaces are valid JSON in every reader.
+RECORD_BYTES: int = 1024
+
 
 class EngineLockError(RuntimeError):
     """Another engine holds the lock. The message names pid/boot_id/age."""
@@ -108,7 +116,11 @@ class EngineLock:
             os.close(fd)
             raise EngineLockError(swapped)
         self._fd = fd
-        self._write()
+        try:
+            self._write()
+        except BaseException:
+            self.release()
+            raise
 
     def release(self) -> None:
         if self._fd is None:
@@ -155,11 +167,48 @@ class EngineLock:
         parent_pid = _parent_pid_from_env()
         if parent_pid is not None:
             data["parent_pid"] = parent_pid
-        blob = json.dumps(data, sort_keys=True).encode("utf-8")
+        record = _fixed_size_record(json.dumps(data, sort_keys=True).encode("utf-8"))
+        on_disk = os.fstat(fd).st_size
         os.lseek(fd, 0, os.SEEK_SET)
-        os.ftruncate(fd, 0)
-        os.write(fd, blob)
+        if on_disk > RECORD_BYTES:
+            # An older writer left a longer file. Keep st_size above RECORD_BYTES
+            # until the new record is written, so readers that gate on size never
+            # read a torn window; blank first, write the record, then shrink.
+            _write_all(fd, b" " * on_disk, path=self.path)
+            os.fsync(fd)
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, record, path=self.path)
         os.fsync(fd)
+        if on_disk > RECORD_BYTES:
+            os.ftruncate(fd, RECORD_BYTES)
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, record, path=self.path)
+        os.fsync(fd)
+        os.lseek(fd, 0, os.SEEK_SET)
+        _write_all(fd, record, path=self.path)
+        os.fsync(fd)
+
+
+def _write_all(fd: int, payload: bytes, *, path: Path) -> None:
+    """Write every byte; ``os.write`` may return a short count on signals."""
+    view = memoryview(payload)
+    offset = 0
+    while offset < len(view):
+        written = os.write(fd, view[offset:])
+        if written <= 0:
+            raise EngineLockError(
+                f"engine lock {path}: wrote {offset} of {len(view)} bytes"
+            )
+        offset += written
+
+
+def _fixed_size_record(blob: bytes) -> bytes:
+    if len(blob) > RECORD_BYTES:
+        raise EngineLockError(
+            f"engine lock record is {len(blob)} bytes, over the fixed "
+            f"{RECORD_BYTES}-byte record"
+        )
+    return blob.ljust(RECORD_BYTES, b" ")
 
 
 def _parent_pid_from_env() -> int | None:
@@ -208,9 +257,18 @@ def read_holder(path: Path) -> LockHolder | None:
     if not lock_path.is_file():
         return None
     try:
-        raw = lock_path.read_text(encoding="utf-8")
+        fd = os.open(lock_path, os.O_RDONLY)
     except OSError:
         return None
+    try:
+        if os.fstat(fd).st_size != RECORD_BYTES:
+            return None
+        raw_b = os.read(fd, RECORD_BYTES)
+    finally:
+        os.close(fd)
+    if len(raw_b) != RECORD_BYTES:
+        return None
+    raw = raw_b.decode("utf-8")
     if not raw.strip():
         return None
     try:
@@ -291,6 +349,7 @@ def _refusal(path: Path, holder: LockHolder) -> str:
 
 __all__ = [
     "HEARTBEAT_TTL_S",
+    "RECORD_BYTES",
     "EngineLock",
     "EngineLockError",
     "LockHolder",

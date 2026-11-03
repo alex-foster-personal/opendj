@@ -7,9 +7,9 @@ fast non-blocking signal while the full sharded lane runs everything anyway.
 
 Since DEVOPS-20 (the maintainer, Thu 1 Oct 2026, ADR-NEW-pr-heads-run-affected-tests) the graph is
 also the core of `scripts/ci_test_selection.py`, which DOES narrow what a pull request
-head runs in the five pytest shards. That use is only sound because the Trunk merge queue
-draft, every main push and every `ci:trunk-repair` PR still run the full suite on the
-exact tree that lands, and because the selector widens this lower bound with named
+head runs in the five pytest shards. That use is only sound because every main push (the
+trunk checkpoint, on the exact tree that lands) and the nightly run still run the full
+suite, and because the selector widens this lower bound with named
 references, conftest reach and an explicit coupling map before it narrows anything.
 Everything said below about this bound alone still holds.
 

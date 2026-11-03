@@ -178,6 +178,8 @@ function paintRow(showSections, phrases = OWN, extra, waveformDesign) {
 	const rec = recordingCtx();
 	render.drawWaveRow(rec.ctx, {
 		waveformDesign,
+		windowS: 24,
+		playheadFrac: 0.5,
 		widthCss: WIDTH,
 		heightCss: HEIGHT,
 		positionMs: POSITION_MS,
@@ -213,6 +215,8 @@ describe('section bands on the main waveform (drawWaveRow)', () => {
 	it('CONTROL: an omitted showSections behaves as off (existing callers unchanged)', () => {
 		const rec = recordingCtx();
 		render.drawWaveRow(rec.ctx, {
+			windowS: 24,
+			playheadFrac: 0.5,
 			widthCss: WIDTH,
 			heightCss: HEIGHT,
 			positionMs: POSITION_MS,
@@ -233,7 +237,10 @@ describe('section bands on the main waveform (drawWaveRow)', () => {
 				[SECTION_PALETTE.edge, SECTION_PALETTE.drop, SECTION_PALETTE.calm]
 			);
 			const waveIdx = on.sequence.findIndex(
-				(e) => (e.kind === 'fillPath' || e.kind === 'stroke') && e.ops !== null && e.ops > 0
+				(e) =>
+					((e.kind === 'fillPath' || e.kind === 'stroke') && e.ops !== null && e.ops > 0) ||
+					// Blocks bars paint with fillRect, not a path (PGWAVE-7692b).
+					(design === 'blocks' && e.kind === 'fillRect' && [PALETTE.low, PALETTE.mid, PALETTE.high].includes(e.style))
 			);
 			assert.ok(waveIdx >= 0, `the ${design} waveform must paint a non-empty path`);
 			const lastBody = on.sequence.lastIndexOf(bodies(on).at(-1));
@@ -251,6 +258,8 @@ describe('section bands on the main waveform (drawWaveRow)', () => {
 		render.drawWaveRow(recordNoLabels.ctx, {
 			waveformDesign: 'blocks',
 			blocksMirrored: false,
+			windowS: 24,
+			playheadFrac: 0.5,
 			widthCss: WIDTH,
 			heightCss: HEIGHT,
 			positionMs: POSITION_MS,

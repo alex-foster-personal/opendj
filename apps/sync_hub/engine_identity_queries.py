@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.shared.state.ids import normalise_isrc
+from apps.shared.text import as_text
 from apps.sync_hub import protocol
 
 
@@ -22,19 +23,12 @@ class StoredMatch:
     sort_key: tuple[str, str]
 
 
-def _as_text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
 def _match_from_row(row: Sequence[Any]) -> StoredMatch:
     return StoredMatch(
         pk=str(row[0]),
-        content_hash=_as_text(row[1]),
-        audio_hash=_as_text(row[2]),
-        isrc=_as_text(row[3]),
+        content_hash=as_text(row[1]),
+        audio_hash=as_text(row[2]),
+        isrc=as_text(row[3]),
         sort_key=protocol.lww_key({protocol.UPDATED_AT: row[4], protocol.ORIGIN_DEVICE_ID: row[5]}),
     )
 
@@ -57,9 +51,9 @@ def matches_by_hash(
         return [
             StoredMatch(
                 pk=str(row[0]),
-                content_hash=_as_text(row[1]),
+                content_hash=as_text(row[1]),
                 audio_hash=None,
-                isrc=_as_text(row[2]),
+                isrc=as_text(row[2]),
                 sort_key=protocol.lww_key(
                     {
                         protocol.UPDATED_AT: row[3],
@@ -113,5 +107,5 @@ def matches_by_isrc(
     return [
         match
         for match in (_match_from_row(row) for row in rows)
-        if normalise_isrc(_as_text(match.isrc)) == isrc
+        if normalise_isrc(as_text(match.isrc)) == isrc
     ]

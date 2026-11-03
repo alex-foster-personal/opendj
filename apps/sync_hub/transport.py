@@ -185,6 +185,16 @@ def is_unreachable(exc: SyncTransportError) -> bool:
     return exc.status_code is None
 
 
+def is_wire_version_refusal(exc: SyncTransportError) -> bool:
+    """True when the hub answered 409 SYNC_WIRE_VERSION or SYNC_SCHEMA_VERSION.
+
+    That is a declared protocol refusal, not an unreachable hub. Callers that
+    map every :class:`SyncTransportError` to ``*_HUB_UNREACHABLE`` must split
+    this case off (FBSYNC-4978).
+    """
+    return exc.code in {"SYNC_WIRE_VERSION", "SYNC_SCHEMA_VERSION"}
+
+
 def is_hub_server_error(exc: SyncTransportError) -> bool:
     """True when the hub answered with HTTP 5xx."""
     return exc.status_code is not None and exc.status_code >= 500
@@ -312,5 +322,6 @@ __all__ = [
     "is_hub_server_error",
     "is_timeout_transport",
     "is_unreachable",
+    "is_wire_version_refusal",
     "refused",
 ]

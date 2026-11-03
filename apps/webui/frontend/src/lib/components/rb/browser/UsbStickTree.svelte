@@ -18,6 +18,7 @@
 		usbLibrary
 	} from '$lib/rb/usb-library.svelte';
 	import { usbTracker, type UsbVolumeKnown } from '$lib/rb/usb-tracker.svelte';
+	import UsbStickTreeView from './UsbStickTreeView.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { loadMenuRegistry, menuRegistry } from '$lib/context-menu/lazy.svelte';
 	import { usbStickMenuItems } from '$lib/rb/usb-stick-menu';
@@ -80,67 +81,26 @@
 		event.preventDefault();
 		_activate(node);
 	}
-
 </script>
 
-{#snippet branch(nodes: PlaylistNode[], depth: number)}
-	{#each nodes as node (node.playlist_id)}
-		{@const isFolder = node.kind === 'folder'}
-		{@const open = usbLibrary.openFolders[node.playlist_id] === true}
-		<div
-			class="row"
-			class:selected={!isFolder && selectedId === node.playlist_id}
-			style="padding-left: {18 + depth * 12}px"
-			role="treeitem"
-			tabindex="0"
-			aria-selected={!isFolder && selectedId === node.playlist_id}
-			aria-expanded={isFolder ? open : undefined}
-			data-testid={isFolder ? 'usb-stick-folder' : 'usb-stick-node'}
-			data-pane-id={node.playlist_id}
-			onclick={() => _activate(node)}
-			onkeydown={(e) => _keydown(e, node)}
-		>
-			{#if isFolder}
-				<svg class="chev" class:open viewBox="0 0 8 8" width="8" height="8" aria-hidden="true">
-					<path d="M2 1l4 3-4 3z" fill="currentColor" />
-				</svg>
-			{:else}
-				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-					<path d="M2 4h12v2H2zM2 8h12v2H2zM2 12h8v2H2z" fill="currentColor" />
-				</svg>
-			{/if}
-			<span class="name" title={node.name}>{node.name}</span>
-			<span
-				class="count"
-				title={isFolder
-					? `${node.track_count} lists in this folder on the stick`
-					: `${node.track_count} tracks in this list on the stick`}>{node.track_count}</span
-			>
-		</div>
-		{#if isFolder && open}
-			{@render branch(node.children, depth + 1)}
-		{/if}
-	{/each}
-{/snippet}
-
-<div class="usb-stick-tree" role="tree" tabindex="-1" aria-label="{volume.name} playlists" data-testid="usb-stick-tree" data-menu-target="tree-readonly" oncontextmenu={_openMenu}>
-	{#if view === undefined || view.status === 'loading'}
-		<div class="row rb-inert" style="padding-left: 18px" data-testid="usb-stick-loading">
-			<span class="name dim">reading stick...</span>
-		</div>
-	{:else if view.status === 'error'}
-		<div
-			class="row rb-inert"
-			style="padding-left: 18px"
-			data-testid="usb-stick-error"
-			data-code={view.code}
-			title={view.message}
-		>
-			<span class="name dim">{usbErrorHeadline(view.code)}</span>
-		</div>
-	{:else}
-		{@render branch(view.tree, 0)}
-	{/if}
+<div
+	class="usb-stick-tree"
+	role="tree"
+	tabindex="-1"
+	aria-label="{volume.name} playlists"
+	data-testid="usb-stick-tree"
+	data-menu-target="tree-readonly"
+	oncontextmenu={_openMenu}
+>
+	<UsbStickTreeView
+		volumeName={volume.name}
+		{view}
+		openFolders={usbLibrary.openFolders}
+		errorHeadline={view?.status === 'error' ? usbErrorHeadline(view.code) : ''}
+		{selectedId}
+		onactivate={_activate}
+		onrowkeydown={_keydown}
+	/>
 </div>
 
 {#if menu !== null && menuRegistry() !== null}
@@ -151,55 +111,3 @@
 		onclose={() => (menu = null)}
 	/>
 {/if}
-
-<style>
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-		height: 20px;
-		padding-right: 6px;
-		color: var(--rb-text);
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.row:hover {
-		background: var(--rb-panel-raised);
-	}
-	.row.selected {
-		background: var(--rb-select);
-	}
-	.row svg {
-		flex: none;
-		color: var(--rb-text-dim);
-	}
-	.chev {
-		transition: transform 80ms linear;
-	}
-	.chev.open {
-		transform: rotate(90deg);
-	}
-	.name {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.name.dim {
-		color: var(--rb-text-dim);
-	}
-	.count {
-		flex: none;
-		min-width: 4ch;
-		text-align: right;
-		color: var(--rb-text-dim);
-		font-variant-numeric: tabular-nums;
-	}
-	.row.rb-inert {
-		opacity: 0.6;
-		cursor: default;
-	}
-	.row.rb-inert:hover {
-		background: transparent;
-	}
-</style>

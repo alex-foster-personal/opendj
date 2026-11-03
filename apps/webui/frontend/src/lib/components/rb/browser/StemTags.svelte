@@ -136,24 +136,30 @@
 		font-size: 8px;
 		letter-spacing: 0;
 	}
+	/* UICONTRAST-6037: the light inks below are for the dark skins. The light
+	   theme and the Light skin set --rb-stem-ink to their dark text, because
+	   #cfefff on their pale tag fill measured 1.38 to 1.96:1. The fill is 25%
+	   (was 35%) so the ink keeps 4.5:1 on the master-row wash too. */
 	.tag.on[data-g='V'] {
-		background: color-mix(in srgb, var(--stem-vocal) 35%, transparent);
+		background: color-mix(in srgb, var(--stem-vocal) 25%, transparent);
 		border-color: color-mix(in srgb, var(--stem-vocal) 70%, transparent);
-		color: #cfefff;
+		color: var(--rb-stem-ink, #cfefff);
 	}
 	.tag.on[data-g='I'] {
-		background: color-mix(in srgb, var(--stem-instrumental) 35%, transparent);
+		background: color-mix(in srgb, var(--stem-instrumental) 25%, transparent);
 		border-color: color-mix(in srgb, var(--stem-instrumental) 70%, transparent);
-		color: #e4f5d8;
+		color: var(--rb-stem-ink, #e4f5d8);
 	}
 	.tag.on[data-g='D'] {
-		background: color-mix(in srgb, var(--stem-drums) 35%, transparent);
+		background: color-mix(in srgb, var(--stem-drums) 25%, transparent);
 		border-color: color-mix(in srgb, var(--stem-drums) 70%, transparent);
-		color: #ffe7c8;
+		color: var(--rb-stem-ink, #ffe7c8);
 	}
+	/* --rb-text, not --rb-text-dim: the dim token measured 3:1 to 4.04:1 on the
+	   master-row wash and the hovered row (UICONTRAST-6037). */
 	.meta {
 		margin-left: 3px;
-		color: var(--rb-text-dim, #838990);
+		color: var(--rb-text, #c8cdd2);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		min-width: 0;

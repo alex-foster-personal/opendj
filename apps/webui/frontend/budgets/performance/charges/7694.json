@@ -1,0 +1,9 @@
+{
+  "bytes": 6144,
+  "measured_main": 330780,
+  "measured_with_pr": 336247,
+  "sha": "b91f398c6f",
+  "date": "Tue 3 Nov 2026",
+  "reason": "Preview gap library pins (LIBPG-7694): the library panel, rail and preview controls ported from the preview build ship in the /performance chunks. One clean vite build each, main b91f398c6f measured 330,780 and main plus #7694 336,247 (+5,467).",
+  "payback": "none planned"
+}

@@ -1,4 +1,5 @@
 export { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
+export { bindAudioEngineSilenceProbes } from '$lib/rb/audio-engine-silence-probes';
 export {
 	notePresentationClock,
 	notePresentationTickFailure,

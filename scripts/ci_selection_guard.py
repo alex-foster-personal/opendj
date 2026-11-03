@@ -17,8 +17,11 @@ and the GitHub event payload (the PR body and labels). Verdicts, one line on std
              lane is, so its share cannot be measured. Never a pass.
 
 A written reason is a `CI-Wide-Reason: <text>` line in the PR body (at least
-MIN_REASON_CHARS characters of text), or the `ci:trunk-repair` label, which is itself the
-operator's written decision to run everything. A FULL record's own machine reason ("global
+MIN_REASON_CHARS characters of text), or the `ci:trunk-repair` label. Since Tue 3 Nov 2026 a
+repair PR takes the same capped selection as any PR head
+((private path)), so its record is within the
+limit and passes without a reason; the label stays an accepted reason so that a wide repair
+record, should one ever occur, never blocks the repair main is waiting on. A FULL record's own machine reason ("global
 path changed: pyproject.toml") says what forced it, not why the author accepts it, so it
 is printed but never counts. A FULL run because a selection switch is off
 (CI_PR_TEST_SELECTION, or CI_QUEUE_TEST_SELECTION for a queue draft) passes: the repo

@@ -6,10 +6,6 @@
 	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import type { StemControl } from '$lib/rb/stem-types';
-	import {
-		toggleTrackLoadResetPanel,
-		trackLoadResetEnabled
-	} from '$lib/rb/track-load-reset.svelte';
 
 	let {
 		deck,
@@ -19,7 +15,9 @@
 		onSolo,
 		onLoad,
 		separate = null,
-		onSeparate
+		onSeparate,
+		stemsResetOn = false,
+		onOpenResetConfig = () => {}
 	}: {
 		deck: DeckState;
 		pending: boolean;
@@ -33,6 +31,10 @@
 		/** STEM-77: the "Separate this track" action on a NO STEMS deck, or null. */
 		separate?: SeparateActionView | null;
 		onSeparate?: () => Promise<void>;
+		/** The track-load reset chip is armed (the stems reset is on). Owned by the parent, read from the reset state. */
+		stemsResetOn?: boolean;
+		/** Opens the track-load reset panel from the chip, anchored on the chip element. */
+		onOpenResetConfig?: (el: HTMLElement) => void;
 	} = $props();
 
 	const STEMS: readonly { id: StemControl; label: string }[] = [
@@ -45,12 +47,10 @@
 	const visibleStems = $derived(STEMS.filter((stem) =>
 		(stem.id !== 'bass' && stem.id !== 'other') || deck.stems.available_controls.includes(stem.id)));
 	const ready: boolean = $derived(deck.stems.status === 'ready');
-	const stemsResetOn = $derived(trackLoadResetEnabled('stems'));
-
 	function openResetConfig(event: MouseEvent): void {
 		event.stopPropagation();
 		const el = event.currentTarget;
-		if (el instanceof HTMLElement) toggleTrackLoadResetPanel('stems', el);
+		if (el instanceof HTMLElement) onOpenResetConfig(el);
 	}
 
 	/** A control this bundle's layout cannot drive. RoFormer's 2-stem split
@@ -180,7 +180,10 @@
 		background: color-mix(in srgb, var(--chip-color) 15%, transparent);
 		border: 1px solid var(--chip-color);
 		border-radius: 2px;
-		color: var(--chip-color);
+		/* UICONTRAST-6037: the light theme and the Light skin set --rb-stem-ink to
+		   their dark text; the stem's own tint stays on the border and fill.
+		   Light VOCAL #4f6a80 on its tint measured 4.15:1. */
+		color: var(--rb-stem-ink, var(--chip-color));
 		font-family: var(--rb-font);
 		font-size: var(--rb-fs-label);
 		font-weight: 600;
@@ -217,16 +220,20 @@
 		color: var(--rb-text-dim);
 		margin-left: 4px;
 	}
+	/* No skin defines --rb-blue, so the light faces painted the #4aa3ff
+	   fallback: 2.59:1 on the light theme's panel and 1.07:1 on its focused
+	   deck (UICONTRAST-6037). They take --rb-stem-ink, their dark text. */
 	.status.busy {
-		color: var(--rb-blue, #4aa3ff);
+		color: var(--rb-stem-ink, var(--rb-blue, #4aa3ff));
 	}
 	.status.action {
 		background: transparent;
 		border: 1px solid var(--rb-blue, #4aa3ff);
 		border-radius: 2px;
-		/* Text takes the skin's own text color so it clears WCAG AA in the
-		   light skins too; the blue border carries the action cue. */
-		color: var(--rb-text);
+		/* UICONTRAST-6037: --rb-stem-ink when the skin sets it; otherwise the skin's
+		   own text color so action labels clear WCAG AA in light skins (main); the
+		   blue border carries the action cue. */
+		color: var(--rb-stem-ink, var(--rb-text));
 		padding: 1px 6px;
 		cursor: pointer;
 	}
@@ -261,6 +268,8 @@
 	.reset-cfg.armed {
 		border-style: solid;
 		border-color: var(--rb-accent, #49c8ff);
-		color: var(--rb-accent, #49c8ff);
+		/* WCAG AA: the raw accent reads 3.6:1 on the dark panel (ui-contrast-audit); 40 percent of the skin's own text color
+		   lifts it past 4.5:1 in each skin's direction (lighter on dark skins, darker on light ones). */
+		color: color-mix(in srgb, var(--rb-accent, #49c8ff) 60%, var(--rb-text));
 	}
 </style>

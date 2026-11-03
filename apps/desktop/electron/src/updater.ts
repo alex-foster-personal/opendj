@@ -9,8 +9,25 @@
 
 import type { ProgressInfo } from 'electron-updater';
 
-/** Generic-provider feed: electron-updater reads `${UPDATE_FEED_URL}/latest-mac.yml`. */
+/**
+ * Generic-provider feed: electron-updater reads `${UPDATE_FEED_URL}/latest-mac.yml`. The engine's
+ * check (`apps/engine_core/update_channel.py` `UPDATE_FEED_URL`) reads the same directory; a test
+ * asserts the two strings are identical.
+ */
 export const UPDATE_FEED_URL = 'https://github.com/alex-foster-personal/issue-assets/releases/latest/download';
+
+/**
+ * Replaces UPDATE_FEED_URL for this shell and its engine alike (the engine inherits the variable),
+ * so a private update-install proof reads one local feed. It cannot widen what installs: Squirrel.Mac
+ * still refuses a bundle not signed by this team, and allowDowngrade stays false.
+ */
+export const FEED_URL_ENV = 'OPENDJ_UPDATE_FEED_URL';
+
+/** The feed directory this shell installs from: the override when set, else UPDATE_FEED_URL. */
+export function resolveFeedUrl(env: Record<string, string | undefined>): string {
+	const override = env[FEED_URL_ENV]?.trim();
+	return override ? override.replace(/\/+$/, '') : UPDATE_FEED_URL;
+}
 
 export type ApplyProgress =
 	| { phase: 'checking' }
@@ -43,7 +60,7 @@ export async function applyUpdate(host: UpdaterHost, onProgress: (progress: Appl
 	autoUpdater.autoDownload = false;
 	autoUpdater.autoInstallOnAppQuit = false;
 	autoUpdater.allowDowngrade = false;
-	autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_FEED_URL });
+	autoUpdater.setFeedURL({ provider: 'generic', url: resolveFeedUrl(process.env) });
 	try {
 		onProgress({ phase: 'checking' });
 		const result = await autoUpdater.checkForUpdates();

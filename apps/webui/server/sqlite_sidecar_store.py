@@ -1,7 +1,8 @@
 """Supersedes: duplicate ``upsert_many`` transaction bodies in
-``grid_quality_store.py`` and ``grid_audio_fit_store.py``.
+``grid_quality_store.py``, ``grid_audio_fit_store.py``, and
+``audio_quality_store.py``.
 
-Shared SQLite upsert for grid sidecar tables.
+Shared SQLite upsert for sidecar tables.
 """
 
 from __future__ import annotations

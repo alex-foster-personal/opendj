@@ -72,6 +72,15 @@ Requirements (statuses per the house docstring convention):
   family, renderer processes, quit log) live behind the Shell class; the
   checks only use HTTP. A WebKit process belongs to this launch only when
   macOS names the launched app's pid as its responsible process.
+- ✔︎ OPS-57 Electron: a bundle with Contents/Resources/app.asar runs as
+  ElectronShell, launched with HOME and CFFIXED_USER_HOME both set to the run
+  root, with the same fixture, checks and bounds as Tauri.
+  - [if] an Electron bundle (app.asar plus payload manifest) is detected as
+    TauriShell [then ⛔️] its renderers are looked for under WebKit and the
+    run cannot measure memory or a clean quit
+  - [if] the Electron launch omits CFFIXED_USER_HOME [then ⛔️] appData stays
+    the real ~/Library/Application Support and `isolation` FAILs
+  - [if] a bundle has neither app.asar nor a payload manifest [then ⛔️] exit 2
 - ✔︎ ✅ OPS-60 analysis: after the folder import, with no rekordbox master.db
   under the run HOME and the import job in folder mode, the check drives the
   same HTTP a new user does. GET /tracks/index must answer 200,
@@ -164,6 +173,9 @@ STEM_PART_MIN_BYTES = 10_000
 TERMINAL_JOB_STATES = ("succeeded", "failed", "cancelled")
 REFUSED_HOST_MARKERS = ("silver",)
 WEBKIT_PROCESS_MARKER = "/WebKit.framework/"
+# An Electron pack carries its shell code here; a Tauri bundle never does.
+ELECTRON_ASAR = "app.asar"
+ACCEPTANCE_SERVICE_ID = "com.af.music-dj-tools.acceptance"
 # macOS records, for every process, the app it is attributed to. WebKit's
 # content, GPU and networking processes are children of launchd and run from a
 # system path, so this is the only thing that ties one to the app that owns it.
@@ -368,12 +380,16 @@ def _short_command(command: str) -> str:
 
 # ----- shell adapter ------------------------------------------------------------
 class Shell:
-    """Everything that depends on the desktop shell (Tauri today, Electron later).
+    """Everything that depends on the desktop shell (Tauri or Electron).
 
     The checks never reach past this class into shell internals; a new shell
-    implements these methods and every check runs unchanged. Renderer RSS is
-    one of them: WKWebView processes live in WebKit.framework, Electron's
-    renderers are Chromium helpers, and the memory sample asks the shell.
+    implements launch and renderer_processes and every check runs unchanged.
+    Both shells share the payload layout and the data dir by design (the
+    Electron shell packs with the Tauri app's identifier so switching shells
+    keeps the user's library), so the payload manifest, the data dir, the
+    engine lock and the shutdown log are read the same way for both.
+    Renderer RSS differs: WKWebView processes live in WebKit.framework,
+    Electron's renderers are Chromium helpers inside the bundle.
     """
 
     def __init__(self, app: Path) -> None:
@@ -396,39 +412,16 @@ class Shell:
 
     @staticmethod
     def detect(app: Path) -> Shell:
-        if (app / "Contents" / "Resources" / "payload" / "manifest.json").is_file():
+        """app.asar marks an Electron pack; it is checked first because an
+        Electron bundle carries the same payload manifest as a Tauri one."""
+        resources = app / "Contents" / "Resources"
+        if (resources / ELECTRON_ASAR).is_file():
+            return ElectronShell(app)
+        if (resources / "payload" / "manifest.json").is_file():
             return TauriShell(app)
-        raise Refused(f"{app}: no known shell layout (Tauri payload manifest missing)")
+        raise Refused(f"{app}: no known shell layout (neither Electron {ELECTRON_ASAR} "
+                      "nor a Tauri payload manifest)")
 
-    def manifest_identity(self) -> dict[str, Any]:
-        raise NotImplementedError
-
-    def data_dir(self, home: Path) -> Path:
-        raise NotImplementedError
-
-    def launch(self, home: Path) -> None:
-        raise NotImplementedError
-
-    def engine_port(self, home: Path) -> int | None:
-        raise NotImplementedError
-
-    def engine_pid(self, home: Path) -> int | None:
-        raise NotImplementedError
-
-    def quit_log_findings(self, home: Path) -> dict[str, Any]:
-        raise NotImplementedError
-
-    def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,
-                           responsible: ResponsibleLookup) -> list[Proc]:
-        """Renderer processes that belong to the shell process owner_pid.
-
-        Empty means this launch has no renderer the instrument can see.
-        Raises Unmeasurable when ownership cannot be established.
-        """
-        raise NotImplementedError
-
-
-class TauriShell(Shell):
     def manifest_identity(self) -> dict[str, Any]:
         """Payload identity. Invalid JSON or a missing identity refuses the run."""
         manifest = self.app / "Contents" / "Resources" / "payload" / "manifest.json"
@@ -447,34 +440,40 @@ class TauriShell(Shell):
         return identity
 
     def data_dir(self, home: Path) -> Path:
-        # Tauri's app_data_dir is $HOME/Library/Application Support/<identifier>.
+        # Tauri's app_data_dir and Electron's appData/<identifier> are both
+        # $HOME/Library/Application Support/<identifier>.
         return home / "Library" / "Application Support" / self.identifier
 
+    def launch_env(self, home: Path) -> dict[str, str]:
+        """Variables the launched app itself receives through LaunchServices."""
+        raise NotImplementedError
+
     def launch(self, home: Path) -> None:
-        # Scrubbed environment, same shape as ship_dmg's OPS-32 relaunch; HOME
-        # is passed to the app itself through LaunchServices with --env.
+        # Scrubbed environment, same shape as ship_dmg's OPS-32 relaunch; the
+        # isolation variables reach the app itself through `open --env`.
+        app_env = self.launch_env(home)
         env = {"HOME": str(home), "USER": os.environ.get("USER", ""),
-               "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-               "AF_SERVICE_ID": "com.af.music-dj-tools.acceptance"}
-        subprocess.run(["/usr/bin/open", "-n", "-g", "--env", f"HOME={home}",
-                        "--env", "AF_SERVICE_ID=com.af.music-dj-tools.acceptance",
-                        str(self.app)], env=env, check=True)
+               "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", **app_env}
+        argv = ["/usr/bin/open", "-n", "-g"]
+        for key, value in app_env.items():
+            argv += ["--env", f"{key}={value}"]
+        subprocess.run([*argv, str(self.app)], env=env, check=True)
+
+    def _engine_lock_field(self, home: Path, key: str) -> int | None:
+        lock = self.data_dir(home) / ".engine.lock"
+        try:
+            return int(json.loads(lock.read_text())[key])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
     def engine_port(self, home: Path) -> int | None:
-        lock = self.data_dir(home) / ".engine.lock"
-        try:
-            return int(json.loads(lock.read_text())["port"])
-        except (OSError, ValueError, KeyError):
-            return None
+        return self._engine_lock_field(home, "port")
 
     def engine_pid(self, home: Path) -> int | None:
-        lock = self.data_dir(home) / ".engine.lock"
-        try:
-            return int(json.loads(lock.read_text())["pid"])
-        except (OSError, ValueError, KeyError):
-            return None
+        return self._engine_lock_field(home, "pid")
 
     def quit_log_findings(self, home: Path) -> dict[str, Any]:
+        # Both shells append their own '[shell shutdown]' lines to engine.log.
         log = self.data_dir(home) / "logs" / "engine.log"
         if not log.is_file():
             raise Unmeasurable(f"no engine log at {log}")
@@ -485,6 +484,21 @@ class TauriShell(Shell):
 
     def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,
                            responsible: ResponsibleLookup) -> list[Proc]:
+        """Renderer processes that belong to the shell process owner_pid.
+
+        Empty means this launch has no renderer the instrument can see.
+        Raises Unmeasurable when ownership cannot be established.
+        """
+        raise NotImplementedError
+
+
+class TauriShell(Shell):
+    def launch_env(self, home: Path) -> dict[str, str]:
+        # Tauri resolves app_data_dir from $HOME (measured, ADR option 3).
+        return {"HOME": str(home), "AF_SERVICE_ID": ACCEPTANCE_SERVICE_ID}
+
+    def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,
+                           responsible: ResponsibleLookup) -> list[Proc]:
         # WKWebView content, GPU and networking processes live in WebKit.framework
         # for every app on the Mac. Only the ones this app is responsible for are ours.
         webkit = [p for p in procs if WEBKIT_PROCESS_MARKER in p.command and p.pid not in seen_before]
@@ -492,12 +506,19 @@ class TauriShell(Shell):
 
 
 class ElectronShell(Shell):
-    """Chromium helpers under apps/desktop/electron, not /WebKit.framework/.
+    """The packed Electron app (apps/desktop/electron): Chromium helpers, not WebKit.
 
-    Shell.detect still returns only TauriShell: launch, data dir and the quit
-    log for Electron are not implemented here. The memory sample can already
-    attribute this shell's renderers, which is the part that is not WebKit.
+    Electron's appData comes from NSSearchPathForDirectoriesInDomains, which
+    ignores $HOME and honours CFFIXED_USER_HOME (measured on macOS 26 with
+    Foundation, Tue 3 Nov 2026). Both are set: HOME for the engine and every
+    child that reads it, CFFIXED_USER_HOME so the shell's own appData, and with
+    it the engine --data-dir and Chromium's profile and single-instance lock,
+    land in the run root. The isolation check still proves the engine's own
+    reported data_dir before anything is written.
     """
+
+    def launch_env(self, home: Path) -> dict[str, str]:
+        return {"HOME": str(home), "CFFIXED_USER_HOME": str(home), "AF_SERVICE_ID": ACCEPTANCE_SERVICE_ID}
 
     def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,  # noqa: ARG002
                            responsible: ResponsibleLookup) -> list[Proc]:  # noqa: ARG002

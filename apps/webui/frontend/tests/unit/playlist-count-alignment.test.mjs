@@ -3,13 +3,18 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { compile } from 'svelte/compiler';
 
-const filename = new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url);
+// PlaylistTree renders its props-only view, which holds the rows and their CSS.
+const filename = new URL('../../src/lib/components/rb/browser/PlaylistTreeView.svelte', import.meta.url);
 const source = readFileSync(filename, 'utf8');
+const containerSource = readFileSync(
+	new URL('../../src/lib/components/rb/browser/PlaylistTree.svelte', import.meta.url),
+	'utf8'
+);
 
 // Issue #881: real counts stay aligned at rest and under selection/hover;
 // a screenshot decoration must not imply analysis state that does not exist.
 test('playlist rows contain no fabricated EXTRA badge or name-based analysis state', () => {
-	assert.doesNotMatch(source, /_hasExtraBadge|badge-extra|CUE Analysis Playlist/);
+	assert.doesNotMatch(source + containerSource, /_hasExtraBadge|badge-extra|CUE Analysis Playlist/);
 });
 
 // REQ: LIBM-105 (issue #3883 AC6), changed by LIBM-184 (issue #3934): the All
@@ -41,8 +46,9 @@ test('the real non-broken count is the final row item after actions and selectio
 	);
 	assert.match(
 		source,
-		/<span class="name" title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : node\.name\}>\{node\.name\}<\/span>/
+		/<span class="name" title=\{node\.mostly_broken \? mostlyBrokenTitle : node\.name\}>\{node\.name\}<\/span>/
 	);
+	assert.match(containerSource, /mostlyBrokenTitle=\{formatMostlyBrokenTooltip\(\)\}/);
 });
 
 test('resting count cells have a right-aligned minimum column and vertical centering', () => {

@@ -5,10 +5,11 @@
 // keyboard-interactive control owns focus. Tab always moves browser focus.
 // Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
 import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
-import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
 import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
 import { gridJumpEnabled } from './grid-jump-flag';
@@ -181,6 +182,15 @@ export function installPerformanceHotkeys(): () => void {
 					void _exitLast();
 				},
 				armPinPlacement,
+				// Linked zoom moves every deck; unlinked, the deck under the pointer,
+				// so with no deck hovered the key does nothing rather than move them all.
+				waveZoomStep: (direction) => {
+					const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
+					if (deck === null && !uiPrefs.wave_zoom_linked) return;
+					void runPerformanceCommandFromUi(
+						deck === null ? { type: 'wave_zoom_step', direction } : { type: 'wave_zoom_step', direction, deck }
+					);
+				},
 				gridJump: (bars) => {
 					void _gridJump(bars);
 				}

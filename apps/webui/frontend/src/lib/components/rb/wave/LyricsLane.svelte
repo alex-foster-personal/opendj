@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { WAVE_WINDOW_S } from './render';
 	import {
 		activeLyricLineIndex,
 		lyricLaneGroups,
@@ -14,19 +13,23 @@
 		lyrics,
 		loadError,
 		positionMs,
-		pitch
+		pitch,
+		windowSeconds,
+		playheadFrac
 	}: {
 		lyrics: { lines: LyricLine[] } | null;
 		loadError: Error | null;
 		positionMs: number;
 		pitch: number;
+		windowSeconds: number;
+		playheadFrac: number;
 	} = $props();
 
 	const activeIndex = $derived(
 		lyrics === null ? -1 : activeLyricLineIndex(lyrics.lines, positionMs)
 	);
 	const groups = $derived(lyrics === null ? [] : lyricLaneGroups(lyrics.lines));
-	const slots = $derived(lyricLaneSlots(groups, pitch, WAVE_WINDOW_S));
+	const slots = $derived(lyricLaneSlots(groups, pitch, windowSeconds));
 </script>
 
 {#if loadError !== null}
@@ -40,7 +43,8 @@
 				lineStartMs: group.start_ms,
 				positionMs,
 				pitch,
-				windowSeconds: WAVE_WINDOW_S
+				windowSeconds,
+				playheadFrac
 			})}
 			<!-- Two-row slots clamp each entry to the next entry on ITS row
 			     (i + 2), which subsumes the adjacent-entry clamp. -->

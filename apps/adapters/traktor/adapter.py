@@ -8,8 +8,10 @@ the user's real Traktor install.
 from __future__ import annotations
 
 import hashlib
+import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 
 from apps.adapters.traktor.capabilities import TRAKTOR_CAPABILITIES
@@ -97,7 +99,16 @@ class TraktorAdapter:
         """Read ``source`` (a ``collection.nml`` file) into an OpenDjLibrary."""
         report = AdapterReport()
         doc = NMLDocument.read(source)
-        tracks = tuple(self._read_entry(e, report) for e in doc.entries())
+        kept: list[Track] = []
+        for e in doc.entries():
+            if not (e.get_subchild_attr("LOCATION", "FILE") or "").strip() or not e.location_path():
+                # No file to match on: importing it at a stand-in path would
+                # collapse every such entry onto one fake track.
+                report.warn(field="location", track_id="", action="dropped",
+                            reason="collection entry has no file location")
+                continue
+            kept.append(self._read_entry(e, report))
+        tracks = tuple(kept)
         playlists = tuple(self._read_playlists(doc, report))
         report.counts["tracks_read"] = len(tracks)
         report.counts["playlists_read"] = len(playlists)
@@ -135,28 +146,22 @@ class TraktorAdapter:
             bpm = float(bpm_str) if bpm_str else None
         except ValueError:
             bpm = None
+        if bpm_str and (bpm is None or not math.isfinite(bpm) or _is_unusable_bpm_text(bpm_str)):
+            bpm = None
             report.warn(field="bpm", track_id=track_id, action="dropped",
                         reason=f"unparseable TEMPO @BPM {bpm_str!r}")
         key_value = entry.get_subchild_attr("MUSICAL_KEY", "VALUE")
         key = traktor_key_to_camelot(key_value)
+        if key is None and key_value not in (None, ""):
+            report.warn(field="key", track_id=track_id, action="dropped",
+                        reason=f"unreadable MUSICAL_KEY @VALUE {key_value!r}")
         info = entry.get_subchild("INFO")
         rating = None
         playtime = None
         play_count = 0
         comment = ""
         if info is not None:
-            rating = traktor_rating_to_stars(info.get("RANKING"))
-            playtime_s = info.get("PLAYTIME")
-            if playtime_s:
-                try:
-                    playtime = round(float(playtime_s) * 1000)
-                except ValueError:
-                    playtime = None
-            try:
-                play_count = max(0, int(info.get("PLAYCOUNT") or 0))
-            except ValueError:
-                play_count = 0
-            comment = (info.get("COMMENT") or "").strip()
+            rating, playtime, play_count, comment = _info_fields(info, track_id, report)
         cues = tuple(self._read_cues(entry, track_id, report))
         extensions: dict[str, object] = {}
         if comment:
@@ -205,18 +210,23 @@ class TraktorAdapter:
                     index = hotcue
                 elif hotcue == -1 and cue_type == "hot":
                     cue_type = "memory"
-            start_ms = 0
+            start_attr = cue_el.get("START")
+            if start_attr is None:
+                report.warn(field="cue_points.position", track_id=track_id,
+                            action="dropped", reason="CUE_V2 has no @START")
+                continue  # never invent a cue at 0
             try:
-                start_ms = round(float(cue_el.get("START", "0")))
-            except ValueError:
+                start_ms = _storable(_scaled_whole(start_attr, 0))
+            except (ValueError, OverflowError):  # OverflowError: an infinite START
                 report.warn(field="cue_points.position", track_id=track_id,
                             action="dropped", reason="unparseable CUE_V2 @START")
+                continue  # a cue with no position is dropped, not placed at 0
             length_ms = None
             length_attr = cue_el.get("LEN")
             if length_attr:
                 try:
-                    length_ms = round(float(length_attr))
-                except ValueError:
+                    length_ms = _storable(_scaled_whole(length_attr, 0))
+                except (ValueError, OverflowError):
                     length_ms = None
             cues.append(
                 CuePoint(
@@ -387,3 +397,78 @@ def _split_location(file_path: str) -> tuple[str, str, str]:
         dir_str = "/:" + parent.strip("/").replace("/", "/:") + "/:"
         return ("", dir_str, name)
     return ("", "/:", name)
+
+
+#: The largest integer the state store (SQLite) can hold.
+_STORE_INT_MAX = 2**63 - 1
+
+
+def _info_fields(
+    info: ET.Element, track_id: str, report: AdapterReport
+) -> tuple[int | None, int | None, int, str]:
+    """Rating, duration, play count and comment from INFO. An unreadable number is counted and dropped."""
+    ranking = info.get("RANKING")
+    rating = traktor_rating_to_stars(ranking)
+    if rating is None and ranking not in (None, ""):
+        report.warn(field="rating", track_id=track_id, action="dropped",
+                    reason=f"unparseable INFO @RANKING {ranking!r}")
+    playtime = None
+    playtime_s = info.get("PLAYTIME")
+    if playtime_s:
+        try:
+            playtime = _storable(_scaled_whole(playtime_s, 3))
+        except (ValueError, OverflowError):
+            report.warn(field="duration", track_id=track_id, action="dropped",
+                        reason=f"unparseable INFO @PLAYTIME {playtime_s!r}")
+    play_count = 0
+    playcount_s = info.get("PLAYCOUNT")
+    try:
+        play_count = max(0, _storable(int(playcount_s or 0)))
+    except ValueError:
+        report.warn(field="play_count", track_id=track_id, action="dropped",
+                    reason=f"unparseable INFO @PLAYCOUNT {playcount_s!r}")
+    comment = (info.get("COMMENT") or "").strip()
+    return rating, playtime, play_count, comment
+
+
+def _is_unusable_bpm_text(raw: str) -> bool:
+    """Whether a source BPM is negative, or nonzero but too small for a float to keep. Judged on its text:
+    float() turns 1e-999 into 0.0 and -1e-999 into -0.0, and a zero BPM is the missing sentinel."""
+    try:
+        value = Decimal(raw.strip())
+    except InvalidOperation:
+        return False
+    return value.is_finite() and value != 0 and float(value) <= 0
+
+
+def _scaled_whole(raw: str, power_of_ten: int) -> int:
+    """``raw`` times 10**power_of_ten, rounded half to even, computed as an exact decimal.
+
+    A float would round a value near the store's limit across it before the bound is checked.
+    A non-finite or absurdly large value raises ValueError, the same as an unparseable one.
+    """
+    try:
+        value = Decimal(raw.strip())
+    except InvalidOperation:
+        raise ValueError(f"{raw!r} is not a number") from None
+    if not value.is_finite():
+        raise ValueError(f"{raw!r} is not finite")
+    if value < 0:
+        # Judged here, before rounding, so a tiny negative such as -0.4 cannot round to a stored zero.
+        raise ValueError(f"{raw!r} is negative")
+    # Magnitude from the exponent first, so the scaling below cannot overflow the decimal context.
+    if not value.is_zero() and value.adjusted() >= 19 + power_of_ten:
+        raise ValueError(f"{raw!r} does not fit the store")
+    exact = Context(prec=len(raw) + 8)
+    scaled = value.scaleb(power_of_ten, context=exact)
+    return int(scaled.to_integral_value(rounding=ROUND_HALF_EVEN, context=exact))
+
+
+def _storable(value: int) -> int:
+    """``value`` if the store can hold it; a negative or past-the-limit value is
+    unreadable data, raised as ValueError so the caller drops and counts it."""
+    if value < 0:
+        raise ValueError(f"{value} is negative")
+    if value > _STORE_INT_MAX:
+        raise ValueError(f"{value} does not fit the store")
+    return value

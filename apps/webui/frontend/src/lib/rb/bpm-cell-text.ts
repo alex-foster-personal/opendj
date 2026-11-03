@@ -12,6 +12,7 @@
  * is no tempo at all, so 0 and below count as missing rather than "0".
  */
 import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte';
+import { bpmUnmeasuredLabel } from '$lib/rb/bpm-cell-title';
 
 export const MISSING_BPM_TEXT = '--';
 
@@ -40,6 +41,9 @@ export function bpmCellText(row: BpmCellRow): BpmCellText {
 			return { text: 'failed', kind: 'failed' };
 		case 'missing':
 			return { text: 'missing', kind: 'not-analyzed' };
+		case 'too_short':
+		case 'no_pulse':
+			return { text: bpmUnmeasuredLabel(row.bpm_status), kind: 'not-analyzed' };
 		// An absent status is "ok, compacted off the wire" (browser-row-wire.ts
 		// listingLaneStatus); the value still decides what the cell shows.
 		case undefined:

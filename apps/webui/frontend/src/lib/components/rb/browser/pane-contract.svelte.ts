@@ -37,6 +37,7 @@ import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
 import { rowRendersUnavailable } from './browser-row-wire';
+import type { PlayFacts } from './last-played';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
@@ -104,6 +105,8 @@ export interface BrowserRow extends Pick<
 	quality: TrackQuality | null;
 	/** Rekordbox DJPlayCount plus Open DJ plays (PLAYS-01); 0 when neither. */
 	play_count: number;
+	/** Per-source play dates and counts when the listing already carried them. */
+	plays?: PlayFacts | null;
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;

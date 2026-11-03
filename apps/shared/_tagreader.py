@@ -8,7 +8,7 @@ could only ship as an opt-in extra of this Apache-2.0 package; the desktop
 payload omitted it and every tag-backed surface (embedded artwork, file
 genre, upload duration) reported "reader unavailable". Since Thu 1 Oct 2026
 every READ goes through ``tinytag`` (MIT, pure Python), a core dependency.
-Research: ``research/tag-reading/2026-10-01-mutagen-replacement.md``.
+Research: ``(private path)``.
 
 Nothing in the product writes tags into audio files: that path needed
 mutagen (GPL-2.0-or-later), which this Apache-2.0 package does not depend

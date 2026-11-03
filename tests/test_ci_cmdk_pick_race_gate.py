@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -68,3 +69,22 @@ def test_a_failing_step_stops_the_gate_with_its_exit_code() -> None:
     # A real child process that exits 3, not a stand-in for subprocess.run.
     with pytest.raises(SystemExit, match="exited 3"):
         gate.run([sys.executable, "-c", "raise SystemExit(3)"], REPOSITORY_ROOT, dict(os.environ))
+
+
+def test_file_invocation_outside_repo_resolves_imports_and_names_missing_pnpm(tmp_path: Path) -> None:
+    """e2e.yml runs this gate as a file path; sys.path[0] is scripts/, not the repo root."""
+    gate_path = REPOSITORY_ROOT / "scripts" / "ci_cmdk_pick_race_gate.py"
+    env = {key: os.environ[key] for key in ("SYSTEMROOT",) if key in os.environ}
+    env["PATH"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(gate_path)],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "pnpm is not on PATH" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "ImportError" not in result.stderr

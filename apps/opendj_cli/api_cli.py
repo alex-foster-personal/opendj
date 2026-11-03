@@ -1,9 +1,10 @@
 """``opendj api METHOD PATH``: raw HTTP escape hatch to the library daemon.
 
-Resolves the backend from worktree ports when configured (``MUSIC_DJ_BACKEND_PORT``
-or the root ``.env``, same as ``just webui-ports``), otherwise from the installed
-app's ``.engine.lock`` (same discovery as ``opendj play``, ``opendj state``, and
-``opendj mcp``). Exit codes: see :mod:`apps.opendj_cli` (canonical table).
+Resolves the backend from an explicit ``--lock`` when supplied, else from worktree
+ports when configured (``MUSIC_DJ_BACKEND_PORT`` or the root ``.env``, same as
+``just webui-ports``), otherwise from the installed app's ``.engine.lock`` (same
+discovery as ``opendj play``, ``opendj state``, and ``opendj mcp``). Exit codes:
+see :mod:`apps.opendj_cli` (canonical table).
 """
 
 from __future__ import annotations
@@ -45,13 +46,16 @@ def resolve_backend_base_url(
     environ: Mapping[str, str] | None = None,
     lock_path: Path | None = None,
 ) -> _BackendTarget:
-    """Worktree ports when configured, else the engine lock file's origin."""
+    """Explicit lock when supplied, else worktree ports, else the default lock file."""
+    if lock_path is not None:
+        origin = resolve_origin(lock_path, environ)
+        return _BackendTarget(base_url=origin.base_url, origin=origin)
     try:
         return _BackendTarget(
             base_url=resolve_ports(environ=environ).api_proxy_target,
         )
     except PortConfigError:
-        origin = resolve_origin(lock_path, environ)
+        origin = resolve_origin(None, environ)
         return _BackendTarget(base_url=origin.base_url, origin=origin)
 
 

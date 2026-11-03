@@ -15,6 +15,8 @@ export const COL_DEFAULTS = {
 	key: 64,
 	bpm: 46,
 	plays: 36,
+	// "128 days ago" at the table's 10px tabular size, plus cell padding.
+	last: 96,
 	rating: 80,
 	comments: 110,
 	time: 48,

@@ -12,10 +12,13 @@ What the plugin CANNOT do is answer the question anywhere except inside the
 shell's own webview. An agent driving this app over HTTP has no IPC bridge,
 and neither does a browser tab pointed at the engine. Agent-native parity is
 a project requirement, so the CHECK is answered here too, over plain HTTP,
-from the SAME endpoint constant the shell is configured with. The two read
-one URL and cannot drift: ``tests/engine_core/test_update_channel.py`` asserts
-this module's ``UPDATE_ENDPOINT`` equals the ``plugins.updater.endpoints[0]``
-in ``tauri.conf.json``.
+from the SAME feed the shell installs from. The two read one directory and
+cannot drift: ``tests/engine_core/test_update_channel.py`` asserts this
+module's ``UPDATE_FEED_URL`` equals ``UPDATE_FEED_URL`` in the Electron
+shell's ``src/updater.ts``. Every release writes both ``latest-mac.yml`` and
+``latest.json`` (the latter carries the Electron app to alpha Tauri installs)
+there, and this module parses either; ``CHECKED_FEED_FILE`` says which it
+reads. (private path) section (d).
 
 TWO VERSIONS, AND WHY BOTH ARE ON SCREEN
 
@@ -84,6 +87,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+import yaml
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -101,19 +105,41 @@ from apps.shared.semver import Semver as _Version
 from apps.shared.semver import parse_semver as _parse_semver
 from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
 
-#: THE update endpoint. One string, read by this module and compiled into the
-#: desktop shell via ``plugins.updater.endpoints`` in tauri.conf.json; a test
-#: asserts the two are identical.
+#: THE update feed directory. One string, read by this module and compiled
+#: into the Electron shell as ``UPDATE_FEED_URL`` in
+#: ``apps/desktop/electron/src/updater.ts``; a test asserts the two are
+#: identical. One release publishes both feeds into it: ``latest-mac.yml``
+#: (electron-updater) and ``latest.json`` (the Tauri updater, which carries the
+#: Electron app as the bridge for alpha installs).
 #:
-#: GitHub Releases is the standard host for a Tauri updater and needs no
-#: server to operate. The product repository is private, so its releases are
-#: deliberately not used here: unauthenticated Tauri clients receive a 404.
+#: GitHub Releases is the standard host for both updaters and needs no server
+#: to operate. The product repository is private, so its releases are
+#: deliberately not used here: unauthenticated clients receive a 404.
 #: ``issue-assets`` is public and holds only signed release artifacts and their
-#: manifest. See docs/auto-update.md.
-UPDATE_ENDPOINT: str = (
+#: manifests. See docs/auto-update.md.
+UPDATE_FEED_URL: str = (
     "https://github.com/alex-foster-personal/issue-assets"
-    "/releases/latest/download/latest.json"
+    "/releases/latest/download"
 )
+
+#: The two feed files one release writes into that directory
+#: (``scripts/electron_release.py``), naming one version and one sha. Both
+#: formats are parsed; which one is read follows the endpoint's suffix.
+ELECTRON_FEED_FILE: str = "latest-mac.yml"
+TAURI_FEED_FILE: str = "latest.json"
+
+#: The file this check reads. ``latest.json`` until the first Electron release
+#: has published ``latest-mac.yml`` (it is a 404 before that, and the e2e gate
+#: fetches whatever this names); then it flips to ``ELECTRON_FEED_FILE``, the
+#: feed that survives deleting the Tauri shell.
+#: (private path) section (d).
+CHECKED_FEED_FILE: str = TAURI_FEED_FILE
+UPDATE_ENDPOINT: str = f"{UPDATE_FEED_URL}/{CHECKED_FEED_FILE}"
+
+#: Replaces ``UPDATE_FEED_URL`` for this engine and the Electron shell alike,
+#: so a private update-install proof reads one local feed. The shell's
+#: updater still only installs a bundle signed by this team, never an older one.
+FEED_URL_ENV: str = "OPENDJ_UPDATE_FEED_URL"
 
 UPDATE_CHECK_PATH: str = "/api/v1/update/check"
 UPDATE_APPLY_PATH: str = "/api/v1/update/apply"
@@ -310,15 +336,29 @@ def compare_versions(current: str, available: str) -> UpdateStatus:
 
 
 # ----- manifest -----------------------------------------------------------
+def update_endpoint(env: dict[str, str] | None = None) -> str:
+    """The feed this engine reads: ``OPENDJ_UPDATE_FEED_URL`` when set, else the public one."""
+    override = (os.environ if env is None else env).get(FEED_URL_ENV, "").strip()
+    base = override.rstrip("/") if override else UPDATE_FEED_URL
+    return f"{base}/{CHECKED_FEED_FILE}"
+
+
+def _is_electron_feed(endpoint: str) -> bool:
+    return endpoint.split("?", 1)[0].endswith((".yml", ".yaml"))
+
+
 def _fetch_manifest(endpoint: str, client: httpx.Client) -> dict[str, object]:
+    electron = _is_electron_feed(endpoint)
     try:
         response = client.get(
             endpoint,
             timeout=REQUEST_TIMEOUT_S,
             follow_redirects=True,
-            headers={"accept": "application/json"},
+            headers={"accept": "text/yaml" if electron else "application/json"},
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        # InvalidURL is not an HTTPError: a malformed OPENDJ_UPDATE_FEED_URL
+        # must still be a named fault, never an unhandled 500.
         raise UpdateCheckError(
             "endpoint-unreachable",
             f"{endpoint} could not be reached: {exc}",
@@ -331,20 +371,70 @@ def _fetch_manifest(endpoint: str, client: httpx.Client) -> dict[str, object]:
             "endpoint-refused",
             f"{endpoint} answered HTTP {response.status_code}.{hint}",
         )
+    kind = "YAML" if electron else "JSON"
     try:
-        manifest = response.json()
-    except ValueError as exc:
+        manifest = yaml.safe_load(response.text) if electron else response.json()
+    except (ValueError, yaml.YAMLError) as exc:
         raise UpdateCheckError(
             "manifest-malformed",
-            f"{endpoint} answered 200 with a body that is not JSON: {exc}",
+            f"{endpoint} answered 200 with a body that is not {kind}: {exc}",
         ) from exc
     if not isinstance(manifest, dict):
         raise UpdateCheckError(
             "manifest-malformed",
-            f"{endpoint} answered 200 with a JSON {type(manifest).__name__}, "
+            f"{endpoint} answered 200 with a {kind} {type(manifest).__name__}, "
             "expected an object",
         )
     return manifest
+
+
+#: electron-updater's macOS zip suffix per platform key (electron-builder's
+#: ``${productName}-${version}-${arch}-mac.zip`` naming).
+_ELECTRON_ZIP_SUFFIX: dict[str, str] = {
+    "darwin-aarch64": "-arm64-mac.zip",
+    "darwin-x86_64": "-x64-mac.zip",
+}
+
+
+def _electron_entry(manifest: dict[str, object], key: str) -> dict[str, object]:
+    """The ``files`` entry this Mac would install, as a ``url``/``signature`` pair.
+
+    electron-updater verifies the zip's sha512 from this entry, then
+    Squirrel.Mac checks the bundle's code signature; an entry with no sha512
+    would be refused at install time, so it is refused here.
+    """
+    suffix = _ELECTRON_ZIP_SUFFIX.get(key)
+    if suffix is None:
+        raise UpdateCheckError(
+            "platform-unsupported",
+            f"{ELECTRON_FEED_FILE} is the macOS feed and carries no build for "
+            f"'{key}'",
+        )
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise UpdateCheckError(
+            "manifest-malformed",
+            "the channel feed has no 'files' list, so it was not written for "
+            "electron-updater",
+        )
+    urls = [f.get("url") for f in files if isinstance(f, dict)]
+    entry = next(
+        (f for f in files if isinstance(f, dict) and str(f.get("url", "")).endswith(suffix)),
+        None,
+    )
+    if entry is None:
+        raise UpdateCheckError(
+            "platform-unsupported",
+            f"the channel feed carries no '*{suffix}' build for '{key}'. It "
+            f"offers: {urls}",
+        )
+    if not isinstance(entry.get("sha512"), str) or entry["sha512"] == "":
+        raise UpdateCheckError(
+            "manifest-malformed",
+            f"the '{entry['url']}' entry has no sha512. electron-updater "
+            "would refuse it at install time, so it is refused here.",
+        )
+    return {"url": entry["url"], "signature": entry["sha512"]}
 
 
 def _platform_entry(manifest: dict[str, object], key: str) -> dict[str, object]:
@@ -391,7 +481,7 @@ def resolve_update_check(
     identity: BuildIdentity,
     *,
     client: httpx.Client,
-    endpoint: str = UPDATE_ENDPOINT,
+    endpoint: str | None = None,
     key: str | None = None,
 ) -> UpdateCheckOut:
     """Answer the question, or say precisely why it could not be answered.
@@ -400,6 +490,7 @@ def resolve_update_check(
     build's version must be the one ``/build-info`` already published, or the
     two readouts on the same screen could disagree.
     """
+    endpoint = update_endpoint() if endpoint is None else endpoint
     try:
         resolved_key = platform_key() if key is None else key
     except UpdateCheckError as exc:
@@ -445,9 +536,10 @@ def resolve_update_check(
             }
         )
 
+    electron = _is_electron_feed(endpoint)
     try:
         manifest = _fetch_manifest(endpoint, client)
-        entry = _platform_entry(manifest, resolved_key)
+        entry = (_electron_entry if electron else _platform_entry)(manifest, resolved_key)
         raw_version = _manifest_version(manifest)
         verdict = compare_versions(current_version, raw_version)
     except UpdateCheckError as exc:
@@ -455,8 +547,8 @@ def resolve_update_check(
             update={"status": exc.status, "detail": exc.message}
         )
 
-    notes = manifest.get("notes")
-    published = manifest.get("pub_date")
+    notes = manifest.get("releaseNotes" if electron else "notes")
+    published = manifest.get("releaseDate" if electron else "pub_date")
     # The case the semver rule cannot see: same number, different build. The
     # updater will not act on it, and the reader is told rather than reassured.
     same_build_drift = verdict == "up-to-date" and _mentions_other_sha(
@@ -521,7 +613,7 @@ def _update_check_http_response(
 
 
 def add_update_check_route(
-    app: FastAPI, *, endpoint: str = UPDATE_ENDPOINT
+    app: FastAPI, *, endpoint: str | None = None
 ) -> None:
     """Mount the check. Resolved per request: the channel moves, the build does not."""
 
@@ -544,7 +636,7 @@ def add_update_check_route(
 
 
 def add_update_apply_route(
-    app: FastAPI, *, endpoint: str = UPDATE_ENDPOINT
+    app: FastAPI, *, endpoint: str | None = None
 ) -> None:
     """Mount apply: enqueue shell work when the channel reports update-available."""
 
@@ -1083,8 +1175,12 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check", help="compare this build against the channel")
     check.add_argument(
         "--endpoint",
-        default=UPDATE_ENDPOINT,
-        help=f"manifest URL to read (default: {UPDATE_ENDPOINT})",
+        default=None,
+        help=(
+            f"feed URL to read (default: {UPDATE_ENDPOINT}, or "
+            f"${FEED_URL_ENV}/{CHECKED_FEED_FILE} when set). A '.yml' URL is "
+            "read as an electron-updater feed, a '.json' URL as a Tauri latest.json"
+        ),
     )
     check.add_argument(
         "--engine",
@@ -1124,7 +1220,7 @@ def main(argv: list[str] | None = None) -> int:
     raise AssertionError(f"unknown command: {args.command}")
 
 
-def _check_locally(endpoint: str) -> int:
+def _check_locally(endpoint: str | None) -> int:
     try:
         info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
         identity = BuildIdentity(info=info, failure=None)

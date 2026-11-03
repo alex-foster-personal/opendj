@@ -35,7 +35,7 @@ before(async () => {
 
 function laneSpans(lines, positionMs) {
 	const html = mod.render(mod.LyricsLane, {
-		props: { lyrics: { lines }, loadError: null, positionMs, pitch: 1 }
+		props: { lyrics: { lines }, loadError: null, positionMs, pitch: 1, windowSeconds: 24, playheadFrac: 0.5 }
 	}).body;
 	return [...html.matchAll(/<span([^>]*)class="lyric-line[^"]*"[^>]*>([^<]*)<\/span>/g)].map(
 		(match) => ({ tag: match[0], text: match[2] })
@@ -94,7 +94,7 @@ test('the line panel keys rows by position, so identical duet lines cannot colli
 	// one is a source pin: the old key (start_ms + text) repeats for two
 	// identical lines at one stamp, which the parser now accepts.
 	const source = await readFile(
-		new URL('../../src/lib/components/LineLyricsPanel.svelte', import.meta.url),
+		new URL('../../src/lib/components/LineLyricsPanelView.svelte', import.meta.url),
 		'utf8'
 	);
 	assert.match(source, /\{#each lyrics\.lines as line, index \(index\)\}/);

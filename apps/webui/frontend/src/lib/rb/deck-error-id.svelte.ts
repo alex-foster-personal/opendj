@@ -54,6 +54,7 @@
  *   ✔︎ ✅ 🎯 Decks do not share ids or evict each other's.
  *     [if] noting deck 2 changes deck 1's id [then ⛔️] broken
  */
+import { isExpectedLibraryRefusalMessage } from './deck-load-failure-copy';
 import { formatErrorId, mintErrorId } from './error-id';
 import { recordPerfEvent } from './perf-event-log';
 import { isUnsyncedStartSyncError } from './beat-sync-math';
@@ -118,7 +119,14 @@ export function noteDeckError(deck: DeckErrorDeckId, message: string | null): vo
 	const id = formatErrorId(mintErrorId());
 	_notedMessages[deck] = message;
 	deckErrorIds[deck] = id;
-	recordPerfEvent(`${DECK_ERROR_KIND} ${id}`, message, deck, 'error');
+	// Expected play-refusals stay in the ring as warn so they do not escalate
+	// to Sentry (OBS-5422). The toast path still POSTs /client-errors for JSONL.
+	recordPerfEvent(
+		`${DECK_ERROR_KIND} ${id}`,
+		message,
+		deck,
+		isExpectedLibraryRefusalMessage(message) ? 'warn' : 'error'
+	);
 }
 
 /**

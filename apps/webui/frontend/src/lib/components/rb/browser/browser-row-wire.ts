@@ -22,6 +22,7 @@ import {
 	type TrackIndexItemWire,
 	type TrackListItemWire
 } from '$lib/rb/api-rb';
+import { playFactsFromUnknown } from './last-played';
 import type { BrowserRow } from './pane-contract.svelte';
 import {
 	isNamedStreamingStatus,
@@ -161,7 +162,10 @@ export function applySettledAvailability(row: {
 	});
 }
 
-type LaneStatus = 'ok' | 'failed' | 'missing' | 'available-not-selected';
+// too_short / no_pulse: bpm was analyzed and no tempo was measured (issue
+// #5986). Only the bpm lane carries them; each lane keeps its own narrower type
+// through listingLaneStatus's type parameter.
+type LaneStatus = 'ok' | 'failed' | 'missing' | 'available-not-selected' | 'too_short' | 'no_pulse';
 
 const STOCK_MISSING_REASON = {
 	key: 'key not analyzed',
@@ -182,7 +186,10 @@ function laneHasValue(value: unknown): boolean {
  * `value` is present. An absent status with no value (an older or drifted
  * payload, or loudness, which has no value on this wire) is reported as
  * failed with a reason, never as a silent ordinary blank. */
-export function listingLaneStatus(status: LaneStatus | undefined, value: unknown): LaneStatus {
+export function listingLaneStatus<S extends LaneStatus>(
+	status: S | undefined,
+	value: unknown
+): S | 'ok' | 'failed' {
 	if (status !== undefined) return status;
 	else if (laneHasValue(value)) return 'ok';
 	else return 'failed';
@@ -259,6 +266,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		streaming_provider: wire.streaming_provider ?? null,
 		quality: wire.quality ?? null,
 		play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
+		plays: playFactsFromUnknown(wire),
 		strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 		vocals: parseVocals(wire.vocals),
 		stems: parseStemSummary(wire.stems),
@@ -359,6 +367,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 		quality: track.quality ?? null,
 		play_count: typeof track.play_count === 'number' ? track.play_count : 0,
+		plays: playFactsFromUnknown(track),
 		strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 		vocals: parseVocals(track.vocals),
 		stems: parseStemSummary(track.stems),

@@ -32,10 +32,8 @@ def verify_device(device_dir: Path) -> tuple[bool, str]:
     if not controls:
         return False, "zero controls"
     html = deck_path.read_text()
-    if "pointerenter" not in html and "addEventListener('pointerenter'" not in html:
-        # generate_html uses pointerenter
-        if "pointerenter" not in html:
-            return False, "deck.html missing pointerenter hover handler"
+    if "pointerenter" not in html:
+        return False, "deck.html missing pointerenter hover handler"
     if "id=\"readout\"" not in html and "id='readout'" not in html:
         return False, "deck.html missing #readout"
     missing_figs: list[str] = []

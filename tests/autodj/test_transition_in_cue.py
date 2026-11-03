@@ -99,6 +99,7 @@ def test_control_without_a_cue_the_intro_wins() -> None:
     windows = mix_windows(profile(SID), "in")
     assert profile(SID).transition_in_bar is None
     assert (windows[0].label, windows[0].start_bar) == ("intro", 1)
+    assert windows[0].pinned is False
     assert len(windows) > 1, "the control must still offer the rule-based candidates"
 
 
@@ -109,6 +110,7 @@ def test_the_cue_wins_and_is_the_only_in_window() -> None:
     windows = mix_windows(cued, "in")
     assert [w.start_bar for w in windows] == [17]
     assert windows[0].score == USER_CUE_SCORE
+    assert windows[0].pinned is True
     assert windows[0].reason.startswith("your transition-in cue")
     assert windows[0].max_bars == 16  # still stops before the drop at bar 33
 
@@ -121,8 +123,52 @@ def test_an_off_grid_cue_snaps_to_the_nearest_bar() -> None:
 def test_a_mid_phrase_cue_stays_where_the_user_put_it() -> None:
     windows = mix_windows(_profile_with_cue(round(12 * BAR_S * 1000)), "in")
     assert windows[0].start_bar == 13, "the cue was moved to a phrase start"
+    assert windows[0].pinned is True
     assert windows[0].label == "intro"
     assert "mid-intro" in windows[0].reason
+
+
+def test_propose_transition_keeps_the_cue_bar_except_drop_swap() -> None:
+    """[if] a cued in-window would move under place_hit [then] it is refused, not accepted moved, [else stop]."""
+    from apps.autodj.propose import propose_transition
+
+    cued = _profile_with_cue(round(12 * BAR_S * 1000))
+    assert cued.transition_in_bar == 13
+    result = propose_transition(profile("trk-out"), cued, out_deck=1, in_deck=2, intent="energy_up", top=None)
+    bad_starts = {17, 25, 26, 29}
+    for proposal in result["proposals"]:
+        style = proposal["plan"]["style"]
+        start = proposal["plan"]["in"]["window"]["start_bar"]
+        if style != "drop_swap":
+            assert start == 13
+        assert start not in bad_starts or style == "drop_swap"
+    reasons = " ".join(row["reason"] for row in result["not_offered"])
+    assert "transition-in cue" in reasons or "pinned" in reasons
+    assert result["not_offered"], "styles that would move the cue should land in not_offered"
+
+
+def test_propose_transition_without_a_cue_still_moves_in_windows() -> None:
+    """[if] there is no transition-in cue [then] place_hit may still move the in-window, [else stop]."""
+    from apps.autodj.propose import propose_transition
+
+    result = propose_transition(profile("trk-out"), profile("trk-in"), out_deck=1, in_deck=2, intent="energy_up", top=None)
+    rationales = " ".join(p["rationale"] for p in result["proposals"])
+    assert "in-window moved" in rationales
+
+
+def test_propose_transition_accepts_a_cue_that_place_hit_would_keep() -> None:
+    """[if] the cue bar already fits hit placement [then] the plan enters on that bar, [else stop]."""
+    from apps.autodj.propose import propose_transition
+
+    cued = _profile_with_cue(round(24 * BAR_S * 1000))
+    assert cued.transition_in_bar == 25
+    result = propose_transition(profile("trk-out"), cued, out_deck=1, in_deck=2, intent="energy_up", top=None)
+    kept = [
+        p
+        for p in result["proposals"]
+        if p["plan"]["style"] != "drop_swap" and p["plan"]["in"]["window"]["start_bar"] == 25
+    ]
+    assert kept, "when place_hit keeps the cue bar, a non-drop_swap plan should enter there"
 
 
 def test_the_out_role_ignores_the_transition_in_cue() -> None:

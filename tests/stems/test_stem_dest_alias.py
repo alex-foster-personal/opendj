@@ -2,14 +2,15 @@
 
 A host name is not a CLI value (issue #5639, batch 3): ``--dest asset-store`` is the
 scp destination, whose host is ``MDT_B2STORE_SSH_HOST``. The old spelling still
-works, with a warning. modal_vocal_farm keeps its own ``bifrost2`` spelling for now
-(renaming it there is a stems-pipeline change behind the perfbatch gate), so the
-runner translates when it builds the farm command.
+works, with a warning. modal_vocal_farm --stems-dest uses the same neutral values
+(its rename rode the perfbatch CLI-value-rename rule), so the runner passes the
+dest through unchanged.
 
 Regression one-liners:
   - if the default dest is not asset-store then broken
   - if --dest bifrost2 does not run as asset-store with a warning then broken
   - if the farm command names a dest the farm does not accept then broken
+  - if the farm still accepts the old bifrost2 spelling then broken
 """
 
 from __future__ import annotations
@@ -51,18 +52,24 @@ def test_alias_runs_as_the_neutral_dest_with_a_warning(capsys: pytest.CaptureFix
         parser.parse_args(["--dest", "somewhere-else"])
 
 
-@pytest.mark.parametrize(
-    ("dest", "farm_dest"),
-    [(NEUTRAL, ALIAS), ("local", "local"), ("r2", "r2"), ("none", "none")],
-)
-def test_farm_command_spells_each_dest_the_farm_way(dest: str, farm_dest: str) -> None:
-    """[if] the farm argv names a dest other than the farm's spelling [then] fail, [else stop]."""
+@pytest.mark.parametrize("dest", [NEUTRAL, "local", "r2", "none"])
+def test_farm_command_passes_the_dest_through(dest: str) -> None:
+    """[if] the farm argv names a dest other than the runner's [then] fail, [else stop]."""
     cmd = ssr.farm_command(ssr.ARMS[0], ["sid-1"], dest, dry_run=False)
-    assert cmd[cmd.index("--stems-dest") + 1] == farm_dest
+    assert cmd[cmd.index("--stems-dest") + 1] == dest
 
 
-def test_every_runner_dest_is_one_the_farm_accepts(farm: ModuleType) -> None:
-    """[if] a runner dest maps to a value the farm rejects [then] fail, [else stop]."""
-    assert set(ssr.FARM_STEMS_DEST) == set(ssr.DESTS)
-    assert set(ssr.FARM_STEMS_DEST.values()) == set(farm.STEM_DESTS)
-    assert ssr.FARM_STEMS_DEST[ssr.DEFAULT_DEST] == farm.DEFAULT_STEM_DEST
+def test_runner_and_farm_accept_the_same_dests(farm: ModuleType) -> None:
+    """[if] the runner and the farm disagree on a dest or the default [then] fail, [else stop]."""
+    assert set(ssr.DESTS) == set(farm.STEM_DESTS)
+    assert ssr.DEFAULT_DEST == farm.DEFAULT_STEM_DEST == NEUTRAL
+    assert ALIAS not in farm.STEM_DESTS
+
+
+def test_farm_rejects_the_old_spelling(farm: ModuleType) -> None:
+    """[if] modal_vocal_farm --stems-dest bifrost2 still parses [then] fail, [else stop]."""
+    parser = farm.build_parser()
+    assert parser.parse_args([]).stems_dest == NEUTRAL
+    assert parser.parse_args(["--stems-dest", NEUTRAL]).stems_dest == NEUTRAL
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--stems-dest", ALIAS])

@@ -84,6 +84,14 @@ def test_the_repair_label_is_a_written_reason():
     assert judge(_record("full"), _event(None, ("ci:trunk-repair",)), 0.5).status == "PASS"
 
 
+@pytest.mark.requirement("DEVOPS-8362")
+def test_a_repair_s_capped_selection_passes_without_a_wide_reason():
+    """[if] a capped ci:trunk-repair selection needs `CI-Wide-Reason:` [then] the repair main waits on is blocked, so fail, [else stop]."""
+    verdict = judge(_record("affected", selected=40), _event(None, ("ci:trunk-repair",)), 0.5)
+    assert verdict.status == "PASS"
+    assert verdict.lines[-1] == "within the limit"
+
+
 def test_a_queue_draft_with_no_body_on_the_full_suite_fails():
     """A draft has no body: a full bundle is the measurement of the queue still blasting."""
     assert judge(_record("full"), {"pull_request": {"body": None}}, 0.5).status == "FAIL"

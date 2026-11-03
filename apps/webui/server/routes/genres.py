@@ -12,6 +12,7 @@ tool (``apps/opendj_cli/mcp_genre_tools.py``); all three call
     POST   /api/v1/genres/enqueue                queue tracks (or every untagged present track)
     GET    /api/v1/genres/{sid}/similar
     GET    /api/v1/genres/config  PUT /api/v1/genres/config
+    PUT    /api/v1/genres/keys/{name}            store a provider key in the Keychain (GENRE-09)
     POST   /api/v1/genres/tags/write  POST /api/v1/genres/tags/undo  GET /api/v1/genres/tags/journal
 
 -Claude
@@ -32,7 +33,7 @@ from apps.analysis import queue_user
 from apps.analysis import store as analysis_store
 from apps.analysis.queue import QueueError
 from apps.analysis.queue_user_lanes import MAX_ENQUEUE_IDS
-from apps.genre_infer import findings, pipeline, providers, service, tag_write
+from apps.genre_infer import findings, keystore, pipeline, providers, service, tag_write
 from apps.shared.events import publish
 from apps.shared.paths import STATE_DB
 from apps.shared.state import db as state_db
@@ -256,6 +257,24 @@ def put_config(
         conn.commit()
     publish("library.changed", {"kind": "tracks", "ids": []})
     return cfg.as_dict()
+
+
+class KeyBody(BaseModel):
+    value: str = Field(min_length=1)
+
+
+@router.put("/keys/{name}")
+def put_key(
+    name: str,
+    body: KeyBody,
+    _guard: StateBackend = Depends(get_write_state),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return service.set_key(name, body.value)
+    except findings.GenreInputError as exc:
+        raise HTTPException(400, {"code": "unknown_genre_key", "message": str(exc)}) from exc
+    except keystore.KeystoreError as exc:
+        raise HTTPException(503, {"code": "keystore_unavailable", "message": str(exc)}) from exc
 
 
 @router.post("/tags/write")

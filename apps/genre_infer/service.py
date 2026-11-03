@@ -18,7 +18,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import findings, groups, library_tags, pipeline, providers, tag_write, taxonomy
+from . import findings, groups, keystore, library_tags, pipeline, providers, tag_write, taxonomy
 
 MAX_IDS = 500
 
@@ -196,6 +196,14 @@ def status(conn: sqlite3.Connection, environ: Mapping[str, str] | None = None) -
     }
 
 
+def set_key(name: str, value: str) -> dict[str, Any]:
+    """Store a provider key in the Keychain (GENRE-09); the value is never echoed back."""
+    if name not in providers.KEY_NAMES:
+        raise findings.GenreInputError(f"unknown key {name!r}; known keys are {list(providers.KEY_NAMES)}")
+    keystore.write(name, value)
+    return {"key": name, "stored": "keychain", "missing_keys": providers.missing_keys()}
+
+
 def settings_items(state_db_path: Path, environ: Mapping[str, str] | None = None) -> list[tuple[str, Any, str]]:
     """(key, value, note) rows for the read-only Settings page's "Genre inference" group."""
     missing = providers.missing_keys(environ)
@@ -206,7 +214,7 @@ def settings_items(state_db_path: Path, environ: Mapping[str, str] | None = None
             cfg = findings.read_config(conn)
         finally:
             conn.close()
-    note = "keys set in the engine's environment" if not missing else f"not available: set {', '.join(missing)}"
+    note = "keys found (environment or Keychain)" if not missing else f"not available: set {', '.join(missing)}"
     return [
         ("genre_inference_available", not missing, note),
         ("genre_auto_infer", cfg.auto_infer, "infer genres for new tracks as they arrive (PUT /api/v1/genres/config)"),

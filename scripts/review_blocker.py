@@ -4,14 +4,17 @@ Contract with the nucbox trunk-bridge (Trunk session, Thu 1 Oct 2026), which pos
 `opendj/review-triage` from `just review-triage <PR>` at a pinned main SHA: exit 0 is a
 pass, exit 1 is a blocker found and exactly one `BLOCKER:` line names the FIRST one,
 and any other exit is "could not measure" with no BLOCKER line. The order is the
-order the gate checks in: reviewer coverage (which includes the control-plane dual
-review, REVIEW-13), then review threads, then the debt ledger, then the PR scope.
+order the gate checks in: review threads, then the debt ledger, then the PR scope.
+Reviewer coverage and the control-plane review are advisory since REVIEW-8220 (the maintainer,
+19:30Z Mon 2 Nov 2026) and are never a BLOCKER.
 
 Requirements (mini-PRD):
   / Exit 1 prints exactly one BLOCKER line; exit 0 and exit 3 print none.
     [if] a passing or unmeasured run prints BLOCKER [then] broken
   / A run that cannot measure says why on one parseable `UNKNOWN: <reason>` line.
     [if] exit 3 leaves the bridge with no reason to show [then] broken
+  / REVIEW-8220: missing review coverage is never a blocker.
+    [if] a run whose only gap is a missing review prints BLOCKER [then] broken
   / REVIEW-22: only an open P0 or human BLOCKING thread is a thread blocker.
     [if] a lone untriaged P0 thread yields no BLOCKER line [then] broken
     [if] a lone untriaged bot P1 thread yields a BLOCKER line [then] broken
@@ -22,21 +25,14 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
-from scripts import review_control_plane
 from scripts.review_thread_parse import Thread
 
 
-def first_blocker(
-    rc: int, coverage_rc: int, failing: Sequence[Thread], debt_error: object, scope_rc: int
-) -> str | None:
+def first_blocker(rc: int, failing: Sequence[Thread], debt_error: object, scope_rc: int) -> str | None:
     """Pure: the BLOCKER line for this verdict, or None when there is none to print."""
     if rc != 1:
         return None
-    if coverage_rc and (dual := review_control_plane.last_failure()):
-        reason = f"control-plane dual review (REVIEW-13): {dual}"
-    elif coverage_rc:
-        reason = "review coverage (see the [review-coverage] FAIL line above)"
-    elif failing:
+    if failing:
         t = failing[0]
         where = f"{t.path}:{t.line}" if t.line else t.path
         more = f" (+{len(failing) - 1} more)" if len(failing) > 1 else ""
@@ -52,9 +48,9 @@ def first_blocker(
     return "BLOCKER: " + " ".join(reason.split())  # one line, whatever the cause text holds
 
 
-def report(rc: int, coverage_rc: int, failing: Sequence[Thread], debt_error: object, scope_rc: int) -> int:
+def report(rc: int, failing: Sequence[Thread], debt_error: object, scope_rc: int) -> int:
     """Print the BLOCKER line (if any) and hand the exit code back unchanged."""
-    line = first_blocker(rc, coverage_rc, failing, debt_error, scope_rc)
+    line = first_blocker(rc, failing, debt_error, scope_rc)
     if line:
         print(line)
     return rc

@@ -269,8 +269,9 @@ test('chip icon: off by choice is a neutral cloud-off, the "!" is only for turne
 });
 
 test('the chip renders the slashed cloud for cloud-off and the "!" only for cloud-alert', () => {
+	// The chip's markup lives in its props-only view.
 	const chip = readFileSync(
-		new URL('../../src/lib/components/CloudSyncStatusChip.svelte', import.meta.url),
+		new URL('../../src/lib/components/CloudSyncStatusChipView.svelte', import.meta.url),
 		'utf8'
 	);
 	assert.match(chip, /\{#if icon === 'cloud-off'\}[\s\S]*?data-icon="cloud-off"[\s\S]*?\{:else\}/);

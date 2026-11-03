@@ -92,13 +92,14 @@
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
 	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
-	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
+	import TopBarStatusChips from '$lib/components/rb/TopBarStatusChips.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import TrackInfoButton from './TrackInfoButton.svelte';
 	import TrackInfoHost from './TrackInfoHost.svelte';
+	import WaveQuickSettingsButton from './WaveQuickSettingsButton.svelte';
 	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		FEATURE_ICON_ROWS,
@@ -125,7 +126,7 @@
 		appModeForPath,
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
-	import { modeIconClass } from '$lib/rb/app-mode-icons';
+	import ModeThumbnail from './ModeThumbnail.svelte';
 	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	/** ENRICH-01: the route's enrich pill, rendered in flow in this row (a snippet, so this file adds no import). */
@@ -602,7 +603,7 @@
 					aria-current={mode.id === activeMode.id ? 'page' : undefined}
 					onclick={() => _selectAppMode(mode.id)}
 				>
-					<span class={`mode-thumbnail ${modeIconClass(mode.iconId)}`} aria-hidden="true"></span>
+					<ModeThumbnail iconId={mode.iconId} />
 					<span class="mode-copy">
 						<strong>{mode.label}</strong>
 						<span class="mode-gain" data-testid="mode-gain">{mode.gain}</span>
@@ -1010,7 +1011,14 @@
 					<select
 						data-testid="ap-next-intent"
 						value={autoPlayNextState.intent}
-						onchange={(event) => (autoPlayNextState.intent = event.currentTarget.value as TransitionIntent)}
+						onchange={async (event) => {
+							const select = event.currentTarget as HTMLSelectElement;
+							const result = await runPerformanceCommandFromUi({
+								type: 'auto_play_next_intent',
+								intent: select.value as TransitionIntent
+							});
+							if (!result.ok) select.value = autoPlayNextState.intent;
+						}}
 					>
 						{#each TRANSITION_INTENTS as intent (intent)}
 							<option value={intent}>{intent}</option>
@@ -1133,6 +1141,8 @@
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
 		{/if}
 	</button>
+
+	<WaveQuickSettingsButton />
 
 	<button
 		type="button"
@@ -1275,7 +1285,8 @@
 		{/if}
 	</button>
 
-	<CloudSyncStatusChip />
+	<!-- CloudSync, then PLUG-6522i module chips (topbar.end slot). -->
+	<TopBarStatusChips />
 	<!-- Labeled signed out too: it is the only sign-in control on this route (AUTH-02). -->
 	<TopBarAccountCluster bind:signedIn menuOpen={baubleMenuOpen}>
 		<UserBauble size={20} showLabel bind:menuOpen={baubleMenuOpen} />
@@ -1300,6 +1311,7 @@
      so its failure shows an error there instead of nothing here. -->
 
 <style>
+
 	.rb-topbar {
 		position: relative;
 		grid-area: topbar;
@@ -1849,33 +1861,6 @@
 	}
 	.mode-lose {
 		color: var(--rb-text-dim);
-	}
-	.mode-thumbnail {
-		display: block;
-		height: 36px;
-		border: 1px solid var(--rb-border);
-		border-radius: 2px;
-		background-color: #141920;
-	}
-	.mode-thumbnail.gig {
-		background:
-			linear-gradient(90deg, transparent 48%, #72b9ff 48% 52%, transparent 52%),
-			linear-gradient(#161d26 45%, #72b9ff 45% 52%, #161d26 52%);
-	}
-	.mode-thumbnail.prep {
-		background:
-			linear-gradient(180deg, #72b9ff 0 18%, transparent 18% 82%, #346c3e 82% 100%),
-			repeating-linear-gradient(90deg, #1a222c 0 4px, #161d26 4px 8px);
-	}
-	.mode-thumbnail.library {
-		background:
-			linear-gradient(90deg, #3b79ad 0 22%, transparent 22% 28%, #346c3e 28% 50%, transparent 50% 56%, #7a5c33 56% 78%, transparent 78%),
-			#161d26;
-	}
-	.mode-thumbnail.trackify {
-		background:
-			radial-gradient(circle at 50% 50%, #a8b2bf 0 12%, #303b48 13% 31%, #72b9ff 32% 36%, #161d26 37%),
-			linear-gradient(90deg, transparent 42%, #72b9ff 42% 58%, transparent 58%);
 	}
 
 	.feature-icons {

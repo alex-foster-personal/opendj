@@ -360,10 +360,17 @@ def resume_backfill(
     try:
         requeued = queue_api.resume(conn, body.batch_id)
         prog = queue_api.progress(conn, body.batch_id, item_limit=0)
-    except queue_api.QueueError as exc:
+    except queue_api.NoSuchBatchError as exc:
         raise HTTPException(
             status_code=404,
             detail={"code": "no_such_batch", "message": str(exc)},
+        ) from exc
+    except queue_api.QueueError as exc:
+        # The batch exists but cannot be re-planned (low memory, unusable
+        # stored durations or model): a refusal, not a missing batch.
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "queue_refused", "message": str(exc)},
         ) from exc
     finally:
         conn.close()

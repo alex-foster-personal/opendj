@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
+// TreeSmartlistSection renders its props-only view, which holds the rows.
 const filename = new URL(
-	'../../src/lib/components/rb/browser/TreeSmartlistSection.svelte',
+	'../../src/lib/components/rb/browser/TreeSmartlistSectionView.svelte',
 	import.meta.url
 );
 const source = readFileSync(filename, 'utf8');

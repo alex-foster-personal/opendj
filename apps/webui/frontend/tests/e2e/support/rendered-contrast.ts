@@ -54,7 +54,8 @@ export function trackCanvasText(): void {
 	}
 }
 
-export function renderedContrastAudit(): RenderedContrastReport {
+/** `scope` is a selector: audit only that subtree (one panel), else the whole body. */
+export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 	const canvas = document.createElement('canvas');
 	canvas.width = 1;
 	canvas.height = 1;
@@ -331,7 +332,7 @@ export function renderedContrastAudit(): RenderedContrastReport {
 		text: string,
 		style: CSSStyleDeclaration,
 		inner?: { bg: number[]; op: number },
-		at?: { x: number; y: number }
+		ats?: { x: number; y: number }[]
 	) => {
 		const name = label(el) + suffix;
 		// SVG text paints with `fill` over shapes, not over a CSS background;
@@ -360,19 +361,28 @@ export function renderedContrastAudit(): RenderedContrastReport {
 			if ((parse(cs.backgroundColor)?.[3] ?? 0) >= 1) hidden = true;
 		}
 		const fg0 = parse(style.color);
-		const p: { fg?: number[]; bg?: number[]; why?: string } = fg0
-			? paint(el, fg0, inner, at ?? centerOf(el.getBoundingClientRect()))
-			: { why: `unparsed color ${style.color}` };
-		if (!p.fg || !p.bg) {
-			unmeasured.push({ el: name, why: p.why ?? 'unmeasured' });
+		if (!fg0) {
+			unmeasured.push({ el: name, why: `unparsed color ${style.color}` });
 			return;
 		}
+		// The worst sample is the painted pair: a label straddling a progress
+		// fill edge is as legible as its half over the fill.
+		let worst: { fg: number[]; bg: number[]; ratio: number } | null = null;
+		for (const at of ats ?? [centerOf(el.getBoundingClientRect())]) {
+			const p = paint(el, fg0, inner, at);
+			if (!p.fg || !p.bg) {
+				unmeasured.push({ el: name, why: p.why ?? 'unmeasured' });
+				return;
+			}
+			const ratio = ratioOf(p.fg, p.bg);
+			if (!worst || ratio < worst.ratio) worst = { fg: p.fg, bg: p.bg, ratio };
+		}
+		if (!worst) return;
 		measured++;
-		const { fg, bg } = p;
+		const { fg, bg, ratio } = worst;
 		const size = parseFloat(style.fontSize);
 		const bold = Number(style.fontWeight) >= 700;
 		const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5;
-		const ratio = ratioOf(fg, bg);
 		// Findings table prints this 2-decimal ratio; displayed 4.5 must not fail a 4.5 floor.
 		const displayed = Math.round(ratio * 100) / 100;
 		const row: ContrastFinding = {
@@ -389,6 +399,9 @@ export function renderedContrastAudit(): RenderedContrastReport {
 
 	const centerOf = (r: DOMRect) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
+	const root = scope === undefined ? document.body : document.querySelector(scope);
+	if (!root) return { measured, findings, unmeasured: [{ el: scope!, why: 'audit scope not found' }], probes };
+
 	// Hit testing skips `pointer-events: none`, which a decorative fill under
 	// a label usually carries; lift it for the audit so every fill is found.
 	const hit = document.createElement('style');
@@ -397,7 +410,7 @@ export function renderedContrastAudit(): RenderedContrastReport {
 	try {
 		// 1. DOM text nodes, measured once per parent element.
 		const seen = new Set<Element>();
-		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		for (let n = walker.nextNode(); n; n = walker.nextNode()) {
 			const text = (n.textContent ?? '').trim();
 			if (!text) continue;
@@ -409,12 +422,20 @@ export function renderedContrastAudit(): RenderedContrastReport {
 			const range = document.createRange();
 			range.selectNodeContents(n);
 			const r = range.getBoundingClientRect();
-			measure(el, '', text, getComputedStyle(el), undefined, r.width && r.height ? centerOf(r) : undefined);
+			const ats = !(r.width && r.height)
+				? undefined
+				: [
+						centerOf(r),
+						...Array.from(range.getClientRects())
+							.filter((l) => l.width > 2 && l.height > 0)
+							.flatMap((l) => [l.left + 1, l.right - 1].map((x) => ({ x, y: l.top + l.height / 2 }))),
+					];
+			measure(el, '', text, getComputedStyle(el), undefined, ats);
 		}
 
 		// 2. Text a form control paints without a DOM text node: its value, or its
 		// placeholder (which paints with ::placeholder's color) when empty.
-		const controls = document.body.querySelectorAll(
+		const controls = root.querySelectorAll(
 			'input:not([type="hidden"], [type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), textarea, select'
 		);
 		for (const el of Array.from(controls)) {
@@ -434,7 +455,7 @@ export function renderedContrastAudit(): RenderedContrastReport {
 
 		// 3. CSS-generated labels (`content: 'LOCK'`). Only quoted strings that
 		// carry a letter or digit count; icon glyphs and empty decorations do not.
-		for (const el of Array.from(document.body.querySelectorAll('*'))) {
+		for (const el of Array.from(root.querySelectorAll('*'))) {
 			for (const pseudo of ['::before', '::after'] as const) {
 				const ps = getComputedStyle(el, pseudo);
 				if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue;
@@ -454,7 +475,7 @@ export function renderedContrastAudit(): RenderedContrastReport {
 			.__contrastCanvasText;
 		if (!painted) unmeasured.push({ el: 'document', why: 'canvas text tracker not installed (trackCanvasText)' });
 		else {
-			for (const c of Array.from(document.body.querySelectorAll('canvas'))) {
+			for (const c of Array.from(root.querySelectorAll('canvas'))) {
 				if (painted.has(c) && visibleOpacity(c) !== null) {
 					unmeasured.push({ el: label(c), why: 'canvas-painted text (fillText)' });
 				}

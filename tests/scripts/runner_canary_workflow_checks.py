@@ -78,7 +78,8 @@ CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 #: Env entries ci.yml's pytest step carries that the canary's must NOT (bundle merges, Tue 27
 #: Oct 2026): CI_BUNDLE_DECLARATIONS reads `needs.scope`, and the canary has no scope job; a
 #: canary is a push, so the selector never reads it there anyway.
-CI_ONLY_PYTEST_ENV = ("CI_BUNDLE_DECLARATIONS",)
+#: CI_MAIN_PUSH_RANGE (Tue 3 Nov 2026) reads `needs.scope` the same way.
+CI_ONLY_PYTEST_ENV = ("CI_BUNDLE_DECLARATIONS", "CI_MAIN_PUSH_RANGE")
 
 
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.

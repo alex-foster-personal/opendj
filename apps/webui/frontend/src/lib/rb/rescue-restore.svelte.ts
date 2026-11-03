@@ -26,6 +26,7 @@ import { engine } from '$lib/rb/audio-engine.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import { API_BASE } from '$lib/api';
+import { mainFollowsSystemOutput } from '$lib/player/cue-native-sink';
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 import { restoreStemControls } from '$lib/rb/stem-restore';
@@ -42,10 +43,13 @@ export type RescueSinkRole = 'cue' | 'master';
 /** RESCUE-05, per saved sink: `none` (nothing was saved), `restored` (same id),
  * `restored_by_label` (id salted away, one output carries the saved label),
  * `not_found`, `ambiguous` (several outputs carry the label), `refused` (the
- * list or the select itself failed). Only `restored` and `restored_by_label`
- * select anything. */
+ * list or the select itself failed), `system_output` (AUDIO-DEVICE-07: the Mac
+ * app's MAIN is the macOS output, so a relaunch never moves it; the operator's
+ * current macOS pick wins). Only `restored` and `restored_by_label` select
+ * anything. */
 export type RescueSinkOutcome =
 	| 'none'
+	| 'system_output'
 	| 'restored'
 	| 'restored_by_label'
 	| 'not_found'
@@ -263,14 +267,23 @@ async function _restoreSinks(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
 	snapshot: RescueSnapshot,
-	notify: RescueNotify
+	notify: RescueNotify,
+	mainIsSystemOutput: boolean
 ): Promise<Record<RescueSinkRole, RescueSinkResult>> {
 	await dispatch({
 		type: 'output_mode',
 		mode: snapshot.mixer.headphones.output_mode
 	});
 	const results: Record<RescueSinkRole, RescueSinkResult> = { cue: NO_SINK, master: NO_SINK };
-	const saved = { cue: _savedSink(snapshot, 'cue'), master: _savedSink(snapshot, 'master') };
+	const savedMaster = _savedSink(snapshot, 'master');
+	// AUDIO-DEVICE-07: in the Mac app a MAIN pick IS the macOS default output, so
+	// replaying it would take the output away from whatever the operator chose
+	// since (his headphones, Tue 3 Nov 2026: every relaunch moved it back to
+	// HYPERBOOM). The output macOS plays on now is the operator's latest pick.
+	if (mainIsSystemOutput && savedMaster !== null) {
+		results.master = { outcome: 'system_output', device_id: null, notice: null };
+	}
+	const saved = { cue: _savedSink(snapshot, 'cue'), master: mainIsSystemOutput ? null : savedMaster };
 	if (saved.cue === null && saved.master === null) return results;
 	try {
 		await dispatch({ type: 'headphone_outputs_refresh' });
@@ -318,11 +331,14 @@ export async function executeRescueRestore(
 		query?: typeof queryPerformanceState;
 		audioContextTime?: () => number;
 		notify?: RescueNotify;
+		/** AUDIO-DEVICE-07: MAIN is the macOS default output (the Mac app). */
+		mainIsSystemOutput?: boolean;
 	} = {}
 ): Promise<RescueUiRestoreResult> {
 	const dispatch = opts.dispatch ?? dispatchPerformanceCommand;
 	const query = opts.query ?? queryPerformanceState;
 	const notify = opts.notify ?? pushToast;
+	const mainIsSystemOutput = opts.mainIsSystemOutput ?? mainFollowsSystemOutput();
 	const snapshot = plan.snapshot;
 	const outcomes: RescueRestoreResult['decks'] = {};
 
@@ -339,7 +355,7 @@ export async function executeRescueRestore(
 			stable_id: snapshot.decks[deckId].stable_id
 		};
 	}
-	const sinks = await _restoreSinks(dispatch, query, snapshot, notify);
+	const sinks = await _restoreSinks(dispatch, query, snapshot, notify, mainIsSystemOutput);
 
 	if (plan.mode === 'layout') {
 		for (const deckId of DECK_IDS) {

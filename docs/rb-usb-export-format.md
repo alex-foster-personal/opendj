@@ -3,7 +3,7 @@
 > **Generated:** 2026-04-17  
 > **Scope:** `music-dj-tools` — USB export ingestion / OSS write path evaluation  
 > **Status:** Research spike (read-only). No code written.  
-> **Format template:** mirrors `docs/fingerprinting-options.md` / `docs/launcher-tech-survey.md`
+> **Format template:** mirrors `(private path)` / `(private path)`
 
 ---
 
@@ -203,7 +203,7 @@ No community member has publicly reported a **fully functional, production-quali
 - **rekordcrate round-trip:** The presence of `BinWrite` trait impls is promising but there are no GitHub issue reports confirming CDJ hardware success.
 - **Mixxx's built-in PDB reader** (C++) is the most widely field-tested OSS reader; Mixxx itself does not write PDB.
 
-**Practical conclusion for music-dj-tools:** Any code path that writes `export.pdb` to a USB intended for a live gig carries meaningful hardware risk. The safe workflow remains: generate metadata → import into rekordbox desktop → let rekordbox write the USB.
+**Practical conclusion for Open DJ:** Any code path that writes `export.pdb` to a USB intended for a live gig carries meaningful hardware risk. The safe workflow remains: generate metadata → import into rekordbox desktop → let rekordbox write the USB.
 
 ---
 
@@ -244,7 +244,7 @@ There is no official documentation publicly available; James Elliott, Henry Bett
 
 ---
 
-## 5. Notes from `docs/open-dj-v0-strawman.md`
+## 5. Notes from `(private path)`
 
 The strawman spec is USB-export-adjacent in several places:
 
@@ -254,7 +254,7 @@ The strawman spec is USB-export-adjacent in several places:
 - **§4.2 Track — Vendor mapping table:** Lists `DjmdContent.BPM` (×100), `DjmdKey.ScaleName` as rekordbox desktop fields — these are the `master.db` fields, not the PDB fields.
 - **§4 — No ANLZ or PDB fields are referenced.** The strawman deliberately avoids waveform data ("waveform summary data is not in v0", §2 item 4).
 
-**Implication:** If music-dj-tools ever adds a USB export write path, it would extend the strawman (not conflict with it) and would require a separate implementation document covering PDB page construction and ANLZ file generation.
+**Implication:** If Open DJ ever adds a USB export write path, it would extend the strawman (not conflict with it) and would require a separate implementation document covering PDB page construction and ANLZ file generation.
 
 ---
 

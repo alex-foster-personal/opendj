@@ -13,8 +13,6 @@
 -->
 <script lang="ts">
 	import type { KaraokeWord } from '$lib/api-karaoke';
-	import { WAVE_WINDOW_S } from './render';
-	import { LYRIC_ROW_CENTER_PCT } from './lyrics-lane';
 	import {
 		assignLanes,
 		activeLaneWordIdx,
@@ -22,6 +20,7 @@
 		laneWindow,
 		laneWordMaxWidthsPx,
 		sliceLanes,
+		wordRowCenters,
 		LANE_FONT_PX,
 		type AssignedLanes,
 		type LaneInputWord,
@@ -31,11 +30,15 @@
 	const {
 		words,
 		positionMs,
-		pitch
+		pitch,
+		windowSeconds,
+		playheadFrac
 	}: {
 		words: KaraokeWord[];
 		positionMs: number;
 		pitch: number;
+		windowSeconds: number;
+		playheadFrac: number;
 	} = $props();
 
 	/** Witness classes drawn as SUSPECT (render.ts drawLyricLanes contract):
@@ -82,15 +85,20 @@
 		packed: PackedLaneWord[];
 		maxWidths: (number | null)[];
 		activeIdx: number | null;
+		rowCenters: readonly number[];
+		rowCount: 2 | 3;
 	} | null => {
 		if (widthCss <= 0) return null;
-		const win = laneWindow({ positionMs, pitch, widthCss, windowSeconds: WAVE_WINDOW_S });
+		const win = laneWindow({ positionMs, pitch, widthCss, windowSeconds, playheadFrac });
 		const assigned = _assignedLanesFor(words, win.pxPerS);
 		const packed = sliceLanes(assigned, win.tLeftSec, win.pxPerS, widthCss);
+		const rowCount = assigned.usedLane2 ? 3 : 2;
 		return {
 			packed,
 			maxWidths: laneWordMaxWidthsPx(packed),
-			activeIdx: activeLaneWordIdx(assigned.laneWords, positionMs / 1000)
+			activeIdx: activeLaneWordIdx(assigned.laneWords, positionMs / 1000),
+			rowCenters: wordRowCenters(rowCount),
+			rowCount
 		};
 	});
 
@@ -110,7 +118,9 @@
 
 <div
 	class="word-lane"
+	class:rows-3={frame !== null && frame.rowCount === 3}
 	aria-label="Karaoke words"
+	data-rows={frame === null ? undefined : frame.rowCount}
 	style:font-size={`${LANE_FONT_PX}px`}
 	bind:clientWidth={widthCss}
 >
@@ -122,7 +132,7 @@
 				class:suspect={_isSuspect(packed.word.idx)}
 				class:active={packed.word.idx === frame.activeIdx}
 				style:left={`${packed.x}px`}
-				style:top={`${LYRIC_ROW_CENTER_PCT[packed.lane]}%`}
+				style:top={`${frame.rowCenters[packed.lane] ?? 50}%`}
 				style:max-width={maxWidth === null ? undefined : `${maxWidth}px`}
 				data-row={packed.lane}
 				title={_wordTitle(packed.word)}
@@ -175,5 +185,10 @@
 	.lane-word.active {
 		color: var(--rb-text);
 		font-weight: 700;
+	}
+	/* Three rows only when the packer needed the overflow row. Tighter
+	   line-height so 18/50/82 percent centers still clear a 43px row. */
+	.word-lane.rows-3 .lane-word {
+		line-height: 11px;
 	}
 </style>

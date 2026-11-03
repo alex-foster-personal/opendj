@@ -33,7 +33,10 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "rb.midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",
+        "deck_hover_link",
         "show_sections",
+        "show_tempo_lane",
+        "tempo_lane_scale",
         "auto_sync.rekordbox",
         "auto_sync.djay",
         "auto_sync.open_dj",
@@ -46,6 +49,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
 _ENUM_VALUES: dict[str, frozenset[str]] = {
     "theme": frozenset({"dark", "light"}),
     "library_density": frozenset({"compact", "cosy"}),
+    "tempo_lane_scale": frozenset({"fixed_10", "relative"}),
     "confirm.playlist_drop_mode": frozenset({"ask", "add", "move"}),
 }
 

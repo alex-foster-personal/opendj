@@ -62,7 +62,8 @@ export const contracts = {
 	/** Idle: the reserved strip stays in the layout, empty. */
 	Idle: {
 		// Story parity: the end state draws nothing visible (EMPTY, not BLANK).
-		tags: ['flat-frame'],
+		// renders-nothing tells the preview capture that an empty frame is the state.
+		tags: ['flat-frame', 'renders-nothing'],
 		args: { loading: false, progress: null, searching: false } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			await expect(root(canvasElement)).toHaveAttribute('role', 'status');

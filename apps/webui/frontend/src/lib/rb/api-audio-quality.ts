@@ -6,14 +6,16 @@
  * `opendj track quality-scan`.
  */
 import { API_BASE } from '$lib/api/base';
+import { requestCoalescer, type Coalescer } from '$lib/api/request-coalescer';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
-import { HOVER_TTL_MS } from '$lib/rb/quality-grade';
 
 let _scanRequested: Promise<void> | null = null;
 let _scanAttempts = 0;
 /** A failed request is retried this many times, this far apart, then reported. */
 const SCAN_RETRY_LIMIT = 3;
 const SCAN_RETRY_DELAY_MS = 30_000;
+
+export const HOVER_TTL_MS = 30_000;
 
 /**
  * Ask the engine, once per page session, to scan the library's audio in the
@@ -48,27 +50,26 @@ export function ensureAudioQualityScan(): Promise<void> {
 	return _scanRequested;
 }
 
-const _hovers = new Map<string, { at: number; text: Promise<string> }>();
-
 /**
  * The full QLT hover for one track, from `GET /api/v1/audio-quality/{id}`.
  * Reused for 30 s per track and grade (`gradeKey`, so a row whose grade
  * changed asks again). A failed read is worded, never blank.
  */
-export function audioQualityHover(stableId: string, gradeKey: string): Promise<string> {
+export function audioQualityHover(
+	stableId: string,
+	gradeKey: string,
+	coalescer: Coalescer = requestCoalescer
+): Promise<string> {
 	const key = `${stableId}|${gradeKey}`;
-	const cached = _hovers.get(key);
-	if (cached !== undefined && Date.now() - cached.at < HOVER_TTL_MS) return cached.text;
-	const text = fetch(`${API_BASE}/api/v1/audio-quality/${encodeURIComponent(stableId)}`)
-		.then(async (response) => {
-			if (!response.ok) throw new Error(`HTTP ${response.status} ${await response.text()}`);
-			const body = (await response.json()) as { quality: { grade: { hover: string } } };
-			return body.quality.grade.hover;
-		})
+	return coalescer
+		.share(key, HOVER_TTL_MS, () =>
+			fetch(`${API_BASE}/api/v1/audio-quality/${encodeURIComponent(stableId)}`).then(async (response) => {
+				if (!response.ok) throw new Error(`HTTP ${response.status} ${await response.text()}`);
+				const body = (await response.json()) as { quality: { grade: { hover: string } } };
+				return body.quality.grade.hover;
+			})
+		)
 		.catch((error: unknown) => {
-			_hovers.delete(key);
 			return `Audio quality details could not be loaded: ${error instanceof Error ? error.message : String(error)}`;
 		});
-	_hovers.set(key, { at: Date.now(), text });
-	return text;
 }

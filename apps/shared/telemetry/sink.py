@@ -16,6 +16,7 @@ import logging
 import os
 import socket
 import sys
+import traceback
 from collections.abc import Mapping, MutableMapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -281,16 +282,47 @@ def sentry_payload(event: ErrorEvent) -> dict[str, Any]:
     }
 
 
-def maybe_send_sentry(event: ErrorEvent) -> str | None:
-    """Forward to Sentry only when the SDK is already active. Never imports it."""
-    from apps.shared.telemetry.budget import is_uvicorn_graceful_shutdown_timeout
+def _raising_site(exc: BaseException) -> str:
+    """``module_file:function`` of the innermost traceback frame, or ``unknown``.
 
-    if is_uvicorn_graceful_shutdown_timeout(event.kind, event.source_site, event.message):
+    The file's basename only, so the same fault groups across machines whose
+    install paths differ, while two handlers that raise the same exception type
+    and message still get separate fingerprints.
+    """
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return "unknown"
+    innermost = frames[-1]
+    return f"{Path(innermost.filename).name}:{innermost.name}"
+
+
+def maybe_send_sentry(
+    event: ErrorEvent,
+    *,
+    exc: BaseException | None = None,
+) -> str | None:
+    """Forward to Sentry only when the SDK is already active. Never imports it.
+
+    uvicorn's unhandled-ASGI ERROR (OBS-5452) carries the inner exception on the
+    log record. Capture that exception so Sentry titles and groups the fault,
+    not the wrapper line ``Exception in ASGI application``. Tags still match
+    the JSONL row. Other ERROR forwards stay ``capture_message``.
+    """
+    from apps.shared.telemetry.budget import (
+        is_availability_lock_give_up,
+        is_uvicorn_graceful_shutdown_timeout,
+    )
+
+    if is_availability_lock_give_up(event.kind, event.message) or (
+        is_uvicorn_graceful_shutdown_timeout(event.kind, event.source_site, event.message)
+    ):
         return None
     if "sentry_sdk" not in sys.modules:
         return None
     try:
         import sentry_sdk
+
+        from apps.shared.telemetry.budget import is_uvicorn_asgi_exception_log
 
         client = sentry_sdk.get_client()
         if client is None or not client.is_active():
@@ -299,6 +331,13 @@ def maybe_send_sentry(event: ErrorEvent) -> str | None:
         with sentry_sdk.new_scope() as scope:
             for key, value in payload["tags"].items():
                 scope.set_tag(key, value)
+            if exc is not None and is_uvicorn_asgi_exception_log(event.message):
+                inner_id = stable_error_id(
+                    source_site=f"{event.source_site}:{_raising_site(exc)}",
+                    message=f"{type(exc).__name__}: {exc}",
+                )
+                scope.fingerprint = [inner_id]
+                return sentry_sdk.capture_exception(exc)
             scope.fingerprint = payload["fingerprint"]
             return sentry_sdk.capture_message(payload["message"], level="error")
     except Exception:

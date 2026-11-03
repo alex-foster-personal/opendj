@@ -378,6 +378,8 @@ jobs:
           # always runs FULL, so neither changes what the canary runs.
           CI_PR_SELECT_BY_NAME: ${{ vars.CI_PR_SELECT_BY_NAME }}
           CI_PR_DEMOTE_WEAK_LINKS: ${{ vars.CI_PR_DEMOTE_WEAK_LINKS }}
+          # Mirrored from ci.yml; a canary branch push is not a main push, so it stays FULL.
+          CI_MAIN_PUSH_TEST_SELECTION: ${{ vars.CI_MAIN_PUSH_TEST_SELECTION }}
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent
@@ -475,6 +477,7 @@ jobs:
             --ignore=tests/sets
             --ignore=tests/quality/test_frontend_typing_gate.py
             --ignore=tests/quality/test_frontend_typing_directives.py
+            --ignore=tests/quality/test_frontend_unit_seam_gate.py
             --ignore=tests/quality/test_mypy_cache.py
             --ignore=tests/perf/test_library_playlist_switch_bench.py
             --ignore=(private path)

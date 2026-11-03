@@ -30,6 +30,14 @@
 #   MDT_MAS_ASC_KEY_ID        App Store Connect API key id
 #   MDT_MAS_ASC_ISSUER_ID     App Store Connect API issuer id
 #
+# One OPTIONAL value, with a default that is derived, not invented:
+#
+#   MDT_MAS_PROBE_CERT        identity the post-sign JIT probe signs with
+#                             (INSTALL-3287). Unset: MDT_MAS_APP_CERT when it
+#                             runs locally, else an Apple Development identity
+#                             from the keychain, else ad-hoc. The probe prints
+#                             which one it used. Never used on the artifact.
+#
 # NOT WIRED INTO CI, on purpose. App Store delivery is release-cadence work
 # with credentials no runner should hold, and a red App Store job on every PR
 # would train everyone to ignore it.
@@ -42,6 +50,9 @@ cd "$REPO_ROOT"
 # the two signing paths cannot disagree about which files are Mach-O.
 # shellcheck source=scripts/lib/macho.sh
 . "$REPO_ROOT/scripts/lib/macho.sh"
+# prove_sandboxed_engine_can_jit: the post-sign JIT smoke (INSTALL-3287).
+# shellcheck source=scripts/lib/sandboxed_jit_smoke.sh
+. "$REPO_ROOT/scripts/lib/sandboxed_jit_smoke.sh"
 
 TAURI_DIR="apps/desktop/src-tauri"
 CONF="$TAURI_DIR/tauri.conf.json"
@@ -56,7 +67,7 @@ case "${1:-}" in
     --package)      MODE="package" ;;
     --upload)       MODE="upload" ;;
     --all)          MODE="all" ;;
-    -h|--help)      sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "[ERROR] unknown argument '${1}'. Run with --help." >&2; exit 2 ;;
 esac
 
@@ -129,7 +140,7 @@ check_toolchain() {
         fi
     fi
 
-    for tool in codesign productbuild; do
+    for tool in codesign productbuild clang; do
         if xcrun --find "$tool" >/dev/null 2>&1 || command -v "$tool" >/dev/null 2>&1; then
             ok "$tool available"
         else
@@ -456,8 +467,17 @@ build() {
     # binary the inherited sandbox actually has to land on.
     signed_count="$(macho_count "$payload")"
     [ "$signed_count" -gt 0 ] || { echo "[ERROR] found no Mach-O files under $payload; the payload carries a whole CPython runtime, so an empty scan means the scan is broken, not that the payload is clean." >&2; exit 1; }
+    # WITHOUT --options runtime, on purpose (INSTALL-3287). Open DJ's analysis
+    # JITs through numba, which the hardened runtime kills unless the
+    # interpreter's own signature carries allow-unsigned-executable-memory;
+    # the parent cannot grant it, because hardened-runtime keys are not
+    # inherited. The Mac App Store does not require the hardened runtime
+    # (notarization does), so the payload keeps the inherit-only helper
+    # entitlements rather than adding a key App Review would ask about. The
+    # outer bundle below keeps --options runtime. Measurements and the
+    # rejected alternatives: scripts/lib/sandboxed_jit_smoke.sh.
     macho_files "$payload" | xargs -0 -n 1 \
-        codesign --force --timestamp --options runtime \
+        codesign --force --timestamp \
             --sign "$MDT_MAS_APP_CERT" \
             --entitlements "$BUILD_DIR/Entitlements.inherit.plist"
     ok "signed $signed_count Mach-O files in the payload with the inherited sandbox"
@@ -472,6 +492,27 @@ build() {
         exit 1
     }
     ok "the bundled interpreter is in the signed set"
+
+    # The static half first, so a regression names its cause before the
+    # dynamic half spends a JIT on it.
+    local interpreter
+    interpreter="$(macho_files "$payload" | tr '\0' '\n' | grep '/runtime/bin/python3' | head -1)"
+    local interpreter_signature
+    interpreter_signature=$(codesign -dv "$interpreter" 2>&1) || {
+        echo "[ERROR] could not read the signature of $interpreter: $interpreter_signature" >&2
+        exit 1
+    }
+    if grep -q 'flags=.*runtime' <<<"$interpreter_signature"; then
+        echo "[ERROR] $interpreter is signed with the hardened runtime, which kills numba's JIT under the App Store signing; see INSTALL-3287 in scripts/lib/sandboxed_jit_smoke.sh." >&2
+        exit 1
+    fi
+    ok "the bundled interpreter is not under the hardened runtime"
+    # The probe signs itself (and, when the store certificate cannot launch
+    # locally, a clone of the payload) with a runnable identity it names in
+    # the output: MDT_MAS_PROBE_CERT, else an Apple Development identity, else
+    # ad-hoc. The store artifact keeps the MDT_MAS_APP_CERT signatures.
+    prove_sandboxed_engine_can_jit "$payload" "$MDT_MAS_APP_CERT" \
+        "$BUILD_DIR/Entitlements.plist" "$BUILD_DIR/Entitlements.inherit.plist" "$BUILD_DIR" || exit 1
 
     # bin/opendj-engine is deliberately NOT signed on its own. It is a POSIX
     # shell script (LAUNCHER_TEMPLATE in scripts/build_engine_payload.py opens

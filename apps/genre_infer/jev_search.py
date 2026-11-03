@@ -16,12 +16,11 @@ error with a reason, never a partial or invented ranking.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from apps.genre_infer import jev
+from apps.genre_infer import jev, keystore
 
 #: The bar shortlists about 50; more would crowd JEV's context with little gain.
 MAX_TRACKS = 60
@@ -122,7 +121,7 @@ def rank(
 
     ``post`` is the HTTP call (``jev._http_post``); tests pass a recorded reply.
     """
-    key = key if key is not None else os.environ.get(jev.KEY_ENV, "").strip()
+    key = key if key is not None else keystore.resolve(jev.KEY_ENV)
     if not key:
         raise SearchKeyMissing(f"AI search needs an OpenRouter key: set {jev.KEY_ENV} in the engine's environment")
     body = build_request(words, tracks, jev.resolve_model(model))
@@ -136,5 +135,4 @@ def rank(
 
 def configured(environ: Mapping[str, str] | None = None) -> bool:
     """Whether an OpenRouter key is set (an empty value counts as unset)."""
-    env = os.environ if environ is None else environ
-    return bool(env.get(jev.KEY_ENV, "").strip())
+    return bool(keystore.resolve(jev.KEY_ENV, environ))

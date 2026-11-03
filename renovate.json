@@ -10,6 +10,7 @@
     "before 6am on monday"
   ],
   "minimumReleaseAge": "3 days",
+  "updateNotScheduled": false,
   "prConcurrentLimit": 6,
   "dependencyDashboard": true,
   "dependencyDashboardApproval": false,

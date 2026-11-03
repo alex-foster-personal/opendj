@@ -58,6 +58,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "autoplay-curve-rainbow.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "autoplay-curve.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -104,6 +108,10 @@
 		{
 			"file": "bpm-hover-grid-verdict.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "bpm-key-cell-edit.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
 		},
 		{
 			"file": "brand-alpha-font.test.mjs",
@@ -478,10 +486,6 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
-			"file": "gothic-no-mix-compat-row-tint.test.mjs",
-			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
-		},
-		{
 			"file": "grid-edit.test.mjs",
 			"reason": "PR #6235 grid adjust/shift, written before GUARD-15 landed (#5857, Sat 31 Oct 2026): pins GridEditButtons and Deck markup (titles, inert Rust-mode state) beside behavioral tests of the grid-edit modules; render conversion owed by the PR's review-followup"
 		},
@@ -614,6 +618,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "last-played.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "leader-only-writers.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -628,6 +636,10 @@
 		{
 			"file": "library-columns.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "library-compat-row-edge-bar.test.mjs",
+			"reason": "LIBM-186 successor to gothic-no-mix-compat-row-tint.test.mjs (Tue 3 Nov 2026): pins the scoped <style> selector exclusions and theme tokens of the compatible-row bar, which SSR render output does not carry"
 		},
 		{
 			"file": "library-filters.test.mjs",
@@ -862,6 +874,22 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "pgmix-01-stem-eq-drag.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7692, the waveform and mixer preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
+			"file": "pgmix-02-library-song-capacity.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7692, the waveform and mixer preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
+			"file": "pgmix-03-calibration-mic-pick.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7692, the waveform and mixer preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
+			"file": "pgmix-04-feedback-pin-shell-tokens.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7692, the waveform and mixer preview port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "pin-1f9711b7-library-load-reserved-strip.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -990,6 +1018,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "playlist-set-run-status.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "playlist-set-tabs.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1022,6 +1054,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "preview-cue-user-load-stop.test.mjs",
+			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
+		},
+		{
 			"file": "preview-waveform-contract.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1032,6 +1068,10 @@
 		{
 			"file": "quantize-grid-options.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "quick-draw-transition-in.test.mjs",
+			"reason": "#8385: asserts the transition-in runner PUTs, toasts, then calls engine.refreshHotCues, in that order inside a click handler; an SSR render never runs the handler, so call order is only visible in source"
 		},
 		{
 			"file": "quick-draw-vocal-fix.test.mjs",
@@ -1468,6 +1508,14 @@
 		{
 			"file": "wheel-sensitivity-settings.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "deck-hover-link-pref.test.mjs",
+			"reason": "DECKUX-5917b wiring pin: asserts each linked panel passes uiPrefs.deck_hover_link through deckHoverLinkId and never the raw hovered deck. Those are the expressions in Deck.svelte, WaveRow.svelte, ChannelStrip.svelte and TrackTable.svelte; rendering TrackTable needs the library and daemon, so the source is the instrument. The behavior itself is rendered-free in the first test and in the Playwright correspondence spec."
+		},
+		{
+			"file": "wave-quick-settings.test.mjs",
+			"reason": "WAVEQS-8348b..8348d wiring pin (PR #8348): asserts the popover and SettingsOverlay both reach previews only through SettingPreview, the popover writes via applySettingChange and never uiPrefs, and the glyph's verbatim title and open-focus selector. The popover's module graph pulls the rune settings singleton, so the source is the instrument; the rendered behavior is covered by wave-quick-settings.spec.ts against the real app."
 		}
 	]
 }

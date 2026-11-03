@@ -9,7 +9,6 @@
  * DOM-free so node:test can drive it with real-shaped vocals objects.
  */
 
-import { WAVE_WINDOW_S } from "$lib/components/rb/wave/render";
 import { waveClickTargetMs } from "$lib/components/rb/wave/wave-scrub";
 
 export type VocalStatus =
@@ -103,6 +102,10 @@ export function waveRowTimeS(args: {
   centerPositionMs: number;
   durationMs: number;
   pitch: number;
+  /** The row's zoom window and playhead place (WAVEZOOM-6802/05). Required: a
+   * caller that omits them must fail, not map clicks through the 24 s view. */
+  windowS: number;
+  playheadFrac: number;
 }): number {
   return (
     waveClickTargetMs({
@@ -110,7 +113,8 @@ export function waveRowTimeS(args: {
       durationMs: args.durationMs,
       pointerX: args.pointerX,
       widthPx: args.widthPx,
-      windowSeconds: WAVE_WINDOW_S * args.pitch,
+      windowSeconds: args.windowS * args.pitch,
+      playheadFrac: args.playheadFrac,
     }) / 1000
   );
 }

@@ -16,6 +16,7 @@ from typing import Any
 
 from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
+from apps.shared.text import as_text
 from apps.sync_hub import protocol, track_lifecycle
 from apps.sync_hub.engine_common import (
     HUB_CHANGELOG_TABLE,
@@ -64,13 +65,6 @@ def _stamp_columns_for(table: str) -> tuple[str, ...]:
     if table == protocol.TRACK_FIELDS_TABLE:
         return _STAMP_COLUMNS + (protocol.MODIFIED_AT,)
     return _STAMP_COLUMNS
-
-
-def _as_text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
 
 
 # ----- apply -----------------------------------------------------------------
@@ -811,13 +805,13 @@ def _resolve_against_stored(
         if faults:
             return _Resolution(loses=False, faults=faults)
         if change.table == "tracks":
-            incoming_hash = _as_text(change.values.get("content_hash"))
+            incoming_hash = as_text(change.values.get("content_hash"))
             stored_row = conn.execute(
                 "SELECT content_hash FROM tracks WHERE stable_id = ?",
                 (change.pk[0],),
             ).fetchone()
             stored_hash = (
-                _as_text(stored_row[0]) if stored_row is not None else None
+                as_text(stored_row[0]) if stored_row is not None else None
             )
             if (
                 incoming_hash

@@ -3,8 +3,8 @@
 Route audit (sync_hub transport failures):
 - stems_assets.py: bulk-hydrate -> 503 SYNC_HUB_UNREACHABLE
 - stems.py: manifest/part hydrate -> 503 via _raise_hydrate_error
-- cloudsync_ops.py: 502 CLOUDSYNC_HUB_UNREACHABLE (unchanged)
-- feedback_sync.py: 503 FEEDBACK_SYNC_HUB_UNREACHABLE (unchanged)
+- cloudsync_ops.py: 502 CLOUDSYNC_HUB_UNREACHABLE; 409 CLOUDSYNC_SYNC_REFUSED on wire 409
+- feedback_sync.py: 503 FEEDBACK_SYNC_HUB_UNREACHABLE; 502 FEEDBACK_SYNC_FAILED on wire 409
 """
 
 from __future__ import annotations

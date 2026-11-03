@@ -4,6 +4,7 @@
 	// deck identity, artwork, the track title and its live key and BPM
 	// (WaveGutter, DECKUX-40). An empty deck shows only its number.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
+	import { untrack } from 'svelte';
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
@@ -19,12 +20,13 @@
 	import {
 		ghostSeekFrame,
 		masterAnlzForDeck,
-		masterDownbeatOverlayForDeck
+		masterDownbeatOverlayForDeck,
+		masterGridGhostForDeck
 	} from './wave-row-deckux-overlays';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
-	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
+	import { deckHoverLinkId, deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import {
 		deckAnlzNeedsFetch,
 		ensureAnlz,
@@ -56,7 +58,6 @@
 		drawWaveRow,
 		readPalette,
 		resolvePaintPalette,
-		WAVE_WINDOW_S,
 		type PlayheadTone,
 		type WavePalette
 	} from './render';
@@ -78,6 +79,40 @@
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { sectionsApiFor } from './sections-lazy.svelte';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
+	import { deckWaveZoom, type WaveZoom } from '$lib/rb/wave-zoom';
+	import {
+		setWaveZoomGlideRunning,
+		setWaveZoomRowBeats,
+		setWaveZoomScrubPreviewMs,
+		setWaveZoomScrubWindowS,
+		waveZoomGlideRunning,
+		waveZoomRowBeats,
+		waveZoomScrubPreviewMs,
+		waveZoomScrubWindowS,
+	} from '$lib/rb/wave-zoom-glide-state.svelte';
+	import {
+		WAVE_ZOOM_ANIM_MS,
+		setWaveZoomGlide,
+		beatgridVariesTempo,
+		waveZoomRefAt,
+		waveZoomSharedWindowS,
+		waveZoomAnimatedWindowS,
+		waveZoomAnimating,
+		waveZoomAnimFromS,
+		waveZoomLabel,
+		wavePlayheadFrac,
+		waveZoomRef,
+		waveZoomWheelDeltaPx,
+		waveZoomWheelSteps,
+		waveZoomWindowS,
+		type WaveZoomAnim
+	} from '$lib/rb/wave-zoom-view';
+	import { planAnchorMoved, planDeckOverlay } from '$lib/rb/plan-overlay-store.svelte';
+	import { planChipText, planChipTitle } from '$lib/rb/plan-overlay-chip';
+	import { tempoCurveData, tempoStabilityKey } from '$lib/rb/tempo-stability';
+	import { requestTempoStability, tempoStabilityFor } from '$lib/rb/tempo-stability.svelte';
+	import { effectiveWaveScheme } from '$lib/rb/ui-skin';
+	import { TEMPO_LANE_COLORS } from './tempo-marks';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -137,6 +172,12 @@
 		readyBeatgridFallback(deck.stable_id, fallbackGate, getBeatgridFallbackEntry)
 	);
 	const paintAnlz = $derived(paintAnlzForRow(anlzData, beatgridFallback));
+	// Publish the beats this row paints, so every row sizes the reference's bars
+	// from the same analysis the reference row draws (WAVEZOOM-6802).
+	$effect(() => {
+		setWaveZoomRowBeats(deckId, paintAnlz?.beatgrid.beats ?? null);
+		return () => setWaveZoomRowBeats(deckId, null);
+	});
 
 
 	// Scrub-target snapping (pin a705aebfbeae) reads this deck's own beatgrid,
@@ -164,6 +205,193 @@
 	);
 	const partnerState = $derived(splitPartner === null ? null : getDeckState(splitPartner.id));
 	const partnerAnlz = $derived(masterAnlzForDeck(partnerState, getAnlzEntry));
+
+	// ---- WAVEZOOM-6802..06: zoom step, step animation and elastic playhead.
+	// The reference deck (master, else the first loaded deck) sizes a bar and
+	// "whole track"; its position is read live at paint time, never from here,
+	// so this derived does not re-run on every position sample.
+	const zoomStep = $derived(deckWaveZoom(uiPrefs, deckId));
+	const zoomRefDeck = $derived(
+		waveZoomRef(
+			DECK_IDS.map((id) => {
+				const st = getDeckState(id);
+				return {
+					id,
+					// A deck is a reference only once its length is published: the load sets
+					// stable_id before duration_ms, and an incomplete load must not elect.
+					loaded: st.stable_id !== null && st.duration_ms !== null,
+					isMaster: st.is_master,
+					// Bars follow the beatgrid the waveform draws; the tag is the fallback.
+					bpm: st.anlz?.beatgrid.bpm ?? st.bpm,
+					pitch: st.pitch,
+					durationMs: st.duration_ms,
+					positionMs: 0
+				};
+			})
+		)
+	);
+	let zoomAnim = $state.raw<WaveZoomAnim | null>(null);
+	let zoomAnimMs = WAVE_ZOOM_ANIM_MS;
+	/** True while a step animates, so the rAF loop runs on a stopped deck too. */
+	let zoomAnimActive = $state(false);
+	let zoomChipVisible = $state(false);
+	/** Bumped each animated frame so the DOM lanes (lyrics, stems) follow the
+	 * glide; the canvas reads the live view itself every frame. */
+	let zoomFrame = $state(0);
+	let _prevZoom: WaveZoom | null = null;
+	$effect(() => {
+		const next = zoomStep;
+		const prev = _prevZoom;
+		_prevZoom = next;
+		if (prev === null || prev === next) return;
+		const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+		const now = performance.now();
+		// A step that lands mid-glide starts from the window on screen, not from
+		// the previous step's target, so the waveform does not jump.
+		const shown = untrack(() => {
+			if (zoomAnim === null || !waveZoomAnimating(zoomAnim, now, zoomAnimMs)) return undefined;
+			const ref =
+				zoomRefDeck === null
+					? null
+					: waveZoomRefAt(zoomRefDeck, getDeckState(zoomRefDeck.id).position_ms, waveZoomRowBeats(zoomRefDeck.id));
+			return waveZoomAnimatedWindowS(zoomAnim, ref, now, zoomAnimMs);
+		});
+		// Plain locals feed the writes and the setters: reading the $state back here
+		// would subscribe this effect to its own writes and cancel the glide it starts.
+		const durMs = reduced ? 0 : WAVE_ZOOM_ANIM_MS;
+		const anim = { from: prev, to: next, startMs: now, fromWindowS: shown };
+		zoomAnimMs = durMs;
+		zoomAnim = anim;
+		setWaveZoomGlide(deckId, anim, durMs);
+		zoomAnimActive = durMs > 0;
+		setWaveZoomGlideRunning(deckId, durMs > 0);
+		zoomChipVisible = true;
+		const animTimer = setTimeout(() => {
+			zoomAnimActive = false;
+			setWaveZoomGlideRunning(deckId, false);
+		}, durMs + 32);
+		const chipTimer = setTimeout(() => (zoomChipVisible = false), 1200);
+		return () => {
+			clearTimeout(animTimer);
+			clearTimeout(chipTimer);
+			setWaveZoomGlideRunning(deckId, false);
+		};
+	});
+	// One chip for the stack while the zoom is linked (on the top row), else
+	// one on each row whose own step changed.
+	const zoomChipHere = $derived(zoomChipVisible && (!uiPrefs.wave_zoom_linked || deckId === 1));
+	// Elastic: once zoomed out past half the reference track the shared
+	// playhead column follows the reference deck, so every row keeps painting
+	// while that deck plays, the reference row included, so its lanes and
+	// overlays advance per frame with its canvas (not per transport sample).
+	const elasticFollowing = $derived.by(() => {
+		const ref = zoomRefDeck;
+		if (uiPrefs.wave_zoom_playhead !== 'elastic' || ref === null) return false;
+		if (!getDeckState(ref.id).playing || ref.durationMs === null) return false;
+		const live = waveZoomRefAt(ref, getDeckState(ref.id).position_ms, waveZoomRowBeats(ref.id));
+		return waveZoomWindowS(deckWaveZoom(uiPrefs, ref.id), live) > ref.durationMs / 1000 / ref.pitch / 2;
+	});
+	// The reference's own glide or scrub keeps every follower row repainting while
+	// it runs, even when the follower is stopped and not elastic-following.
+	const refMoving = $derived(
+		zoomRefDeck !== null &&
+			zoomRefDeck.id !== deckId &&
+			(waveZoomGlideRunning(zoomRefDeck.id) || waveZoomScrubPreviewMs(zoomRefDeck.id) !== null)
+	);
+
+	// A playing reference whose beatgrid varies in tempo changes its bar length
+	// as it crosses each tempo boundary. Every row, the reference's own included,
+	// must tick with it: lyric lanes, stem rows and stopped followers keep the
+	// previous scale otherwise, until the next transport publication. A constant
+	// grid never changes, so it costs no per-frame work.
+	const refTempoLive = $derived.by(() => {
+		const ref = zoomRefDeck;
+		if (ref === null || !getDeckState(ref.id).playing) return false;
+		return beatgridVariesTempo(waveZoomRowBeats(ref.id));
+	});
+
+	/** The row's zoom view as painted: the live view, with the window held during a drag. */
+	function _zoomView(paintPositionMs: number): { windowS: number; frac: number; cacheWindowS?: number } {
+		const view = _liveZoomView(paintPositionMs);
+		// A held scale is the reference's for the whole gesture, so LINKED follower
+		// rows share it. Unlinked rows keep their own zoom. The playhead fraction
+		// stays live: it is the shared column.
+		const linkedRef = uiPrefs.wave_zoom_linked && zoomRefDeck !== null ? zoomRefDeck : null;
+		const held = scrubFrozenWindowS ?? (linkedRef === null ? null : waveZoomScrubWindowS(linkedRef.id));
+		if (held === null) return view;
+		return { windowS: held, frac: view.frac };
+	}
+
+	/** The row's live zoom view: wall-clock window and playhead place 0..1. */
+	function _liveZoomView(paintPositionMs: number): { windowS: number; frac: number; cacheWindowS?: number } {
+		const ref = zoomRefDeck;
+		// The reference's bar length follows the beatgrid tempo at its current
+		// position, so a variable-tempo grid keeps the ladder honest (WAVEZOOM-6802).
+		const live =
+			ref === null
+				? null
+				: waveZoomRefAt(
+						ref,
+						ref.id === deckId ? paintPositionMs : _partnerPaintMs(ref.id, getDeckState(ref.id)),
+						waveZoomRowBeats(ref.id)
+					);
+		const anim = zoomAnim;
+		const now = performance.now();
+		const gliding = anim !== null && anim.to === zoomStep && waveZoomAnimating(anim, now, zoomAnimMs);
+		const windowS = gliding ? waveZoomAnimatedWindowS(anim, live, now, zoomAnimMs) : waveZoomWindowS(zoomStep, live);
+		// The playhead column is shared: every row places it from the reference
+		// deck's window, animated while the reference glides, so unlinked rows at
+		// different steps stay on one column through every glide.
+		const sharedWindowS = live === null || ref === null ? windowS : waveZoomSharedWindowS(ref.id, deckWaveZoom(uiPrefs, ref.id), live, now);
+		const frac = wavePlayheadFrac(uiPrefs.wave_zoom_playhead, sharedWindowS, live);
+		if (!gliding) return { windowS, frac };
+		// Build the band cache once, at the wider step, and scale it through the glide.
+		const cacheWindowS = Math.max(waveZoomAnimFromS(anim, live), waveZoomWindowS(anim.to, live));
+		return { windowS, frac, cacheWindowS };
+	}
+
+	// Ctrl/Cmd-wheel and trackpad pinch (which arrives as a ctrl-wheel) zoom
+	// one ladder step per WAVE_ZOOM_WHEEL_STEP_PX of delta. Registered
+	// non-passive on the canvas wrap, below the row's fader wheelAdjust, and
+	// stopped there so the channel fader never moves on a zoom gesture.
+	const _zoomWheelAcc = { px: 0 };
+	let canvasWrapEl: HTMLDivElement | undefined = $state();
+	$effect(() => {
+		const el = canvasWrapEl;
+		if (!el) return;
+		const onWheel = (event: WheelEvent): void => {
+			if (!(event.ctrlKey || event.metaKey)) return;
+			event.preventDefault();
+			event.stopPropagation();
+			const deltaPx = waveZoomWheelDeltaPx(event.deltaY, event.deltaMode, el.clientHeight);
+			// One step per threshold crossed: a single large delta can complete several.
+			const steps = waveZoomWheelSteps(_zoomWheelAcc, deltaPx);
+			for (let i = 0; i < Math.abs(steps); i++) {
+				void runPerformanceCommandFromUi({
+					type: 'wave_zoom_step',
+					direction: steps > 0 ? 'in' : 'out',
+					deck: deckId
+				});
+			}
+		};
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	});
+	// WAVEPLAN-7896: a pending plan's curves on this deck and on the split row's partner. Null with no plan.
+	const planCurves = $derived(planDeckOverlay(deckId));
+	// Issue #8339: tempo-change marks with direction and severity, from the
+	// same daemon read the deck strip's tempo lane paints.
+	const tempoKey: string | null = $derived(
+		deck.stable_id === null || anlzData === null ? null : tempoStabilityKey(deck.stable_id, anlzData.beatgrid)
+	);
+	$effect(() => {
+		if (tempoKey !== null && deck.stable_id !== null) requestTempoStability(deck.stable_id, tempoKey);
+	});
+	const tempoSegments = $derived(tempoCurveData(tempoKey === null ? null : tempoStabilityFor(tempoKey)));
+	const tempoScale = $derived(uiPrefs.tempo_lane_scale);
+	const hideTempo = $derived(!uiPrefs.show_tempo_lane);
+	const tempoColors = $derived(TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)]);
+	const partnerPlanCurves = $derived(splitPartner === null ? null : planDeckOverlay(splitPartner.id));
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
 		if (!deck.audible) return 'stopped';
@@ -204,7 +432,18 @@
 			hasTrustedBeatGrid
 		})
 	);
-
+	// Faint master beat grid on every other row, whether or not Beat Sync Max
+	// is on. The master row keeps its own grid and does not ghost itself.
+	const masterBeatGhost = $derived.by(() =>
+		masterGridGhostForDeck({
+			isMaster: deck.is_master,
+			masterState,
+			masterAnlz,
+			deckPositionMs: deck.position_ms,
+			deckPitch: deck.pitch,
+			hasTrustedBeatGrid
+		})
+	);
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
 	let cssW = $state(0);
@@ -225,14 +464,32 @@
 	let scrubWidthPx = 0;
 	let scrubMoved = false;
 	let scrubDispatchError: unknown = null;
+	// The painted window scale, captured at pointerdown and held for the gesture. The drag
+	// maps pointer travel to time with one scale, so the content under the pointer must not
+	// stretch while the preview crosses a variable-tempo boundary. The playhead fraction
+	// stays live: it is the shared column that followers track.
+	let scrubFrozenWindowS: number | null = null;
 	const _paintScheduleState = initPaintScheduleState();
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
 	});
 
+	/** Mirrors this row's gesture target into the shared registry, so follower rows
+	 * place the shared playhead from the same scrub position the reference paints. */
+	function _setScrubPreview(ms: number | null): void {
+		scrubPreviewMs = ms;
+		setWaveZoomScrubPreviewMs(deckId, ms);
+	}
+	// Teardown mid-gesture must clear the shared held scale too, or linked rows
+	// would keep the old gesture's window after this row unmounts.
+	$effect(() => () => {
+		setWaveZoomScrubPreviewMs(deckId, null);
+		setWaveZoomScrubWindowS(deckId, null);
+	});
+
 	function _queueSeek(positionMs: number): void {
-		scrubPreviewMs = positionMs;
+		_setScrubPreview(positionMs);
 		// Drag path must not await: the latest-only dispatcher coalesces while
 		// the previous schedule drains. Awaiting here serialized every move
 		// behind transport presentation and felt laggy vs Rekordbox.
@@ -252,11 +509,18 @@
 	}
 
 	function _partnerPaintMs(id: DeckId, partner: { position_ms: number; playing: boolean }): number {
+		const preview = waveZoomScrubPreviewMs(id);
+		if (preview !== null) return preview;
 		return isPresentationClockStalled(id) ? partner.position_ms : playheadMs(id, partner);
 	}
 
+	const laneView = $derived.by(() => {
+		void zoomFrame;
+		void zoomAnimActive;
+		return _zoomView(_paintPositionMs());
+	});
 	const stemScrollPx = $derived(
-		paintScrollPx(_paintPositionMs(), deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch)
+		paintScrollPx(_paintPositionMs(), deck.duration_ms, cssW, laneView.windowS, deck.pitch)
 	);
 	const stemRowExtraPx = $derived(
 		showStems && deck.stable_id !== null ? STEM_WAVE_ROW_MAX * STEM_WAVE_ROW_PX : 0
@@ -285,7 +549,8 @@
 		const el = canvasEl;
 		if (!el || palette === null || cssW === 0 || cssH === 0) return;
 		const paintPositionMs = _paintPositionMs();
-		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
+		const view = _zoomView(paintPositionMs);
+		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, view.windowS, deck.pitch);
 		const ghost = ghostSeekFrame(waveformSeekArmed, performance.now());
 		const partnerPaintMs = splitPartner === null || partnerState === null ? null : _partnerPaintMs(splitPartner.id, partnerState);
 		const visualInputs = [
@@ -303,7 +568,15 @@
 			splitPartner?.id ?? null,
 			partnerAnlz,
 			partnerPaintMs,
-			partnerState?.pitch ?? null
+			partnerState?.pitch ?? null,
+			Math.round(view.windowS * 1000),
+			Math.round(view.frac * cssW),
+			planCurves,
+			partnerPlanCurves,
+			tempoSegments,
+			tempoColors,
+			tempoScale,
+			hideTempo
 		] as const;
 		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
@@ -322,12 +595,12 @@
 			// Empty deck: flat dark row + state-derived center line - never an invented waveform.
 			ctx.fillStyle = paintPalette.bg;
 			ctx.fillRect(0, 0, cssW, cssH);
-			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
+			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone, 0, view.frac);
 			return;
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
-			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin), windowS: view.windowS, playheadFrac: view.frac, ...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }) };
 			paintSplitRow(
 				el,
 				ctx,
@@ -339,7 +612,8 @@
 					pitch: partnerState.pitch,
 					loop: partnerState.loop,
 					playheadTone: partnerState.is_master ? 'master' : partnerState.audible ? 'now' : 'stopped',
-					playheadTimeMs: performance.now()
+					playheadTimeMs: performance.now(),
+					planCurves: partnerPlanCurves
 				},
 				{
 					...common,
@@ -351,7 +625,12 @@
 					playheadTone: syncPlayheadTone,
 					playheadTimeMs: performance.now(),
 					ghostSeekMs: ghost.ghostSeekMs,
-					ghostSeekVisible: ghost.ghostSeekVisible
+					ghostSeekVisible: ghost.ghostSeekVisible,
+					planCurves,
+					tempo: tempoSegments,
+					tempoColors,
+					tempoScale,
+					hideTempo
 				},
 				{ top: splitPartner.label, bottom: `DECK ${deckId}`, color: paintPalette.phrase, line: paintPalette.tick },
 				dpr
@@ -372,8 +651,17 @@
 			showSections: uiPrefs.show_sections,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			masterDownbeatOverlay,
+			masterBeatGhost,
 			ghostSeekMs: ghost.ghostSeekMs,
-			ghostSeekVisible: ghost.ghostSeekVisible
+			ghostSeekVisible: ghost.ghostSeekVisible,
+			windowS: view.windowS,
+			playheadFrac: view.frac,
+			...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }),
+			planCurves,
+			tempo: tempoSegments,
+			tempoColors,
+			tempoScale,
+			hideTempo
 		});
 	}
 
@@ -396,16 +684,22 @@
 	// painting while it plays even when this deck is paused.
 	const partnerMoving = $derived(splitPartner !== null && (partnerState?.playing ?? false));
 
+	// The hover-only pulse the rAF loop below keeps running. Without hover nothing paints a paused follower on a frame
+	// loop, so the stopped-deck repaint must keep it: a cue or a plan's curves on an idle synced deck have to show.
+	const hoverPulse = $derived(deckHoverUi.deckId === deckId && (syncPlayheadTone === 'drift' || masterMoving));
+
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
 		// The hover and drift-pulse inputs are read ONLY when nothing else keeps the
 		// loop running. Read unconditionally, a follower's sync tone flipping mid-frame
 		// re-ran this effect, cancelled the frame already queued and dropped one
 		// (ANIM-CLOCK-01: about one frame a second on the follower's strip).
-		const running = deck.playing || seeking || waveformSeekArmed !== null || partnerMoving;
-		if (!running && !(deckHoverUi.deckId === deckId && (syncPlayheadTone === 'drift' || masterMoving))) return;
+		const running =
+			deck.playing || seeking || waveformSeekArmed !== null || partnerMoving || zoomAnimActive || elasticFollowing || refMoving || refTempoLive;
+		if (!running && !hoverPulse) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
+			if (zoomAnimActive || elasticFollowing || refMoving || refTempoLive) zoomFrame++;
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
 			stallState = foldPresentationSample(stallState, {
 				playing: deck.playing,
@@ -426,7 +720,12 @@
 	// early return keeps position_ms untracked during playback so this
 	// effect stays quiet while the rAF loop owns the canvas.
 	$effect(() => {
-		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving || partnerMoving) return;
+		if (
+			deck.playing || seeking || hoverPulse || partnerMoving ||
+			zoomAnimActive || elasticFollowing || refMoving || refTempoLive
+		) {
+			return;
+		}
 		void deck.stable_id;
 		void deck.position_ms;
 		void deck.pitch;
@@ -439,14 +738,27 @@
 		void paintAnlz;
 		void anlzErrorCode;
 		void masterBeats;
-		void masterState?.position_ms;
+		// Under a moving master this would repaint an idle follower on every engine tick.
+		if (!masterMoving) void masterState?.position_ms;
 		void partnerState?.position_ms;
 		void partnerState?.pitch;
 		void partnerAnlz;
 		void splitPartner;
+		void planCurves;
+		void partnerPlanCurves;
+		void tempoSegments;
+		void tempoColors;
+		void tempoScale;
+		void hideTempo;
 		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void cssW;
 		void cssH;
+		void zoomStep;
+		void zoomRefDeck;
+		// A paused reference deck that is scrubbed repaints every stopped row, so
+		// the reference's live position is tracked here, not only its identity.
+		void (zoomRefDeck === null ? null : getDeckState(zoomRefDeck.id).position_ms);
+		void uiPrefs.wave_zoom_playhead;
 		void uiPrefs.show_sections;
 		// STRUCT-05: subscribe to the lazily loaded section painter so the
 		// bands paint as soon as it lands after the pref turns on.
@@ -466,7 +778,7 @@
 			clientX,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S * deck.pitch
+			windowSeconds: _zoomView(scrubOriginPositionMs).windowS * deck.pitch
 		});
 		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
@@ -477,7 +789,9 @@
 			pointerX: clientX - scrubLeftPx,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S * deck.pitch
+			...((view) => ({ windowSeconds: view.windowS * deck.pitch, playheadFrac: view.frac }))(
+				_zoomView(scrubOriginPositionMs)
+			)
 		});
 		return snapWaveTargetMs(raw, scrubBeats, waveSnapModeFromModifiers(modifiers));
 	}
@@ -486,7 +800,9 @@
 		scrubPointerId = null;
 		scrubMoved = false;
 		seeking = false;
-		scrubPreviewMs = null;
+		scrubFrozenWindowS = null;
+		setWaveZoomScrubWindowS(deckId, null);
+		_setScrubPreview(null);
 	}
 
 	async function onPointerDown(event: PointerEvent): Promise<void> {
@@ -512,6 +828,8 @@
 		scrubWidthPx = rect.width;
 		scrubMoved = false;
 		scrubDispatchError = null;
+		scrubFrozenWindowS = _zoomView(_paintPositionMs()).windowS;
+		setWaveZoomScrubWindowS(deckId, scrubFrozenWindowS);
 		seeking = true;
 		const snapOnDown = waveSnapModeFromModifiers(event);
 		const deferBeatSyncSeek =
@@ -519,7 +837,7 @@
 		// SPIKE-PERF: jump the painted window under the pointer immediately,
 		// except BeatSyncMax deferred seeks (ghost cursor until arm fires).
 		if (!deferBeatSyncSeek) {
-			scrubPreviewMs = _clickTarget(event.clientX, event);
+			_setScrubPreview(_clickTarget(event.clientX, event));
 		}
 	}
 
@@ -540,7 +858,7 @@
 				? _dragTarget(event.clientX, event)
 				: _clickTarget(event.clientX, event);
 			if (!scrubMoved && snap === 'downbeat' && deck.playing && uiPrefs.beat_sync_max) {
-				scrubPreviewMs = null;
+				_setScrubPreview(null);
 				await runPerformanceCommandFromUi({
 					type: 'waveform_seek',
 					deck: deckId,
@@ -548,7 +866,7 @@
 					snap
 				});
 			} else {
-				scrubPreviewMs = targetMs;
+				_setScrubPreview(targetMs);
 				await seekDispatcher.request(targetMs);
 				if (scrubDispatchError !== null) throw scrubDispatchError;
 			}
@@ -573,8 +891,10 @@
 <div
 	class="rb-waverow"
 	class:secondary={deckId === 3 || deckId === 4}
-	class:deck-focus={deckHoverUi.deckId === deckId}
+	class:deck-focus={deckHoverLinkId(uiPrefs.deck_hover_link) === deckId}
 	data-deck={deckId} data-wave-surface="row"
+	data-wave-window-s={laneView.windowS}
+	data-wave-playhead-frac={laneView.frac}
 	style={`--rb-waverow-stem-extra: ${stemRowExtraPx}px`}
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
@@ -588,7 +908,16 @@
 >
 	<WaveGutter {deck} {deckId} />
 	<div class="wave-col">
-		<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
+		<div class="canvas-wrap" title={vocalsTitle ?? undefined} bind:this={canvasWrapEl}>
+			{#if zoomChipHere}
+				<!-- Keyed so each step remounts the chip and restarts its fade. -->
+				{#key zoomStep}
+					<span
+						class="zoom-chip"
+						title={`Waveform zoom: ${waveZoomLabel(zoomStep).toLowerCase()} across the row. Ctrl or Cmd plus the mouse wheel, a trackpad pinch, or the [ and ] keys change it.`}
+					>{waveZoomLabel(zoomStep)}</span>
+				{/key}
+			{/if}
 			{#if finished}
 				<button
 					class="finished-eject"
@@ -624,7 +953,12 @@ estimated from the render clock and may run ahead of what you hear."
 				onpointercancel={onPointerCancel}
 				onlostpointercapture={onLostPointerCapture}
 			></canvas>
-			<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} />
+			{#if planCurves !== null}
+				<span class="plan-chip" data-plan-chip={planCurves.role} title={planChipTitle(planCurves, planAnchorMoved())}>
+					{planChipText(planCurves, planAnchorMoved())}
+				</span>
+			{/if}
+			<LyricLanes stableId={deck.stable_id} lyrics={lyricsState.lyrics} loadError={lyricsState.loadError} positionMs={_paintPositionMs()} pitch={deck.pitch} windowSeconds={laneView.windowS} playheadFrac={laneView.frac} />
 			{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 				<span class="anlz-state" title={anlzErrorCode}>
 					{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
@@ -640,7 +974,7 @@ estimated from the render clock and may run ahead of what you hear."
 				</span>
 			{/if}
 		</div>
-		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} />
+		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} windowS={laneView.windowS} playheadFrac={laneView.frac} />
 	</div>
 </div>
 
@@ -655,7 +989,36 @@ estimated from the render clock and may run ahead of what you hear."
 	.rb-waverow.secondary {
 		background: var(--rb-waverow-secondary);
 	}
+	/* DECKUX-5917: the hover link no longer lifts the fill (WaveRow.chrome.css). */
 	.rb-waverow.secondary.deck-focus {
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, var(--rb-waverow-secondary));
+		background: var(--rb-waverow-secondary);
+	}
+	/* WAVEZOOM-6802b: the zoom chip ("16 BARS") fades in on a step change and out
+	   after 1.2 s; it says where you are without a permanent control. */
+	.zoom-chip {
+		position: absolute;
+		top: 2px;
+		right: 4px;
+		z-index: 3;
+		padding: 1px 5px;
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-bg) 70%, transparent);
+		border: 1px solid var(--rb-border);
+		color: var(--rb-text, #fff);
+		font-size: 9px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		font-variant-numeric: tabular-nums;
+		pointer-events: none;
+		animation: zoom-chip-fade 1200ms ease-out forwards;
+	}
+	@keyframes zoom-chip-fade {
+		0% { opacity: 0; }
+		10% { opacity: 1; }
+		75% { opacity: 1; }
+		100% { opacity: 0; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.zoom-chip { animation: none; }
 	}
 </style>

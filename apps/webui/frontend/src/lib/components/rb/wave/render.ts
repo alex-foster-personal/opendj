@@ -11,7 +11,7 @@
  * payloads draw a single-colour waveform from the per-point max of whatever
  * band arrays the server filled - bands are NEVER synthesised.
  */
-import { vocalsOf } from '$lib/rb/api-rb';
+import { vocalsOf } from '$lib/rb/vocals';
 import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
@@ -28,9 +28,13 @@ import {
 import type { SectionSpan } from './sections';
 import type { SectionPalette } from './section-palette';
 import { sectionsApiFor, type SectionsApi } from './sections-lazy.svelte';
+import { drawPlanCurves } from './plan-curves-render';
+import { drawTempoCurve, TEMPO_LANE_COLORS, type TempoCurveData, type TempoLaneColors, type TempoLaneScale } from './tempo-marks';
+import type { PlanDeckOverlay } from '$lib/rb/plan-overlay';
 import {
 	drawGhostSeekPlayhead,
 	drawMasterDownbeatOverlay,
+	drawMasterGridGhost,
 	drawPlayheadWithColors,
 	type MasterDownbeatOverlay
 } from './wave-playhead-render';
@@ -58,9 +62,10 @@ export function drawPlayhead(
 	w: number,
 	h: number,
 	tone: PlayheadTone = 'now',
-	timeMs: number = 0
+	timeMs: number = 0,
+	playheadFrac: number = 0.5
 ): void {
-	drawPlayheadWithColors(ctx, w, h, PLAYHEAD_COLORS, tone, timeMs);
+	drawPlayheadWithColors(ctx, w, h, PLAYHEAD_COLORS, tone, timeMs, playheadFrac);
 }
 
 // Cue-marker painting, the wavestack palette and its WCAG contrast floor
@@ -109,9 +114,11 @@ export function vocalAlpha(intensity: number): number {
 	return 0.5 + ((i - 1) * 0.5) / 3;
 }
 
-/** Seconds of track visible across one row (window is centered on the
- * fixed playhead). 24s keeps the <=38400-point detail waveform dense. */
-export const WAVE_WINDOW_S = 24;
+/** Seconds of track visible across one row. Lives in wave-window.ts so a
+ * component that needs only this constant does not import render.ts and the
+ * backend module it reaches. Re-exported here for existing importers. */
+export { WAVE_WINDOW_S } from './wave-window';
+import { WAVE_WINDOW_S } from './wave-window';
 
 /** Rendering style only (matches rekordbox's white core): highs are drawn
  * at reduced height so the white band reads as the inner core. The band
@@ -355,9 +362,32 @@ export interface WaveRowFrame {
 	blocksSnap?: boolean;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
 	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
+	/** Master's beat grid, very faint, on the other rows. Same projection
+	 * as the downbeat overlay. Null on the master row itself. */
+	masterBeatGhost?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
 	ghostSeekMs?: number | null;
 	ghostSeekVisible?: boolean;
+	/** WAVEZOOM-6802: wall-clock seconds across the row. Required: legacy callers pass WAVE_WINDOW_S. */
+	windowS: number;
+	/** WAVEZOOM-6802c: playhead position across the row, 0..1. Required: legacy callers pass 0.5 (centered). */
+	playheadFrac: number;
+	/** WAVEZOOM-6802b: while a zoom step animates, the window the band cache is
+	 * BUILT at (the wider of the two steps); every frame of the glide then
+	 * scales that one cache instead of rebuilding tiles per frame. Unset, the
+	 * cache is built at the drawn window. */
+	cacheWindowS?: number;
+	/** WAVEPLAN-7896: the pending plan's curves on this deck, in track time; absent or null draws nothing. A split row's
+	 * bottom half is flipped as a whole afterwards (split-row.ts), which puts a knob's 1 at the row's outer edge. */
+	planCurves?: PlanDeckOverlay | null;
+	/** Issue #8339: the daemon's tempo-stability answer for the served grid,
+	 * drawn as the tempo curve in place of the plain own-grid tempo_changes
+	 * lines; absent or null keeps those lines. */
+	tempo?: TempoCurveData | null;
+	tempoColors?: TempoLaneColors;
+	tempoScale?: TempoLaneScale;
+	/** `show_tempo_lane` off: no tempo marks at all on this row. */
+	hideTempo?: boolean;
 }
 
 /** Paint one full row frame. ctx must already be DPR-scaled so all
@@ -372,11 +402,19 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		throw new RangeError(`drawWaveRow: pitch must be finite and > 0, got ${pitch}`);
 	}
 	const durS = frame.durationMs / 1000;
-	// WAVE_WINDOW_S is wall-clock; scale into track time via pitch so a
+	// The window is wall-clock; scale into track time via pitch so a
 	// synced follower (pitch = masterBpm/nativeBpm) shows the same beat
 	// spacing as the master across the whole row.
-	const trackWindowS = WAVE_WINDOW_S * pitch;
-	const tLeft = frame.positionMs / 1000 - trackWindowS / 2;
+	const windowS = frame.windowS;
+	if (!Number.isFinite(windowS) || windowS <= 0) {
+		throw new RangeError(`drawWaveRow: windowS must be finite and > 0, got ${windowS}`);
+	}
+	const playheadFrac = frame.playheadFrac;
+	if (!Number.isFinite(playheadFrac) || playheadFrac < 0 || playheadFrac > 1) {
+		throw new RangeError(`drawWaveRow: playheadFrac must be within 0..1, got ${playheadFrac}`);
+	}
+	const trackWindowS = windowS * pitch;
+	const tLeft = frame.positionMs / 1000 - trackWindowS * playheadFrac;
 	const pxPerS = w / trackWindowS;
 
 	const design = frame.waveformDesign ?? 'tri-band';
@@ -403,13 +441,21 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			mirrored: frame.blocksMirrored ?? true,
 			snap: frame.blocksSnap ?? BLOCKS_CFG.SNAP_DEFAULT,
 			// Only a grid the row paints: block edges then sit on its lines.
-			beats: shouldPaintBeatGrid(frame.anlz) ? frame.anlz.beatgrid.beats : null
+			beats: shouldPaintBeatGrid(frame.anlz) ? frame.anlz.beatgrid.beats : null,
+			barPhaseUntrusted: frame.anlz.beatgrid?.bar_phase_untrusted === true
 		};
-		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks, originPx);
+		const cachePxPerS = frame.cacheWindowS === undefined ? pxPerS : w / (frame.cacheWindowS * pitch);
+		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks, cachePxPerS, originPx);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
 	// the master's downbeats; painted after the bands, before everything else.
+	if (durS > 0 && frame.masterBeatGhost !== undefined && frame.masterBeatGhost !== null) {
+		// Skip ghost downbeats when the stronger Beat Sync Max overlay is
+		// about to paint those same lines.
+		const includeDownbeats = frame.masterDownbeatOverlay == null;
+		drawMasterGridGhost(ctx, frame.masterBeatGhost, tLeft, pxPerS, w, h, includeDownbeats);
+	}
 	if (durS > 0 && frame.masterDownbeatOverlay !== undefined && frame.masterDownbeatOverlay !== null) {
 		drawMasterDownbeatOverlay(ctx, frame.masterDownbeatOverlay, tLeft, pxPerS, w, h);
 	}
@@ -434,13 +480,31 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 				frame.anlz.beatgrid.bar_phase_untrusted === true,
 				originPx
 			);
-			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
+			if (frame.hideTempo === true) {
+				// show_tempo_lane is off: nothing about tempo on this row.
+			} else if (frame.tempo != null) {
+				drawTempoCurve(
+					ctx,
+					frame.tempo,
+					tLeft,
+					pxPerS,
+					w,
+					{ top: VOCAL_BAR_PX + 1, height: h / 3, lineWidth: 2, iconPx: 16 },
+					frame.tempoColors ?? TEMPO_LANE_COLORS.dark,
+					frame.tempoScale ?? 'fixed_10'
+				);
+			} else {
+				_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
+			}
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
 	}
-	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
+	if (frame.planCurves !== undefined && frame.planCurves !== null) {
+		drawPlanCurves(ctx, frame.planCurves, palette, tLeft, pxPerS, w, h);
+	}
+	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0, playheadFrac);
 	if (frame.ghostSeekMs !== undefined && frame.ghostSeekMs !== null && frame.ghostSeekVisible === true) {
 		drawGhostSeekPlayhead(ctx, frame.ghostSeekMs, tLeft, pxPerS, w, h);
 	}
@@ -456,8 +520,12 @@ export function resolveStripWaveformKind(
 
 export interface StemWaveRowFrame {
 	envelope: Float32Array | readonly number[];
-	/** Main-row scroll: track seconds x (width / (WAVE_WINDOW_S x pitch)). */
+	/** Main-row scroll: track seconds x (width / (windowS x pitch)). */
 	scrollPx: number;
+	/** The main row's zoom window and playhead place (WaveRowFrame). Required:
+	 * a stem row drawn at a guessed scale would disagree with the waveform. */
+	windowS: number;
+	playheadFrac: number;
 	/** Whole-track duration the envelope spans, in ms. */
 	durationMs: number | null;
 	/** Deck pitch, the same rate the main row scales its window by. */
@@ -471,15 +539,21 @@ export interface StemWaveRowFrame {
  * The envelope spans the WHOLE track, so one point is durationS / points of
  * track time, drawn at the main row's px-per-second (Codex P1 on #3645). */
 export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRowFrame): void {
-	const { envelope, scrollPx, durationMs, pitch, width, height, color } = frame;
+	const { envelope, scrollPx, durationMs, pitch, width, height, color, windowS, playheadFrac } = frame;
+	if (!Number.isFinite(windowS) || windowS <= 0) {
+		throw new RangeError(`drawStemWaveRow: windowS must be finite and > 0, got ${windowS}`);
+	}
+	if (!Number.isFinite(playheadFrac) || playheadFrac < 0 || playheadFrac > 1) {
+		throw new RangeError(`drawStemWaveRow: playheadFrac must be within 0..1, got ${playheadFrac}`);
+	}
 	ctx.clearRect(0, 0, width, height);
 	if (envelope.length === 0 || width <= 0 || height <= 0) return;
 	if (durationMs === null || !(durationMs > 0) || !(pitch > 0)) return;
 
 	const points = envelope.length;
-	const pxPerS = width / (WAVE_WINDOW_S * pitch);
+	const pxPerS = width / (windowS * pitch);
 	const pxPerPoint = ((durationMs / 1000) * pxPerS) / points;
-	const startPx = scrollPx - width / 2;
+	const startPx = scrollPx - width * playheadFrac;
 
 	ctx.fillStyle = color;
 	for (let x = 0; x < width; x++) {
@@ -534,6 +608,7 @@ function _drawCachedBands(
 	palette: WavePalette,
 	design: WaveformDesign,
 	blocks: BlocksSpec,
+	cachePxPerS: number = pxPerS,
 	originPx?: number
 ): void {
 	// The snapper loads on first use (block-layout-lazy.svelte.ts); until then
@@ -553,20 +628,20 @@ function _drawCachedBands(
 	const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
 	// Snapped edges follow the beat grid itself, not only its period, so a grid
 	// edit (a new beats array) rebuilds the image.
-	const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats);
+	const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted);
 	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
 	let image = _bandImages.get(waveform);
 	if (
 		image === undefined ||
 		image.key !== key ||
 		image.sections !== sections ||
-		!bandImageScaleReusable(image.pxPerS, pxPerS)
+		!bandImageScaleReusable(image.pxPerS, cachePxPerS)
 	) {
 		image = {
 			tiles: new Map(),
-			fullW: Math.max(1, Math.ceil(durS * pxPerS)),
+			fullW: Math.max(1, Math.ceil(durS * cachePxPerS)),
 			key,
-			pxPerS,
+			pxPerS: cachePxPerS,
 			sections,
 			blocks: null
 		};
@@ -583,6 +658,17 @@ function _drawCachedBands(
 	// one keeps a tEnd that lands exactly on a tile edge from allocating the
 	// zero-width tile that starts there (Sol P1 on PR #6786).
 	const last = Math.min(Math.ceil(image.fullW / tile) - 1, Math.ceil((tEnd * image.pxPerS) / tile) - 1);
+	// Gothic and mono bars are 2px marks on a 3px pitch. A fractional dest x,
+	// or the retina scale on a 1x cache, blends each bar with the transparent
+	// gap. Those partial columns travel with the scroll as lighter bands, and
+	// they read loudest on a light face. The scroll origin snaps to a device
+	// pixel (half a device pixel at most, so the playhead sample stays put),
+	// one snap for the whole row so every tile shares it, and smoothing stays
+	// off for the blit, so a bar is either covered or not.
+	const deviceScale = _deviceScale(ctx);
+	const origin = _snapDevicePx(-tLeft * pxPerS, deviceScale);
+	const smooth = ctx.imageSmoothingEnabled;
+	ctx.imageSmoothingEnabled = false;
 	for (let i = first; i <= last; i++) {
 		let canvas = image.tiles.get(i);
 		if (canvas === undefined) {
@@ -590,13 +676,14 @@ function _drawCachedBands(
 			image.tiles.set(i, canvas);
 		}
 		const x0 = i * tile;
-		// Destination edges snap to whole px: two tiles blitted at a fractional
-		// x each anti-alias the shared column to part coverage, and a real
-		// canvas shows that as a seam (Sentry on PR #6786, caught by
-		// tests/e2e/wave-band-tiles.spec.ts). Every tile shares the same
-		// fractional offset, so rounding moves them together, edge to edge.
+		// Destination edges land on whole device px: two tiles blitted at a
+		// fractional x each anti-alias the shared column to part coverage, and
+		// a real canvas shows that as a seam (Sentry on PR #6786, caught by
+		// tests/e2e/wave-band-tiles.spec.ts). Every tile shares the same snapped
+		// origin, so they move together, edge to edge.
 		if (scale === 1) {
-			ctx.drawImage(canvas, originPx === undefined ? Math.round(x0 - tLeft * pxPerS) : x0 - originPx, 0);
+			// DECKUX-42: snapped Gothic blocks share main's whole-pixel origin with the beat grid.
+			ctx.drawImage(canvas, originPx === undefined ? origin + x0 : x0 - originPx, 0);
 			continue;
 		}
 		// Scaled blit of only the visible part of this tile.
@@ -604,10 +691,23 @@ function _drawCachedBands(
 		const sxEnd = Math.min(x0 + canvas.width, tEnd * image.pxPerS);
 		const sw = sxEnd - sx;
 		if (!(sw > 0)) continue;
-		const dLeft = Math.round((sx / image.pxPerS - tLeft) * pxPerS);
-		const dRight = Math.round((sxEnd / image.pxPerS - tLeft) * pxPerS);
+		const dLeft = _snapDevicePx(origin + sx * scale, deviceScale);
+		const dRight = _snapDevicePx(origin + sxEnd * scale, deviceScale);
 		if (dRight > dLeft) ctx.drawImage(canvas, sx - x0, 0, sw, canvas.height, dLeft, 0, dRight - dLeft, canvas.height);
 	}
+	ctx.imageSmoothingEnabled = smooth;
+}
+
+/** Device-pixel scale of a context WaveRow has already set to the DPR. */
+function _deviceScale(ctx: CanvasRenderingContext2D): number {
+	if (typeof ctx.getTransform !== 'function') return 1;
+	const scale = ctx.getTransform()?.a;
+	return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+/** Round a CSS-pixel position onto a whole device pixel. */
+function _snapDevicePx(cssPx: number, deviceScale: number): number {
+	return Math.round(cssPx * deviceScale) / deviceScale;
 }
 
 /** True when an image built at `builtPxPerS` may be drawn at `livePxPerS`. */
@@ -869,6 +969,8 @@ interface BlocksSpec {
 	snap: boolean;
 	/** The painted beat grid, or null when the row paints none. */
 	beats: readonly AnlzBeat[] | null;
+	/** The grid's bar phase is untrusted, so it thins by beat, not by bar. */
+	barPhaseUntrusted: boolean;
 }
 
 const _DEFAULT_BLOCKS: BlocksSpec = {
@@ -877,7 +979,8 @@ const _DEFAULT_BLOCKS: BlocksSpec = {
 	beatPeriodS: null,
 	mirrored: true,
 	snap: false,
-	beats: null
+	beats: null,
+	barPhaseUntrusted: false
 };
 
 /** Snapped block edges for a deck-row band surface `w` px wide at `pxPerS`
@@ -895,7 +998,7 @@ function _edgesFor(
 	// Detect on the level the painter shows: its own divisors and clamp.
 	const d = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
 	const norm = { divisor: Math.max(d.low, d.mid, d.high), clampAtOne: blocks.curve === 'legacy-p99' };
-	return api.rowBlockEdges(waveform, durS, norm, w, blocks.beats, pxPerS);
+	return api.rowBlockEdges(waveform, durS, norm, w, blocks.beats, pxPerS, blocks.barPhaseUntrusted);
 }
 
 /** The fixed-pitch layout: edge b at b x pitch, so the last block may run
@@ -1075,17 +1178,18 @@ export function paintStackedBlocks(
 					[palette.high, shares.high, HIGH_BAND_SCALE]
 				];
 	for (const [color, share, scale] of layers) {
-		const path = new Path2D();
+		ctx.fillStyle = color;
 		for (let b = from; b < to; b++) {
 			const frac = share === null ? 1 : share[b] * scale;
 			const barH = Math.round(heights[b] * frac * maxBarH);
 			if (barH <= 0) continue;
 			const x = edges === undefined ? b * BLOCK_PITCH_PX : edges[b];
 			const barW = edges === undefined ? BLOCK_BAR_PX : edges[b + 1] - edges[b] - BLOCK_GAP_PX;
-			path.rect(x - offsetPx, anchorY - barH, barW, mirrored ? barH * 2 : barH);
+			// fillRect, not a Path2D: WebKit antialiases a path fill of these
+			// 2px bars, and the partial edge pixels are the lighter bands
+			// that show up once the row scrolls.
+			ctx.fillRect(x - offsetPx, anchorY - barH, barW, mirrored ? barH * 2 : barH);
 		}
-		ctx.fillStyle = color;
-		ctx.fill(path);
 	}
 }
 

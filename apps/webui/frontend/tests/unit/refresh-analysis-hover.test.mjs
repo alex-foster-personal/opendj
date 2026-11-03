@@ -145,6 +145,10 @@ function sourceFiles(dir) {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
 		const path = join(dir, e.name);
 		if (e.isDirectory()) return sourceFiles(path);
+		// A Storybook story imports its component statically by design
+		// (tests/unit/storybook-stories.test.mjs requires it) and never ships
+		// in the app bundle, so it cannot defeat the lazy load this guards.
+		if (e.name.endsWith('.stories.ts')) return [];
 		return /\.(svelte|ts|js)$/.test(e.name) ? [path] : [];
 	});
 }

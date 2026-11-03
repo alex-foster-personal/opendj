@@ -121,6 +121,17 @@ CHANGELOG_CLASSES: tuple[DataClass, ...] = (
         "the offline-first store of record; the table is just the sync channel.",
         (),
     ),
+    fixed(
+        "library-organization",
+        "Sections, tag metadata and works",
+        state_tables(
+            "playlist_section", "tag_type", "tag_meta", "tag_synonym",
+            "work", "work_member", "work_dismissal", "work_pref",
+        ),
+        "sync_hub_changelog",
+        f"Organization the user built by hand. {_LIBRARY_RULE}",
+        (),
+    ),
 )
 
 REGISTRY_CLASSES: tuple[DataClass, ...] = (
@@ -147,13 +158,15 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
             "local_changelog",
             "sync_identity_remap",
             "sync_write_tokens",
+            "undo_journal",
         ),
         "machine_local",
         "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py). "
         "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
         "across batched hub_apply calls on the shared connection; additive bookkeeping "
         "for this machine's own apply, not part of the sync set itself. "
-        "sync_write_tokens (migrations_v21.py) gates this machine's own digest walk.",
+        "sync_write_tokens (migrations_v21.py) gates this machine's own digest walk. "
+        "undo_journal (migrations_v26.py) is this machine's per-session undo stack.",
         (),
     ),
     fixed(
@@ -410,9 +423,20 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "playlist-sets",
         "Playlist performance sets",
-        state_tables("playlist_sets", "playlist_set_entries", "playlist_set_runs"),
+        state_tables(
+            "playlist_sets",
+            "playlist_set_entries",
+            "playlist_set_runs",
+            "playlist_component_slots",
+            "playlist_components",
+            "playlist_component_entries",
+            "playlist_component_tags",
+            "playlist_set_parts",
+            "playlist_set_run_entries",
+        ),
         "not_yet_built",
-        "User-authored performance sets within a playlist (SET-05, ADR-0016). "
+        "User-authored performance sets within a playlist (SET-05, ADR-0016), "
+        "with the components and routes they are built from (SET-6586). "
         f"{_OUTSIDE_SYNC_SET}",
         # playlist_sets.playlist_id carries no SQL REFERENCES clause (unlike
         # playlist_memberships/playlist_pins, which genuinely reference

@@ -51,13 +51,15 @@ test('clearAutoPlayOrder clears pin roles', () => {
 	assert.equal(queue.autoPlayOrder.pinRoleOf.size, 0);
 });
 
-test('AutoPlay rank glyph stays numeric arrow only in extracted cell', () => {
+test('AutoPlay rank glyph stays a numeric arrow separate from the pin role', () => {
 	const source = readFileSync(
 		fileURLToPath(
 			new URL('../../src/lib/components/rb/browser/AutoPlayRankCell.svelte', import.meta.url)
 		),
 		'utf8'
 	);
-	assert.match(source, />\{rank\}\{AUTOPLAY_ARROW\}<\/span>/);
+	assert.match(source, /\{rank\}/);
+	assert.match(source, /class="ap-rank-arrow"/);
+	assert.match(source, /arrowDirection < 0/);
 	assert.match(source, /class="ap-pin-role"/);
 });

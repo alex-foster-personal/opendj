@@ -133,6 +133,11 @@ def register_genre_tools(
         return call("POST", "/infer", json_body={"stable_ids": stable_ids, "force": force}, timeout=INFER_TIMEOUT_S)
 
     @server.tool(annotations=_MUTATING)
+    def genres_set_key(name: str, value: str) -> dict[str, Any]:
+        """Store OPENROUTER_API_KEY or SERPER_API_KEY in the engine's macOS Keychain so inference runs from a Finder launch."""
+        return call("PUT", f"/keys/{name}", json_body={"value": value})
+
+    @server.tool(annotations=_MUTATING)
     def genres_enqueue_missing() -> dict[str, Any]:
         """Queue every present track with no inferred genre yet on the background genre lane (one job per duplicate group)."""
         return call("POST", "/enqueue", json_body={"all_missing": True})

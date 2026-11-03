@@ -70,6 +70,7 @@ class MixWindow:
     peak_bar: int | None
     score: float
     reason: str
+    pinned: bool = False
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -226,7 +227,7 @@ def _transition_in_window(profile: TrackProfile, bar: int) -> MixWindow:
     label = section.label if section is not None else "unknown"
     on_phrase = section is not None and section.start_bar == bar
     why = "your transition-in cue" + ("" if on_phrase or section is None else f" (mid-{label}, not a phrase start)")
-    return replace(_in_window(profile, bar, label, why), score=USER_CUE_SCORE)
+    return replace(_in_window(profile, bar, label, why), score=USER_CUE_SCORE, pinned=True)
 
 
 def mix_windows(profile: TrackProfile, role: Role, *, limit: int = 5) -> list[MixWindow]:

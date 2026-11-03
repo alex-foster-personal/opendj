@@ -19,7 +19,9 @@ test('TreeContextMenu exposes New smartlist and smartlist Rename/Duplicate', () 
 });
 
 test('TreeSmartlistSection supports inline rename and duplicate/create flows', () => {
-	const src = source('src/lib/components/rb/browser/TreeSmartlistSection.svelte');
+	const src =
+		source('src/lib/components/rb/browser/TreeSmartlistSection.svelte') +
+		source('src/lib/components/rb/browser/TreeSmartlistSectionView.svelte');
 	assert.match(src, /aria-label="Rename smartlist"/);
 	assert.match(src, /createAndRename/);
 	assert.match(src, /Duplicated as/);
@@ -32,7 +34,9 @@ test('LibraryNav passes oncreatesmartlist into PlaylistTree', () => {
 });
 
 test('PlaylistTree still does not inline smartlists rows', () => {
-	const src = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	const src =
+		source('src/lib/components/rb/browser/PlaylistTree.svelte') +
+		source('src/lib/components/rb/browser/PlaylistTreeView.svelte');
 	assert.doesNotMatch(src, /\{#each smartlists\.rows/);
 	assert.doesNotMatch(src, /TreeSmartlistSection/);
 });

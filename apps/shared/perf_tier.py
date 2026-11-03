@@ -19,6 +19,9 @@ CPU_STANDARD: int = 4
 
 MiB: int = 1024 * 1024
 
+#: ``app.state`` attribute :mod:`apps.engine_core.host_info` sets once at boot.
+HOST_INFO_STATE_ATTR: str = "host_info"
+
 SCALERS: dict[str, dict[str, int | str]] = {
     "LOW": {
         "prefetch_tracks": 2,

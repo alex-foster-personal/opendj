@@ -1,8 +1,27 @@
 # Merge fast in private, promote to public only when all CI and security pass
 
-Part of [security.md](security.md). Status: **design, not built.** Decision
-record: [ADR-0043](../decisions/ADR-0043-security-review-system.md).
+Part of `(private path)`. Status: **partly built** (see "What
+exists today" below): the mirror build and its gate exist and are run by hand;
+the scheduled promotion job does not. Decision record: ADR-0043.
 Requirement: SEC-03.
+
+## What exists today (re-checked Thu 15 Oct 2026)
+
+- **The public repo** is `alex-foster-personal/opendj`, a filtered mirror of
+  this repo's `main`. It is public (read from the GitHub API, Thu 15 Oct
+  2026). Agents never change its visibility.
+- **The build** is a private publish toolkit, not in this repo. It runs one
+  deterministic `git filter-repo` sequence over a fresh clone of a pinned
+  `main` SHA: a path allowlist, a denylist, path renames, text and message
+  rewrites, and a mailmap. Re-running it with unchanged inputs reproduces the
+  same SHAs, so the public repo only fast-forwards.
+- **The gate** runs before any push: a harness that replays every leak class
+  already hit (with controls), a verify pass over the built repo, and a judge
+  over every published text file and every commit message. A stage that
+  cannot measure reports UNKNOWN, which blocks the push.
+- **Not built yet:** the scheduled job that picks the newest fully green
+  private SHA, and the contributor-PR import script (hard rule 3).
+
 
 ## Problem
 
@@ -60,11 +79,14 @@ than on every fast merge.
 1. **Never attach self-hosted runners to the public repo.** Fork PRs could
    run attacker code on agentbox or nucbox machines. The public repo uses
    GitHub-hosted runners only.
-2. **First publish uses a fresh history.** Publishing the private history
-   exposes every secret and identity ever committed; the OSSPUB audit covers
-   only the current tree. The v1 public repo starts from one squashed root
-   commit of a promoted SHA. Full history can follow later, after a
-   full-history secret and identity scan.
+2. **Publish rewritten history, never raw history.** Publishing the private
+   history as-is would expose every secret and identity ever committed, and
+   the OSSPUB audit covers only the current tree. The first design here was a
+   squashed root commit. The owner chose instead (Mon 5 Oct 2026) to keep
+   attribution: the mirror publishes the filtered, rewritten history, and
+   every commit message and every historical blob of a kept path passes the
+   gate's history and message checks before a push. Only the v1.0 line of
+   tags is published.
 3. **Contributor PRs land in private first.** A public PR is imported into
    the private repo (patch applied to a private branch, full CI there),
    merged there, and carried out by the next promotion. The public PR is

@@ -3,8 +3,16 @@
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
 	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
+	import {
+		REC_STATUS_UNREACHABLE_GROUP,
+		REC_STATUS_UNREACHABLE_LIMIT,
+		recorderStatusRetryMs,
+		recorderStatusUnreachable,
+		recorderStatusUnreachableMessage
+	} from '$lib/sets/recorder-status-retry';
 	import { showWholeCollectionFromChrome } from '$lib/rb/playlist-history-chrome.svelte';
 	import IconRail from './IconRail.svelte';
+	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 
 	let {
 		source,
@@ -57,10 +65,26 @@
 	// SET-11: while the capture is starting or waiting on the macOS microphone
 	// prompt, re-read it so REC lights the moment audio is really written; and
 	// while it records, so an input that stops mid-set unlights REC.
+	// OPEN-DJ-BE-4G: an unanswered status read keeps the last status and asks
+	// for another read. A fresh object each time, so the retry effect re-arms
+	// even when the delay is unchanged.
+	let statusRetry = $state<{ after: number } | null>(null);
+	let unreachableReads = 0;
+
 	$effect(() => {
+		// A pending retry owns the next read, so the poll does not double it.
+		if (statusRetry !== null) return;
 		const after = rail.poll;
 		if (after === null || !recordable) return;
 		const timer = setTimeout(() => void refreshRecorderStatus(), after);
+		return () => clearTimeout(timer);
+	});
+
+	// The retry read is gated on recordable like every other status read.
+	$effect(() => {
+		const retry = statusRetry;
+		if (retry === null || !recordable) return;
+		const timer = setTimeout(() => refreshRecorderStatus(), retry.after);
 		return () => clearTimeout(timer);
 	});
 
@@ -113,8 +137,27 @@
 	async function refreshRecorderStatus(): Promise<void> {
 		try {
 			setRecorder(await getRecorderStatus());
+			unreachableReads = 0;
+			statusRetry = null;
 		} catch (error) {
-			pushToast(`REC status failed: ${String(error)}`, 'error');
+			if (!recorderStatusUnreachable(error)) {
+				unreachableReads = 0;
+				statusRetry = null;
+				pushToast(`REC status failed: ${String(error)}`, 'error', undefined, error);
+				return;
+			}
+			unreachableReads += 1;
+			statusRetry = { after: recorderStatusRetryMs(unreachableReads) };
+			if (unreachableReads === REC_STATUS_UNREACHABLE_LIMIT) {
+				pushToast(
+					recorderStatusUnreachableMessage(unreachableReads, error),
+					'error',
+					undefined,
+					error,
+					{},
+					REC_STATUS_UNREACHABLE_GROUP
+				);
+			}
 		}
 	}
 
@@ -149,6 +192,7 @@
 	{onspotify}
 	oncollection={showWholeCollection}
 	{recordable}
+	recordingAvailable={setRecordingEnabled()}
 	recording={rail.recording}
 	recordingBusy={recorderBusy}
 	recordingWaiting={rail.waiting}

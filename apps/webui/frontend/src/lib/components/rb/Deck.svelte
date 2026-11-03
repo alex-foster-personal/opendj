@@ -37,7 +37,7 @@
 	import {
 		deckHoverEnter,
 		deckHoverLeave,
-		deckHoverUi,
+		deckHoverLinkId,
 		deckIdFromHoverEl
 	} from '$lib/rb/deck-hover.svelte';
 	import { formatLoadLatency } from '$lib/rb/format-load-latency';
@@ -70,6 +70,7 @@
 	import PadModeMenu from './deck/PadModeMenu.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
+	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
 	import {
 		loadedStemSeparation,
 		stemSeparation,
@@ -610,7 +611,7 @@
 	aria-label={`deck ${deckId}`}
 	class:drop-hover={dropHover}
 	class:loading={pending}
-	class:deck-focus={deckHoverUi.deckId === deckId}
+	class:deck-focus={deckHoverLinkId(uiPrefs.deck_hover_link) === deckId}
 	class:selected={selected}
 	class:is-master={deck.is_master}
 	class:deck-dim={deckLook.dim}
@@ -755,6 +756,8 @@
 			onLoad={loadStems}
 			separate={separateView}
 			onSeparate={separateStems}
+			stemsResetOn={trackLoadResetEnabled('stems')}
+			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el)}
 		/>
 	{/if}
 
@@ -857,27 +860,28 @@
 			opacity: 0.55;
 		}
 	}
+	/* DECKUX-5917: the link tick layers over each resting stroke, never replaces it. */
 	.rb-deck.deck-focus {
-		outline: 2px solid var(--rb-accent, #49c8ff);
-		outline-offset: -4px;
-		transition:
-			box-shadow 50ms ease-out,
-			background 50ms ease-out;
-		background: var(--rb-deck-hover-bg);
-		box-shadow: var(--rb-deck-hover-inset);
+		box-shadow:
+			var(--rb-deck-link-tick),
+			inset 0 0 0 1px #3d4652;
 	}
 	.rb-deck.selected {
 		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
 	}
 	.rb-deck.selected.deck-focus {
-		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+		box-shadow:
+			var(--rb-deck-link-tick),
+			inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
 	}
-	/* Yellow master outline wins over focus stroke for quick ID. */
+	/* Yellow master outline stays for quick ID. */
 	.rb-deck.is-master {
 		box-shadow: inset 0 0 0 2px var(--rb-yellow);
 	}
 	.rb-deck.is-master.deck-focus {
-		box-shadow: inset 0 0 0 2px var(--rb-yellow);
+		box-shadow:
+			var(--rb-deck-link-tick),
+			inset 0 0 0 2px var(--rb-yellow);
 	}
 	/* Finished, or paused longer than 30s: pull the whole panel back so a
 	   deck that is actually playing stays the bright one. A veil, not a

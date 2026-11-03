@@ -65,6 +65,9 @@ def _conn(tmp_path: Path) -> sqlite3.Connection:
     _data, state = library(tmp_path)
     conn = sqlite3.connect(str(state))
     findings.ensure_schema(conn)
+    # These tests are about group sharing, not precedence: pin the pre-GENRE-09
+    # order so a fixture's library tag never masks the finding under test.
+    findings.update_config(conn, {"precedence": ["user", "beatport", "odj-fused", "library-tag"]})
     _add(conn, *_copies(conn))
     return conn
 

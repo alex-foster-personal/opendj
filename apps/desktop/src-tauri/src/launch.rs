@@ -3,7 +3,7 @@
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::io::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::engine;
 
@@ -30,7 +30,7 @@ struct LockJson {
     port: Option<u16>,
 }
 
-pub fn lock_path(data_dir: &Path) -> std::path::PathBuf {
+pub fn lock_path(data_dir: &Path) -> PathBuf {
     data_dir.join(LOCK_FILE_NAME)
 }
 

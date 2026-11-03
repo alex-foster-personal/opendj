@@ -20,12 +20,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.equivalence.config import CFG, FieldPair
+from apps.equivalence.config import CFG, FieldPair, SourceField
 from apps.equivalence.normalisers import (
     MISSING,
     Key,
     NormaliseError,
     is_comparable_unit,
+    format_canonical,
     normalise,
     pair_notation_form,
 )
@@ -302,7 +303,9 @@ def compare_pair(
     return agreement, comparisons
 
 
-def _canonical(raw: Any, spec, unit_ok: bool, counts: Counter, side: str) -> Any:
+def _canonical(
+    raw: Any, spec: SourceField, unit_ok: bool, counts: Counter[str], side: str
+) -> Any:
     if not unit_ok:
         counts[f"{side}_missing"] += 1
         return None
@@ -327,10 +330,8 @@ def _judge(left: Any, right: Any, spec: FieldPair) -> tuple[bool, float | None, 
     return False, delta, _numeric_signature(float(left), float(right))
 
 
-def _render(value: Any) -> str:
-    if isinstance(value, Key):
-        return f"{value.camelot} (pc={value.pitch_class},{value.mode})"
-    return f"{float(value):g}"
+def _render(value: Key | float) -> str:
+    return format_canonical(value, detailed_key=True)
 
 
 # --------------------------------------------------------- offset clusters

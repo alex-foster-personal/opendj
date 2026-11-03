@@ -92,6 +92,9 @@ NON_GATE_JOBS = frozenset(
         "Trunk quarantined tests",
         # continue-on-error on pull_request: an early signal, never a verdict.
         "pytest fast tier",
+        # e2e.yml's advisory Electron shell job (ELECTRON-6208): continue-on-error and out of
+        # `e2e verdict`'s needs until the owner swaps it for the WebKit steps.
+        "e2e electron shell",
     }
 )
 PYTEST_JOBS = frozenset({"pytest fast lane"})
@@ -168,7 +171,8 @@ RATCHET_TESTS = (
 PAPERWORK = re.compile(
     r"^(ops/quality/baseline\.json|reqs\.json|apps/webui/openapi\.json"
     r"|apps/webui/frontend/src/lib/api-types\.ts|\.planning/|docs/|\.test_durations"
-    r"|apps/webui/frontend/scripts/bundle-budget\.mjs|\.importlinter|scripts/oss_tip_rules\.py"
+    r"|apps/webui/frontend/scripts/bundle-budget\.mjs|apps/webui/frontend/budgets/"
+    r"|\.importlinter|scripts/oss_tip_rules\.py"
     r"|\.agents/|.*\.md$)"
 )
 TEST_PATH = re.compile(r"(^tests/|/tests/|\.test\.|\.spec\.)")
@@ -596,6 +600,10 @@ class Head:
     # The run's id, which GitHub assigns in creation order: it breaks a tie between two shas
     # pushed within one second, whose second-resolution `created_at` values compare equal.
     run_id: int = 0
+    # GitHub's run state is retained for an incomplete head, so the report can distinguish an
+    # active run from a cancelled run and from a run whose jobs never appeared.
+    status: str | None = None
+    conclusion: str | None = None
     # The failed pytest/quality jobs whose log this run needed and could not read: their names
     # are all that survives to say which gate families the lost evidence could have moved.
     unread_jobs: frozenset[str] = frozenset()
@@ -970,6 +978,92 @@ def unread_scopes(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime]
     return scope
 
 
+HEAD_REASON_ORDER: tuple[str, ...] = (
+    "still_running",
+    "cancelled",
+    "missing_job",
+    "missing_workflow",
+    "superseded",
+)
+
+
+def unread_head_reasons(
+    heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None
+) -> tuple[dict[str, int], dict[str, dict[str, object]]]:
+    """Explain incomplete heads, including cancellations excluded as superseded.
+
+    An incomplete head with a missing log is reported by ``unread_log_reasons``. This separate
+    inventory covers the other path to UNKNOWN: an active/cancelled run, a run with no jobs, or
+    a workflow absent from the collected runs. A cancelled older sha superseded by a newer push
+    is recorded as ``out_of_scope`` because ``_unread_shas`` deliberately excludes it from gate
+    uncertainty; all other entries are ``UNKNOWN`` evidence.
+    """
+    entries: list[dict[str, object]] = []
+    for shas in _by_branch_sha(heads).values():
+        newest = _push_order(shas)[-1]
+        for sha, runs in shas.items():
+            if full_verdict(runs) or not _owned(runs, window):
+                continue
+            missing_workflows = set(WORKFLOWS) - set(runs)
+            superseded = sha != newest and all(h.cancelled for h in runs.values() if not h.measured)
+            if superseded:
+                sample = next(iter(runs.values()))
+                entries.append(
+                    {
+                        "reason": "superseded",
+                        "disposition": "out_of_scope",
+                        "run_id": sample.run_id,
+                        "job_id": None,
+                        "status": sample.status,
+                        "detail": f"sha {sha[:12]} was superseded by {newest[:12]}",
+                    }
+                )
+                continue
+            if missing_workflows:
+                entries.extend(
+                    {
+                        "reason": "missing_workflow",
+                        "disposition": "UNKNOWN",
+                        "run_id": None,
+                        "job_id": None,
+                        "status": "missing",
+                        "detail": f"no {workflow} run for sha {sha[:12]}",
+                    }
+                    for workflow in sorted(missing_workflows)
+                )
+            for sample in runs.values():
+                if sample.measured:
+                    continue
+                if sample.cancelled:
+                    reason = "cancelled"
+                    detail = "run was cancelled before a full verdict"
+                elif sample.zero_jobs:
+                    reason = "missing_job"
+                    detail = "run returned no jobs"
+                elif sample.status in {"queued", "in_progress", "requested", "waiting", "pending"} or sample.conclusion is None:
+                    reason = "still_running"
+                    detail = f"status={sample.status or 'unknown'} conclusion={sample.conclusion or 'none'}"
+                else:
+                    reason = "missing_job"
+                    detail = f"conclusion={sample.conclusion or 'none'} did not produce a full verdict"
+                entries.append(
+                    {
+                        "reason": reason,
+                        "disposition": "UNKNOWN",
+                        "run_id": sample.run_id,
+                        "job_id": None,
+                        "status": sample.status,
+                        "detail": detail,
+                    }
+                )
+    counts = Counter(str(entry["reason"]) for entry in entries)
+    ordered_counts = {reason: counts[reason] for reason in HEAD_REASON_ORDER if counts.get(reason)}
+    samples: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        samples.setdefault(str(entry["reason"]), dict(entry))
+    return ordered_counts, {reason: samples[reason] for reason in HEAD_REASON_ORDER if reason in samples}
+
+
 def unmeasured_heads(heads: Sequence[Head], window: tuple[dt.datetime, dt.datetime] | None) -> int:
     """PR shas in `window` with no measured verdict that no newer push superseded."""
     return _head_counts(heads, window)[1]
@@ -1095,6 +1189,47 @@ def unread_gate_scope(heads: Sequence[Head], window: tuple[dt.datetime, dt.datet
     return blind
 
 
+def _unread_reason_lines(meta: Mapping[str, object]) -> list[str]:
+    """The count-by-reason sentence, or nothing when this run read every log it asked for.
+
+    The counts cover every job log the run tried to read, look-behind included, so they sit
+    next to the window-scoped `unreadable_logs` count rather than replacing it: a reader can
+    see both how much evidence is missing from the scored window and why any is missing.
+    """
+    reasons = meta.get("unread_log_reasons") or {}
+    if not isinstance(reasons, Mapping) or not reasons:
+        return []
+    samples = meta.get("unread_log_samples") or {}
+    parts = []
+    for reason, count in reasons.items():
+        sample = samples.get(reason) if isinstance(samples, Mapping) else None
+        if sample:
+            detail = str(sample.get("detail", ""))[:160]
+            parts.append(f"{reason} {count} (run {sample.get('run_id')} job {sample.get('job_id')}: {detail})")
+        else:
+            parts.append(f"{reason} {count}")
+    return ["", "Unread log reasons: " + "; ".join(parts) + "."]
+
+
+def _unread_head_reason_lines(meta: Mapping[str, object]) -> list[str]:
+    """The count-by-reason sentence for incomplete heads that had no failed log read."""
+    reasons = meta.get("unread_head_reasons") or {}
+    if not isinstance(reasons, Mapping) or not reasons:
+        return []
+    samples = meta.get("unread_head_samples") or {}
+    parts = []
+    for reason, count in reasons.items():
+        sample = samples.get(reason) if isinstance(samples, Mapping) else None
+        if sample:
+            parts.append(
+                f"{reason} {count} ({sample.get('disposition')}; run {sample.get('run_id') or 'n/a'}: "
+                f"{str(sample.get('detail', ''))[:160]})"
+            )
+        else:
+            parts.append(f"{reason} {count}")
+    return ["", "Unread head reasons: " + "; ".join(parts) + "."]
+
+
 def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object]) -> str:
     rows = sorted(scores.values(), key=lambda g: (-g.held_hours, -len(g.branches), g.key))
     sole_total = sum(g.sole_red_heads for g in scores.values())
@@ -1107,6 +1242,9 @@ def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object])
         f"{meta['ratchet_only_heads']} of them red on ratchets alone. Heads not scored for want of a full "
         f"verdict: {meta['incomplete_heads']}. Logs unreadable: "
         f"{meta['unreadable_logs']}. Workflow reads unreadable: {meta['guard_reads_unread']}.",
+        "",
+        *_unread_reason_lines(meta),
+        *_unread_head_reason_lines(meta),
         "",
         "Held hours: PR time between a ratchet-only red head and the branch's next verdict, "
         f"capped at {HELD_CAP_H:g} h. Fix kinds come from the branch's own commits; a `code` "
@@ -1634,6 +1772,12 @@ class Collected:
     # skip evidence is UNKNOWN, so they are counted here and in `incomplete_heads`, never
     # quietly treated as a run whose skips were all independent.
     guard_reads_unread: int = 0
+    # Why each unread log was unread, counted by class, with the first entry of each class for
+    # its run id, job id and gh message. Covers every log this run tried to read (the
+    # look-behind included), which is why it is reported beside, not instead of, the
+    # window-scoped `unreadable_logs` count.
+    unread_reasons: dict[str, int] = field(default_factory=dict)
+    unread_samples: dict[str, dict] = field(default_factory=dict)
 
 
 def _head_repo(run: Mapping) -> str | None:
@@ -1692,6 +1836,22 @@ def _in_main_window(run: Mapping, main_window: tuple[dt.datetime, dt.datetime] |
 LOG_RETRY_BACKOFF_S = (0.5, 1.5)
 
 
+# A dropped or stalled connection, as gh and the HTTP stack word it. One list, so the
+# retry decision (`_log_failure_is_transient`) and the reported class (`unread_reason`)
+# cannot drift. Substrings: "timeout" also covers "i/o timeout" and "tls handshake timeout".
+TRANSPORT_ERRORS: tuple[str, ...] = (
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection refused",
+    "error connecting",
+    "stream error",
+    "received from peer",
+    "unexpected eof",
+    "temporary failure",
+)
+
+
 def _log_failure_is_transient(err: RuntimeError) -> bool:
     """Whether a failed log fetch can heal on its own and is worth another attempt.
 
@@ -1704,43 +1864,115 @@ def _log_failure_is_transient(err: RuntimeError) -> bool:
     text = str(err).lower()
     if any(seen in text for seen in ("http 404", "http 410", "http 403", "http 422", "not found", "gone")):
         return False
-    return any(
-        seen in text
-        for seen in (
-            "http 500",
-            "http 502",
-            "http 503",
-            "http 504",
-            "timed out",
-            "timeout",
-            "connection reset",
-            "connection refused",
-            "error connecting",
-            "temporary failure",
+    if any(f"http {code}" in text for code in (500, 502, 503, 504)):
+        return True
+    return any(seen in text for seen in TRANSPORT_ERRORS)
+
+
+UNREAD_REASON_ORDER: tuple[str, ...] = (
+    "expired",
+    "forbidden",
+    "rate_limited",
+    "server_error",
+    "transport",
+    "empty",
+    "other",
+)
+
+
+def unread_reason(err: RuntimeError | None) -> str:
+    """Why one job log could not be read, classified so the report names the cause.
+
+    Only the counts were reported before, so a window full of UNKNOWN verdicts could not
+    say whether its evidence had expired, been refused, or never arrived. The classes are
+    the ones with a different next action: `expired` is unrecoverable (the artifact is
+    gone), `forbidden` is a token scope, `rate_limited` and `server_error` are the shared
+    token's own load, `transport` is the network, and `empty` is a 200 with no body.
+    An unrecognised message stays `other`, with its first line kept in the entry, so a new
+    cause is visible instead of being folded into a known one.
+    """
+    if err is None:
+        return "empty"
+    text = str(err).lower()
+    if any(seen in text for seen in ("http 404", "http 410", "not found", "gone")):
+        return "expired"
+    if any(seen in text for seen in ("http 403", "forbidden")):
+        return "forbidden"
+    if any(seen in text for seen in ("http 429", "rate limit", "secondary rate")):
+        return "rate_limited"
+    if any(f"http {code}" in text for code in (500, 502, 503, 504)) or "bad gateway" in text:
+        return "server_error"
+    if any(seen in text for seen in TRANSPORT_ERRORS):
+        return "transport"
+    return "other"
+
+
+@dataclass
+class UnreadLogs:
+    """One entry per job log this run could not read, with its classified reason.
+
+    `_job_log` runs inside a `ThreadPoolExecutor`, so this is an append-only list and the
+    counts are derived once the pool has joined: no counter is mutated from several
+    threads, and no entry is lost to a read-modify-write.
+    """
+
+    entries: list[dict] = field(default_factory=list)
+
+    def record(self, job: Mapping, reason: str, detail: str) -> None:
+        self.entries.append(
+            {
+                "run_id": int(job.get("run_id") or 0),
+                "job_id": int(job.get("id") or 0),
+                "job": str(job.get("name") or ""),
+                "reason": reason,
+                "detail": detail.splitlines()[0][:200],
+            }
         )
-    )
+
+    def counts(self) -> dict[str, int]:
+        counted = Counter(entry["reason"] for entry in self.entries)
+        return {reason: counted[reason] for reason in UNREAD_REASON_ORDER if counted.get(reason)}
 
 
-def _job_log(api: Api, job: Mapping) -> tuple[int, str | None]:
+def _first_by_reason(entries: Sequence[Mapping]) -> dict[str, dict]:
+    """The first entry of each reason class, in `UNREAD_REASON_ORDER`, for the report line."""
+    samples: dict[str, dict] = {}
+    for entry in entries:
+        samples.setdefault(str(entry["reason"]), dict(entry))
+    return {reason: samples[reason] for reason in UNREAD_REASON_ORDER if reason in samples}
+
+
+def _job_log(api: Api, job: Mapping, unread: UnreadLogs | None = None) -> tuple[int, str | None]:
     """One job's log, or None when it cannot be read (expired, or the API refused).
 
     A transient failure is retried with backoff, because those logs do come back and the
     window they belong to is void while they are missing. A permanent one returns on the
     first attempt, so the retry cannot lengthen a run whose logs are simply gone.
+    `unread` collects the run id, job id and classified reason for every None returned, so
+    the report can say why its evidence is missing rather than only how much is.
 
     `GhReadError` is not one of those: it says this run's own read is impossible (a gh that
     cannot keep a log's escapes, or bytes that will not decode), so it propagates and the run
     fails instead of scoring a window it could not read. It is not a `RuntimeError`, so the
     retry below cannot swallow it.
     """
+    last: RuntimeError | None = None
     for wait in (0.0, *LOG_RETRY_BACKOFF_S):
         if wait:
             time.sleep(wait)
         try:
-            return job["id"], api(f"repos/{REPO}/actions/jobs/{job['id']}/logs") or None
+            body = api(f"repos/{REPO}/actions/jobs/{job['id']}/logs") or None
+            if body is None and unread is not None:
+                unread.record(job, "empty", "gh api returned an empty body")
+            return job["id"], body
         except RuntimeError as err:
+            last = err
             if not _log_failure_is_transient(err):
+                if unread is not None:
+                    unread.record(job, unread_reason(err), str(err))
                 return job["id"], None
+    if unread is not None:
+        unread.record(job, unread_reason(last), str(last) if last else "<no error recorded>")
     return job["id"], None
 
 
@@ -1848,6 +2080,7 @@ def _selection_logs(
     verdicts: Mapping[int, tuple[frozenset[str], bool, int, frozenset[str]]],
     logs: Mapping[int, str | None],
     workers: int,
+    unread: UnreadLogs | None = None,
 ) -> dict[int, str | None]:
     """Logs of the pytest shards that could clear a pytest red: every shard, passing or not,
     of a PR run on a branch where some run was red on a pytest key. A PR head runs only its
@@ -1862,7 +2095,7 @@ def _selection_logs(
     ]
 
     with ThreadPoolExecutor(workers) as pool:
-        return dict(pool.map(lambda j: _job_log(api, j), shards))
+        return dict(pool.map(lambda j: _job_log(api, j, unread), shards))
 
 
 def collect(
@@ -1941,11 +2174,12 @@ def collect(
         or (run_id in main_reports and _main_report_job(j))
     ]
 
+    unread_logs = UnreadLogs()
     with ThreadPoolExecutor(workers) as pool:
-        logs = dict(pool.map(lambda j: _job_log(api, j), log_jobs))
+        logs = dict(pool.map(lambda j: _job_log(api, j, unread_logs), log_jobs))
 
     verdicts = {run["id"]: judge_jobs(jobs.get(run["id"], []), logs) for _, run in wanted}
-    selection = _selection_logs(api, wanted, jobs, verdicts, logs, workers)
+    selection = _selection_logs(api, wanted, jobs, verdicts, logs, workers, unread_logs)
     logs = {**logs, **selection}
     consulted = _selection_branches(wanted, verdicts)
 
@@ -2012,7 +2246,9 @@ def collect(
                 run["conclusion"] == "cancelled",
                 _iso(run["created_at"]),
                 run["id"],
-                frozenset(lost_jobs),
+                status=run.get("status"),
+                conclusion=run.get("conclusion"),
+                unread_jobs=frozenset(lost_jobs),
                 zero_jobs=read_zero_jobs(run, jobs),
                 aggregate=run_aggregate_verdict(jobs.get(run["id"], [])),
                 guard_unread=guard_unread,
@@ -2024,7 +2260,17 @@ def collect(
     )
     unreadable += uncovered
     main_unread += uncovered
-    return Collected(heads, main_red, len(wanted), unreadable, len(log_jobs), main_unread, guard_unreads)
+    return Collected(
+        heads,
+        main_red,
+        len(wanted),
+        unreadable,
+        len(log_jobs),
+        main_unread,
+        guard_unreads,
+        unread_logs.counts(),
+        _first_by_reason(unread_logs.entries),
+    )
 
 
 def _main_report_gaps(jobs: Sequence[Mapping], red: frozenset[str]) -> int:
@@ -2265,11 +2511,9 @@ def main(argv: Sequence[str] | None = None, api: Api = _gh_api) -> int:
     window = scored_window(now, args.days)
     since, until = window
     data = collect(api, since - LOOKBEHIND, now, main_window=window, finished_since=since)
-    if reason := unmeasured_window(data, window):
-        print(f"[ratchet-scorecard] UNKNOWN: {reason} between {since} and {until}")
-        return 3
-    scores = score(data.heads, data.main_red, own_files(api), now, window=window, horizon=LOOKAHEAD)
     red_heads, ratchet_only_heads = head_summary(data.heads, window)
+    unread_head_counts, unread_head_samples = unread_head_reasons(data.heads, window)
+    reason = unmeasured_window(data, window)
     meta = {
         "date": until.date().isoformat(),
         "since": since.isoformat(),
@@ -2279,9 +2523,28 @@ def main(argv: Sequence[str] | None = None, api: Api = _gh_api) -> int:
         "red_heads": red_heads,
         "ratchet_only_heads": ratchet_only_heads,
         "unreadable_logs": owned_unread_logs(data.heads, window)[0] + data.main_unread_logs,
+        "unread_log_reasons": data.unread_reasons,
+        "unread_log_samples": data.unread_samples,
+        "unread_head_reasons": unread_head_counts,
+        "unread_head_samples": unread_head_samples,
         "guard_reads_unread": owned_guard_unreads(data.heads, window),
         "incomplete_heads": incomplete_heads(data.heads, window),
     }
+    if reason:
+        meta["unknown_reason"] = reason
+        markdown = render_markdown({}, meta)
+        if args.json:
+            args.json.write_text(
+                json.dumps({"meta": meta, "gates": []}, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        if args.markdown:
+            args.markdown.write_text(markdown, encoding="utf-8", newline="\n")
+        sys.stdout.write(markdown)
+        print(f"[ratchet-scorecard] UNKNOWN: {reason} between {since} and {until}", file=sys.stderr)
+        return 3
+    scores = score(data.heads, data.main_red, own_files(api), now, window=window, horizon=LOOKAHEAD)
     markdown = render_markdown(scores, meta)
     payload = {
         "meta": meta,

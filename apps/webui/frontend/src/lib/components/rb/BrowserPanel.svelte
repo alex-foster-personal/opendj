@@ -41,6 +41,10 @@
 		type LibraryHealthDot
 	} from '$lib/rb/library-health-dots';
 	import {
+		refreshLoadedDeckVocalsIfNeeded,
+		subscribeLoadedDeckVocalsRefresh
+	} from '$lib/rb/loaded-deck-vocals-refresh';
+	import {
 		plannedTitle,
 		anyDeckPlaying,
 		createPlayingGate,
@@ -142,7 +146,7 @@
 		dispatchPerformanceCommand,
 		performanceCommandStatus,
 		registerPerformanceBrowserAdapter,
-		runPerformanceCommandFromUi
+		runPerformanceCommandFromUi, silencePreviewForUserLoad
 	} from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './browser/SpinnerIcon.svelte';
 	import {
@@ -201,6 +205,7 @@
 		UsbExportScreenLoader
 	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import { noteLibraryViewport } from '$lib/rb/library-song-capacity.svelte';
 	import {
 		rememberSpotifyRecent,
 		setConfirmPref,
@@ -646,6 +651,27 @@
 			_heldAnlzConsumers.clear();
 		};
 	});
+	/** When a loaded deck's hydrated row reports a newer vocal status than the
+	 * shared ANLZ cache, bypass-fetch and republish without blocking playback
+	 * (issue #1031). Only loaded stable_ids are observed - never a per-row
+	 * fan-out for tracks that are not on a deck. A new deck load re-runs this
+	 * effect through `decks`, so _loadOntoDeck needs no call of its own.
+	 * Ingest completion and resync use `subscribeLoadedDeckVocalsRefresh`
+	 * instead of waiting on the playing gate. */
+	$effect(() => {
+		const seen = new Set<string>();
+		for (const deck of DECK_IDS) {
+			const stableId = decks[deck].stable_id;
+			if (stableId === null || seen.has(stableId)) continue;
+			seen.add(stableId);
+			for (const p of panes) {
+				const row = p.rows.find((r) => r.stable_id === stableId);
+				if (row === undefined) continue;
+				refreshLoadedDeckVocalsIfNeeded(stableId, row.vocals.status);
+				break;
+			}
+		}
+	});
 	const treeNodes = $derived(
 		playlists
 			.slice()
@@ -1086,6 +1112,7 @@
 		// ever one refetch. Playlist TREE names refresh immediately on
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
+		const unsubscribeLoadedDeckVocals = subscribeLoadedDeckVocalsRefresh();
 		const unsubscribeTracks = subscribeKind('tracks', () => _requestLibraryRefresh());
 		// Tree names are user-visible undo/redo state (v1). The playing-gated
 		// full library refetch can be in flight, deferred, or throw after its
@@ -1133,6 +1160,7 @@
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
+			unsubscribeLoadedDeckVocals();
 			clearInterval(healthRefetchTimer);
 			_coverageRefresh.dispose();
 			_reconcileRefresh.dispose();
@@ -2766,12 +2794,12 @@
 			// deck that has since become master (a confirm dialog can sit open
 			// for any length of time - r3919940009), or that was always master
 			// (the "Load onto deck N" button never consults the picker at all).
-			// Revalidate at the actual load boundary, the one place every path
-			// converges, instead of trusting a pick made earlier.
+			// Revalidate at the load boundary, where every path converges, not at the pick.
 			if (decks[target].is_master) {
 				pushToast(`cannot load: CH${target} is the live master - unload or reassign it first`, 'error');
 				return;
 			}
+			silencePreviewForUserLoad(target); // same turn as the click, before the load is queued (pin 104cf3b626fd)
 			// KEYSHIFT-03: snapshot the shift the row shows now. Replacing the
 			// deck that supplies the compatible reference unloads it first, which
 			// clears that reference before the load is dispatched. A surface that
@@ -3836,6 +3864,7 @@
 				panes[activePane].rememberScroll(top);
 			}}
 			onrenderedrowcapacity={noteRenderedLibraryRowCapacity}
+			onlibraryviewport={noteLibraryViewport}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}

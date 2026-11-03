@@ -108,19 +108,21 @@ def test_gain_unclamped_when_headroom_allows() -> None:
     assert gain == pytest.approx(6.0)
 
 
-def test_report_payload_rounds_gain_and_carries_targets() -> None:
-    scan = LoudnessScan(
-        Path("/music/track.wav"),
-        integrated_lufs=-20.333,
-        loudness_range_lu=5.0,
-        true_peak_dbtp=-12.0,
-    )
-    payload = scan.report_payload(target_lufs=-14.0, ceiling_dbtp=-1.0)
-    assert payload["path"] == "/music/track.wav"
-    assert payload["target_lufs"] == -14.0
-    assert payload["ceiling_dbtp"] == -1.0
-    assert payload["gain_db"] == 6.33
-    assert payload["gain_clamped"] is False
+# if the report payload carries anything but the scan's own measured values then
+# the CLI JSON is reporting something the scan did not measure
+def test_report_payload_rounds_gain_and_carries_targets(tmp_path: Path) -> None:
+    scan = scan_file(_sine(tmp_path / "track.wav", 0.5))
+    target_lufs, ceiling_dbtp = -14.333, -1.0
+    payload = scan.report_payload(target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp)
+    gain_db, clamped = scan.gain_db(target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp)
+    assert payload["path"] == str(scan.path)
+    assert payload["integrated_lufs"] == scan.integrated_lufs
+    assert payload["loudness_range_lu"] == scan.loudness_range_lu
+    assert payload["true_peak_dbtp"] == scan.true_peak_dbtp
+    assert payload["target_lufs"] == target_lufs
+    assert payload["ceiling_dbtp"] == ceiling_dbtp
+    assert payload["gain_db"] == round(gain_db, 2)
+    assert payload["gain_clamped"] is clamped
 
 
 # --- ffmpeg resolution (NATIVE-10) -----------------------------------------

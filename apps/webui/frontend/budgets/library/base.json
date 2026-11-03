@@ -1,0 +1,11 @@
+{
+  "note": "initial load of \"/\"",
+  "order": 10,
+  "attribution": {
+    "graph": "library"
+  },
+  "limit": 301056,
+  "measured": 300897,
+  "measured_on": "Tue 3 Nov 2026",
+  "baseline_sha": "7837e0961708e8b7a957258dbbcdbfdc3660a07a"
+}

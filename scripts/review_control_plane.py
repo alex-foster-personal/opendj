@@ -1,4 +1,11 @@
-"""Control-plane dual review: part of the review-triage verdict (REVIEW-13).
+"""Control-plane review note: advisory since REVIEW-8220 (REVIEW-13 retired as a gate).
+
+REVIEW-8220 (the maintainer, 19:30Z Mon 2 Nov 2026): "lax the 2 review requirement entirely to be soft -
+replace with a reminder to try to include a review where appropriate (just one is fine) and no
+strict requirement at all". `enforce` still measures who reviewed, and prints either the `ok`
+line or a `[review-coverage] NOTE:` line; it never returns a failure, and an author it cannot
+read (no harness trailer, #8214) is part of the note, not a failed measurement. Everything below
+describes the measurement, which is unchanged; read "fails" as "prints the advisory note".
 
 THE RULE (the maintainer, Tue 29 Sep 2026, chosen over human approval): a PR that edits the
 control plane needs SUBMITTED reviews at its current head from two different
@@ -51,6 +58,8 @@ Requirements (mini-PRD):
     [if] apps/x.py with one reviewer fails here [then] broken
   / An author that cannot be read is a failed measurement, never a pass.
     [if] a commit with no harness trailer yields PASS [then] broken
+  / A missing author trailer names who rewrites it, never a bare note.
+    [if] the advisory note for a missing trailer leaves no owner path [then] broken
   / A PR with more commits than the listing's cap is read in full, or not judged at all.
     [if] #3837 (428 commits) reports "may be truncated" [then] broken
     [if] a full listing short of the PR's own commit count yields a verdict [then] broken
@@ -91,7 +100,6 @@ from scripts.review_control_plane_codex import (
     codex_head_tied_issue_comment as _codex_head_tied_issue_comment,
     harness_reviewed_at_head as _harness_reviewed_at_head,
 )
-from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
 
 _SOL_MARKER_GROUPS = 4
@@ -249,20 +257,20 @@ _AMBIGUITY_LANE_MARKERS: Mapping[str, re.Pattern[str]] = {
 }
 
 
-#: The last `enforce` FAIL's detail, for review_blocker's one-line BLOCKER; empty when the
-#: last run did not fail. Module state on purpose: triage hands back only an exit code.
-_LAST_FAILURE: list[str] = []
-
-
-def last_failure() -> str | None:
-    return _LAST_FAILURE[-1] if _LAST_FAILURE else None
-
-
 def verdict_line(ok: bool, head_sha: str, detail: str) -> str:
     """REVIEW-13's verdict line. It names the head because on a FAIL triage exits
     before its own `PR #N @ head` header, and review_chain reads the head from here."""
     outcome = "ok" if ok else "FAIL"
     return f"[review-coverage] {outcome}: control-plane dual review (REVIEW-13) @ head {head_sha}: {detail}"
+
+
+def advisory_line(head_sha: str, detail: str) -> str:
+    """REVIEW-8220's note where REVIEW-13 used to FAIL. It must never start with the FAIL prefix
+    or carry the could-not-measure text: the nucbox lander holds a PR on either."""
+    return (
+        f"[review-coverage] NOTE: control-plane review is advisory (REVIEW-8220) @ head {head_sha}: "
+        f"{detail}; consider one review where it helps, one is enough; nothing is held"
+    )
 
 
 @dataclass(frozen=True)
@@ -292,15 +300,6 @@ _RECOGNITION = re.compile(
 _NOBODY = "(none)"
 
 
-def recognition_line(verdict: DualReview) -> str:
-    """Per-harness result beside a REVIEW-13 FAIL, so review_chain can tell a lane whose review
-    was recognized (one more is needed) from a lane whose review was not recognized at all."""
-    return (
-        f"[review-coverage] REVIEW-13 reviewers: recognized at head {', '.join(verdict.recognized) or _NOBODY}; "
-        f"counted as independent {', '.join(verdict.counted) or _NOBODY}; need {DUAL_REVIEW_MIN}"
-    )
-
-
 def read_recognition(output: str) -> Recognition | None:
     """The last `recognition_line` on review-coverage's output; None when it printed none."""
     found = list(_RECOGNITION.finditer(output))
@@ -312,11 +311,6 @@ def read_recognition(output: str) -> Recognition | None:
         return frozenset() if text == _NOBODY else frozenset(n.strip() for n in text.split(","))
 
     return Recognition(names("recognized"), names("counted"), int(found[-1].group("need")))
-
-
-def failure_lines(verdict: DualReview, head_sha: str) -> tuple[str, str]:
-    """Everything `enforce` prints for a REVIEW-13 FAIL, carry proofs aside."""
-    return verdict_line(False, head_sha, verdict.detail), recognition_line(verdict)
 
 
 @dataclass(frozen=True)
@@ -350,6 +344,22 @@ def without_declaration_only(paths: Sequence[str], entries: Callable[[], Sequenc
         return list(paths)
     waived = {e["filename"] for e in entries() if declaration_only(e)}
     return [p for p in paths if p not in waived]
+
+
+def append_author_trailer_owner_path(detail: str) -> str:
+    """One-line owner handoff when a commit lacks a readable harness trailer.
+
+    It names the PR author by role, with no GitHub read: under REVIEW-8220 this note is advisory,
+    and a lookup that could fail would turn it back into a held, unmeasured verdict."""
+    if "has no author trailer" not in detail:
+        return detail
+    return (
+        f"{detail}; owner: the PR author recovers the trailer without a force-push: "
+        "cherry-pick the commits onto a fresh branch from main, give that commit a harness "
+        "trailer (`-Claude`/`-Codex`/`-Cursor`/`-Grok` on its own line in the final block, real "
+        "newlines, never a literal `\\n`) and open a replacement PR, or ask CORE for a "
+        "force-push exception (see (private path))"
+    )
 
 
 def author_markers(message: str) -> set[str]:
@@ -581,7 +591,7 @@ def dual_review(
     ok = len(counted) >= DUAL_REVIEW_MIN
     detail = (
         f"control plane ({shown}); {author_detail}; independent submitted reviews at head: "
-        f"{', '.join(counted) or '(none)'} (need {DUAL_REVIEW_MIN}; excluded as author: "
+        f"{', '.join(counted) or '(none)'} (REVIEW-13 asked for {DUAL_REVIEW_MIN}; excluded as author: "
         f"{', '.join(sorted(excluded)) or '(none)'})"
     )
     if carry.unknown and not ok:
@@ -617,16 +627,19 @@ def measure(
     return dual_review(hits, authors, author_detail, at_head, carried(at_head))
 
 
-def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
-    """review_coverage.triage's hook: 0 to continue, 1 after printing the FAIL line.
+def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> bool:
+    """review_coverage.triage's hook: prints the `ok` line or an advisory NOTE, and never holds.
 
-    Raises TriageError when it cannot measure. review_coverage is imported here, not
-    at the top, because it imports this module; reading `_paginated_json_list`
-    through it keeps the one fetch seam its tests already use.
+    Returns whether REVIEW-13's old bar (two independent harness reviews) was met, for tests and
+    callers that report it; no caller may hold a PR on False.
+
+    REVIEW-8220: fewer than two independent reviews, or authors that cannot be read (no
+    harness trailer), is a NOTE, not a FAIL and not a failed measurement. A failed GitHub
+    read still raises TriageError. review_coverage is imported here, not at the top, because
+    it imports this module; reading `_paginated_json_list` through it keeps the one fetch
+    seam its tests already use.
     """
     from scripts import review_coverage as rc
-
-    _LAST_FAILURE.clear()
 
     def files_at_head() -> list[dict]:
         # The files API describes the LIVE head: fail closed if it is not the pinned one.
@@ -683,16 +696,13 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         reviewed_at_head=lambda: reviewed_at(head_sha),
         carried=carried,
     )
-    if verdict.ok is None:
-        raise TriageError(f"control-plane dual review (REVIEW-13) could not measure: {verdict.detail}")
     if not control_plane_hits(changed_files):
-        return 0
+        return True
     rc._require_head_unchanged(head_sha, rc._head_sha(pr))
     if verdict.ok:
         print(verdict_line(True, head_sha, verdict.detail))
         print_carry_proofs(verdict.carried, head_sha)
-        return 0
-    _LAST_FAILURE.append(verdict.detail)
-    print(*failure_lines(verdict, head_sha), sep="\n")
+        return True
+    print(advisory_line(head_sha, append_author_trailer_owner_path(verdict.detail)))
     print_carry_proofs(verdict.carried, head_sha)
-    return 1
+    return False

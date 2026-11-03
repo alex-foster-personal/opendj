@@ -135,7 +135,8 @@ export default defineConfig({
 		'**/audio-output-topology.spec.ts', // playwright.audio-output-topology.config.ts (no server)
 		'**/full-reload-gate.spec.ts', // playwright.full-reload-gate.config.ts (own vite instance, r3920753724)
 		'**/audio-soak.spec.ts', // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
-		'**/autoplay-error-hunt.spec.ts' // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
+		'**/autoplay-error-hunt.spec.ts', // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
+		'**/silence-expected-audible.spec.ts' // playwright.silence-expected-audible.config.ts (real backend + bench clips)
 	],
 	fullyParallel: false,
 	workers: 1,

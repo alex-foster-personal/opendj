@@ -134,6 +134,7 @@ def profile_correlations(
     The long-term estimate's own score vector, exposed so segment confidence
     and the track's scalar key come from one computation.
     """
+    _require_chroma_matrix(chroma)
     return correlation_matrix(
         chroma.mean(axis=1, keepdims=True), major_profile, minor_profile
     )[:, 0]

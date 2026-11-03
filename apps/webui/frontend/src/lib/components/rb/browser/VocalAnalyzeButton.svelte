@@ -6,6 +6,10 @@
 -->
 <script lang="ts">
 	import { analyzeVocalsFromStems, RbApiError, type StemSummary } from '$lib/rb/api-rb';
+	import {
+		isStableIdOnLoadedDeck,
+		refreshLoadedDeckVocalsFromServer
+	} from '$lib/rb/loaded-deck-vocals-refresh';
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalsAnalyzeRefusal } from '$lib/rb/vocals-analyze-refusal';
 
@@ -30,6 +34,7 @@
 			const result = await analyzeVocalsFromStems(stableId);
 			if (result.claimed.includes(stableId)) {
 				pushToast('Vocal analysis done', 'info');
+				if (isStableIdOnLoadedDeck(stableId)) void refreshLoadedDeckVocalsFromServer([stableId]);
 			} else {
 				pushToast(`Vocal analysis refused: ${result.refused[stableId] ?? 'unknown'}`, 'error');
 			}

@@ -9,6 +9,7 @@ Regression one-liners:
   - if MDT_AGENTBOX_HOST unset or blank is not agentbox then broken
   - if a set MDT_AGENTBOX_HOST does not rename every agentbox use alike then broken
   - if a value that is not one DNS label reaches ssh or the remote command then broken
+  - if crate_sync --help names a box other than the configured one then broken
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -38,7 +40,9 @@ OVERRIDE = "hostbox-test"
 _PROBE = """
 import json
 from apps.webui import crate_sync, run_agentbox as r
-to_default = crate_sync.build_parser().get_default("to")
+parser = crate_sync.build_parser()
+to_default = parser.get_default("to")
+crate_sync_help = " ".join(parser.format_help().split())
 print(json.dumps({
     "hostname": r.AGENTBOX_HOSTNAME,
     "ssh_host": r.SSH_HOST,
@@ -49,11 +53,12 @@ print(json.dumps({
     "is_agentbox": r.is_agentbox(hostname=r.AGENTBOX_HOSTNAME),
     "keeps_logs": str(r.log_home(hostname=r.AGENTBOX_HOSTNAME)) == str(r.LOG_DIR),
     "crate_sync_to": to_default,
+    "crate_sync_help": crate_sync_help,
 }))
 """
 
 
-def _uses_in_a_fresh_process(value: str | None) -> dict[str, object]:
+def _uses_in_a_fresh_process(value: str | None) -> dict[str, Any]:
     drop = {AGENTBOX_HOST_ENV, AGENTBOX_SSH_HOSTS_ENV}
     env = {k: v for k, v in os.environ.items() if k not in drop}
     if value is not None:
@@ -109,6 +114,9 @@ def test_every_agentbox_use_follows_the_one_variable(value: str | None, expected
     assert argv[argv.index("--short-host") + 1] == expected
     assert uses["is_agentbox"] is True
     assert uses["keeps_logs"] is True
+    crate_sync_help = uses["crate_sync_help"]
+    for phrase in (f"pushes to {expected}", f"run on {expected};", f"(owner Mac -> {expected})"):
+        assert phrase in crate_sync_help, phrase
 
 
 def test_a_bad_value_stops_the_module_from_loading() -> None:

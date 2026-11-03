@@ -64,31 +64,3 @@ export function gradeView(grade: TrackQualityGrade, compact: boolean): GradeView
 		dataGrade: grade.checked ? key : `${key}-unchecked`
 	};
 }
-
-/** How long a loaded hover is reused before a mouseenter asks again. */
-export const HOVER_TTL_MS = 30_000;
-
-/** A loaded hover, tied to the grade it describes and when it arrived. */
-export interface LoadedHover {
-	key: string;
-	at: number;
-	text: string;
-}
-
-/** The title to show: the loaded hover only if it describes the current grade. */
-export function hoverTitle(
-	loaded: LoadedHover | null,
-	gradeKey: string,
-	fallback: string,
-	now = Date.now()
-): string {
-	if (loaded !== null && loaded.key === gradeKey && now - loaded.at < HOVER_TTL_MS) {
-		return loaded.text;
-	}
-	return fallback;
-}
-
-/** True when a mouseenter need not ask again: same grade, inside the TTL. */
-export function hoverIsFresh(loaded: LoadedHover | null, gradeKey: string, now: number): boolean {
-	return loaded !== null && loaded.key === gradeKey && now - loaded.at < HOVER_TTL_MS;
-}

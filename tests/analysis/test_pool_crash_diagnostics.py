@@ -280,7 +280,7 @@ def test_a_worker_dying_during_submission_is_reported_not_leaked(
         for ref in queue:
             submitted.append(ref.stable_id)
             time.sleep(0.25)
-            yield ref.stable_id, str(ref.path)
+            yield ref.stable_id, str(ref.path), ()
 
     with pytest.raises(RuntimeError) as excinfo:
         pool_mod.run_pool(_slowly(), backend=selfkill, workers=2)

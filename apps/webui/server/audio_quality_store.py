@@ -38,6 +38,7 @@ from typing import Any
 
 from apps.shared import audio_grade
 from apps.shared.audio_scan import rule_version
+from apps.webui.server.sqlite_sidecar_store import upsert_many_sidecar
 
 STORE_FILENAME = "audio-quality.db"
 _SQL_CHUNK = 500
@@ -112,19 +113,13 @@ def upsert_many(rows: Sequence[StoredScan], state_db: Path) -> None:
     """Replace the stored scan for each row's track, in one transaction."""
     if not rows:
         return
-    path = store_path(state_db)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    try:
-        with conn:
-            conn.execute(_SCHEMA)
-            conn.executemany(
-                f"INSERT OR REPLACE INTO audio_quality ({', '.join(_COLUMNS)}) "
-                f"VALUES ({', '.join('?' * len(_COLUMNS))})",
-                [astuple(row) for row in rows],
-            )
-    finally:
-        conn.close()
+    upsert_many_sidecar(
+        store_path(state_db),
+        _SCHEMA,
+        "audio_quality",
+        _COLUMNS,
+        [astuple(row) for row in rows],
+    )
 
 
 def same_path(a: str, b: str) -> bool:

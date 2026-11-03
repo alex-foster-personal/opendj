@@ -181,7 +181,9 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	);
 	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
-	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	const tree =
+		source('src/lib/components/rb/browser/PlaylistTree.svelte') +
+		source('src/lib/components/rb/browser/PlaylistTreeView.svelte');
 	assert.match(tree, /non-broken tracks, \$\{node\.broken_count\} broken tracks/);
 	assert.match(tree, /track count unavailable:/);
 	assert.match(
@@ -288,7 +290,9 @@ test('the memory meter samples through untrack and perfMeterSampleIntervalMs', (
 });
 
 test('PlaylistTree renders the reserved Missing Tracks folder outside the playlist loop', () => {
-	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
+	const tree =
+		source('src/lib/components/rb/browser/PlaylistTree.svelte') +
+		source('src/lib/components/rb/browser/PlaylistTreeView.svelte');
 	assert.match(tree, /MissingTracksFolder/);
 	assert.match(tree, /data-testid="playlist-missing-tracks"/);
 	const eachBlock = tree.match(/\{#each nodes as node \(node\.playlist_id\)\}[\s\S]*?\{\/each\}/)?.[0];

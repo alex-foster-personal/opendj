@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { waitForPerformanceIpc } from './support/performance-ready';
 import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
+import { applySkin, expectSkin, restoreThemeAfterEach, SKINS, type Skin } from './support/skin-prefs';
 import {
 	renderedContrastAudit,
 	trackCanvasText,
@@ -27,11 +28,6 @@ import {
 // checks what the browser paints, which is where Gothic's white-on-#d6d6d6
 // MORE button (1.45:1) hid.
 
-/** A skin on the dark theme, or 'theme-light': the default skin on the light
- * theme (html[data-theme], a separate pref that styles the library and
- * Settings shell outside .perf-root). */
-type Skin = 'default' | 'mono-dev' | 'light' | 'theme-light';
-const SKINS: Skin[] = ['default', 'mono-dev', 'light', 'theme-light'];
 type Surface = 'performance-more' | 'performance-less' | 'performance-hover' | 'library' | 'settings';
 
 interface AllowEntry {
@@ -56,138 +52,13 @@ const SHELL_BG: Record<Skin, string> = {
 	'theme-light': 'rgb(247, 243, 235)'
 };
 
-const NO_MOTION = '*, *::before, *::after { transition: none !important; animation: none !important; }';
-
-/** What each labeled pass means in the app's own preferences. */
-function _prefsFor(skin: Skin): { ui_skin: 'default' | 'mono-dev' | 'light'; theme: 'dark' | 'light' } {
-	if (skin === 'theme-light') return { ui_skin: 'default', theme: 'light' };
-	return { ui_skin: skin, theme: 'dark' };
-}
-
-interface SkinUi {
-	ui_skin: string;
-	wave_palette: string;
-	wave_split_master: string;
-}
-
-async function _ipcUi(page: Page): Promise<SkinUi> {
-	return page.evaluate(() => {
-		const ipc = window.musicDjToolsPerformance;
-		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		const { ui_skin, wave_palette, wave_split_master } = ipc.query().ui;
-		return { ui_skin, wave_palette, wave_split_master };
-	});
-}
-
-async function _putTheme(page: Page, theme: string): Promise<void> {
-	const res = await page.request.put('/api/v1/ui-prefs', { data: { theme } });
-	expect(res.ok(), `PUT /api/v1/ui-prefs theme=${theme}: ${res.status()}`).toBe(true);
-}
-
-/**
- * Select a skin through the app's real preferences, never by writing DOM
- * attributes: the ui_skin goes through the performance IPC `set_skin`
- * command (setUiSkin, which persists it), and the theme through the daemon's
- * ui-prefs file the app hydrates on load. The page is then reloaded so every
- * reactive reader (uiPrefs.ui_skin, uiPrefs.theme) starts from those values.
- * Must run on /performance, where the IPC is installed.
- */
-async function _applySkin(page: Page, skin: Skin): Promise<void> {
-	const want = _prefsFor(skin);
-	await _putTheme(page, want.theme);
-	const ui = await _ipcUi(page);
-	await page.evaluate(
-		(cmd) => window.musicDjToolsPerformance!.dispatch(cmd as never),
-		{ type: 'set_skin', ui_skin: want.ui_skin, wave_palette: ui.wave_palette, wave_split_master: ui.wave_split_master }
-	);
-	await page.reload({ waitUntil: 'domcontentloaded' });
-	await waitForPerformanceIpc(page);
-	await _waitForMirrorLeadership(page, skin);
-	expect((await _ipcUi(page)).ui_skin, `${skin}: uiPrefs.ui_skin after reload`).toBe(want.ui_skin);
-	await _expectSkin(page, skin);
-}
-
-const MIRROR_PATH = '/api/v1/state/ui-mirror';
-
-/**
- * Wait until THIS page leads the engine's UI mirror (AGENT-18), so the
- * follower banner ("Another Open DJ window is in control") is not on screen
- * when the audit samples.
- *
- * A freshly loaded /performance page reads the mirror lease before its first
- * PUT; if another page still holds it (the previous spec's page, or this
- * test's own pre-reload page, whose pagehide DELETE can lose to its last 1 Hz
- * PUT), it starts as a follower and only claims after that 10 s lease lapses
- * or a click lands. CI runs 37879937047 and 37876178845 (Fri 9 Oct 2026)
- * sampled default/performance-more and -less in that window and failed on
- * the banner's text. Only a leader PUTs, so an accepted PUT from the reloaded
- * document is the presence signal; the engine must then name that same
- * client as the lease holder, and the banner must be gone.
- */
-async function _waitForMirrorLeadership(page: Page, skin: Skin): Promise<void> {
-	// The pre-reload document's in-flight requests are aborted when the
-	// reload commits, so a PUT answered from here on is this document's.
-	const accepted = await page.waitForResponse(
-		(response) =>
-			response.request().method() === 'PUT' &&
-			new URL(response.url()).pathname === MIRROR_PATH &&
-			response.status() === 202,
-		{ timeout: 30_000 }
-	);
-	const clientId = accepted.request().headers()['x-opendj-lease'];
-	expect(clientId, `${skin}: the accepted mirror PUT names its writer`).toBeTruthy();
-	await expect
-		.poll(
-			async () => {
-				const res = await page.request.get(`${MIRROR_PATH}/lease`);
-				expect(res.ok(), `GET ${MIRROR_PATH}/lease: ${res.status()}`).toBe(true);
-				return ((await res.json()) as { holder: string | null }).holder;
-			},
-			{ message: `${skin}: the engine names this page as the mirror lease holder` }
-		)
-		.toBe(clientId);
-	await expect(page.getByTestId('tab-leader-banner'), `${skin}: follower banner after leading`).toHaveCount(0);
-}
-
-/**
- * Presence control for every audited page: the app itself (not this test)
- * put the skin and theme on <html>, and the skin button reads the same pref.
- */
-async function _expectSkin(page: Page, skin: Skin): Promise<void> {
-	const want = _prefsFor(skin);
-	await expect
-		.poll(() => page.evaluate(() => document.documentElement.dataset.theme ?? null), { message: `${skin}: html[data-theme]` })
-		.toBe(want.theme);
-	const dom = await page.evaluate(() => ({
-		skin: document.documentElement.dataset.skin ?? 'default',
-		button: document.querySelector('[data-skin-current]')?.getAttribute('data-skin-current') ?? null
-	}));
-	expect(dom.skin, `${skin}: html[data-skin]`).toBe(want.ui_skin);
-	if (dom.button !== null) expect(dom.button, `${skin}: skin button`).toBe(want.ui_skin);
-	await page.addStyleTag({ content: NO_MOTION });
-	// Let style recalculation and any skin-driven re-render settle.
-	await page.waitForTimeout(300);
-}
-
-// The theme pass writes the daemon's ui-prefs file, which outlives this
-// browser context: put back what was there, pass or fail. (ui_skin lives in
-// this context's localStorage and goes away with it.)
-let originalTheme: string | null = null;
-
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(trackCanvasText);
-	const res = await page.request.get('/api/v1/ui-prefs');
-	expect(res.ok(), `GET /api/v1/ui-prefs: ${res.status()}`).toBe(true);
-	const theme = ((await res.json()) as { theme?: unknown }).theme;
-	originalTheme = theme === 'dark' || theme === 'light' ? theme : null;
 });
-
-test.afterEach(async ({ page }) => {
-	if (originalTheme !== null) await _putTheme(page, originalTheme);
-});
+restoreThemeAfterEach();
 
 async function _audit(page: Page): Promise<RenderedContrastReport> {
-	return page.evaluate(renderedContrastAudit);
+	return page.evaluate(renderedContrastAudit, undefined);
 }
 
 const HOVER_OWNER = 'data-contrast-hover-owner';
@@ -467,7 +338,7 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 		await appendEmptyRescueSnapshot(page.request);
 		await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 		await waitForPerformanceIpc(page);
-		await _applySkin(page, skin);
+		await applySkin(page, skin);
 		await _loadTwoDecks(page);
 		for (const layout of ['MORE', 'LESS'] as const) {
 			await _setDeckLayout(page, layout);
@@ -481,7 +352,7 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 		for (const [route, surface] of [['/', 'library'], ['/settings', 'settings']] as const) {
 			await page.goto(route, { waitUntil: 'domcontentloaded' });
 			await page.waitForLoadState('networkidle').catch(() => {});
-			await _expectSkin(page, skin);
+			await expectSkin(page, skin);
 			// Control: the theme really reached the shell, not just the attribute.
 			const shell = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 			expect(shell, `${skin}/${surface} shell background`).toBe(SHELL_BG[skin]);
@@ -513,7 +384,7 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	await page.setViewportSize({ width: 1600, height: 900 });
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);
-	await _applySkin(page, 'mono-dev');
+	await applySkin(page, 'mono-dev');
 	await _setDeckLayout(page, 'MORE');
 
 	// Positive control derived from the W34 defect itself: restore the

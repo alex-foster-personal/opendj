@@ -59,8 +59,45 @@ BARE_MATCH_EXEMPT = frozenset(
         "steve",
         # The fixture login the audit's own tests build to prove the home rules fire.
         "jdoe",
+        # macOS profile folder segment (Users/<login>/Library/...) and DJ product
+        # vocabulary ("library preview", "library media") are not account names;
+        # the home-path rules still report library in a home-directory position.
+        "library",
+        # Acceptance/electron dev staged data directory name under a placeholder home.
+        "fixture-library",
     }
 )
+
+# Children of a macOS home directory, and of `/Users` itself, that are folders rather
+# than accounts. A home rule that matches inside a nested path such as a home root
+# followed directly by `Library` and then `Application Support` (a sandboxed HOME whose
+# own child is the macOS `Library`) captures the folder as if it were a login, and the
+# bare rule would then report every ordinary use of the word. Compared case-
+# insensitively. The home rule itself still reports the position; only the harvest as a
+# LOGIN is refused.
+MACOS_HOME_CHILDREN = frozenset(
+    {
+        "applications",
+        "default",
+        "desktop",
+        "documents",
+        "downloads",
+        "library",
+        "movies",
+        "music",
+        "pictures",
+        "public",
+        "shared",
+    }
+)
+
+# A home root NESTED inside a placeholder's home is a directory in that tree, not an
+# account: a sandboxed HOME such as a macOS placeholder home holding a run folder, then
+# a nested home root, then `fixture-library`, names the run's fixture folder, and `dev`
+# (the account that owns the path) is already judged a placeholder. Matched only when
+# the path runs unbroken from the outer home root to this match, so a nested root under
+# a REAL login is still harvested.
+_NESTED_UNDER_HOME_BEFORE = re.compile(r"(?:/users/|/home/)([^/\s'\"`)]+)/[^\s'\"`)]*$", re.IGNORECASE)
 
 # A match whose preceding text ends at a home root is already reported by the
 # home-path rule that owns that position; reporting it twice adds a line, not a leak.
@@ -99,7 +136,14 @@ def revealed_login(rule: str, match: re.Match[str], preceding: str) -> str | Non
     if not _rule_accepts(rule, match, preceding):
         return None
     login = _login_from_segment(match.group(1))
-    return login if login is not None and not _is_placeholder_home(login) else None
+    if login is None or login in MACOS_HOME_CHILDREN or _is_nested_under_placeholder_home(preceding):
+        return None
+    return None if _is_placeholder_home(login) else login
+
+
+def _is_nested_under_placeholder_home(preceding: str) -> bool:
+    outer = _NESTED_UNDER_HOME_BEFORE.search(preceding)
+    return outer is not None and _is_placeholder_home(outer.group(1))
 
 
 def revealed_logins(texts: Iterable[str]) -> frozenset[str]:

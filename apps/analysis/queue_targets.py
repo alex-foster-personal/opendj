@@ -23,7 +23,6 @@ from apps.shared.ffmpeg import FfmpegUnavailable, probe_duration_s, resolve_ffmp
 from apps.shared.state import locations as track_locations
 
 from . import admission
-from .backlog import _candidate_paths
 from .queue import QueueError, TargetResolver
 
 # Keep IN (...) under SQLite's default 999 bind cap (see apps.shared.state.queries).
@@ -95,22 +94,6 @@ def _duration_probe(count: int) -> Callable[[Path], float | None] | None:
     return lambda path: engine_decode.probe_duration_s(path, exe)
 
 
-def _resolve_local_path(
-    file_path: str | None,
-    locations: Sequence[str],
-    path_map: platform_paths.PathMap,
-) -> str | None:
-    """The first of a track's recorded paths that exists on THIS machine."""
-    for candidate in _candidate_paths(file_path, locations):
-        mapped = platform_paths.resolve_library_path(candidate, path_map=path_map)
-        # A native absolute path resolves to itself whether or not it exists;
-        # a host that mirrors another Mac's library holds the bytes under an
-        # alternate location, so the first path that EXISTS wins (NATIVE-21).
-        if mapped.resolved is not None and mapped.resolved.exists():
-            return str(mapped.resolved)
-    return None
-
-
 def _admission_duration_s(
     resolved: str | None, duration_ms: int | None, measured_s: float | None
 ) -> float | None:
@@ -120,6 +103,31 @@ def _admission_duration_s(
     if duration_ms:
         return duration_ms / 1000.0
     return measured_s
+
+
+def _resolved_rows(
+    conn: sqlite3.Connection,
+    rows: Sequence[tuple[str, str | None, int | None]],
+    *,
+    path_map: platform_paths.PathMap,
+) -> list[tuple[str, str | None, int | None]]:
+    """Resolve each live track to its playback-ordered local winner."""
+    return [
+        (
+            sid,
+            str(picks[0].path) if picks else None,
+            duration_ms,
+        )
+        for sid, _file_path, duration_ms in rows
+        for picks in [
+            track_locations.ordered_playable_candidates(
+                conn,
+                sid,
+                path_map=path_map,
+                for_analysis=True,
+            )
+        ]
+    ]
 
 
 def candidates_from_state(
@@ -138,10 +146,10 @@ def candidates_from_state(
     the admission rule with ``duration_unknown`` rather than admitted at an
     invented length.
 
-    Paths go through the same resolution the backlog drain uses
-    (``platform_paths.resolve_library_path`` over the legacy column plus
-    ``track_locations``), so the queue and the drain cannot disagree about
-    where a track's bytes are.
+    Paths go through the same playback winner ordering the backlog drain uses
+    (:func:`apps.shared.state.locations.ordered_playable_candidates`), so the
+    queue, the drain and playback cannot disagree about which copy is the
+    track.
 
     The read filters ``deleted_at``: nothing hard-deletes a synced row here,
     so a removed track is a tombstone that is still selectable. Asking for
@@ -162,11 +170,7 @@ def candidates_from_state(
             f"(unknown or deleted): {missing[:5]}"
         )
     path_map = platform_paths.load_path_map()
-    locations = track_locations.list_location_paths(conn, wanted)
-    resolved_rows = [
-        (sid, _resolve_local_path(file_path, locations.get(sid, ()), path_map), ms)
-        for sid, file_path, ms in rows
-    ]
+    resolved_rows = _resolved_rows(conn, rows, path_map=path_map)
     measured = _measured_durations(
         {sid: path for sid, path, ms in resolved_rows if path is not None and not ms}
     )

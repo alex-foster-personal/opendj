@@ -1354,13 +1354,14 @@ jobs:
         # so pythonLocation is always set here), not whatever python3 the PATH finds.
         run: $pythonLocation/bin/python3 "$GITHUB_WORKSPACE/scripts/ci_cmdk_preview_cue_gate.py"
 
-      # -- Headphone device probe gate, performance Playwright config ---------
+      # -- Targeted performance-config gate (headphone selection token) --------
       # CUEOUT-06 / issue #2090: the probe clicks "+ OUT" by its accessible
-      # name (aria-label="ADD OUTPUT"). Without a CI step referencing
-      # playwright.performance.config.ts the mismatch timed out every run and
-      # stayed invisible. Own ports 5273/8686; host lock because eight e2e jobs
-      # share a host.
-      - name: Headphone device probe gate - performance config
+      # name (aria-label="ADD OUTPUT"). Issue #7773: library-panel E2E lived
+      # only in this config and red on main unnoticed. One invocation, two
+      # specs; ` headphone ` stays the selection token and E2E_FOOTPRINTS_DIR
+      # key for published footprint maps even though the gate now owns both.
+      # Own ports 5273/8686; host lock because eight e2e jobs share a host.
+      - name: Targeted performance-config gate - headphone probe and library panels
         working-directory: apps/webui/frontend
         # Runs only when the scope job's selection names it (TEST-BUDGET round 3,
         # scripts/ci_e2e_selection.py): an empty e2e_gates is a non-PR event, every
@@ -1371,7 +1372,7 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" performance-headphone-gate \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5273 8686 -- \
-            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts --output test-results/performance-headphone-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
+            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts tests/e2e/performance-library-panels.spec.ts --output test-results/performance-config-gate --reporter=list,./tests/e2e/support/footprint-reporter.ts
 
       - name: Root Playwright suite (real engine + Vite)
         id: root-playwright
@@ -1635,6 +1636,222 @@ jobs:
           name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
           path: ${{ steps.stage-e2e-junit.outputs.stage_dir }}
           if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # ELECTRON SHELL GATE (ELECTRON-6208), ADVISORY. Runs beside the WebKit gate.
+  #
+  # The same named artifact subset the `gate` job's WebKit steps block on
+  # (setup-entry-points, deckload-smoke), driven through the real Electron
+  # desktop shell with Playwright's `_electron` launcher instead of a browser
+  # (tests/e2e/playwright.electron-shell.config.ts says what runs and the one
+  # named exclusion). WebKit caused 11 of the 15 real queue failures in the
+  # 8 Oct 2026 PR-flow research, and the desktop app is moving to Electron.
+  #
+  # NOT YET BLOCKING, on purpose: `continue-on-error` at job level and absent
+  # from `verdict`'s needs, so its red is visible on the run but cannot hold a
+  # PR or a queue draft. RETIREMENT NOTE: the WebKit steps in `gate` retire,
+  # and this job joins `verdict`, once this job has been green for 20
+  # consecutive in-scope runs. That swap is the owner's call, not this job's.
+  # ---------------------------------------------------------------------------
+  electron:
+    name: e2e electron shell (advisory)
+    needs: scope
+    if: needs.scope.outputs.in_scope == 'true'
+    # Same runner switch as `gate`.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          persist-credentials: false
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Enable pinned pnpm
+        # Order matters: corepack before setup-node, so a `pnpm` shim exists on
+        # PATH when setup-node's `cache: pnpm` resolves the store. Same
+        # ordering constraint ci.yml documents.
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          # Same 3.11 target ci.yml pins, and for the same reason.
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
+          # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
+          # action's cache on, its post step runs `uv cache prune --ci` against that
+          # directory while fifteen sibling jobs hold its lock: trunk E2E red on
+          # 227fb7c86 (Wed 9 Sep 2026, "Timeout (300s) when waiting for lock on
+          # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
+          # archive entry out from under `uv sync` on 34275041870 the day before.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: System deps for pyrekordbox (SQLCipher)
+        # The engine imports pyrekordbox, which links libsqlcipher at runtime.
+        # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
+        run: |
+          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
+
+      - name: Install Python deps into the project venv
+        # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
+        # with `uv run --no-sync`, which requires an already-populated .venv;
+        # against an unpopulated one it resolves somewhere else entirely and
+        # reports success while binding the wrong thing. Populating the venv
+        # here is what makes that command mean what it says.
+        run: uv sync --locked --extra analysis
+
+      - name: Prove the venv is populated and is this checkout's
+        # Fail fast and loudly rather than letting the engine boot fail 180s
+        # later inside a Playwright webServer timeout, where the real cause is
+        # invisible.
+        run: |
+          set -euo pipefail
+          test -x .venv/bin/python || { echo "[ERROR] .venv/bin/python missing after uv sync"; exit 1; }
+          echo "[OK] venv interpreter: $(.venv/bin/python -c 'import sys; print(sys.executable)')"
+          .venv/bin/python -c "import apps.engine_core" \
+            || { echo "[ERROR] engine package not importable from the project venv"; exit 1; }
+          echo "[OK] apps.engine_core imports"
+
+      - name: Runner preflight - node tools and disk
+        run: scripts/ci_node_preflight.sh apps/webui/frontend
+
+      - name: Install frontend dependencies
+        working-directory: apps/webui/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install and build the Electron shell
+        # pnpm install runs electron's postinstall, which downloads the runtime.
+        working-directory: apps/desktop/electron
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Display server and Electron system libraries
+        # Electron is Chromium: the apt libraries Playwright's chromium needs.
+        # install-deps also installs xvfb (Playwright's own tool list), which
+        # gives a headless runner its display.
+        working-directory: apps/webui/frontend
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages pnpm exec playwright install-deps chromium
+          command -v xvfb-run || { echo "::error::xvfb-run missing after install-deps"; exit 1; }
+
+      - name: Acquire production frontend artifact from CI
+        id: frontend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
+
+      - name: Electron shell gate (production build, named subset)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        working-directory: apps/webui/frontend
+        # Fixed port 8694: host lock plus port reap, like the webkit-deckload steps.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" electron-shell \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8694 -- \
+            xvfb-run -a -s "-screen 0 1920x1200x24" \
+            pnpm exec playwright test \
+            --config tests/e2e/playwright.electron-shell.config.ts \
+            --output test-results/electron-shell
+
+      - name: Upload failure artifacts
+        if: failure()
+        continue-on-error: true
+        # R2, not GitHub artifact storage: the bucket lifecycle rule on ci/
+        # expires it (the GitHub step kept it 2 days).
+        uses: ./.github/actions/r2-artifact
+        with:
+          mode: upload
+          name: e2e-electron-shell-failures
+          path: |
+            apps/webui/frontend/test-results/**
+            apps/webui/frontend/tests/e2e/fixtures/electron-shell-data/logs/**
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -2028,6 +2245,20 @@ jobs:
         # own design, not something this workflow introduces.
         if: ${{ !cancelled() }}
         run: pnpm exec playwright test --config tests/e2e/playwright.stems.config.ts --output test-results/stems-progress
+
+      - name: Extended - silence expected audible (AUDIOLIVE-09, AUDIOLIVE-17)
+        working-directory: apps/webui/frontend
+        # Real backend over a throwaway library built from the committed bench
+        # clips (ffmpeg transcodes the stem parts): the browser scenarios that
+        # prove the master silence watchdog stops decks only when sound was
+        # expected. Fixed loopback ports 8707/5327 (vite.silence-expected-audible
+        # config), so it holds its own host lock like the other fixed-port suites.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" silence-expected-audible \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8707 5327 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.silence-expected-audible.config.ts \
+            --output test-results/silence-expected-audible
 
       - name: Extended - midi maps resync
         working-directory: apps/webui/frontend

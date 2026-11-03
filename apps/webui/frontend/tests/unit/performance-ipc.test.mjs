@@ -74,6 +74,8 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'filter', deck: 2, value: 0.7 }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'stem_gain', deck: 2, stem: 'vocal', value: 0.7 }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'stem_eq_mode', deck: 2, enabled: true }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_toggle' }), null);
@@ -970,6 +972,32 @@ test('queryPerformanceState serializes has_rb_mapping so a browser/CLI agent can
 	}
 });
 
+test('queryPerformanceState exposes validated vocals per deck (#1031)', () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		const empty = pairing.queryPerformanceState().decks[1];
+		assert.equal(empty.vocals, null);
+
+		pairing.deckStates[1].stable_id = 'track-vocals';
+		pairing.deckStates[1].anlz = {
+			beatgrid: { beats: [] },
+			vocals: { status: 'demucs', fps: 10, regions: [{ start_s: 0, end_s: 1, intensity: 0.5 }] }
+		};
+		const loaded = pairing.queryPerformanceState().decks[1];
+		assert.equal(loaded.vocals.status, 'demucs');
+		assert.equal(loaded.vocals.regions.length, 1);
+		assert.notEqual(
+			loaded.vocals.regions,
+			pairing.deckStates[1].anlz.vocals.regions,
+			'snapshot regions must be isolated from deck state'
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('deck header key controls dispatch only through the typed performance dispatcher', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const headerSource = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');
@@ -1553,6 +1581,36 @@ test('TOPVIEW-06 two-track AutoPlay has a queue scope and the checkbox uses the 
 	const source = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
 	assert.match(source, /runPerformanceCommandFromUi\(\{\s*type: 'auto_play_two_track',/);
 	assert.doesNotMatch(source, /setAutoPlayTwoDeck\(/);
+});
+
+test('AGENT-48 AutoPlay intent selector dispatches auto_play_next_intent through the shared path', async () => {
+	// [if] auto_play_next_intent has no queue scope [then] every IPC/CLI call throws, [else stop].
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'auto_play_next_intent', intent: 'smooth' }),
+		null
+	);
+	const plan = await loadTypeScriptModule('src/lib/rb/auto-play-next-plan.ts');
+	const topBar = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
+	assert.match(topBar, /runPerformanceCommandFromUi\(\{\s*type: 'auto_play_next_intent'/);
+	assert.doesNotMatch(topBar, /autoPlayNextState\.intent\s*=/);
+	for (const intent of plan.TRANSITION_INTENTS) {
+		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent }), {
+			type: 'auto_play_next_intent',
+			intent
+		});
+	}
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent' }), /unknown intent/);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent: 'teleport' }),
+		/unknown intent/
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent: 'smooth', deck: 1 })
+	);
+	const ipcSource = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
+	assert.match(ipcSource, /command\.type === 'auto_play_next_intent'/);
+	const mirrorSource = await readFile('src/lib/rb/ui-mirror.ts', 'utf8');
+	assert.match(mirrorSource, /auto_play_next: readAutoPlayNextMirror\(\)/);
 });
 
 test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher commands', async () => {

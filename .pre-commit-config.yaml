@@ -1,4 +1,4 @@
-# Minimal pre-commit hooks for music-dj-tools.
+# Minimal pre-commit hooks for Open DJ.
 #
 # Install once with: pip install pre-commit && pre-commit install
 # Run on the whole tree with: pre-commit run --all-files

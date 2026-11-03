@@ -25,12 +25,11 @@ Requirements (mini-PRD):
     [if] the rule's thresholds changed [then] every verdict is recomputed ⛔️
     [if] the file is missing or unreadable [then] `unknown` with that reason
       ⛔️ ok, suspect, or a crash that ends the scan
-  ✔︎ ✅ 🎯 ScanRunner: single-flight background scan with a readable status.
+  ✔︎ ✅ 🎯 ScanRunner: single-flight background scan with a readable status
+    (engine in scan_runner.py).
     [if] a scan is running and another is requested [then] the running one
       is reported ⛔️ two scans at once
     [if] the scan raises [then] the error is kept in the status ⛔️ silence
-
--Claude
 """
 from __future__ import annotations
 
@@ -62,6 +61,7 @@ from apps.shared.platform_paths import AssetResolver
 from apps.webui.server import grid_quality_store, library_playable
 from apps.webui.server.grid_quality_store import StoredGridQuality
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
+from apps.webui.server.scan_runner import ScanRunner as SharedScanRunner
 
 log = logging.getLogger(__name__)
 
@@ -242,7 +242,13 @@ def scan_library(*, scope: ScanScope = "present", pause_s: float = 0.0) -> ScanR
 # ---------------------------------------------------------------- runner
 
 
-class ScanRunner:
+def _publish_grid_result(result: ScanResult) -> None:
+    if result.written > 0:
+        # Rows carry the verdict, so listings must be read again.
+        publish("library.changed", {"kind": "tracks", "ids": []})
+
+
+class ScanRunner(SharedScanRunner[ScanResult]):
     """Single-flight scan with a status any caller can read."""
 
     def __init__(
@@ -254,76 +260,27 @@ class ScanRunner:
     ) -> None:
         # The audio-fit scan (GRIDFIT-02) reuses this runner with its own scan.
         self._scan_fn = scan_fn or scan_library
-        self._thread_name = thread_name
-        self._label = label
-        self._lock = threading.Lock()
-        self._thread: threading.Thread | None = None
-        self._running_scope: ScanScope | None = None
-        self._last_result: ScanResult | None = None
-        self._last_error: str | None = None
-
-    def status(self) -> dict[str, Any]:
-        with self._lock:
-            return {
-                "state": "running" if self._running_scope is not None else "idle",
-                "running_scope": self._running_scope,
-                "last_result": asdict(self._last_result) if self._last_result else None,
-                "last_error": self._last_error,
-            }
-
-    def _claim(self, scope: ScanScope) -> bool:
-        with self._lock:
-            if self._running_scope is not None:
-                return False
-            self._running_scope = scope
-            return True
-
-    def _run(self, scope: ScanScope, pause_s: float) -> None:
-        result: ScanResult | None = None
-        error: str | None = None
-        try:
-            result = self._scan_fn(scope=scope, pause_s=pause_s)
-        except Exception as exc:
-            log.exception("%s scan failed", self._label)
-            error = f"{type(exc).__name__}: {exc}"
-        with self._lock:
-            self._running_scope = None
-            self._last_error = error
-            if result is not None:
-                self._last_result = result
-        if result is not None and result.written > 0:
-            # Rows carry the verdict, so listings must be read again.
-            publish("library.changed", {"kind": "tracks", "ids": []})
-
-    def run_blocking(self, scope: ScanScope) -> dict[str, Any]:
-        """Scan on the caller's thread; waits out a scan already running."""
-        while not self._claim(scope):
-            self.join(timeout_s=600)
-            time.sleep(0.05)
-        self._run(scope, 0.0)
-        return self.status()
+        super().__init__(
+            thread_name=thread_name,
+            label=label,
+            on_busy="wait",
+            extra_status=lambda _running, _stop, extra: {"running_scope": extra},
+            on_result=_publish_grid_result,
+        )
 
     def start(self, scope: ScanScope) -> dict[str, Any]:
         """Start a background scan unless one is running; returns the status."""
-        if self._claim(scope):
-            thread = threading.Thread(
-                target=self._run,
-                args=(scope, BACKGROUND_PAUSE_S),
-                name=self._thread_name,
-                daemon=True,
-            )
-            with self._lock:
-                self._thread = thread
-            thread.start()
-        return self.status()
+        return self.start_work(
+            lambda _stop: self._scan_fn(scope=scope, pause_s=BACKGROUND_PAUSE_S),
+            extra=scope,
+        )
 
-    def join(self, timeout_s: float) -> None:
-        with self._lock:
-            thread = self._thread
-        if thread is not None:
-            thread.join(timeout_s)
-            if thread.is_alive():
-                raise TimeoutError(f"{self._label} scan still running after {timeout_s} s")
+    def run_blocking(self, scope: ScanScope) -> dict[str, Any]:
+        """Scan on the caller's thread; waits out a scan already running."""
+        return self.run_work(
+            lambda _stop: self._scan_fn(scope=scope, pause_s=0.0),
+            extra=scope,
+        )
 
 
 _RUNNER_GUARD = threading.Lock()

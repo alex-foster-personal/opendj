@@ -78,6 +78,7 @@ def test_v13_db_migrates_forbid_duplicates(tmp_path: Path) -> None:
     fresh = sqlite3.connect(":memory:")
     state_schema.apply_migrations(fresh)
     migrated = sqlite3.connect(str(path))
+    state_schema.apply_migrations(migrated)
     assert _columns(migrated, "playlists") == _columns(fresh, "playlists")
     migrated.close()
     fresh.close()

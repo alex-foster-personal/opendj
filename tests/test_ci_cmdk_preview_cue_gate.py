@@ -92,3 +92,22 @@ def test_a_missing_bash_names_itself(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setenv("PATH", str(tmp_path))
     with pytest.raises(SystemExit, match="bash is not on PATH"):
         gate.bash_run(Path("scripts/wrapper.sh"))
+
+
+def test_file_invocation_outside_repo_resolves_imports_and_names_missing_gcc(tmp_path: Path) -> None:
+    """e2e.yml runs this gate as a file path; sys.path[0] is scripts/, not the repo root."""
+    gate_path = REPOSITORY_ROOT / "scripts" / "ci_cmdk_preview_cue_gate.py"
+    env = {key: os.environ[key] for key in ("SYSTEMROOT",) if key in os.environ}
+    env["PATH"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(gate_path)],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "gcc is not on PATH" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "ImportError" not in result.stderr

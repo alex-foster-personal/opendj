@@ -24,7 +24,7 @@
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
-use super::search::TrackHit;
+use super::search::{track_hit_from_row, TrackHit};
 use crate::state::now_unix;
 
 const LAMBDA: f64 = 0.1_f64;
@@ -50,6 +50,18 @@ pub fn raw_score(plays: i64, drags: i64) -> f64 {
     (plays as f64) * 2.0 + (drags as f64)
 }
 
+/// Most recent frecency event timestamp, for decay calculation.
+///
+/// Uses the later of `last_played_at` and `last_dragged_at` when both are set
+/// so a recent play is not masked by an older drag (P17-02).
+pub fn latest_frecency_event_ts(
+    last_played_at: Option<i64>,
+    last_dragged_at: Option<i64>,
+) -> Option<i64> {
+    // Option orders None below Some, so max keeps whichever event exists.
+    last_played_at.max(last_dragged_at)
+}
+
 /// Rank the top `limit` tracks by `raw_score * decay(last_dragged_at)`.
 pub fn get_frecent_top_impl(
     conn: &Connection,
@@ -71,27 +83,9 @@ pub fn get_frecent_top_impl(
             let drags: i64 = r.get(9)?;
             let last_played: Option<i64> = r.get(10)?;
             let last_dragged: Option<i64> = r.get(11)?;
-            // P17-02: use the MOST RECENT of the two timestamps rather than
-            // the first non-None one. `last_dragged.or(last_played)` would
-            // pin decay to a stale drag timestamp even if the track has
-            // been played very recently, distorting top-200 ranking.
-            let last = match (last_played, last_dragged) {
-                (Some(p), Some(d)) => Some(p.max(d)),
-                (Some(p), None) => Some(p),
-                (None, Some(d)) => Some(d),
-                (None, None) => None,
-            };
+            let last = latest_frecency_event_ts(last_played, last_dragged);
             Ok(FrecentHit {
-                track: TrackHit {
-                    stable_id: r.get(0)?,
-                    path: r.get(1)?,
-                    title: r.get(2)?,
-                    artist: r.get(3)?,
-                    album: r.get(4)?,
-                    genre: r.get(5)?,
-                    key: r.get(6)?,
-                    bpm: r.get(7)?,
-                },
+                track: track_hit_from_row(r)?,
                 score: raw_score(plays, drags) * decay(now, last),
                 plays,
                 drags,
@@ -100,7 +94,11 @@ pub fn get_frecent_top_impl(
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     hits.truncate(limit as usize);
     Ok(hits)
 }
@@ -192,6 +190,15 @@ mod tests {
     }
 
     #[test]
+    fn latest_frecency_event_ts_picks_most_recent() {
+        assert_eq!(latest_frecency_event_ts(None, None), None);
+        assert_eq!(latest_frecency_event_ts(Some(10), None), Some(10));
+        assert_eq!(latest_frecency_event_ts(None, Some(20)), Some(20));
+        assert_eq!(latest_frecency_event_ts(Some(10), Some(20)), Some(20));
+        assert_eq!(latest_frecency_event_ts(Some(30), Some(20)), Some(30));
+    }
+
+    #[test]
     fn frecency_record_drag_increments() {
         let conn = seeded_conn();
         record_drag_impl(&conn, "s1", 1_800_000_000).unwrap();
@@ -252,7 +259,9 @@ mod tests {
         .unwrap();
         let hits = get_frecent_top_impl(&conn, now, 10).unwrap();
         let value = serde_json::to_value(&hits[0]).unwrap();
-        let object = value.as_object().expect("a FrecentHit serializes to an object");
+        let object = value
+            .as_object()
+            .expect("a FrecentHit serializes to an object");
 
         let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
         keys.sort_unstable();
@@ -261,8 +270,17 @@ mod tests {
         assert_eq!(
             keys,
             vec![
-                "album", "artist", "bpm", "drags", "genre", "key", "path", "plays", "score",
-                "stable_id", "title",
+                "album",
+                "artist",
+                "bpm",
+                "drags",
+                "genre",
+                "key",
+                "path",
+                "plays",
+                "score",
+                "stable_id",
+                "title",
             ],
         );
         assert!(object["score"].is_f64(), "score must arrive as a number");
@@ -280,7 +298,9 @@ mod tests {
         let start = main_rs
             .find("generate_handler![")
             .expect("main.rs still registers commands with generate_handler!");
-        let end = main_rs[start..].find(']').expect("the handler list is closed");
+        let end = main_rs[start..]
+            .find(']')
+            .expect("the handler list is closed");
         let handlers = &main_rs[start..start + end];
         assert!(
             handlers.contains("get_frecent_top"),

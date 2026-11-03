@@ -222,21 +222,16 @@ def record_assignments(
     return written
 
 
-#: Where an arm's stems go. "asset-store" is the scp destination, the host
-#: scripts/b2store.py names (MDT_B2STORE_SSH_HOST): a host name is not a CLI
-#: value (issue #5639).
+#: Where an arm's stems go: the same values as modal_vocal_farm --stems-dest.
+#: "asset-store" is the scp destination, the host scripts/b2store.py names
+#: (MDT_B2STORE_SSH_HOST): a host name is not a CLI value (issue #5639). Not
+#: imported from the farm, which needs modal; tests/stems/test_stem_dest_alias.py
+#: pins the two together.
 DESTS: tuple[str, ...] = ("asset-store", "local", "r2", "none")
 DEFAULT_DEST: str = "asset-store"
 #: Deprecated --dest spellings and the dest each means. Accepted with a warning;
 #: a later stage of #5639 drops them.
 DEPRECATED_DEST_ALIASES: dict[str, str] = {"bifrost2": "asset-store"}
-#: The farm's --stems-dest spelling of each dest. modal_vocal_farm still calls the
-#: asset store "bifrost2": renaming it there is a stems-pipeline change behind the
-#: perfbatch gate, a later batch of #5639. Not imported from the farm, which needs
-#: modal; tests/stems/test_stem_dest_alias.py pins the two together.
-FARM_STEMS_DEST: dict[str, str] = {
-    "asset-store": "bifrost2", "local": "local", "r2": "r2", "none": "none",
-}
 
 
 def dest_arg(value: str) -> str:
@@ -253,7 +248,7 @@ def farm_command(arm: Arm, ids: list[str], dest: str, dry_run: bool) -> list[str
     cmd = [
         sys.executable, "-m", "scripts.modal_vocal_farm",
         "--preset", arm.preset, "--stem-codec", arm.codec,
-        "--stems-dest", FARM_STEMS_DEST[dest], "--refarm",
+        "--stems-dest", dest, "--refarm",
     ]
     for stable_id in ids:
         cmd += ["--only-stable-id", stable_id]

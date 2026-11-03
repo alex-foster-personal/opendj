@@ -3,6 +3,11 @@ import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte
 import { bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 import { hasUsableBpm } from '$lib/rb/bpm-cell-text';
 
+/** Cell text for an analyzed track with no tempo (issue #5986): never a 0. */
+export function bpmUnmeasuredLabel(status: 'too_short' | 'no_pulse'): string {
+	return status === 'too_short' ? 'too short' : 'no pulse';
+}
+
 export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string {
 	if (row.bpm_status === 'failed') {
 		return row.bpm_reason ?? 'bpm analysis failed';
@@ -12,6 +17,9 @@ export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string 
 	}
 	if (row.bpm_status === 'available-not-selected') {
 		return row.bpm_reason ?? 'beatgrid analysis available but not selected';
+	}
+	if (row.bpm_status === 'too_short' || row.bpm_status === 'no_pulse') {
+		return row.bpm_reason ?? bpmUnmeasuredLabel(row.bpm_status);
 	}
 	const parts: string[] = [];
 	const heat = bpmHeatLabel(classifyBpmHeat(row.bpm, masterBpm), masterBpm);

@@ -23,6 +23,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -31,6 +32,7 @@ from typing import Any
 
 import httpx
 import pytest
+import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -41,8 +43,10 @@ from apps.engine_core.build_info import (
     resolve_build_info,
 )
 from apps.engine_core.update_channel import (
+    FEED_URL_ENV,
     UPDATE_CHECK_PATH,
     UPDATE_ENDPOINT,
+    UPDATE_FEED_URL,
     UpdateCheckError,
     _apply_via_engine,
     add_update_check_route,
@@ -50,6 +54,7 @@ from apps.engine_core.update_channel import (
     parse_version,
     platform_key,
     resolve_update_check,
+    update_endpoint,
 )
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
@@ -115,6 +120,26 @@ def _manifest(version: str, *, notes: str = "", key: str = KEY) -> dict[str, obj
     }
 
 
+ELECTRON_ENDPOINT: str = f"{UPDATE_FEED_URL}/latest-mac.yml"
+
+
+def _electron_feed(version: str, *, notes: str = "", zip_suffix: str = "-arm64-mac.zip") -> dict[str, object]:
+    """An electron-updater ``latest-mac.yml``, as scripts/electron_release.py writes it."""
+    zip_name = f"OpenDJ-{version}{zip_suffix}"
+    return {
+        "version": version,
+        "files": [{"url": zip_name, "sha512": "c2hhNTEy", "size": 123}],
+        "path": zip_name,
+        "sha512": "c2hhNTEy",
+        "releaseDate": "2026-09-01T00:00:00.000Z",
+        "releaseNotes": notes,
+    }
+
+
+def _feed_ok(body: object):
+    return lambda request: httpx.Response(200, text=yaml.safe_dump(body))
+
+
 def _client(handler) -> httpx.Client:
     """An httpx client whose transport is a function, so no socket is opened."""
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -132,6 +157,98 @@ def test_endpoint_matches_the_shell_configuration() -> None:
         "the engine check and the Tauri updater must read ONE channel; "
         f"conf={endpoints[0]!r} module={UPDATE_ENDPOINT!r}"
     )
+
+
+def test_the_feed_directory_matches_the_electron_shell() -> None:
+    """The Electron updater installs from the directory this check reads; they cannot drift."""
+    updater_ts = (REPO_ROOT / "apps/desktop/electron/src/updater.ts").read_text(encoding="utf-8")
+    match = re.search(r"export const UPDATE_FEED_URL = '([^']+)';", updater_ts)
+    assert match is not None, "updater.ts no longer declares UPDATE_FEED_URL"
+    assert match.group(1) == UPDATE_FEED_URL, (
+        f"updater.ts={match.group(1)!r} module={UPDATE_FEED_URL!r}"
+    )
+    assert f"{UPDATE_FEED_URL}/latest.json" == UPDATE_ENDPOINT
+
+
+def test_the_feed_override_moves_the_whole_directory() -> None:
+    assert update_endpoint({}) == UPDATE_ENDPOINT
+    assert update_endpoint({FEED_URL_ENV: "https://proof-feed.invalid/feed/"}) == "https://proof-feed.invalid/feed/latest.json"
+    assert update_endpoint({FEED_URL_ENV: "  "}) == UPDATE_ENDPOINT
+
+
+def test_the_check_reads_the_override_feed(monkeypatch) -> None:
+    monkeypatch.setenv(FEED_URL_ENV, "https://proof-feed.invalid/feed")
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json=_manifest("9.9.9"))
+
+    with _client(handler) as client:
+        result = resolve_update_check(_identity(), client=client, key=KEY)
+    assert seen == ["https://proof-feed.invalid/feed/latest.json"]
+    assert result.status == "update-available" and result.available_version == "9.9.9"
+    assert result.endpoint == "https://proof-feed.invalid/feed/latest.json"
+
+
+def test_a_malformed_override_is_a_named_fault(monkeypatch) -> None:
+    monkeypatch.setenv(FEED_URL_ENV, "http://[::1")
+    with httpx.Client() as client:
+        result = resolve_update_check(_identity(), client=client, key=KEY)
+    assert result.status == "endpoint-unreachable"
+    assert "http://[::1" in (result.detail or "")
+
+
+# ----- the electron-updater feed (latest-mac.yml) -------------------------
+def test_an_electron_feed_is_read_from_a_yml_endpoint() -> None:
+    notes = f"built from {RUNNING_SHA_FULL}"
+    with _client(_feed_ok(_electron_feed("9.9.9", notes=notes))) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "update-available" and result.available_version == "9.9.9"
+    assert result.notes == notes and result.published_at == "2026-09-01T00:00:00.000Z"
+    assert result.detail is not None and "OpenDJ-9.9.9-arm64-mac.zip" in result.detail
+
+
+def test_an_electron_feed_from_a_different_build_is_surfaced() -> None:
+    body = _electron_feed(RUNNING_VERSION, notes="built from cafe1234")
+    with _client(_feed_ok(body)) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "up-to-date" and result.same_version_different_build is True
+
+
+def test_an_electron_feed_without_this_macs_zip_is_unsupported() -> None:
+    body = _electron_feed("0.2.0", zip_suffix="-x64-mac.zip")
+    with _client(_feed_ok(body)) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "platform-unsupported"
+    assert "-arm64-mac.zip" in (result.detail or "") and "x64" in (result.detail or "")
+
+
+def test_the_mac_feed_has_nothing_for_another_os() -> None:
+    with _client(_feed_ok(_electron_feed("0.2.0"))) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key="windows-x86_64")
+    assert result.status == "platform-unsupported"
+    assert "windows-x86_64" in (result.detail or "")
+
+
+def test_an_electron_feed_file_without_a_sha512_is_refused() -> None:
+    body = _electron_feed("0.2.0")
+    body["files"][0].pop("sha512")  # type: ignore[index]
+    with _client(_feed_ok(body)) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "manifest-malformed"
+    assert "sha512" in (result.detail or "")
+
+
+def test_an_electron_feed_without_files_or_as_non_yaml_is_malformed() -> None:
+    body = _electron_feed("0.2.0")
+    body.pop("files")
+    with _client(_feed_ok(body)) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "manifest-malformed"
+    with _client(lambda r: httpx.Response(200, text="version: [unclosed")) as client:
+        result = resolve_update_check(_identity(), client=client, endpoint=ELECTRON_ENDPOINT, key=KEY)
+    assert result.status == "manifest-malformed" and "not YAML" in (result.detail or "")
 
 
 def test_endpoint_uses_the_public_release_host() -> None:

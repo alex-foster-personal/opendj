@@ -57,9 +57,13 @@ test('the USBs tab body is lazy: LibraryNav imports the stick list only on deman
 	// The tree lives inside that lazy chunk, and the list never reads the
 	// stick store itself: only an opened stick's tree does.
 	const list = source('src/lib/components/rb/browser/UsbSourceList.svelte');
+	const listView = source('src/lib/components/rb/browser/UsbSourceListView.svelte');
 	assert.match(list, STATIC_IMPORT('\\./UsbStickTree\\.svelte'));
-	assert.doesNotMatch(list, /usb-library/);
-	assert.match(list, /\{:else if openSticks\[vol\.id\]\}\s*<UsbStickTree /);
+	assert.doesNotMatch(list + listView, /usb-library/);
+	// The view draws an opened stick through the container's stickTree
+	// snippet, which is where the tree itself is mounted.
+	assert.match(listView, /\{:else if openSticks\[vol\.id\]\}\s*\{@render stickTree\(vol\)\}/);
+	assert.match(list, /\{#snippet stickTree\(vol: UsbVolumeKnown\)\}\s*<UsbStickTree /);
 });
 
 test('BrowserPanel reaches the stick store only through the lazy barrel', () => {
@@ -71,7 +75,9 @@ test('BrowserPanel reaches the stick store only through the lazy barrel', () => 
 });
 
 test('stick rows show both permission states, with a way to System Settings', () => {
-	const list = source('src/lib/components/rb/browser/UsbSourceList.svelte');
+	const list =
+		source('src/lib/components/rb/browser/UsbSourceList.svelte') +
+		source('src/lib/components/rb/browser/UsbSourceListView.svelte');
 	const pending = between(list, "{#if vol.access === 'pending'}", "{:else if vol.access === 'denied'}");
 	assert.match(pending, /waiting for permission/);
 	assert.match(pending, /title=/, 'the pending state explains itself on hover');
@@ -164,7 +170,7 @@ test('stick rows are read only and skip rb-meta hydration', () => {
 });
 
 test('every numeric readout in the stick tree carries a hover title', () => {
-	const tree = source('src/lib/components/rb/browser/UsbStickTree.svelte');
+	const tree = source('src/lib/components/rb/browser/UsbStickTreeView.svelte');
 	const count = between(tree, 'class="count"', '</span');
 	assert.match(count, /title=\{/);
 	assert.match(count, /tracks in this list on the stick/);

@@ -20,6 +20,7 @@ What stays FULL, because the import reader cannot see it:
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -561,6 +562,10 @@ def test_the_committed_path_list_is_exactly_the_derived_one() -> None:
     assert derived, "no helper-carried path found; the derivation measured nothing"
     assert config.helper_carried_paths is not None
     committed = config.helper_carried_paths
+    # A repeated entry fails the equality below while its add and remove lists both print
+    # empty (main at 80d4c76d90, Tue 3 Nov 2026), so name it first.
+    repeated = sorted(path for path, n in Counter(committed).items() if n > 1)
+    assert not repeated, f"ci/test-scopes.yml `helper_carried_paths` lists {repeated} more than once; keep one"
     assert tuple(sorted(derived)) == tuple(sorted(committed)), (
         "ci/test-scopes.yml `helper_carried_paths` no longer matches the global helpers' module closure:"
         f" add {sorted(derived - set(committed))}, remove {sorted(set(committed) - derived)}"

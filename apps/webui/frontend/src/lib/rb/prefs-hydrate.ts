@@ -19,6 +19,7 @@ import { GIG_HELPER_PREFS, type GigHelperPref } from './gig-helper-prefs';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
+import { parseTempoLaneScale, type TempoLaneScale } from './tempo-lane-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
 import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
@@ -94,7 +95,10 @@ export type DiskPrefsPatch = {
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
 	show_stems?: boolean;
+	deck_hover_link?: boolean;
 	show_sections?: boolean;
+	show_tempo_lane?: boolean;
+	tempo_lane_scale?: TempoLaneScale;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -189,7 +193,10 @@ export interface PrefsHydrateTarget {
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
 	show_stems: boolean;
+	deck_hover_link: boolean;
 	show_sections: boolean;
+	show_tempo_lane: boolean;
+	tempo_lane_scale: TempoLaneScale;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
@@ -413,8 +420,18 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_stems === 'boolean') {
 			uiPrefs.show_stems = body.show_stems;
 		}
+		if (typeof body.deck_hover_link === 'boolean') {
+			uiPrefs.deck_hover_link = body.deck_hover_link;
+		}
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
+		}
+		if (typeof body.show_tempo_lane === 'boolean') {
+			uiPrefs.show_tempo_lane = body.show_tempo_lane;
+		}
+		const tempoLaneScale = parseTempoLaneScale(body.tempo_lane_scale);
+		if (tempoLaneScale !== undefined) {
+			uiPrefs.tempo_lane_scale = tempoLaneScale;
 		}
 		const radialChangedDuringGet = uiPrefs.jog_radial_waveform !== jogRadialAtRequest;
 		if (radialClaimedAtRequest || isDiskValueSuperseded('jog_radial_waveform')) {

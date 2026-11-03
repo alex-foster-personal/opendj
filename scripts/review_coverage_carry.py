@@ -327,14 +327,28 @@ def verdicts_with_carry(
         if verdict.reviewed and row and (reason := evidence_skipped_paths_ok(name, row.bodies, pr_diff)):
             verdict = ReviewerVerdict(name, False, reason)
         if not verdict.reviewed:
-            verdict = _apply_carry(verdict, pr, head_sha, inputs)
+            verdict = _apply_carry(verdict, pr, head_sha, inputs, pr_diff=pr_diff)
         verdicts.append(verdict)
     return verdicts
 
 
-def _apply_carry(verdict, pr: str, head_sha: str, inputs: ReviewCarryInputs):
+def _apply_carry(
+    verdict,
+    pr: str,
+    head_sha: str,
+    inputs: ReviewCarryInputs,
+    *,
+    pr_diff: str | None,
+):
     attempt = carry_attempt(
-        verdict.name, pr, head_sha, inputs.reviews, inputs.inline, inputs.issue_comments, inputs.repo_root
+        verdict.name,
+        pr,
+        head_sha,
+        inputs.reviews,
+        inputs.inline,
+        inputs.issue_comments,
+        inputs.repo_root,
+        pr_diff=pr_diff,
     )
     if attempt.verdict is not None:
         return attempt.verdict
@@ -394,9 +408,11 @@ def carry_attempt(
     inline: list[dict],
     issue_comments: list[dict],
     repo_root: Path,
+    *,
+    pr_diff: str | None = None,
 ) -> CarryAttempt:
     """Try each rule on each reviewed ancestor head, newest first."""
-    from scripts.review_coverage import ReviewerVerdict, _matches
+    from scripts.review_coverage import ReviewerVerdict, _collect_evidence, _matches
 
     candidates = reviewed_shas_for_reviewer(name, reviews, inline, issue_comments, matches_login=_matches)
     if not candidates:
@@ -405,11 +421,17 @@ def carry_attempt(
     fetch_commits(repo_root, head_sha)
     present, unknown = _fetch_candidates(repo_root, candidates)
     base_tip = _BaseTip(repo_root)
+    refusal: ReviewerVerdict | None = None
     for carried_sha in sort_candidates_newest_first(repo_root, head_sha, present):
         if not _reviewed_at(name, reviews, inline, issue_comments, carried_sha):
             continue
         short = carried_sha[:11]
         if is_debt_only_since(repo_root, pr, carried_sha, head_sha):
+            evidence_h = _collect_evidence(name, reviews, inline, issue_comments, carried_sha)
+            if reason := evidence_skipped_paths_ok(name, evidence_h.bodies, pr_diff):
+                refused = f"carry from {short} refused: {reason}"
+                refusal = refusal or ReviewerVerdict(name, False, refused)
+                continue
             return CarryAttempt(
                 ReviewerVerdict(
                     name=name,
@@ -447,6 +469,8 @@ def carry_attempt(
                     carry_proof=same_path.proof_lines(),
                 )
             )
+    if refusal is not None:
+        return CarryAttempt(refusal, tuple(unknown))
     return CarryAttempt(None, tuple(unknown))
 
 
@@ -458,6 +482,13 @@ def try_carry_verdict(
     inline: list[dict],
     issue_comments: list[dict],
     repo_root: Path,
+    *,
+    pr_diff: str | None = None,
 ) -> ReviewerVerdict | None:
-    """Return a carried ReviewerVerdict, or None when carry does not apply."""
-    return carry_attempt(name, pr, head_sha, reviews, inline, issue_comments, repo_root).verdict
+    """Return a carried ReviewerVerdict, a refusal, or None when carry does not apply.
+
+    A carried debt-only review meets the same ``skipped=`` parity as one at head.
+    """
+    return carry_attempt(
+        name, pr, head_sha, reviews, inline, issue_comments, repo_root, pr_diff=pr_diff
+    ).verdict

@@ -1,6 +1,6 @@
 """The engine payload reaches the packed Electron app on every host (OPS-63).
 
-[if] a staged engine payload is installed into a packed Electron app [then] it arrives whole and executable, [else stop].
+[if] a staged payload is installed into a packed app [then] it arrives complete and executable, [else stop].
 
 [if] a packed Electron app's resources/payload is the placeholder and a staged payload has
      executable bin/opendj-engine and bin/odj-audio [then] the copy puts both, executable, in

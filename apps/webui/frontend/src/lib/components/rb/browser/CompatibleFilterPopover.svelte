@@ -8,9 +8,23 @@
 		{ handleKey: (e: KeyboardEvent) => void }
 	>;
 
+	/** Loads the range panel. The default is the real panel; a story passes its own. */
+	async function loadRangePanel(): Promise<PanelComponent | null> {
+		const mod = await import('./CompatibleFilterPanel.svelte');
+		return mod.default;
+	}
+
 	// The mode comes from the parent, which already reads the prefs store, so
 	// this component adds no importer to prefs.svelte.ts (quality fan-in ratchet).
-	let { children, mode }: { children: Snippet; mode: CompatibleMode } = $props();
+	let {
+		children,
+		mode,
+		loadPanel = loadRangePanel
+	}: {
+		children: Snippet;
+		mode: CompatibleMode;
+		loadPanel?: () => Promise<PanelComponent | null>;
+	} = $props();
 	let open = $state(false);
 	let closeTimer: ReturnType<typeof setTimeout> | undefined;
 	let openTimer: ReturnType<typeof setTimeout> | undefined;
@@ -35,8 +49,8 @@
 
 	function _ensurePanel(): void {
 		if (Panel !== null || panelLoad !== null) return;
-		panelLoad = import('./CompatibleFilterPanel.svelte').then((mod) => {
-			Panel = mod.default;
+		panelLoad = loadPanel().then((panel) => {
+			Panel = panel;
 		});
 	}
 

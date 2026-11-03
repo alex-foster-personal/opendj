@@ -22,10 +22,23 @@
 		audioInterferenceWarning,
 		refreshAudioInterference
 	} from '$lib/rb/audio-interference.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneState } from '$lib/rb/mixer-types';
 
-	let { headphones, onmode, embedded = false }: { headphones: HeadphoneState; onmode: (mode: HeadphoneAlignmentMode) => void; embedded?: boolean } =
-		$props();
+	let {
+		headphones,
+		onmode,
+		embedded = false,
+		calibrationMicId,
+		onPickMic
+	}: {
+		headphones: HeadphoneState;
+		onmode: (mode: HeadphoneAlignmentMode) => void;
+		embedded?: boolean;
+		/** Empty until the operator picks a mic. The preferred input does not count. */
+		calibrationMicId: string;
+		onPickMic: (deviceId: string) => void;
+	} = $props();
 
 	const MODE_COPY: Record<HeadphoneAlignmentMode, { label: string; detail: string }> = {
 		headphones_only: {
@@ -89,14 +102,41 @@
 							: 0
 	);
 
-	function start(): void {
+	const micReady = $derived(
+		calibrationMicId.trim() !== '' && headphones.inputs.some((input) => input.id === calibrationMicId)
+	);
+
+	function pickMic(event: Event): void {
+		const select = event.currentTarget;
+		if (!(select instanceof HTMLSelectElement)) return;
+		onPickMic(select.value);
+	}
+
+	async function start(): Promise<void> {
 		startError = null;
+		if (!micReady) {
+			startError = 'Choose the microphone that will hear the chirps before starting.';
+			return;
+		}
+		// Flush the pick through the headphone queue so the capture cannot open
+		// the auto-selected mic while this command is still waiting.
+		const selected = await runPerformanceCommandFromUi({
+			type: 'headphone_input_select',
+			device_id: calibrationMicId
+		});
+		if (!selected.ok) {
+			startError =
+				selected.error instanceof Error ? selected.error.message : 'Could not select that microphone.';
+			return;
+		}
 		void refreshAudioInterference();
-		startCueAlignment({ interactive: true }).catch((error: unknown) => {
+		try {
+			await startCueAlignment({ interactive: true });
+		} catch (error: unknown) {
 			// The machine already wrote `calibration.error` for a failed run; this
 			// only catches a start that never reached it.
 			if (calibration.step !== 'failed') startError = error instanceof Error ? error.message : String(error);
-		});
+		}
 	}
 
 	function continueCueCheck(): void {
@@ -131,9 +171,9 @@
 			{#if calibration.step === 'idle' || calibration.step === 'applied' || calibration.step === 'failed'}
 				{#if calibration.step === 'idle'}
 					<p>
-						This measures how far your headphones lag the room. The laptop plays a short chirp through the
-						speakers, then through the headphones, and the built-in microphone times both. It takes up to
-						{estimatedSeconds} seconds; playing decks are paused while it runs and resume when it finishes.
+						This measures how far your headphones lag the room. Choose the microphone that can hear the
+						speakers. The laptop plays a short chirp through the speakers, then through the headphones, and
+						that microphone times both. It takes up to {estimatedSeconds} seconds; playing decks are paused while it runs and resume when it finishes.
 					</p>
 				{:else if calibration.step === 'applied' && plan !== null}
 					<p class="ca-ok" role="status">
@@ -190,12 +230,30 @@
 						{@render modeCopy('hybrid')}
 					</label>
 				</fieldset>
+				<label class="ca-mic">
+					<span>Microphone</span>
+					<select aria-label="microphone for this calibration run" value={calibrationMicId} onchange={pickMic}>
+						<option value="" disabled={calibrationMicId !== ''}>Choose a microphone</option>
+						{#each headphones.inputs as input (input.id)}
+							<option value={input.id}>{input.label || input.id}</option>
+						{/each}
+					</select>
+				</label>
+				{#if headphones.inputs.length === 0}
+					<p class="ca-warn" role="status">
+						No microphones are listed. Allow microphone access in Audio I/O, then choose the mic that can
+						hear the speakers.
+					</p>
+				{:else if !micReady}
+					<p class="ca-warn" role="status">Choose a microphone before starting. Calibration will not run until you do.</p>
+				{/if}
 				<div class="ca-actions">
 					<button
 						type="button"
 						class="ca-primary"
-						disabled={cueAlignmentRunning()}
-						onclick={start}>{calibration.step === 'idle' ? 'Start calibration' : 'Run again'}</button
+						disabled={cueAlignmentRunning() || !micReady}
+						title={micReady ? undefined : 'Choose the microphone that will hear the chirps'}
+						onclick={() => void start()}>{calibration.step === 'idle' ? 'Start calibration' : 'Run again'}</button
 					>
 					<button type="button" onclick={closeCueAlignModal}>{calibration.step === 'applied' ? 'Done' : 'Cancel'}</button>
 				</div>
@@ -208,7 +266,7 @@
 					<li class:active={stepIndex === 5}>Verifying</li>
 				</ol>
 				{#if calibration.step === 'mic_access'}
-					<p>Waiting for microphone access. Allow the built-in microphone if the browser asks.</p>
+					<p>Waiting for microphone access. Allow the microphone you chose if the browser asks.</p>
 				{:else if calibration.step === 'mic_check_master'}
 					<p>
 						Chirping through the speakers, getting louder until the microphone hears it. Keep the room quiet
@@ -405,6 +463,24 @@
 	}
 	.ca-steps li.done {
 		color: var(--rb-text, #ddd);
+	}
+	.ca-mic {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0 0 10px;
+		font-size: 11px;
+		color: var(--rb-text-dim, #999);
+	}
+	.ca-mic select {
+		font: inherit;
+		font-size: 12px;
+		width: 100%;
+		padding: 4px 6px;
+		background: var(--rb-panel, #14171b);
+		color: var(--rb-text, #ddd);
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 3px;
 	}
 	.ca-actions {
 		display: flex;

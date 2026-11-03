@@ -16,6 +16,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
 	BrowserWindow,
+	Menu,
 	app,
 	dialog,
 	ipcMain,
@@ -26,10 +27,12 @@ import {
 	session,
 	shell,
 	type IpcMainEvent,
+	type MenuItemConstructorOptions,
 	type IpcMainInvokeEvent
 } from 'electron';
 
 import { defaultBootDeps, startEngine } from './boot';
+import { installEditContextMenu } from './context-menu';
 import { PAYLOAD_DIR } from './engine';
 import { makeLockProbe, performancePageUrl } from './launch';
 import { coreAudioOutputDevices, outputHealthJson } from './output-health';
@@ -39,15 +42,22 @@ import {
 	APP_SCHEME,
 	AUDIO_ENGINE_CHOICE_FILE,
 	type PageInit,
+	devCdpPortFromEnv,
 	diagnosticOutput,
 	isAppPage,
+	classifyMainFrameNavigation,
+	packagedRemoteDebuggingRefusal,
+	REMOTE_DEBUGGING_SWITCHES,
 	isExternalUrlAllowed,
 	isTrustedPage,
+	macAppSupportDir,
+	macMenuTemplate,
 	permissionAllowed,
 	readAudioEngineChoice,
 	readBuildStamp,
 	shellBuildIdentity,
 	startingWindowSize,
+	validateDataDirContainedInHome,
 	writeAudioEngineChoice
 } from './policy';
 import { ShellHealthServer } from './shell-health';
@@ -70,8 +80,17 @@ const DEFAULT_IDENTIFIER = 'com.opendj.desktop';
 
 // ----- P1: diagnostic flags, before anything touches the disk ----------------
 const argv = process.argv.slice(app.isPackaged ? 1 : 2);
+const packagedCdpRefusal = packagedRemoteDebuggingRefusal(
+	app.isPackaged,
+	process.argv,
+	REMOTE_DEBUGGING_SWITCHES.some((name) => app.commandLine.hasSwitch(name))
+);
 const diagnostic = diagnosticOutput(argv, app.getVersion());
-if (diagnostic !== null) {
+if (packagedCdpRefusal !== null) {
+	for (const name of REMOTE_DEBUGGING_SWITCHES) app.commandLine.removeSwitch(name);
+	process.stderr.write(`${packagedCdpRefusal}\n`);
+	app.exit(1);
+} else if (diagnostic !== null) {
 	process.stdout.write(diagnostic);
 	app.exit(0);
 } else {
@@ -93,8 +112,10 @@ function readIdentifier(): string {
 
 /**
  * The engine's data dir: where Tauri's `app_data_dir()` puts it, so switching
- * shells keeps the user's library. Unpackaged builds accept
- * OPENDJ_SHELL_DATA_DIR so tests never touch a real library.
+ * shells keeps the user's library. On macOS that is read from `$HOME`, as
+ * Tauri reads it, and refused when it is not inside `$HOME` (#6068); see
+ * `macAppSupportDir`. Unpackaged builds accept OPENDJ_SHELL_DATA_DIR so tests
+ * never touch a real library. Throws EngineError when the folder is refused.
  */
 function engineDataDir(identifier: string): string {
 	const override = process.env.OPENDJ_SHELL_DATA_DIR;
@@ -103,7 +124,32 @@ function engineDataDir(identifier: string): string {
 		const base = process.env.XDG_DATA_HOME?.trim() || path.join(os.homedir(), '.local', 'share');
 		return path.join(base, identifier);
 	}
+	if (process.platform === 'darwin') {
+		const home = process.env.HOME;
+		const dataDir = path.join(macAppSupportDir(home ?? ''), identifier);
+		try {
+			validateDataDirContainedInHome(dataDir, home);
+		} catch (error) {
+			throw new EngineError('Open DJ refused its data folder.', (error as Error).message);
+		}
+		return dataDir;
+	}
 	return path.join(app.getPath('appData'), identifier);
+}
+
+/**
+ * Chromium's own profile (and the single-instance lock in it) follows `$HOME`
+ * too, so a HOME-redirected run neither reads the real profile nor collides
+ * with a real running app's lock. For a real user the paths are unchanged.
+ * Must run before the single-instance lock and before ready.
+ */
+function pinChromiumDirsToHome(): void {
+	if (process.platform !== 'darwin') return;
+	const home = process.env.HOME;
+	if (home === undefined || !path.isAbsolute(home)) return; // engineDataDir refuses this case loudly.
+	const appData = macAppSupportDir(home);
+	app.setPath('appData', appData);
+	app.setPath('userData', path.join(appData, app.getName()));
 }
 
 function payloadDir(): string {
@@ -117,12 +163,17 @@ function setupDir(): string {
 	return app.isPackaged ? path.join(process.resourcesPath, 'setup') : path.resolve(app.getAppPath(), '..', 'setup');
 }
 
-function failVisibly(error: unknown): never {
+/** Log, show the native error box (safe before ready), and exit 1. */
+function reportFatal(error: unknown): void {
 	const headline = error instanceof EngineError ? error.headline : 'Open DJ cannot start.';
 	const detail = error instanceof EngineError ? error.detail : String(error instanceof Error ? error.message : error);
 	appendShellLog('ERROR', `${headline}\n\n${detail}`);
 	dialog.showErrorBox('Open DJ cannot start', `${headline}\n\n${detail}`);
 	app.exit(1);
+}
+
+function failVisibly(error: unknown): never {
+	reportFatal(error);
 	throw error;
 }
 
@@ -143,10 +194,9 @@ function applyShellMark(): void {
 
 function main(): void {
 	app.setName('Open DJ');
-	// P19/D10: a CDP port only for unpackaged builds; packaged builds also have
-	// the inspect fuses off, so this surface cannot ship.
-	const cdpPort = process.env.OPENDJ_REMOTE_DEBUGGING_PORT;
-	if (!app.isPackaged && cdpPort !== undefined && /^\d{1,5}$/.test(cdpPort)) {
+	// P19/D10 / ELECTRON-6877: CDP only for unpackaged builds (CLI refusal above).
+	const cdpPort = devCdpPortFromEnv(app.isPackaged, process.env.OPENDJ_REMOTE_DEBUGGING_PORT);
+	if (cdpPort !== null) {
 		app.commandLine.appendSwitch('remote-debugging-port', cdpPort);
 		app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
 	}
@@ -154,6 +204,8 @@ function main(): void {
 	protocol.registerSchemesAsPrivileged([
 		{ scheme: APP_SCHEME, privileges: { standard: true, supportFetchAPI: true, codeCache: true } }
 	]);
+
+	pinChromiumDirsToHome();
 
 	// P2: single instance, claimed before any launch plan can run (#2868).
 	if (!app.requestSingleInstanceLock()) {
@@ -170,7 +222,15 @@ function main(): void {
 	let supervisor: EngineSupervisor | null = null;
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
-	const engineChoiceFile = path.join(engineDataDir(identifier), AUDIO_ENGINE_CHOICE_FILE);
+	let dataDir: string;
+	try {
+		dataDir = engineDataDir(identifier);
+	} catch (error) {
+		// Before any store, log or engine exists (#6068); nothing to clean up.
+		reportFatal(error);
+		return;
+	}
+	const engineChoiceFile = path.join(dataDir, AUDIO_ENGINE_CHOICE_FILE);
 	let savedEngineChoice: PageInit['audioEngineChoice'] = null;
 	try {
 		savedEngineChoice = readAudioEngineChoice(engineChoiceFile);
@@ -331,7 +391,6 @@ function main(): void {
 
 	void app.whenReady().then(async () => {
 		installSignalHandlers();
-		const dataDir = engineDataDir(identifier);
 		const logPath = path.join(dataDir, ENGINE_LOG);
 		try {
 			fs.mkdirSync(dataDir, { recursive: true });
@@ -341,6 +400,11 @@ function main(): void {
 		}
 		appendShellLog('INFO', `electron shell ${app.getVersion()} (electron ${process.versions.electron}) data dir ${dataDir}`);
 		applyShellMark();
+		if (process.platform === 'darwin') {
+			Menu.setApplicationMenu(
+				Menu.buildFromTemplate(macMenuTemplate(productName, app.isPackaged) as MenuItemConstructorOptions[])
+			);
+		}
 
 		// The bootstrap page, served like tauri://localhost was.
 		const setupRoot = setupDir();
@@ -469,16 +533,18 @@ function main(): void {
 				if (details.isMainFrame) appendShellLog('webview', `navigation started: ${details.url}`);
 			});
 			contents.on('did-navigate', (_event, url) => appendShellLog('webview', `navigation finished: ${url}`));
+			installEditContextMenu(contents);
 			const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
-				if (isTrustedPage(url)) return;
+				const action = classifyMainFrameNavigation(url);
+				if (action === 'allow') return;
 				event.preventDefault();
 				appendShellLog('WARN', `refused navigation to ${url}`);
-				if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
+				if (action === 'open-external') void shell.openExternal(url);
 			};
 			contents.on('will-navigate', (event, url) => guardNavigation(event, url));
 			contents.on('will-redirect', (event, url) => guardNavigation(event, url));
 			contents.setWindowOpenHandler(({ url }) => {
-				if (isExternalUrlAllowed(url) && new URL(url).protocol === 'https:') void shell.openExternal(url);
+				if (classifyMainFrameNavigation(url) === 'open-external') void shell.openExternal(url);
 				return { action: 'deny' };
 			});
 

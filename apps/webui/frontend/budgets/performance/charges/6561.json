@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 326775,
+  "measured_with_pr": 327062,
+  "sha": "8cec8fe78",
+  "date": "Tue 3 Nov 2026",
+  "reason": "Storybook backfill (PR #6561): the performance surface grows 287 bytes with the story-only and capture-seam changes on the PR (wave split, BrandLaunch and CompatibleFilterPopover props, recording seam), measured on one clean vite build of origin/main e44a4d984 (326,775) and of the merge with this PR (327,062). Charged at 1 KiB, the growth ceiled to KiB.",
+  "payback": "none planned"
+}

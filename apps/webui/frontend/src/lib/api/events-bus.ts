@@ -53,6 +53,7 @@ export const LIBRARY_KINDS = [
 	'playlists',
 	'mytags',
 	'hot_cues',
+	'transition_in',
 	'beatgrid_edit',
 	'smartlists',
 	'dedup',

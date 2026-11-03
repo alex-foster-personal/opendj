@@ -5,10 +5,10 @@ human-facing overview see `README.md`; for the contribution process see `CONTRIB
 
 ## What this project is
 
-music-dj-tools (openDJ) is a local-first DJ library toolchain and an agent-drivable DJ rig:
+Open DJ is a local-first DJ library toolchain and an agent-drivable DJ rig:
 
 - A FastAPI daemon (`apps/webui/server`, loopback `127.0.0.1:8585`, no authentication) over a
-  shared SQLite state layer (`data/state/state.db`).
+  shared SQLite state layer (`(private path)`).
 - A SvelteKit frontend (`apps/webui/frontend`, dev server on `:5173`) whose main screen,
   `/performance`, is a four-deck Web Audio performance rig over your real library.
 - Adapters and sync tooling for Rekordbox, djay Pro, Serato and Traktor (`apps/sync`,

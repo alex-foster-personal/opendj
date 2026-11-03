@@ -37,7 +37,7 @@ colors and play counts (no state field holds them), and cue colors (rekordbox's
 cue color table is unpublished, so an RGB cannot be mapped onto an index
 honestly).
 
-Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml
+Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml|djay
 [--source P] [--write]``. It lives in ``apps.adapters`` rather than ``apps.shared.state``
 because it calls the readers, and ``apps.shared`` imports nothing else from
 ``apps`` (the ``shared-is-the-stable-core`` contract in ``.importlinter``).
@@ -56,7 +56,7 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
-from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
+from apps.open_dj import AdapterReport, CuePoint, OpenDjLibrary, Playlist, Track
 from apps.shared import hashing
 from apps.shared.state import cue_store, deleted_tracks
 from apps.shared.state import db as state_db
@@ -67,8 +67,8 @@ from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import compute_playlist_id
 
-Vendor = Literal["serato", "traktor", "rekordbox-xml"]
-VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml")
+Vendor = Literal["serato", "traktor", "rekordbox-xml", "djay"]
+VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml", "djay")
 
 #: The ``track_fields.source`` each import writes. A rekordbox XML export is
 #: labeled with the format it is in, ``rekordbox``, whichever app wrote it.
@@ -76,6 +76,7 @@ _SOURCE: dict[str, str] = {
     "serato": "serato",
     "traktor": "traktor",
     "rekordbox-xml": "rekordbox",
+    "djay": "djay",
 }
 
 #: Maps a path as the app stored it to a local absolute path.
@@ -92,8 +93,12 @@ class VendorIngestReport:
 
     vendor: str
     source: str
-    #: Entries in the app's library. THE denominator.
+    #: Entries in the app's library that reached the import. THE denominator
+    #: for the counts below; the source total adds ``entries_dropped_by_reader``.
     entries_seen: int = 0
+    #: Whole entries the app's reader dropped before the import saw them
+    #: (no file location, or streaming). Counted in the source total.
+    entries_dropped_by_reader: int = 0
     #: Entries whose file was already a library track (merged onto that row).
     tracks_matched: int = 0
     #: Entries that became new library tracks.
@@ -116,6 +121,9 @@ class VendorIngestReport:
     playlist_entries_unresolved: int = 0
     duration_s: float = 0.0
     dry_run: bool = True
+    #: What the app's reader dropped or changed before the import saw it,
+    #: counted per kind (see :class:`VendorRead`).
+    reader_notes: dict[str, int] = dataclasses.field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -258,7 +266,7 @@ def store_cues(cues: Iterable[CuePoint], report: VendorIngestReport) -> list[dic
 # ---------- ingest ----------------------------------------------------------
 
 
-def ingest_library(
+def ingest_library(  # noqa: PLR0913 - one keyword per import option, all optional but vendor and source.
     writer: StateWriter,
     library: OpenDjLibrary,
     *,
@@ -268,6 +276,7 @@ def ingest_library(
     dry_run: bool = True,
     modified_at: str | None = None,
     clock: _ClockFn | None = None,
+    write_cues: bool = True,
 ) -> VendorIngestReport:
     """Write ``library`` (read from ``vendor``'s files at ``source``) into state.db.
 
@@ -275,6 +284,9 @@ def ingest_library(
     saved its library (:func:`source_modified_at`). A stamp that moved on
     every run would rewrite every unchanged value as new history, so callers
     pass the source's own time, and only a test may leave it to the clock.
+
+    ``write_cues=False`` leaves every track's cue set alone. It is for a reader
+    that did not read cues, where an empty ``cues`` means unknown, not cleared.
     """
     if vendor not in VENDORS:
         raise ValueError(f"unknown vendor {vendor!r}; expected one of {VENDORS}")
@@ -306,7 +318,7 @@ def ingest_library(
                     continue
                 seen.add(sid)
                 entry_to_sid[track.track_id] = sid
-                _write_fields(writer, sid, track, field_source, fill_only, stamp, report)
+                _write_fields(writer, sid, track, field_source, fill_only, stamp, report, write_cues)
             _write_playlists(writer, library.playlists, vendor, entry_to_sid, deleted_entries, report)
             writer.register_adapter(
                 vendor,
@@ -436,6 +448,7 @@ def _write_fields(
     fill_only: bool,
     modified_at: str,
     report: VendorIngestReport,
+    write_cues: bool = True,
 ) -> None:
     conn = writer.raw_conn
     for name, value in _field_values(track):
@@ -448,6 +461,8 @@ def _write_fields(
             continue
         if writer.set_field(sid, name, value, source=source, modified_at=modified_at):  # type: ignore[arg-type]
             report.fields_written[name] = report.fields_written.get(name, 0) + 1
+    if not write_cues:
+        return
     cues = store_cues(track.cues, report)
     if fill_only and cue_store.read_row(conn, sid) is not None:
         return
@@ -518,28 +533,106 @@ def _write_playlists(
 # ---------- readers and CLI -------------------------------------------------
 
 
-def read_vendor_library(vendor: Vendor, source: Path) -> tuple[OpenDjLibrary, PathResolver]:
-    """Read ``source`` with ``vendor``'s adapter, plus its path resolver."""
+@dataclasses.dataclass(frozen=True)
+class VendorRead:
+    """An app's library as its reader saw it."""
+
+    library: OpenDjLibrary
+    resolve_path: PathResolver
+    #: What the reader could not carry over, counted per kind
+    #: ("bpm dropped: <reason>" -> 12). Never empty because nothing was
+    #: checked: each reader reports what it skipped.
+    reader_notes: dict[str, int]
+    #: Whole entries the reader dropped, so absent from ``library.tracks``.
+    entries_dropped: int = 0
+
+
+def read_vendor(vendor: Vendor, source: Path) -> VendorRead:
+    """Read ``source`` with ``vendor``'s reader: the library, its path
+    resolver, and a count of everything the reader dropped or changed."""
     source = Path(source).expanduser()
     if vendor == "serato":
         from apps.adapters.serato.adapter import SeratoAdapter, SeratoAdapterOptions
 
         adapter = SeratoAdapter(
-            options=SeratoAdapterOptions(audio_root=serato_volume_root(source))
+            options=SeratoAdapterOptions(audio_root=serato_volume_root(source), absolute_paths_are_logical=False)
         )
-        library, _ = adapter.read(source)
-        return library, serato_path_resolver(source)
+        library, adapter_report = adapter.read(source)
+        # The reader drops a whole row only for want of a file path.
+        dropped = sum(1 for w in adapter_report.warnings if w.field == "location" and w.action == "dropped")
+        return VendorRead(library, serato_path_resolver(source), _count_warnings(adapter_report, _SERATO_READER_LOSSES), dropped)
     if vendor == "traktor":
         from apps.adapters.traktor.adapter import TraktorAdapter
 
-        library, _ = TraktorAdapter().read(source)
-        return library, traktor_path_resolver()
+        library, adapter_report = TraktorAdapter().read(source)
+        # The reader drops a whole entry only for want of a file location.
+        dropped = sum(1 for w in adapter_report.warnings if w.field == "location" and w.action == "dropped")
+        return VendorRead(library, traktor_path_resolver(), _count_warnings(adapter_report, _TRAKTOR_READER_LOSSES), dropped)
     if vendor == "rekordbox-xml":
         from apps.adapters.rekordbox_xml import read_rekordbox_xml
 
+        xml = read_rekordbox_xml(source)
         # Locations are absolute file URLs; the reader already decoded them.
-        return read_rekordbox_xml(source).library, rekordbox_xml_path_resolver
+        return VendorRead(
+            xml.library,
+            rekordbox_xml_path_resolver,
+            _nonzero({"location dropped: streaming or blank": xml.tracks_without_location}),
+            xml.tracks_without_location,
+        )
+    if vendor == "djay":
+        from apps.adapters.djay import read_djay_library
+
+        djay = read_djay_library(source)
+        # djay stores file URLs; the reader already decoded them to paths.
+        return VendorRead(
+            djay.library,
+            _decoded_path,
+            _nonzero({
+                "location dropped: streaming, no local file": djay.tracks_streaming,
+                "cues dropped: djay cue or loop list could not be read": djay.cue_arrays_unreadable,
+            }),
+            djay.tracks_streaming,
+        )
     raise ValueError(f"unknown vendor {vendor!r}")
+
+
+def read_vendor_library(vendor: Vendor, source: Path) -> tuple[OpenDjLibrary, PathResolver]:
+    """Read ``source`` with ``vendor``'s adapter, plus its path resolver."""
+    read = read_vendor(vendor, source)
+    return read.library, read.resolve_path
+
+
+def _decoded_path(path: str) -> str:
+    return path
+
+
+# (field, action) pairs DJIMPORT-6039 counts as reader losses. Any other warning
+# (a playlist entry) is not counted here yet.
+_SERATO_READER_LOSSES = frozenset({("location", "dropped"), ("cues", "dropped"), ("bpm", "dropped")})
+_TRAKTOR_READER_LOSSES = frozenset({
+    ("location", "dropped"),
+    ("bpm", "dropped"),
+    ("key", "dropped"),
+    ("rating", "dropped"),
+    ("duration", "dropped"),
+    ("play_count", "dropped"),
+    ("cue_points.position", "dropped"),
+    ("cue_points.color", "downgraded"),
+})
+
+
+def _count_warnings(adapter_report: AdapterReport, losses: frozenset[tuple[str, str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for warning in adapter_report.warnings:
+        if (warning.field, warning.action) not in losses:
+            continue
+        key = f"{warning.field} {warning.action}: {warning.reason}"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _nonzero(counts: dict[str, int]) -> dict[str, int]:
+    return {key: n for key, n in counts.items() if n}
 
 
 def source_modified_at(source: Path) -> str:
@@ -562,12 +655,18 @@ def default_source(vendor: Vendor) -> Path | None:
         root = home / "Documents" / "Native Instruments"
         found = sorted(root.glob("Traktor */collection.nml")) if root.is_dir() else []
         return found[-1] if found else None
+    if vendor == "djay":
+        from apps.shared.platform_paths import DJAY_LIVE_DB
+
+        return DJAY_LIVE_DB if DJAY_LIVE_DB.is_file() else None
     return None
 
 
 def _print_summary(report: VendorIngestReport) -> None:
     print(f"{report.vendor} import ({'dry-run' if report.dry_run else 'write'})")
     print(f"  source:               {report.source}")
+    print(f"  entries in source:    {report.entries_seen + report.entries_dropped_by_reader}")
+    print(f"  dropped by reader:    {report.entries_dropped_by_reader}")
     print(f"  entries in library:   {report.entries_seen}")
     print(f"  matched to tracks:    {report.tracks_matched}")
     print(f"  new tracks:           {report.tracks_inserted}")
@@ -583,6 +682,9 @@ def _print_summary(report: VendorIngestReport) -> None:
     print(f"  cues with no kind:    {report.cues_skipped}")
     print(f"  playlists written:    {report.playlists_written}")
     print(f"  playlist entries unresolved: {report.playlist_entries_unresolved}")
+    print(f"  not carried over by the reader: {sum(report.reader_notes.values())}")
+    for note, count in sorted(report.reader_notes.items(), key=lambda item: (-item[1], item[0])):
+        print(f"    {count:>6}  {note}")
     print(f"  duration:             {report.duration_s:.3f}s")
 
 
@@ -593,20 +695,25 @@ def run_cli(args: argparse.Namespace, vendor: Vendor) -> int:
         where = args.source or "the default location"
         print(f"error: no {vendor} library found at {where}", file=sys.stderr)
         return 1
-    library, resolver = read_vendor_library(vendor, source)
+    read = read_vendor(vendor, source)
     state_path = Path(args.db) if args.db else state_paths.STATE_DB
     conn = state_db.open_rw(state_path)
     writer = StateWriter(conn, actor=f"ingest-{vendor}")
     try:
         report = ingest_library(
             writer,
-            library,
+            read.library,
             vendor=vendor,
+            # djay's cues stay gated behind DJIMPORT-5956b and this path never reads
+            # them, so an empty cue list here means unread, not cleared.
+            write_cues=vendor != "djay",
             source=str(source),
-            resolve_path=resolver,
+            resolve_path=read.resolve_path,
             dry_run=not args.write,
             modified_at=source_modified_at(source),
         )
+        report.reader_notes = dict(read.reader_notes)
+        report.entries_dropped_by_reader = read.entries_dropped
         _print_summary(report)
     finally:
         writer.close()
@@ -618,6 +725,7 @@ _WHERE: dict[str, str] = {
     "serato": "the _Serato_ folder (default ~/Music/_Serato_)",
     "traktor": "collection.nml (default: the newest Traktor folder in ~/Documents/Native Instruments)",
     "rekordbox-xml": "a rekordbox XML export (from rekordbox, Lexicon, Engine DJ or VirtualDJ); required",
+    "djay": "djay's MediaLibrary.db (default ~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db)",
 }
 
 
@@ -653,10 +761,12 @@ __all__ = [
     "PathResolver",
     "Vendor",
     "VendorIngestReport",
+    "VendorRead",
     "default_source",
     "ingest_library",
     "main",
     "nfc",
+    "read_vendor",
     "read_vendor_library",
     "run_cli",
     "serato_path_resolver",

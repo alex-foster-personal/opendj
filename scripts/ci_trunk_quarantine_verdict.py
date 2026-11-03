@@ -18,6 +18,7 @@ lets a failing shard through ONLY when every one of these holds:
 - the JUnit report exists, parses, and records at least one failed testcase
   (a <failure> or <error> child). Exit 1 with nothing failed is unexplained.
 - every failed testcase is on the list, matched on (classname, name).
+- no failed testcase is a drift guard (NEVER_EXCUSED), however Trunk lists it.
 - no more than MAX_EXCUSED_PER_SHARD failures are excused at once. More than
   that in one shard is an infrastructure burst, not a flake.
 
@@ -32,6 +33,9 @@ Requirements (REQ CIQUAR-01):
     - [if] exit 1, two failures, only one listed [then ⛔️ if the verdict passes]
   ✔︎ a listed-only failure passes
     - [if] exit 1, every failure listed [then ⛔️ if the verdict fails]
+  ✔︎ a drift guard's failure fails even when Trunk lists it
+    - [if] exit 1, the carry-path guard failed and is listed [then ⛔️ if the verdict passes]
+    - [if] a NEVER_EXCUSED entry names no defined test [then ⛔️ if its test passes]
   ✔︎ any exit other than 0 or 1 fails even when every failure is listed
     - [if] exit 2, 4, 124 or 137 with listed failures [then ⛔️ if the verdict passes]
   ✔︎ a missing, unparseable or not-ok list fails closed
@@ -58,6 +62,16 @@ PYTEST_TESTS_FAILED = 1
 MAX_QUARANTINED_LIST = 350
 #: More failures than this in one shard is an infrastructure burst.
 MAX_EXCUSED_PER_SHARD = 10
+#: Drift guards: each fails on every head until a committed list matches what the tree derives,
+#: then passes. Trunk reads that fail-then-pass on main as flaky and quarantined the carry-path
+#: guard on Tue 3 Nov 2026, which would let the next drift land green. Never excused.
+NEVER_EXCUSED: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("tests.scripts.test_ci_plan", "test_every_declared_dependency_is_one_the_imports_actually_say"),
+        ("tests.scripts.test_ci_plan_carry_paths", "test_the_committed_path_list_is_exactly_the_derived_one"),
+        ("tests.scripts.test_ci_plan_helpers", "test_the_committed_helper_carried_list_is_exactly_the_derived_one"),
+    }
+)
 
 
 # -----------------------------------------------------------------------------
@@ -128,11 +142,13 @@ def decide(pytest_rc: str, quarantine_raw: str, junit: Path) -> Verdict:
         return Verdict(False, failed)
     if not failed:
         return Verdict(False, "pytest exited 1 but the JUnit report records no failed testcase")
-    unlisted = [f"{c}::{n}" for c, n in failed if (c, n) not in quarantined]
+    guards = [key for key in failed if key in NEVER_EXCUSED]
+    unlisted = [f"{c}::{n}" for c, n in failed if (c, n) not in quarantined or (c, n) in guards]
     if unlisted:
+        note = f" ({len(guards)} of them drift guard(s), never excused even when Trunk lists them)" if guards else ""
         return Verdict(
             False,
-            f"{len(unlisted)} failed test(s) are not quarantined: " + ", ".join(unlisted[:20]),
+            f"{len(unlisted)} failed test(s) are not quarantined{note}: " + ", ".join(unlisted[:20]),
         )
     if len(failed) > MAX_EXCUSED_PER_SHARD:
         return Verdict(

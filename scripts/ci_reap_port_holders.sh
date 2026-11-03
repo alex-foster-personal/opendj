@@ -75,6 +75,8 @@
 #   - if the pid's identity changed between two signals and the second is
 #     still sent then broken
 #   - if no port is given then the step must fail rather than reap nothing
+#   - if a listener on a non-loopback, non-wildcard address (a host's
+#     Tailscale IP) is waited on or fails the step then broken
 set -euo pipefail
 
 ports=()
@@ -105,18 +107,37 @@ readonly PORT_OWNER_REGISTRY_DIR="${MDT_CI_PORT_OWNER_REGISTRY_DIR:-/tmp/music-d
 # exists for (issue #1613) is a listener owned by a DIFFERENT uid, which
 # unprivileged `ss -p` reports without its pid. One uid cannot create that
 # shape, so the test supplies the real `ss` minus the per-socket owner list --
-# exactly the output the kernel/ss already produces cross-uid. Nothing else
-# ever substitutes it, and production leaves it at `ss`.
+# exactly the output the kernel/ss already produces cross-uid. The test also
+# substitutes canned `ss` lines to place a listener on an address one test
+# process cannot bind (a host's Tailscale IP). Production leaves it at `ss`.
 readonly SS_BIN="${MDT_CI_REAP_SS:-ss}"
+
+# Only a listener that can collide with the suites' bind counts as a holder.
+# Every caller binds 127.0.0.1 (the playwright configs pass --host 127.0.0.1),
+# which only a loopback or wildcard listener on the same port can block. A
+# listener on another address of the host cannot: Tue 3 Nov 2026 on agbox3-7,
+# root's tailscaled listened on [fd7a:115c:a1e0::d328:7f08]:41793, and the
+# reaper waited out the foreign-holder bound on it and failed the step even
+# though nothing could have collided with it. Loopback is 127.0.0.0/8, ::1 and
+# their v4-mapped form; wildcard is 0.0.0.0, :: and ss's `*` (dual-stack).
+_colliding_listeners() { # $1 = port, $2 = extra ss flags -> the colliding ss lines
+    "$SS_BIN" -Hltn"$2" "sport = :$1" | awk '{
+        addr = $4
+        sub(/:[0-9]+$/, "", addr)
+        gsub(/[][]/, "", addr)
+        sub(/%.*/, "", addr)
+        if (addr ~ /^(127\.|::ffff:127\.)/ || addr == "::1" || addr == "0.0.0.0" || addr == "::" || addr == "*") print
+    }'
+}
 
 # Both helpers must yield an empty result, not a failed pipeline, on a free
 # port: under `set -eo pipefail` a grep with no match would abort the script.
 _holder_pids() {
-    "$SS_BIN" -Hltnp "sport = :$1" | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
+    _colliding_listeners "$1" p | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
 }
 
 _listener_count() {
-    "$SS_BIN" -Hltn "sport = :$1" | { grep -c . || true; }
+    _colliding_listeners "$1" "" | { grep -c . || true; }
 }
 
 # Process identity: start time in clock ticks, field 22 of /proc/<pid>/stat

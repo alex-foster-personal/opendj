@@ -92,13 +92,14 @@ from apps.shared.pairings.schema_sql import (
 from apps.shared.state.analysis_stale import STALE_TABLES_SQL
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 from apps.shared.state.migrations_v25 import _V25 as _LEGACY_V25
+from apps.shared.state.migrations_v26 import _V26 as _LEGACY_V26
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 14
+SCHEMA_VERSION: int = 15
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1138,6 +1139,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "lyrics": "apps/shared/state/migrations_v10.py",
     "feedback": "apps/shared/state/migrations_v12.py",
     "pair_transitions": "apps/shared/state/migrations_v25.py",
+    "library_org": "apps/shared/state/migrations_v26.py",
     "path_index": "apps/shared/state/migrations_v18.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
@@ -1199,6 +1201,10 @@ TABLES: dict[str, tuple[str, ...]] = {
     "lyrics": ("lyric_verdict",),
     "feedback": ("feedback_pins",),
     "pair_transitions": ("pair_transitions",),
+    "library_org": (
+        "playlist_section", "tag_type", "tag_meta", "tag_synonym", "work",
+        "work_member", "work_dismissal", "work_pref", "undo_journal",
+    ),
     "path_index": ("path_availability",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
@@ -1239,7 +1245,7 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
     {
         "native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback",
-        "path_index", "sync_write_tokens", "pair_transitions",
+        "path_index", "sync_write_tokens", "pair_transitions", "library_org",
     }
 )
 
@@ -1357,9 +1363,20 @@ this rung dropping it leave a fresh database without it too."""
 _V14: list[str] = [statement.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ") for statement in _LEGACY_V25]
 """13 -> 14: transition memory (legacy ladder v25, ADR-0129)."""
 
+_V15: list[str] = [
+    statement
+    for statement in _LEGACY_V26
+    if "pair_transitions" not in statement
+    and "CREATE TRIGGER" not in statement
+    and "sync_write_tokens" not in statement
+]
+"""14 -> 15: library organization (legacy ladder v26). Write-token triggers and
+seed tokens stay out for the reason the _SYNC_WRITE_TOKENS domain gives, and
+the legacy step's pair_transitions repair is _V14's table already."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14,
+    _V14, _V15,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
@@ -1754,6 +1771,13 @@ def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
         f"ALTER TABLE tracks ADD COLUMN {column} TEXT"
         for column in _ADDED_TRACK_COLUMNS
         if column in columns
+    }
+    playlist_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(playlists)")}
+    present |= {
+        stmt
+        for stmt in ALL_DDL
+        if stmt.startswith("ALTER TABLE playlists ADD COLUMN ")
+        and stmt.split()[5] in playlist_columns
     }
     return [stmt for stmt in ALL_DDL if stmt not in present]
 

@@ -63,6 +63,11 @@ ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
+#: WAVEQS-8348e: mirrors WAVEFORM_OVERLAYS in src/lib/rb/waveform-overlay-command.ts.
+WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial")
+WAVE_ZOOM_VALUES: tuple[str, ...] = ("4", "8", "16", "32", "64", "whole")
+WAVE_ZOOM_DIRECTION_VALUES: tuple[str, ...] = ("in", "out")
+WAVE_ZOOM_PLAYHEAD_VALUES: tuple[str, ...] = ("elastic", "center")
 # TOPVIEW-01..03: mirrors PERF_VIEWS in apps/webui/frontend/src/lib/rb/topbar-view-prefs.ts.
 TRANSITION_INTENT_VALUES: tuple[str, ...] = ("smooth", "energy_up", "wind_down", "showy", "vocals_clean")
 PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
@@ -341,6 +346,9 @@ _VERBS: tuple[Verb, ...] = (
     Verb("auto_play_next_cancel", "auto_play_next_cancel", ()),
     Verb("auto_play_decide_now", "auto_play_decide_now", (),
          note="AUTOPLAN-06: AutoPlay decides now rather than at its target; read autoplay_decision on the mirror."),
+    Verb("auto_play_next_intent", "auto_play_next_intent", (
+        arg("intent", "enum", enum_value(TRANSITION_INTENT_VALUES), "smooth|energy_up|wind_down|showy|vocals_clean"),
+    ), note="The AutoPlay menu Intent selector: set the next planned transition's intent without arming."),
     Verb("auto_play_early", "auto_play_early", (
         arg("enabled", "bool", bool_value, "true|false", optional=True),
         arg("decide_after_s", "number", number_value, "seconds on the master", optional=True),
@@ -365,6 +373,23 @@ _VERBS: tuple[Verb, ...] = (
     Verb("set_waveform_design", "set_waveform_design", (
         arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "auto|tri-band|mono|line|blocks"),
     )),
+    Verb("set_waveform_overlay", "set_waveform_overlay", (
+        arg("overlay", "enum", enum_value(WAVEFORM_OVERLAY_VALUES), "sections|lyrics|lyrics_scrub|jog_radial"),
+        _ENABLED,
+    ), note="WAVEQS-8348e: the waveform quick-settings popover's switches: sections, lyrics on the waveform, "
+            "lyrics while hover-scrubbing, the radial jog waveform."),
+    Verb("set_wave_zoom", "set_wave_zoom", (
+        arg("zoom", "enum", enum_value(WAVE_ZOOM_VALUES), "4|8|16|32|64|whole (bars across the row)"),
+        arg("deck", "deck", deck_value, "1-4", optional=True),
+    ), note="WAVEZOOM-6802: main waveform zoom; deck only matters while the zoom is unlinked."),
+    Verb("wave_zoom_step", "wave_zoom_step", (
+        arg("direction", "enum", enum_value(WAVE_ZOOM_DIRECTION_VALUES), "in|out"),
+        arg("deck", "deck", deck_value, "1-4", optional=True),
+    ), note="WAVEZOOM-6802b: one ladder step, as Ctrl/Cmd-wheel, pinch and the [ ] keys do."),
+    Verb("set_wave_zoom_options", "set_wave_zoom_options", (
+        arg("playhead", "enum", enum_value(WAVE_ZOOM_PLAYHEAD_VALUES), "elastic|center"),
+        arg("linked", "bool", bool_value, "true|false"),
+    ), note="WAVEZOOM-6802c/06: playhead glide when zoomed out; one zoom for all decks or one each."),
     Verb("set_skin", "set_skin", (
         arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light"),
         arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono"),
