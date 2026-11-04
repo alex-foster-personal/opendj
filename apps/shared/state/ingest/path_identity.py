@@ -5,6 +5,7 @@ A later import or refresh of the same path must not mint a second id just
 because mtime moved. Existing duplicate rows are left in place; this module
 only stops a third (or second) id from being created.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping

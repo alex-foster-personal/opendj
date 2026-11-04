@@ -99,9 +99,7 @@ class Structure:
         for i, b in enumerate(self.boundaries):
             nxt = self.boundaries[i + 1] if i + 1 < len(self.boundaries) else None
             end_s = nxt.time_s if nxt else duration_s
-            bars = (
-                (nxt.bar - b.bar) if (nxt and nxt.bar is not None and b.bar is not None) else None
-            )
+            bars = (nxt.bar - b.bar) if (nxt and nxt.bar is not None and b.bar is not None) else None
             out.append(
                 {
                     "start_s": round(b.time_s, TIME_S_DECIMALS),
@@ -133,9 +131,7 @@ def _nearest(grid: Sequence[float], t: float) -> int:
     return i if grid[i] - t < t - grid[i - 1] else i - 1
 
 
-def _local_bar(
-    grid: Sequence[float], i: int, fallback: float, half_window: int = LOCAL_BAR_HALF_WINDOW
-) -> float:
+def _local_bar(grid: Sequence[float], i: int, fallback: float, half_window: int = LOCAL_BAR_HALF_WINDOW) -> float:
     """Median bar length around downbeat ``i``.
 
     A median over the neighboring bars, not the two gaps touching ``i``: a
@@ -201,9 +197,7 @@ def quantize(
         out.append(Boundary(s, grid[bar], lab, bar, abs(grid[bar] - s), aligned, "snapped"))
     out.sort(key=lambda b: b.time_s)
 
-    return Structure(
-        out, phrase_bars, offset, merged, _implausible(out, grid), _lead_label(segments)
-    )
+    return Structure(out, phrase_bars, offset, merged, _implausible(out, grid), _lead_label(segments))
 
 
 def _lead_label(segments: Sequence[tuple[float, float, str]]) -> str | None:
@@ -215,9 +209,7 @@ def _lead_label(segments: Sequence[tuple[float, float, str]]) -> str | None:
 def _model_starts(segments: Sequence[tuple[float, float, str]]) -> list[tuple[float, str]]:
     """Section starts inside the song: the track's own start and the silence labels drop out."""
     return sorted(
-        (float(s), str(label))
-        for s, _e, label in segments
-        if float(s) > 0.0 and str(label) not in EDGE_LABELS
+        (float(s), str(label)) for s, _e, label in segments if float(s) > 0.0 and str(label) not in EDGE_LABELS
     )
 
 
@@ -234,9 +226,7 @@ def _downbeat_snap(
     return first
 
 
-def _phrase_offset(
-    first: Sequence[tuple[float, str, int | None]], phrase_bars: int, pinned: int | None
-) -> int | None:
+def _phrase_offset(first: Sequence[tuple[float, str, int | None]], phrase_bars: int, pinned: int | None) -> int | None:
     if phrase_bars == 1:
         return None
     if pinned is not None:
@@ -245,9 +235,7 @@ def _phrase_offset(
     return vote_phrase_offset(snapped_bars, phrase_bars) if snapped_bars else 0
 
 
-def _phrase_snap(
-    downbeat: int, n_bars: int, phrase_bars: int, offset: int | None, max_move: int
-) -> tuple[int, bool]:
+def _phrase_snap(downbeat: int, n_bars: int, phrase_bars: int, offset: int | None, max_move: int) -> tuple[int, bool]:
     """(bar, phrase_aligned) after moving at most ``max_move`` bars onto a phrase start."""
     if phrase_bars == 1 or offset is None:
         return downbeat, phrase_bars == 1

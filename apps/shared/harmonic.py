@@ -326,7 +326,7 @@ def bpm_compatibility(bpm1: float | None, bpm2: float | None, max_diff_pct: floa
     # Quadratic falloff: gentle near 0%, steep near max
     # 3% diff -> ~0.91, 6% diff -> ~0.64, 10% -> 0.0
     normalized = effective_diff / max_diff_pct
-    score = 1.0 - (normalized ** 2)
+    score = 1.0 - (normalized**2)
     score = max(0.0, score - tempo_penalty)
     return score
 
@@ -392,6 +392,7 @@ def track_compatibility(
 # Suggest Next Track
 # ---------------------------------------------------------------------------
 
+
 def suggest_next(
     current_key: str | None,
     current_bpm: float,
@@ -448,6 +449,7 @@ def suggest_next(
 # and the AI-01 suggester. Lives here because it's the common input to the
 # whole harmonic-math pipeline; the solver + suggester import it rather
 # than re-declaring per-module.
+
 
 @dataclass(slots=True)
 class TrackFeature:

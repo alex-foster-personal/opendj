@@ -57,7 +57,7 @@ resolves cleanly with this header and no requires-python cap.
 
 DEVICE: `auto` here means "prefer a real accelerator", mirroring
 apps/analysis_beatgrid/beat_this_runner.py's convention. CPU is the
-REQUIRED path (specs/native-analysis-v1.md section 4, "CPU-only path"), so
+REQUIRED path ((private path) section 4, "CPU-only path"), so
 `--device cpu` must always work, and CPU is the only device this file's own
 timing claims cover. Measured on this box (CPU, one 5 s synthetic tone,
 including checkpoint load): 3.766 s wall time -- NOT a per-track figure once
@@ -80,6 +80,7 @@ False) and the newer dynamo=True exporter are attempted and BOTH exact
 failures (or successes) are recorded, since the two exporters can behave
 differently and reporting only one is a materially weaker artifact.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -113,7 +114,7 @@ PRODUCER_VERSION = "0.1.0"  # skey has no PyPI release; SKEY_REVISION is the rea
 SKEY_REVISION = "918b83d273568d5041569bb8068843d19a335726"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def resolve_device(requested: str) -> str:
     """`auto` picks mps, else cuda, else cpu. Anything else is taken literally.
 
@@ -151,7 +152,7 @@ def _checkpoint_provenance(checkpoint_path: str | Path) -> dict[str, Any]:
 
 
 def _skey_label_to_rekordbox_style(label: str) -> str:
-    """"F# Major" -> "F#", "A minor" -> "Am"; matches the spelling
+    """ "F# Major" -> "F#", "A minor" -> "Am"; matches the spelling
     apps.analysis_key.canon.from_rekordbox_scale_name already accepts, so a
     downstream scorer needs no S-KEY-specific parsing. Raises on skey's own
     "error" sentinel (see infer_key's except branch) rather than mapping it
@@ -164,10 +165,8 @@ def _skey_label_to_rekordbox_style(label: str) -> str:
     raise ValueError(f"not a skey key_map label: {label!r}")
 
 
-#-----------------------------------------------------------------------------
-def analyze_one(
-    path: str, hcqt, chromanet, crop_fn, sample_rate: int, device: torch.device
-) -> dict[str, Any]:
+# -----------------------------------------------------------------------------
+def analyze_one(path: str, hcqt, chromanet, crop_fn, sample_rate: int, device: torch.device) -> dict[str, Any]:
     from skey.key_detection import infer_key
 
     started = time.time()
@@ -191,7 +190,7 @@ def analyze_one(
     }
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def attempt_onnx_export(
     hcqt, chromanet, crop_fn, sample_rate: int, device: torch.device, dynamo: bool
 ) -> dict[str, Any]:
@@ -230,9 +229,9 @@ def attempt_onnx_export(
             return {"dynamo": dynamo, "success": True, "error": None}
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def main() -> int:
-    # Windows consoles default to cp1252 (specs/native-analysis-v1.md's
+    # Windows consoles default to cp1252 ((private path)'s
     # "Console encoding" rule); reconfigure so a non-ASCII track title in
     # --audio or --out cannot raise UnicodeEncodeError mid-run.
     sys.stdout.reconfigure(encoding="utf-8")
@@ -243,9 +242,7 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="JSON output path")
     ap.add_argument("--device", default="auto", choices=["auto", "cpu", "mps", "cuda"])
     ap.add_argument("--checkpoint", default=str(DEFAULT_CHECKPOINT_PATH))
-    ap.add_argument(
-        "--skip-onnx-export", action="store_true", help="skip the (slow) export attempts"
-    )
+    ap.add_argument("--skip-onnx-export", action="store_true", help="skip the (slow) export attempts")
     args = ap.parse_args()
 
     device_name = resolve_device(args.device)
@@ -259,8 +256,7 @@ def main() -> int:
     load_s = round(time.time() - load_started, 3)
     checkpoint = _checkpoint_provenance(args.checkpoint)
     print(
-        f"[skey] model loaded in {load_s}s, sr={sample_rate}, "
-        f"checkpoint sha256={checkpoint['sha256'][:16]}...",
+        f"[skey] model loaded in {load_s}s, sr={sample_rate}, checkpoint sha256={checkpoint['sha256'][:16]}...",
         flush=True,
     )
 

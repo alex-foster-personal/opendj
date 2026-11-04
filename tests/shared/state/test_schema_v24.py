@@ -92,7 +92,7 @@ def test_path_queries_use_the_primary_key(tmp_path: Path) -> None:
     """[if] the index lookup and upsert are planned [then] they use the primary key, [else stop]."""
     conn = state_db.open_rw(tmp_path / "state" / "state.db")
     try:
-        path_index.upsert_rows(conn, "ns", [("/a.mp3", 1)])
+        path_index.upsert_rows(conn, "ns", [("/a.mp3", 1, None)])
         plan = " ".join(
             str(row[-1])
             for row in conn.execute(

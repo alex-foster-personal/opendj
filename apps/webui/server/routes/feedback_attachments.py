@@ -105,9 +105,7 @@ def _delete_attachment_file(attachments_dir: Path, attachment_id: str) -> None:
 
 # ----- upload -----------------------------------------------------------------
 @router.post("/comments/{comment_id}/attachment", response_model=CommentOut, status_code=201)
-async def upload_attachment(
-    comment_id: str, request: Request, file: Annotated[UploadFile, File()]
-) -> CommentOut:
+async def upload_attachment(comment_id: str, request: Request, file: Annotated[UploadFile, File()]) -> CommentOut:
     """Attach one screenshot to an existing pin (issue #1333).
 
     Type and size are checked, and the bytes are verified to actually decode
@@ -124,8 +122,7 @@ async def upload_attachment(
             detail={
                 "code": "ATTACHMENT_TYPE_UNSUPPORTED",
                 "message": (
-                    f"unsupported attachment type {content_type!r}; allowed: "
-                    f"{', '.join(sorted(_EXT_BY_CONTENT_TYPE))}"
+                    f"unsupported attachment type {content_type!r}; allowed: {', '.join(sorted(_EXT_BY_CONTENT_TYPE))}"
                 ),
             },
         )
@@ -192,8 +189,7 @@ async def upload_attachment(
             detail={
                 "code": "ATTACHMENT_TYPE_MISMATCH",
                 "message": (
-                    f"declared Content-Type {content_type!r} does not match the "
-                    f"decoded image format {decoded_format!r}"
+                    f"declared Content-Type {content_type!r} does not match the decoded image format {decoded_format!r}"
                 ),
             },
         )

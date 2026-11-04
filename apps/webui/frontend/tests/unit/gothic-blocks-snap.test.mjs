@@ -493,3 +493,65 @@ test('on a thinned grid only painted beat lines anchor, and each keeps its edge 
 	// Control: at deck zoom nothing thins, and every beat anchors.
 	assert.equal(layout.beatAnchorsPx(beats, 40).length, beats.length);
 });
+
+test('variable-tempo slow window snaps every painted beat line (issue #8335)', async () => {
+	const math = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts');
+	const pxPerS = 22;
+	const windowS = 24;
+	const widthCss = pxPerS * windowS;
+	const slowBeats = 64;
+	const slowDurS = slowBeats * 0.5;
+	const beats = [];
+	for (let i = 0; i < slowBeats; i++) {
+		beats.push({ n: (i % 4) + 1, bpm: 120, t: i * 0.5 });
+	}
+	for (let j = 0; j < 80; j++) {
+		beats.push({ n: (j % 4) + 1, bpm: 150, t: slowDurS + j * 0.4 });
+	}
+	const durS = slowDurS + 80 * 0.4;
+	const tLeftSlow = 0;
+	const positionMs = (tLeftSlow + windowS / 2) * 1000;
+	assert.equal(math.beatLineStrideForWindow(beats, tLeftSlow, pxPerS, widthCss), 1);
+	assert.equal(math.beatLineStrideForWindow(beats, 0, pxPerS, Infinity), 4);
+	const slowLines = math.visibleBeatLines(beats, tLeftSlow, pxPerS, widthCss, 40, false, 0);
+	const slowXs = new Set(slowLines.map((l) => l.x));
+	for (const x of [121, 132, 143]) assert.ok(slowXs.has(x), `CONTROL: slow window paints beat at ${x} px`);
+	const anchors = Array.from(layout.beatAnchorsPx(beats, pxPerS, false, 1));
+	for (const x of [121, 132, 143]) assert.ok(anchors.includes(x), `stride-1 anchor at ${x} px`);
+	const detail = { length: 1200, low: Array(1200).fill(0.3), mid: Array(1200).fill(0.3), high: Array(1200).fill(0.3) };
+	const mono = '#cfcfcf';
+	const lines = [];
+	const blockLefts = new Set();
+	const palette = {
+		bg: '#000', low: '#1', mid: '#2', high: '#3', mono, tick: '#4',
+		cueHotCue: '#35c04f', cueLoop: '#e8a13a', cueMemory: '#ff3b30', cueOutline: '#c8cdd2', phrase: '#888'
+	};
+	const ctx = {
+		fillStyle: '',
+		globalAlpha: 1,
+		imageSmoothingEnabled: true,
+		fillRect(x, y, w, h) {
+			if (this.globalAlpha === 0.38 || this.globalAlpha === 0.55) lines.push(x);
+			if (this.fillStyle === mono && this.globalAlpha === 1) blockLefts.add(x);
+		},
+		fill() {},
+		drawImage() {}
+	};
+	render.drawWaveRow(ctx, {
+		widthCss, heightCss: ROW_H, positionMs, durationMs: durS * 1000,
+		anlz: anlzOf(detail, beats), palette, pitch: 1, windowS, playheadFrac: 0.5, loop: null,
+		waveformDesign: 'blocks', blocksSnap: true
+	});
+	for (const x of [121, 132, 143]) {
+		assert.ok(lines.includes(x), `painted line at ${x} px`);
+		assert.ok(blockLefts.has(x), `painted line at ${x} px starts a block`);
+	}
+	const fastLeft = slowDurS + 4;
+	const fastStride = math.beatLineStrideForWindow(beats, fastLeft, pxPerS, widthCss);
+	assert.equal(fastStride, 4);
+	const fastLines = math.visibleBeatLines(beats, fastLeft, pxPerS, widthCss, 40, false, Math.round(fastLeft * pxPerS));
+	const fastEdges = new Set(
+		layout.snappedBlockEdges(Math.ceil(durS * pxPerS), [], layout.beatAnchorsPx(beats, pxPerS, false, fastStride))
+	);
+	for (const l of fastLines) assert.ok(fastEdges.has(l.x + Math.round(fastLeft * pxPerS)), `thinned line at ${l.x} px has an edge`);
+});

@@ -73,6 +73,7 @@ from apps.vocals.cli import (
     CATEGORY_BROKEN_CACHE,
     CATEGORY_CACHED,
     CATEGORY_MISSING,
+    CATEGORY_STEM_DERIVABLE,
     CATEGORY_TODO,
     WORKER_TIMEOUT_S,
     Ctx,
@@ -265,9 +266,15 @@ def _rekordbox_tracks(ctx: Ctx) -> dict[str, VocalTrack]:
     return {t.stable_id: t for t in tracks_from_rows(ctx, by_vendor, rows)}
 
 
-def _classify_own(ctx: Ctx, tracks: list[VocalTrack]) -> None:
+def _classify_own(
+    ctx: Ctx,
+    tracks: list[VocalTrack],
+    *,
+    stem_roots: tuple[Path, ...] | None = None,
+) -> None:
     """Categories for tracks rekordbox does not hold. No ANLZ or PVDI can
     exist for them, so only the audio file and the vocal-cache decide."""
+    stem_candidates: list[VocalTrack] = []
     for tr in tracks:
         if not tr.audio_on_disk:
             tr.category = CATEGORY_MISSING
@@ -283,10 +290,21 @@ def _classify_own(ctx: Ctx, tracks: list[VocalTrack]) -> None:
             ):
                 tr.category = CATEGORY_CACHED
             else:
-                tr.category = CATEGORY_TODO
+                stem_candidates.append(tr)
         except ValueError as exc:
             log.warning("broken vocal-cache for %s during classify: %s", tr.stable_id, exc)
             tr.category = CATEGORY_BROKEN_CACHE
+
+    loadable = vfrom_stems.loadable_bundle_ids(
+        [t.stable_id for t in stem_candidates],
+        stems_dir=vfrom_stems.stems_dir(ctx.data_dir),
+        roots=stem_roots,
+    )
+    for tr in stem_candidates:
+        if tr.stable_id in loadable:
+            tr.category = CATEGORY_STEM_DERIVABLE
+        else:
+            tr.category = CATEGORY_TODO
 
 
 def _own_vocals(stable_id: str) -> dict[str, Any]:
@@ -368,21 +386,35 @@ def analyze_vocals(
             continue
         candidates.append(tr)
 
-    classify(ctx, [tr for tr in candidates if tr.stable_id in rekordbox_by_id])
-    _classify_own(ctx, [tr for tr in candidates if tr.stable_id not in rekordbox_by_id])
+    configured_roots = getattr(request.app.state, "stem_roots", None)
+    stem_roots = (
+        tuple(Path(root) for root in configured_roots)
+        if configured_roots is not None
+        else None
+    )
+
+    classify(
+        ctx,
+        [tr for tr in candidates if tr.stable_id in rekordbox_by_id],
+        stem_roots=stem_roots,
+    )
+    _classify_own(
+        ctx,
+        [tr for tr in candidates if tr.stable_id not in rekordbox_by_id],
+        stem_roots=stem_roots,
+    )
     for tr in candidates:
-        if tr.category != CATEGORY_TODO:
+        if body.mode == "from-stems":
+            if tr.category not in (CATEGORY_TODO, CATEGORY_STEM_DERIVABLE):
+                refused[tr.stable_id] = tr.category
+                continue
+        elif tr.category != CATEGORY_TODO:
             refused[tr.stable_id] = tr.category
             continue
-        assert tr.audio_path is not None  # CATEGORY_TODO implies audio_on_disk
+        assert tr.audio_path is not None  # todo / stem_derivable implies audio_on_disk
 
         if body.mode == "from-stems":
-            configured_roots = getattr(request.app.state, "stem_roots", None)
-            roots = (
-                tuple(Path(root) for root in configured_roots)
-                if configured_roots is not None
-                else None
-            )
+            roots = stem_roots
             try:
                 vfrom_stems.write_from_bundle(
                     ctx.data_dir,

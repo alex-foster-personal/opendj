@@ -65,7 +65,7 @@ def test_clean_render_scores_high_with_every_core_factor_measured() -> None:
     assert result.score is not None and result.score >= CLEAN_FLOOR, (
         "if the clean render scores low then M penalizes good transitions"
     )
-    assert result.scorer_version == SCORER_VERSION == "0.8.0"
+    assert result.scorer_version == SCORER_VERSION == "0.9.0"
 
 
 def test_noise_band_is_small_against_the_drops() -> None:
@@ -634,6 +634,27 @@ def test_a_low_pile_up_counts_both_full_beats_and_a_low_hole_reads_as_a_hole() -
     pile, hole = _score(Mutation(in_low_unheld=True)), _score(Mutation(low_hole=True))
     assert pile.metrics["bass_both_full_beats"] >= 8 and pile.factors["bass_overlap"] < 0.1
     assert hole.metrics["low_hole_db"] > 20 and hole.factors["low_continuity"] < 0.05
+
+
+@pytest.mark.requirement("TRYER-01")
+def test_a_bass_free_solo_reports_bass_overlap_unknown() -> None:
+    """[if] a solo has no measurable bass [then] bass_overlap is unknown, never a pile-up, [else stop]."""
+    out_gone = _score(Mutation(out_solo_low_killed=True))
+    in_gone = _score(Mutation(in_solo_low_killed=True))
+    both = _score(Mutation(out_solo_low_killed=True, in_solo_low_killed=True))
+    for result, token in (
+        (out_gone, "outgoing"),
+        (in_gone, "incoming"),
+        (both, "outgoing"),
+    ):
+        assert "bass_overlap" in result.unknown and token in result.unknown["bass_overlap"]
+        assert "bass_overlap" not in result.factors
+        assert "bass_both_full_beats" not in result.metrics
+        assert result.measured.k == 6 and result.measured.n == 7
+        assert result.scorer_version == SCORER_VERSION == "0.9.0"
+        assert result.score is not None
+    pile = _score(Mutation(in_low_unheld=True))
+    assert "bass_overlap" in pile.factors and pile.metrics["bass_both_full_beats"] >= 8
 
 
 def test_an_outgoing_peaking_alone_in_the_overlap_is_not_a_transition_over() -> None:

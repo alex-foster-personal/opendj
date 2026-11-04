@@ -47,6 +47,8 @@
 					viewport: { width: number; height: number };
 					followOn: { parentId: string; label: string } | null;
 					placement: PinPlacement | null;
+					key?: number;
+					stack?: number;
 			  })
 			| null;
 		pushToast: PushToast;
@@ -73,7 +75,12 @@
 	const bodyStyle = $derived.by(() => {
 		if (pinDraft === null) return '';
 		const pos = measuredPos;
-		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pinDraft.point);
+		const shiftX = (pinDraft.stack ?? 0) * 18;
+		const shiftY = (pinDraft.stack ?? 0) * 46;
+		const place =
+			pos !== null
+				? `left:${pos.x + shiftX}px;top:${pos.y + shiftY}px`
+				: pinBodyStyle(pinDraft.point);
 		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 

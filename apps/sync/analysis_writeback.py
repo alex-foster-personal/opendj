@@ -5,6 +5,7 @@ row. Loudness has no rekordbox column; values are stored in ``odjAnalysisScalar`
 inside the same sqlite file (rekordbox ignores unknown tables; CDJs do not
 display LUFS). USB read-back of the sidecar is out of scope (#2051).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -66,9 +67,7 @@ def _ensure_scalar_table(conn: sqlite3.Connection) -> None:
 def _new_key_id(conn: sqlite3.Connection) -> str:
     for _ in range(50):
         candidate = str(secrets.randbelow(9_000_000_000) + 1_000_000_000)
-        if conn.execute(
-            "SELECT 1 FROM djmdKey WHERE ID = ?", (candidate,)
-        ).fetchone() is None:
+        if conn.execute("SELECT 1 FROM djmdKey WHERE ID = ?", (candidate,)).fetchone() is None:
             return candidate
     raise RuntimeError("could not allocate a unique djmdKey ID")
 
@@ -80,15 +79,11 @@ def _resolve_key_id(conn: sqlite3.Connection, own_camelot: str) -> tuple[str, bo
     except (ValueError, TypeError):
         raise ValueError(f"unparseable own key: {own_camelot!r}") from None
 
-    row = conn.execute(
-        "SELECT ID FROM djmdKey WHERE ScaleName = ?", (spelled,)
-    ).fetchone()
+    row = conn.execute("SELECT ID FROM djmdKey WHERE ScaleName = ?", (spelled,)).fetchone()
     if row:
         return str(row[0]), False
 
-    for key_id, scale_name in conn.execute(
-        "SELECT ID, ScaleName FROM djmdKey"
-    ).fetchall():
+    for key_id, scale_name in conn.execute("SELECT ID, ScaleName FROM djmdKey").fetchall():
         try:
             if str(key_to_camelot(str(scale_name))) == str(own_camelot):
                 return str(key_id), False
@@ -166,9 +161,7 @@ def verify_scalar(
     value: object,
 ) -> bool:
     if field == "bpm":
-        row = conn.execute(
-            "SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)
-        ).fetchone()
+        row = conn.execute("SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
         if row is None:
             return False
         try:
@@ -209,9 +202,7 @@ def verify_scalar(
 
 
 def _maybe_delete_created_key(conn: sqlite3.Connection, key_id: str) -> None:
-    row = conn.execute(
-        "SELECT COUNT(*) FROM djmdContent WHERE KeyID = ?", (key_id,)
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) FROM djmdContent WHERE KeyID = ?", (key_id,)).fetchone()
     if row and int(row[0]) == 0:
         conn.execute("DELETE FROM djmdKey WHERE ID = ?", (key_id,))
 
@@ -239,9 +230,7 @@ def _beats_on_rekordbox_timeline(
     reader, this refuses when the file cannot be read: a grid written without
     knowing the lead-in would land in rekordbox up to ~25 ms early.
     """
-    row = rb_conn.execute(
-        "SELECT FolderPath FROM djmdContent WHERE ID = ?", (content_id,)
-    ).fetchone()
+    row = rb_conn.execute("SELECT FolderPath FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
     lead_in_s = rekordbox_lead_in_s(row[0] if row else None)
     if lead_in_s is None:
         raise SafetyAbort(
@@ -321,11 +310,9 @@ def live_writeback(
         and row.rb_content_id is not None
     ]
 
-    unsupported = sorted({
-        row.field
-        for row in plan.rows
-        if row.bucket == "writable" and row.field not in _SUPPORTED_RB_WRITE_FIELDS
-    })
+    unsupported = sorted(
+        {row.field for row in plan.rows if row.bucket == "writable" and row.field not in _SUPPORTED_RB_WRITE_FIELDS}
+    )
     if unsupported:
         raise UnsupportedRbFieldError(
             f"RB-side write for fields {unsupported} is not implemented; "
@@ -333,15 +320,10 @@ def live_writeback(
         )
 
     dynamic_pqtz = sum(
-        1
-        for row in plan.rows
-        if row.bucket == "dynamic" and row.field == "pqtz" and row.field in fields
+        1 for row in plan.rows if row.bucket == "dynamic" and row.field == "pqtz" and row.field in fields
     )
     if dynamic_pqtz:
-        print(
-            f"[apply_analysis] refused {dynamic_pqtz} dynamic PQTZ grid(s) "
-            "(multi-anchor; see #1481)"
-        )
+        print(f"[apply_analysis] refused {dynamic_pqtz} dynamic PQTZ grid(s) (multi-anchor; see #1481)")
 
     if not writable_rows:
         print("[apply_analysis] wrote 0 fields")
@@ -361,12 +343,8 @@ def live_writeback(
         if row.field == "pqtz":
             payload = load_own_beatgrid(state_conn, row.stable_id)
             if payload is None:
-                raise SafetyAbort(
-                    f"pqtz own beatgrid missing for {row.stable_id}"
-                )
-            beats = _beats_on_rekordbox_timeline(
-                rb_conn, content_id, list(payload["beats"])
-            )
+                raise SafetyAbort(f"pqtz own beatgrid missing for {row.stable_id}")
+            beats = _beats_on_rekordbox_timeline(rb_conn, content_id, list(payload["beats"]))
             pqtz_beats[content_id] = beats
             tag = f"{content_id}:{row.field}"
             expected[tag] = (content_id, row.field, beats)
@@ -413,17 +391,16 @@ def live_writeback(
                     }
                     with sess.per_track(tag) as w:
                         write_pqtz_row(
-                            rb_conn, content_id, beats, preimage=preimage,
+                            rb_conn,
+                            content_id,
+                            beats,
+                            preimage=preimage,
                         )
                         w.write((field, beats))
                         if not w.verify_readback():
-                            raise SafetyAbort(
-                                f"verify_readback failed for {tag}"
-                            )
+                            raise SafetyAbort(f"verify_readback failed for {tag}")
                         preimages.append(dict(preimage))
-                        w.append_reverse(
-                            f"# analysis preimage recorded in {preimage_path.name}"
-                        )
+                        w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
                         written += 1
                     continue
                 own = _parse_own_value(field, row.own_value)
@@ -431,9 +408,7 @@ def live_writeback(
                 with sess.per_track(tag) as w:
                     ok = write_scalar(rb_conn, content_id, field, own, preimage)
                     if not ok:
-                        raise SafetyAbort(
-                            f"write_scalar failed for {tag} field={field!r}"
-                        )
+                        raise SafetyAbort(f"write_scalar failed for {tag} field={field!r}")
                     w.write((field, own))
                     if not verify_scalar(rb_conn, content_id, field, own):
                         restore_content_field(rb_conn, preimage)
@@ -443,9 +418,7 @@ def live_writeback(
                     if not w.verify_readback():
                         raise SafetyAbort(f"verify_readback failed for {tag}")
                     preimages.append(dict(preimage))
-                    w.append_reverse(
-                        f"# analysis preimage recorded in {preimage_path.name}"
-                    )
+                    w.append_reverse(f"# analysis preimage recorded in {preimage_path.name}")
                     written += 1
         finally:
             state_conn.close()
@@ -455,10 +428,7 @@ def live_writeback(
         )
         rb_conn.commit()
 
-    print(
-        f"[apply_analysis] wrote {written} fields of "
-        f"{len(writable_rows)} planned"
-    )
+    print(f"[apply_analysis] wrote {written} fields of {len(writable_rows)} planned")
     return 0
 
 
@@ -485,40 +455,28 @@ def run_undo(
             continue
         content_id = str(snap["content_id"])
         if field == "key":
-            row = rb_conn.execute(
-                "SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)
-            ).fetchone()
+            row = rb_conn.execute("SELECT KeyID FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
             if row is None or str(row[0]) != str(snap.get("key_id")):
-                raise SafetyAbort(
-                    f"undo verify failed: KeyID for {content_id}"
-                )
+                raise SafetyAbort(f"undo verify failed: KeyID for {content_id}")
         elif field == "bpm":
-            row = rb_conn.execute(
-                "SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)
-            ).fetchone()
+            row = rb_conn.execute("SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
             if row is None or int(row[0]) != int(snap.get("bpm")):
                 raise SafetyAbort(f"undo verify failed: BPM for {content_id}")
         elif field in ("loudness_lufs", "loudness_dbtp"):
             if snap.get("scalar_existed"):
                 row = rb_conn.execute(
-                    f"SELECT value FROM {_SCALAR_TABLE} "
-                    "WHERE ContentID = ? AND field = ?",
+                    f"SELECT value FROM {_SCALAR_TABLE} WHERE ContentID = ? AND field = ?",
                     (content_id, field),
                 ).fetchone()
                 if row is None or str(row[0]) != str(snap.get("scalar_value")):
-                    raise SafetyAbort(
-                        f"undo verify failed: sidecar {field} for {content_id}"
-                    )
+                    raise SafetyAbort(f"undo verify failed: sidecar {field} for {content_id}")
             else:
                 row = rb_conn.execute(
-                    f"SELECT 1 FROM {_SCALAR_TABLE} "
-                    "WHERE ContentID = ? AND field = ?",
+                    f"SELECT 1 FROM {_SCALAR_TABLE} WHERE ContentID = ? AND field = ?",
                     (content_id, field),
                 ).fetchone()
                 if row is not None:
-                    raise SafetyAbort(
-                        f"undo verify failed: sidecar {field} still present"
-                    )
+                    raise SafetyAbort(f"undo verify failed: sidecar {field} still present")
     rb_conn.commit()
     print(f"[apply_analysis] undo restored {len(snapshots)} field(s)")
     return 0

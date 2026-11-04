@@ -12,24 +12,26 @@ const ENGINE =
 	readFrontendSource('src/lib/rb/audio-engine.svelte.ts') +
 	'\n' +
 	readFrontendSource('src/lib/rb/deck-channel-graph.ts');
+const COLOR =
+	readFrontendSource('src/lib/rb/color-fx.ts') + '\n' + readFrontendSource('src/lib/rb/color-fx-graph.ts');
 
 test('centered FILTER has a real dry route around both BiquadFilterNodes', () => {
 	assert.match(ENGINE, /filterDry: GainNode;/);
 	assert.match(ENGINE, /filterLpWet: GainNode;/);
 	assert.match(ENGINE, /filterHpWet: GainNode;/);
-	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, lpWetGain, hpWetGain \} = filterParamsFromKnob\(ch\.filter\);/);
+	// COLORFX-01: the branches now sum on a unity color bus that feeds the cue
+	// and the fader, and the knob drive (with its per-effect law) lives in
+	// color-fx.ts / color-fx-graph.ts. FILTER mode is filterParamsFromKnob verbatim
+	// (pinned behaviorally in color-fx.test.mjs).
+	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, lpWetGain, hpWetGain \} = colorFilterParamsForBuild\(deck, ch\.filter\);/);
 	assert.match(ENGINE, /for \(const stage of \[filterDry, filterLp, filterHp\]\) high\.connect\(stage\);/);
-	assert.match(
-		ENGINE,
-		/for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(cue\);/
-	);
-	assert.match(
-		ENGINE,
-		/for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(fader\);/
-	);
-	assert.match(ENGINE, /_setParam\(nodes\.filterDry\.gain, dryGain\);/);
-	assert.match(ENGINE, /_setParam\(nodes\.filterLpWet\.gain, lpWetGain\);/);
-	assert.match(ENGINE, /_setParam\(nodes\.filterHpWet\.gain, hpWetGain\);/);
+	assert.match(ENGINE, /for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(colorBus\);/);
+	assert.match(ENGINE, /colorBus\.connect\(cue\);/);
+	assert.match(ENGINE, /colorBus\.connect\(fader\);/);
+	assert.match(COLOR, /filter: filterParamsFromKnob\(value\)/);
+	assert.match(COLOR, /_ramp\(nodes\.filterDry\.gain, f\.dryGain, now, COLOR_FX_RAMP_SEC\);/);
+	assert.match(COLOR, /_ramp\(nodes\.filterLpWet\.gain, f\.lpWetGain, now, COLOR_FX_RAMP_SEC\);/);
+	assert.match(COLOR, /_ramp\(nodes\.filterHpWet\.gain, f\.hpWetGain, now, COLOR_FX_RAMP_SEC\);/);
 });
 
 test('the inactive filter half is silenced, not left in series', () => {

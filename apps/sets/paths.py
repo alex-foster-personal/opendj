@@ -29,6 +29,11 @@ MODELS_DIR: Path = Path(__file__).resolve().parent / "models"
 _WINDOWS_DISALLOWED_SESSION_CHARS = frozenset('<>:"/\\|?*')
 
 
+def resolve_sets_root(sets_root: Path | None = None) -> Path:
+    """Return ``sets_root`` when injected, otherwise :data:`SETS_DIR`."""
+    return Path(sets_root) if sets_root is not None else SETS_DIR
+
+
 #: The segment suffixes the recorder writes and the media type each is served
 #: as. Names are ``audio_<UTC start>`` plus one of these, so sorting by name
 #: is sorting by start even in a session resumed on the other backend.
@@ -98,5 +103,6 @@ __all__ = [
     "SETS_DB",
     "MODELS_DIR",
     "SessionPathError",
+    "resolve_sets_root",
     "session_dir",
 ]

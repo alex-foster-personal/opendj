@@ -5,6 +5,7 @@ RESEARCH section 5). No LLM in the hot path. Unmatched returns
 ``None`` so the daemon can TTS "didn't get that" and log the
 transcript for post-set review.
 """
+
 from __future__ import annotations
 
 import re
@@ -88,9 +89,7 @@ PATTERNS: list[Rule] = [
     ),
     Rule(
         "ADVANCE_QUEUE",
-        re.compile(
-            r"^\s*(?:play\s+the\s+next(?:\s+(?:track|one))?|next\s+(?:track|one|up))\s*$"
-        ),
+        re.compile(r"^\s*(?:play\s+the\s+next(?:\s+(?:track|one))?|next\s+(?:track|one|up))\s*$"),
     ),
     Rule(
         "SAVE_CUE",
@@ -101,9 +100,7 @@ PATTERNS: list[Rule] = [
     ),
     Rule(
         "RATE_TRACK",
-        re.compile(
-            r"^\s*rate\s+(?:this|it|that)?\s*(?P<stars>\d+)\s+stars?\s*$"
-        ),
+        re.compile(r"^\s*rate\s+(?:this|it|that)?\s*(?P<stars>\d+)\s+stars?\s*$"),
     ),
     # SEARCH is last because it greedily swallows anything starting with "find".
     Rule(

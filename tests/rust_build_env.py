@@ -15,6 +15,7 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -31,8 +32,15 @@ def bindgen_env(environ: Mapping[str, str]) -> dict[str, str]:
     signalsmith-stretch runs bindgen, and the CI runners' libclang ships without
     its resource headers ('stddef.h' file not found). Appended, so flags already
     set are kept; left alone where gcc has no include dir to give.
+
+    Left alone on Windows too. The MSVC build finds the Visual Studio headers
+    by itself (measured with a libclang that ships no resource headers), and
+    a directory given here is searched before them, so a MinGW gcc that
+    happens to be on PATH would hand bindgen another compiler's stddef.h.
     """
     env = dict(environ)
+    if sys.platform == "win32":
+        return env
     gcc = shutil.which("gcc")
     if gcc is None:
         return env
@@ -45,11 +53,14 @@ def bindgen_env(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
-def _unavailable(reason: str) -> None:
+def _unavailable(reason: str) -> NoReturn:
     """Skip as a capability report, or fail where the build is required."""
     if os.environ.get(REQUIRE_ENV) == "1":
         pytest.fail(f"{reason}, and {REQUIRE_ENV}=1 requires the build")
     pytest.skip(f"UNAVAILABLE: {reason}; the contracts job runs this with {REQUIRE_ENV}=1")
+    # Never reached: both calls above raise. Said outright for a type checker
+    # that runs without pytest installed and so cannot know it.
+    raise AssertionError("pytest.skip returned")
 
 
 def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
@@ -61,7 +72,11 @@ def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
     test with cargo's stderr. A ``features`` build gets its own target dir, so
     it never overwrites the default build other tests run concurrently.
     """
-    if shutil.which("cargo") is None:
+    # The cargo that is found is the one that is run: Windows starts a bare
+    # name only when it is an .exe, while ``shutil.which`` also finds a
+    # cargo.cmd or cargo.bat shim.
+    cargo = shutil.which("cargo")
+    if cargo is None:
         _unavailable("no cargo here, so odj-audio cannot be built from this checkout")
     target = crate / "target"
     extra: list[str] = []
@@ -70,7 +85,7 @@ def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
         extra = ["--features", ",".join(features), "--target-dir", str(target)]
     result = subprocess.run(
         [
-            "cargo",
+            cargo,
             "build",
             "--quiet",
             "--bin",

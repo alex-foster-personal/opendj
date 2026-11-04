@@ -1,6 +1,7 @@
 """Tests for apps.sync.usb.reversal."""
 from __future__ import annotations
 
+import shlex
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -25,6 +26,7 @@ def _op(kind: str, dst: Path, src: Path | None = None) -> Op:
 
 @pytest.mark.requirement("CAT-02")
 def test_reversal_records_copy_delete_rename(tmp_path) -> None:
+    """[if] ops are appended [then] the script carries each inverse command, [else stop]."""
     log = ReversalLog.open(
         dir_=tmp_path,
         profile_name="p",
@@ -84,8 +86,10 @@ def test_reversal_records_copy_delete_rename(tmp_path) -> None:
     assert "profile:    p" in text
     assert "drive_uuid: UUID" in text
     # Regression for [C1]: rename op must produce an inverse `mv` line.
-    # shlex.quote returns safe paths unquoted, so match bare path tokens.
-    assert f"mv -v -- {rename_new} {rename_old}" in text
+    # Match through shlex.quote: POSIX tmp paths stay bare, Windows
+    # backslash paths are quoted, and the script must carry exactly that.
+    expected_mv = f"mv -v -- {shlex.quote(str(rename_new))} {shlex.quote(str(rename_old))}"
+    assert expected_mv in text
     # bash -n validates the generated script.
     ok, err = verify_syntax(log.path)
     assert ok, err
@@ -93,7 +97,24 @@ def test_reversal_records_copy_delete_rename(tmp_path) -> None:
 
 @pytest.mark.requirement("CAT-02")
 def test_verify_syntax_rejects_garbage(tmp_path) -> None:
+    """[if] the script has a bash syntax error [then] bash itself rejects it, [else stop]."""
     bad = tmp_path / "bad.sh"
     bad.write_text("#!/bin/bash\nif then fi\n", encoding="utf-8")
-    ok, _err = verify_syntax(bad)
+    ok, err = verify_syntax(bad)
     assert not ok
+    # Only bash's own diagnostic proves a real check ran: "bash not available"
+    # and "timeout" also return not-ok without parsing anything.
+    assert "syntax error" in err, err
+
+
+@pytest.mark.requirement("CAT-02")
+def test_verify_syntax_accepts_valid_script(tmp_path) -> None:
+    """[if] a valid reversal script is checked [then] ok with empty stderr, [else stop]."""
+    # Regression: on Windows a bare ``bash`` resolved to the System32 WSL
+    # launcher, which returned rc=1 with empty stderr for VALID scripts, so
+    # every reversal log was reported as a syntax failure.
+    good = tmp_path / "good.sh"
+    good.write_text("#!/usr/bin/env bash\nset -euo pipefail\necho ok\n", encoding="utf-8")
+    ok, err = verify_syntax(good)
+    assert ok, err
+    assert err == ""

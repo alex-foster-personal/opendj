@@ -1,4 +1,5 @@
 """Shared helpers for reading ``(private path)`` rows."""
+
 from __future__ import annotations
 
 import csv

@@ -88,6 +88,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import statistics
@@ -422,15 +423,54 @@ def module_durations(ledger: dict[str, float]) -> dict[str, float]:
     return totals
 
 
+#: CI-DYNSHARD: recorded test seconds one shard is planned to carry. Measured Wed 4 Nov 2026:
+#: a FULL fifth is ~300 s of ledger time (1539 s union, run 34454681711), and a shard job's
+#: fixed setup (checkout, venv, preflight) is 56-151 s (#8438). 240 s keeps an AFFECTED shard
+#: under a FULL one while a typical later edit (a handful of modules) needs one runner.
+SHARD_TARGET_SECONDS = 240.0
+
+
+def _module_weights(modules: list[str], durations: dict[str, float]) -> dict[str, float]:
+    """Recorded seconds per module; an untimed module weighs the median timed one."""
+    known = [durations[m] for m in modules if m in durations]
+    default = statistics.median(known) if known else 1.0
+    return {m: durations.get(m, default) for m in modules}
+
+
+def planned_shard_count(
+    modules: list[str], durations: dict[str, float], max_shards: int, target_s: float = SHARD_TARGET_SECONDS
+) -> int:
+    """How many shards an AFFECTED selection needs: 0 for none, else ceil(seconds / target) in 1..max."""
+    if not modules:
+        return 0
+    seconds = sum(_module_weights(modules, durations).values())
+    return max(1, min(max_shards, math.ceil(seconds / target_s)))
+
+
+def shard_matrix(record_path: Path, max_shards: int) -> list[int]:
+    """The shard numbers to launch, read from the scope job's selection record.
+
+    Fail-open: a missing, unreadable or FULL record, or one without a plan, launches every shard,
+    so a crash can only cost runner minutes, never coverage.
+    """
+    every = list(range(1, max_shards + 1))
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return every
+    count = record.get("shard_count") if isinstance(record, dict) else None
+    if record.get("mode") != "affected" or not isinstance(count, int) or not 0 <= count <= max_shards:
+        return every
+    return list(range(1, count + 1))
+
+
 def assign_shards(modules: list[str], durations: dict[str, float], shards: int) -> list[list[str]]:
     """Greedy least-loaded assignment, heaviest module first; ties go to the lower shard.
 
     A module the ledger has never timed (a new test file) weighs the median recorded module,
     so it is neither free nor dominant.
     """
-    known = [durations[m] for m in modules if m in durations]
-    default = statistics.median(known) if known else 1.0
-    weights = {m: durations.get(m, default) for m in modules}
+    weights = _module_weights(modules, durations)
     loads = [0.0] * shards
     assignment: list[list[str]] = [[] for _ in range(shards)]
     for module in sorted(modules, key=lambda m: (-weights[m], m)):
@@ -506,6 +546,9 @@ class Record:
     demoted: dict[str, list[str]] = dataclass_field(default_factory=dict)
     #: The commit a main push diffed against (`main_push_base`); None for every other run.
     main_push_base: str | None = None
+    #: CI-DYNSHARD: shards this run's AFFECTED assignment spreads over (0 = no test, no shard);
+    #: the scope job launches exactly that many. None on a FULL record (every shard runs).
+    shard_count: int | None = None
 
 
 class HardCapError(Exception):
@@ -613,6 +656,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     demote: str | None = None,
     main_switch: str | None = None,
     range_json: str | None = None,
+    active_shards: int | None = None,
 ) -> Record:
     """The whole decision for this run. Any failure is a FULL record, except under a hard cap.
 
@@ -620,6 +664,8 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     not an answer the cap can give. The switches (`full_suite_reason`) still keep a run FULL.
 
     `bundle_json` is CI_BUNDLE_DECLARATIONS; it is read only for a `trunk-merge/` head.
+    `active_shards` is the number of shards the run launched (the scope job's plan); None plans it
+    here from the selection's recorded seconds (`planned_shard_count`), which is what the scope does.
     `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml); a main
     push is priced as a PR head. `range_json` is CI_MAIN_PUSH_RANGE, read only for a main push.
     """
@@ -674,6 +720,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
             policy=asdict(policy) if policy else None,
             demoted=selection.demoted if selection else {},
             main_push_base=base,
+            shard_count=None if mode == "full" else len(assignment or []),
         )
 
     reason = full_suite_reason(switch, event, queue_switch, main_switch)
@@ -701,7 +748,10 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
             )  # fmt: skip
             selection.modules = fitted.kept
             budget_block = fitted.as_record()
-        assignment = assign_shards(selection.modules, durations, shards)
+        launched = (
+            active_shards if active_shards is not None else planned_shard_count(selection.modules, durations, shards)
+        )
+        assignment = assign_shards(selection.modules, durations, launched)
     except FullSuite as fallback:
         _full_or_refuse(hard, f"cannot narrow or rank the change under the hard cap: {fallback}", fallback)
         return record("full", f"fell back to the full suite: {fallback}")
@@ -885,6 +935,7 @@ def _select(arguments: argparse.Namespace) -> int:
             demote=os.environ.get(DEMOTE_VARIABLE),
             main_switch=main_switch,
             range_json=os.environ.get(MAIN_RANGE_VARIABLE),
+            active_shards=arguments.active_shards,
         )
     except HardCapError as refused:
         print(f"[ERROR] HARD CAP REFUSED: {refused}", file=sys.stderr)
@@ -916,6 +967,13 @@ def main(argv: list[str] | None = None) -> int:
     select.add_argument(
         "--budget", default=None, help="runner-minute budget config (ci/test-budget.yml); none = unbudgeted"
     )
+    select.add_argument(
+        "--active-shards", type=int, default=None,
+        help="shards this run launched (CI-DYNSHARD); unset plans the count from the selection",
+    )  # fmt: skip
+    matrix = commands.add_parser("shard-matrix", help="print the JSON shard list the scope job launches")
+    matrix.add_argument("--record", required=True, help="the scope's selection.json")
+    matrix.add_argument("--max", type=int, required=True, help="the most shards a run may launch")
     junit = commands.add_parser("junit-all-skipped", help="exit 0 iff every selected module skipped at module level")
     junit.add_argument("report")
     junit.add_argument("--modules", required=True, help="the shard's shard-modules.txt")
@@ -923,7 +981,12 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.command == "select":
         if not 1 <= arguments.shard <= arguments.shards:
             parser.error(f"--shard {arguments.shard} is outside 1..{arguments.shards}")
+        if arguments.active_shards is not None and not arguments.shard <= arguments.active_shards <= arguments.shards:
+            parser.error(f"--active-shards {arguments.active_shards} is outside {arguments.shard}..{arguments.shards}")
         return _select(arguments)
+    if arguments.command == "shard-matrix":
+        print(json.dumps(shard_matrix(Path(arguments.record), arguments.max), separators=(",", ":")))
+        return 0
     if arguments.command == "junit-all-skipped":
         modules = Path(arguments.modules).read_text(encoding="utf-8").split()
         return 0 if junit_all_skipped(Path(arguments.report), modules) else 1

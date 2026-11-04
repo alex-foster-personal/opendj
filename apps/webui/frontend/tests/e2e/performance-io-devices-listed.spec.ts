@@ -51,7 +51,16 @@ test('every named device is listed, with no action offered, and the parity route
 	await expect(panel.locator('[data-io-device-access-action]')).toHaveCount(0);
 	await expect(panel.locator('[data-io-device-access-message]')).toHaveCount(0);
 	const state = await headphones(page);
-	expect(state.outputs).toEqual(named.map((device) => ({ id: device.deviceId, label: device.label })));
+	expect(state.outputs).toEqual(
+		named.map((device) => ({
+			id: device.deviceId,
+			label: device.label,
+			// GB-6846: the panel carries the mirror's complete five-key DTO.
+			physical_id: null,
+			muted_by_jack: null,
+			transport: null
+		}))
+	);
 	expect(state.outputs.filter((output) => output.id === 'default')).toHaveLength(1);
 	const optionLabels = await page
 		.getByLabel('master output device', { exact: true })

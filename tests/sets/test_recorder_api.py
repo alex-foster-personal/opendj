@@ -119,6 +119,26 @@ def test_recover_rejects_a_live_external_pid(recorder_client):
     assert "still running" in response.json()["detail"]
 
 
+def test_pid_is_running_short_circuits_non_positive_without_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] pid <= 0 [then] _pid_is_running is False without calling pid_is_alive [else stop]."""
+    from apps.sets import recorder_service
+
+    calls: list[int] = []
+
+    def _spy(pid: int) -> bool:
+        calls.append(pid)
+        return True
+
+    monkeypatch.setattr(recorder_service, "pid_is_alive", _spy)
+    assert recorder_service._pid_is_running(0) is False
+    assert recorder_service._pid_is_running(-1) is False
+    assert calls == []
+    assert recorder_service._pid_is_running(1) is True
+    assert calls == [1]
+
+
 def test_stop_rejects_session_other_than_owned_recorder(recorder_client):
     client, _ = recorder_client
     session_id = "2026-07-22T22-10-00"

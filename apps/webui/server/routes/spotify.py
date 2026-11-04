@@ -9,15 +9,35 @@ persisted data is an explicit server error.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, HttpUrl, TypeAdapter, ValidationError, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from apps.shared.state import db as state_db
+from apps.spotify import account as spotify_account
 from apps.spotify.acquisition import SOURCE_KEYS
+from apps.spotify.client import (
+    DEFAULT_SCOPES,
+    TOKEN_CACHE_PATH,
+    MissingCredentialsError,
+    ReauthorizationRequired,
+    SpotifyClient,
+)
+from apps.spotify.listen_history import fetch_recent_plays
 
 from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
@@ -160,4 +180,390 @@ def get_pending_tracks(
     return [_to_pending_track(row) for row in rows]
 
 
-__all__ = ["PendingTrackOut", "SuggestedSourcesOut", "router"]
+# ---------------------------------------------------------------------------
+# Admin panes: connection status and live listen history
+# ---------------------------------------------------------------------------
+
+class SpotifyStatusOut(BaseModel):
+    """What the operator panel can PROVE about the Spotify connection.
+
+    ``connected`` is true only after a live ``/me`` call returned a profile.
+    A present client id and a token file on disk are NOT a connection: a token
+    can be expired, revoked, or minted for a narrower scope set. Those two
+    fields are reported separately so a failure says which half is missing.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    connected: bool
+    needs_authorization: bool
+    client_id_present: bool
+    token_cache_path: str
+    token_cache_present: bool
+    scopes: list[str]
+    display_name: str | None
+    account_id: str | None
+    product: str | None
+    error: str | None
+
+
+class RecentPlayOut(BaseModel):
+    """One live Spotify play, scored against the local library."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    played_at: str
+    spotify_uri: str
+    isrc: str | None
+    title: str
+    artist: str
+    album: str | None
+    duration_ms: int | None
+    ownership: Literal["owned", "review", "unmatched"]
+    confidence: float
+    matched_stable_id: str | None
+    suggested_sources: SuggestedSourcesOut
+
+
+def _state_db_path(request: Request) -> Path:
+    configured_path = getattr(request.app.state, "state_db_path", None)
+    if configured_path is None:
+        raise _server_error("STATE_DB_UNAVAILABLE", "state database path is not configured")
+    return Path(configured_path)
+
+
+@router.get("/status", response_model=SpotifyStatusOut)
+def get_status() -> SpotifyStatusOut:
+    """Probe the Spotify connection with a real API call.
+
+    Never raises for a disconnected account: "not connected, and here is why"
+    is the answer the pane is asking for. It DOES raise for a state the
+    operator cannot act on, because a 200 carrying a lie is worse than a 500.
+    """
+    client_id_present = bool(os.environ.get("SPOTIFY_CLIENT_ID"))
+    token_cache_present = TOKEN_CACHE_PATH.exists()
+    scopes = DEFAULT_SCOPES.split()
+    base = {
+        "client_id_present": client_id_present,
+        "token_cache_path": str(TOKEN_CACHE_PATH),
+        "token_cache_present": token_cache_present,
+        "scopes": scopes,
+    }
+    if not client_id_present:
+        return SpotifyStatusOut(
+            connected=False,
+            needs_authorization=False,
+            display_name=None,
+            account_id=None,
+            product=None,
+            error=(
+                "SPOTIFY_CLIENT_ID is not set for the daemon. Start it under "
+                "`doppler run -p construct -c dev_af -- ...` or export the var."
+            ),
+            **base,
+        )
+    if not token_cache_present:
+        return SpotifyStatusOut(
+            connected=False,
+            needs_authorization=True,
+            display_name=None,
+            account_id=None,
+            product=None,
+            error=(
+                f"No cached token at {TOKEN_CACHE_PATH}. Run `python -m apps.spotify "
+                "recent` once in a terminal to complete the browser PKCE flow."
+            ),
+            **base,
+        )
+    try:
+        profile = SpotifyClient.from_env(interactive=False).current_user()
+    except ReauthorizationRequired as exc:
+        return SpotifyStatusOut(
+            connected=False,
+            needs_authorization=True,
+            display_name=None,
+            account_id=None,
+            product=None,
+            error=str(exc),
+            **base,
+        )
+    except Exception as exc:  # noqa: BLE001 -- the reason is the payload
+        return SpotifyStatusOut(
+            connected=False,
+            needs_authorization=False,
+            display_name=None,
+            account_id=None,
+            product=None,
+            error=f"{type(exc).__name__}: {exc}",
+            **base,
+        )
+    return SpotifyStatusOut(
+        connected=True,
+        needs_authorization=False,
+        display_name=profile.get("display_name"),
+        account_id=profile.get("id"),
+        product=profile.get("product"),
+        error=None,
+        **base,
+    )
+
+
+@router.get("/recently-played", response_model=list[RecentPlayOut])
+def get_recently_played(
+    request: Request,
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> list[RecentPlayOut]:
+    """Live plays, newest first, each scored owned / review / unmatched.
+
+    A Spotify or matcher failure is a 502/500 with the real reason, never an
+    empty list: an empty list here means "you have played nothing recently",
+    and that claim must not be produced by a broken call.
+    """
+    try:
+        client = SpotifyClient.from_env(interactive=False)
+    except MissingCredentialsError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SPOTIFY_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
+    except ReauthorizationRequired as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "SPOTIFY_REAUTH_REQUIRED", "message": str(exc)},
+        ) from exc
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SPOTIFY_EXTRA_MISSING",
+                "message": (
+                    "Spotify support is not installed in this engine "
+                    "(the 'spotify' extra)."
+                ),
+            },
+        ) from exc
+
+    state_path = _state_db_path(request)
+    try:
+        plays = fetch_recent_plays(client, state_path, limit=limit)
+    except sqlite3.DatabaseError as exc:
+        raise _server_error("STATE_DB_UNAVAILABLE", str(exc)) from exc
+    except ValueError as exc:
+        raise _server_error("SPOTIFY_HISTORY_MALFORMED", str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 -- upstream failure, reported verbatim
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "SPOTIFY_HISTORY_UNAVAILABLE",
+                "message": f"{type(exc).__name__}: {exc}",
+            },
+        ) from exc
+
+    return [
+        RecentPlayOut(
+            played_at=play.played_at,
+            spotify_uri=play.spotify_uri,
+            isrc=play.isrc,
+            title=play.title,
+            artist=play.artist,
+            album=play.album,
+            duration_ms=play.duration_ms,
+            ownership=play.ownership,
+            confidence=play.confidence,
+            matched_stable_id=play.matched_stable_id,
+            suggested_sources=SuggestedSourcesOut.model_validate(play.suggested_sources),
+        )
+        for play in plays
+    ]
+
+
+class AccountPlaylistOut(BaseModel):
+    """One playlist on the signed-in Spotify account (imported or not)."""
+
+    # Strict: a string "3" or an int 1 is contract drift, not a count or a flag
+    # to coerce.
+    model_config = ConfigDict(strict=True)
+    # Nonempty, as the engine requires.
+    spotify_id: str = Field(min_length=1)
+    name: str
+    owner_id: str = Field(min_length=1)
+    owner_name: str | None
+    owned: bool
+    collaborative: bool
+    public: bool | None
+    track_count: int | None = Field(ge=0)
+    image_url: str | None
+    open_url: str
+    snapshot_id: str | None
+
+    @model_validator(mode="after")
+    def _player_url_is_the_ids(self) -> AccountPlaylistOut:
+        # The id is base-62 and open_url is exactly the page built from it, so
+        # a one-sided change cannot open another playlist.
+        if not spotify_account.PLAYER_ID_RE.fullmatch(self.spotify_id):
+            raise ValueError(f"spotify_id {self.spotify_id!r} is not base-62")
+        if self.open_url != spotify_account.playlist_open_url(self.spotify_id):
+            raise ValueError(f"open_url {self.open_url!r} is not the page for {self.spotify_id}")
+        return self
+
+
+class AccountPlaylistsOut(BaseModel):
+    """Every playlist on the account, or why the engine cannot list them."""
+
+    model_config = ConfigDict(strict=True)
+    connected: bool
+    reason: spotify_account.NotConnectedReason | None = None
+    message: str | None = None
+    user_id: str | None = None
+    display_name: str | None = None
+    total_reported: int | None = Field(default=None, ge=0)
+    # Required even when disconnected, so a response that drops it cannot read
+    # as an account with no playlists.
+    playlists: list[AccountPlaylistOut]
+
+    @model_validator(mode="after")
+    def _connected_listing_is_complete(self) -> AccountPlaylistsOut:
+        # A connected listing always carries its user and Spotify's total, the
+        # proof that every playlist arrived; only a disconnected answer omits
+        # them, and it must say why.
+        if self.connected:
+            if not self.user_id or self.total_reported is None:
+                raise ValueError("a connected Spotify listing needs user_id and total_reported")
+        elif self.reason is None or self.message is None:
+            raise ValueError("a disconnected Spotify listing needs reason and message")
+        elif self.playlists:
+            # SPOT-01: a disconnected answer carries an empty list, the same
+            # shape the frontend parser accepts.
+            raise ValueError("a disconnected Spotify listing must carry no playlists")
+        elif (
+            self.user_id is not None
+            or self.display_name is not None
+            or self.total_reported is not None
+        ):
+            raise ValueError("a disconnected Spotify listing must carry no account fields")
+        return self
+
+
+class ConnectStartOut(BaseModel):
+    authorize_url: str
+
+
+class ConnectStatusOut(BaseModel):
+    phase: Literal["idle", "waiting", "connected", "failed"]
+    detail: str | None
+
+
+# Sync handlers run on a thread pool: without this, two first Connect requests
+# could each build a flow, and the stored one would not own the listener.
+_CONNECT_FLOW_LOCK = threading.Lock()
+
+
+def _connect_flow(request: Request) -> spotify_account.ConnectFlow:
+    with _CONNECT_FLOW_LOCK:
+        flow = getattr(request.app.state, "spotify_connect_flow", None)
+        if flow is None:
+            flow = spotify_account.ConnectFlow()
+            request.app.state.spotify_connect_flow = flow
+        return flow
+
+
+def _account_api(request: Request) -> spotify_account.AccountApi:
+    # Tests (and a future cloud account seam) install their own opener here.
+    opener = getattr(request.app.state, "spotify_account_opener", None)
+    return (opener or spotify_account.open_account_client)()
+
+
+@router.get("/account/playlists", response_model=AccountPlaylistsOut)
+def get_account_playlists(request: Request) -> AccountPlaylistsOut:
+    """Every playlist the signed-in account owns or follows, all pages (SPOT-6555).
+
+    Not being signed in is a normal state, not an error: the body says
+    ``connected: false`` with a reason code the panel turns into a sign-in
+    prompt. A Spotify API failure after sign-in is a 502.
+    """
+    try:
+        listing = spotify_account.list_account_playlists(_account_api(request))
+    except spotify_account.NotConnected as exc:
+        return AccountPlaylistsOut(connected=False, reason=exc.reason, message=exc.message, playlists=[])
+    except spotify_account.ClientIdUnreadable as exc:
+        raise _server_error("SPOTIFY_CLIENT_ID_UNREADABLE", str(exc)) from exc
+    except Exception as exc:  # spotipy raises SpotifyException / requests errors
+        status = getattr(exc, "http_status", None)
+        if status == 401:
+            return AccountPlaylistsOut(
+                connected=False,
+                reason="token_refresh_failed",
+                message="Spotify rejected the saved sign-in; sign in again.",
+                playlists=[],
+            )
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "SPOTIFY_API_ERROR", "message": f"Spotify playlist listing failed: {exc}"},
+        ) from exc
+    body = listing.to_json()
+    return AccountPlaylistsOut(connected=True, **body)
+
+
+@router.post("/account/connect", response_model=ConnectStartOut)
+def start_account_connect(request: Request) -> ConnectStartOut:
+    """Begin an in-app sign-in; the caller opens the URL in a browser."""
+    try:
+        url = _connect_flow(request).start()
+    except spotify_account.NotConnected as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.reason.upper(), "message": exc.message}) from exc
+    except spotify_account.ClientIdUnreadable as exc:
+        raise _server_error("SPOTIFY_CLIENT_ID_UNREADABLE", str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail={"code": "SPOTIFY_CONNECT_BUSY", "message": str(exc)}) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SPOTIFY_REDIRECT_PORT_BUSY", "message": f"cannot listen for the Spotify redirect: {exc}"},
+        ) from exc
+    return ConnectStartOut(authorize_url=url)
+
+
+class ClientIdIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str
+
+
+class ClientIdOut(BaseModel):
+    saved: Literal[True]
+
+
+@router.put("/account/client-id", response_model=ClientIdOut)
+def put_account_client_id(body: ClientIdIn, request: Request) -> ClientIdOut:
+    """Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).
+
+    A PKCE client id is public, not a secret; it only names the app the user
+    registered with redirect URI http://127.0.0.1:8888/callback.
+    """
+    try:
+        client_id = spotify_account.normalize_client_id(body.client_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "SPOTIFY_CLIENT_ID_INVALID", "message": str(exc)}) from exc
+    # Tests point this at tmp_path; production writes ~/.music-dj-tools/spotify-client.json.
+    path = getattr(request.app.state, "spotify_client_id_path", None)
+    try:
+        spotify_account.save_client_id(client_id, path)
+    except OSError as exc:
+        raise _server_error("SPOTIFY_CLIENT_ID_WRITE_FAILED", f"could not save the Spotify client id: {exc}") from exc
+    return ClientIdOut(saved=True)
+
+
+@router.get("/account/connect", response_model=ConnectStatusOut)
+def get_account_connect(request: Request) -> ConnectStatusOut:
+    return ConnectStatusOut(**_connect_flow(request).status())
+
+
+__all__ = [
+    "AccountPlaylistOut",
+    "AccountPlaylistsOut",
+    "PendingTrackOut",
+    "RecentPlayOut",
+    "SpotifyStatusOut",
+    "SuggestedSourcesOut",
+    "router",
+]

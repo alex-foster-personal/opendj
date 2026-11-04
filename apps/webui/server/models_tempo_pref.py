@@ -31,5 +31,3 @@ class TempoPrefPatch(BaseModel):
         if self.min is not None and self.max is not None and self.min >= self.max:
             raise ValueError("tempo_pref.min must be less than tempo_pref.max")
         return self
-
-

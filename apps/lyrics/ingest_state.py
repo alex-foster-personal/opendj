@@ -57,15 +57,12 @@ class IngestReport:
     failures: tuple[str, ...]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # matching
-#-----------------------------------------------------------------------------
-def _match_vendor_id(
-    conn: sqlite3.Connection, track: dict[str, Any]
-) -> tuple[str | None, str]:
+# -----------------------------------------------------------------------------
+def _match_vendor_id(conn: sqlite3.Connection, track: dict[str, Any]) -> tuple[str | None, str]:
     row = conn.execute(
-        "SELECT stable_id FROM track_vendor_ids "
-        "WHERE vendor='rekordbox' AND vendor_id=?",
+        "SELECT stable_id FROM track_vendor_ids WHERE vendor='rekordbox' AND vendor_id=?",
         (track["name"],),
     ).fetchone()
     if row is None:
@@ -73,9 +70,7 @@ def _match_vendor_id(
     return str(row[0]), ""
 
 
-def _match_file_path(
-    conn: sqlite3.Connection, track: dict[str, Any]
-) -> tuple[str | None, str]:
+def _match_file_path(conn: sqlite3.Connection, track: dict[str, Any]) -> tuple[str | None, str]:
     if not track.get("file_path"):
         return None, "no file_path key in manifest entry"
     rows = conn.execute(
@@ -111,9 +106,9 @@ def _match_tracks(
     return matched, unmatched
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the write half
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _ingest_one(
     conn: sqlite3.Connection,
     *,
@@ -167,16 +162,13 @@ def _ingest_one(
     return artifact.n_words
 
 
-def _load_inputs(
-    manifest: Path, coverage: Path | None
-) -> tuple[list[dict[str, Any]], dict[str, float]]:
+def _load_inputs(manifest: Path, coverage: Path | None) -> tuple[list[dict[str, Any]], dict[str, float]]:
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     tracks = payload["tracks"] if isinstance(payload, dict) else payload
     coverage_by_id: dict[str, float] = {}
     if coverage is not None:
         coverage_by_id = {
-            row["track_id"]: row["coverage_pct"]
-            for row in json.loads(coverage.read_text(encoding="utf-8"))
+            row["track_id"]: row["coverage_pct"] for row in json.loads(coverage.read_text(encoding="utf-8"))
         }
     return list(tracks), coverage_by_id
 
@@ -238,10 +230,7 @@ def format_report(report: IngestReport, *, manifest: Path, write: bool) -> str:
         f"(denominator: {report.n_tracks} tracks in {manifest.name})"
     ]
     if report.unmatched:
-        body.append(
-            f"[WARN] {len(report.unmatched)} track(s) could not be matched to "
-            "this library snapshot:"
-        )
+        body.append(f"[WARN] {len(report.unmatched)} track(s) could not be matched to this library snapshot:")
         body.extend(f"       {label}" for label in report.unmatched[:10])
     if report.failures:
         body.append(f"[ERROR] {len(report.failures)} track(s) failed to ingest:")

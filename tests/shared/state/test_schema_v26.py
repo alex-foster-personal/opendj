@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.store import schema as store_schema
-from apps.shared.state import migrations_v26
+from apps.shared.state import migrations_v26, migrations_v27
 from apps.shared.state import schema as state_schema
 
 pytestmark = [
@@ -68,10 +68,11 @@ def _seed_v25_rows(path: Path) -> None:
 
 
 def test_the_ladder_is_linear_with_library_org_at_26() -> None:
-    assert state_schema.SCHEMA_VERSION == 26, "if the state ladder target is not 26 then broken"
-    assert len(state_schema.MIGRATIONS) == 26, "if the ladder has a gap or a duplicate step then broken"
+    assert state_schema.SCHEMA_VERSION == 27, "if the state ladder target is not 27 then broken"
+    assert len(state_schema.MIGRATIONS) == 27, "if the ladder has a gap or a duplicate step then broken"
     assert state_schema.MIGRATIONS[24] is state_schema._V25, "if v25 is not transition memory then broken"
     assert state_schema.MIGRATIONS[25] is migrations_v26._V26, "if v26 is not library organization then broken"
+    assert state_schema.MIGRATIONS[26] is migrations_v27._V27, "if v27 is not path_availability mtime then broken"
 
 
 def test_a_v25_db_upgrades_to_v26_and_keeps_its_rows(tmp_path: Path) -> None:
@@ -85,7 +86,7 @@ def test_a_v25_db_upgrades_to_v26_and_keeps_its_rows(tmp_path: Path) -> None:
 
     conn = sqlite3.connect(str(path))
     try:
-        assert state_schema.apply_migrations(conn) == 26
+        assert state_schema.apply_migrations(conn) == 27
         assert set(_LIBRARY_TABLES) <= _tables(conn), "if a library table is missing after v26 then broken"
         assert conn.execute("SELECT name, kind, parent_id FROM playlists").fetchall() == [("Warmup", "playlist", None)]
         assert conn.execute("SELECT count(*) FROM pair_transitions").fetchone()[0] == 1, (
@@ -118,7 +119,7 @@ def test_a_db_stamped_v25_by_the_reverted_7886_gains_transition_memory(tmp_path:
     tokens_before = conn.execute("SELECT table_name, token FROM sync_write_tokens ORDER BY 1").fetchall()
     assert "pair_transitions" not in _tables(conn)  # negative control: the gap #7961 names
     try:
-        assert state_schema.apply_migrations(conn) == 26, "if a #7886-stamped db cannot reach v26 then broken"
+        assert state_schema.apply_migrations(conn) == 27, "if a #7886-stamped db cannot reach v26 then broken"
         assert "pair_transitions" in _tables(conn), "if v26 does not repair the missing transition memory then broken"
         assert conn.execute("SELECT kind FROM playlists WHERE playlist_id = 'f-1'").fetchone() == ("folder",)
         assert conn.execute("SELECT count(*), max(label = 'Vibes') FROM tag_type").fetchone() == (3, 1), (
@@ -164,18 +165,18 @@ def test_a_db_newer_than_the_code_is_left_alone(tmp_path: Path) -> None:
     path = tmp_path / "state.db"
     _ladder_to(path, 26)
     conn = sqlite3.connect(str(path))
-    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (27, 'future')")
+    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (28, 'future')")
     conn.commit()
     schema_before = conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall()
     try:
-        assert state_schema.apply_migrations(conn) == 27
+        assert state_schema.apply_migrations(conn) == 28
         assert conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall() == schema_before
     finally:
         conn.close()
 
 
 def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> None:
-    assert store_schema.SCHEMA_VERSION == 15
+    assert store_schema.SCHEMA_VERSION == 16
     fresh = sqlite3.connect(":memory:")
     store_schema.apply_migrations(fresh)
     assert {"pair_transitions", *_LIBRARY_TABLES} <= _tables(fresh)
@@ -184,7 +185,7 @@ def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> 
 
     # Adoption takes a db the legacy ladder has already finished, as the runner's own refusal says.
     path = tmp_path / "state.db"
-    _ladder_to(path, 26)
+    _ladder_to(path, 27)
     adopted = sqlite3.connect(str(path))
     try:
         store_schema.apply_migrations(adopted)

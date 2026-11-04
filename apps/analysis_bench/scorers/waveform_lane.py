@@ -56,9 +56,7 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     tracks = list(manifest.get("tracks") or [])
     if not tracks:
-        raise ValueError(
-            f"{bundle}/manifest.json declares no tracks for the waveform lane"
-        )
+        raise ValueError(f"{bundle}/manifest.json declares no tracks for the waveform lane")
     stable_ids = [track["stable_id"] for track in tracks]
     duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
     if duplicates:
@@ -99,9 +97,7 @@ def _summarize(values: list[float]) -> dict[str, float]:
     }
 
 
-def _score_arm(
-    bundle: Path, tracks: list[dict[str, Any]], results: dict[str, Any]
-) -> dict[str, Any]:
+def _score_arm(bundle: Path, tracks: list[dict[str, Any]], results: dict[str, Any]) -> dict[str, Any]:
     stable_ids = [track["stable_id"] for track in tracks]
     refuse_unknown(results, stable_ids)
     per_band: dict[str, list[float]] = {name: [] for name in BAND_NAMES}
@@ -117,9 +113,7 @@ def _score_arm(
         truth = load_truth(bundle, track)
         for index, name in enumerate(BAND_NAMES):
             per_band[name].append(_finite_r(pearson(ours[:, index], truth[:, index])))
-    return {
-        name: _summarize(values) for name, values in per_band.items()
-    } | {"n_omitted": n_omitted}
+    return {name: _summarize(values) for name, values in per_band.items()} | {"n_omitted": n_omitted}
 
 
 def score_bundle(bundle: Path, arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -150,10 +144,7 @@ def render_table(report: dict[str, Any]) -> str:
         report["arms"].items(),
         key=lambda item: (_ROLE_ORDER.get(item[1]["role"], 2), item[0]),
     )
-    header = (
-        "| arm | role | n_omitted | "
-        "low median r (n) | mid median r (n) | high median r (n) |"
-    )
+    header = "| arm | role | n_omitted | low median r (n) | mid median r (n) | high median r (n) |"
     delimiter = "|---|---|---|---|---|---|"
     lines = [
         f"n_fixtures (bundle denominator) = {report['n_fixtures']}",
@@ -162,10 +153,6 @@ def render_table(report: dict[str, Any]) -> str:
         delimiter,
     ]
     for name, arm in order:
-        cells = " | ".join(
-            f"{arm[band]['median']:.6f} ({arm[band]['n']})" for band in BAND_NAMES
-        )
-        lines.append(
-            f"| {name} | {arm['role']} | {arm['n_omitted']} | {cells} |"
-        )
+        cells = " | ".join(f"{arm[band]['median']:.6f} ({arm[band]['n']})" for band in BAND_NAMES)
+        lines.append(f"| {name} | {arm['role']} | {arm['n_omitted']} | {cells} |")
     return "\n".join(lines)

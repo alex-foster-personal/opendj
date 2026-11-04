@@ -14,6 +14,7 @@ Own cues (CUES-01) ride the same chain: not a selectable lane, but the same
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,9 +37,7 @@ def apply_own_overlays(
     payload = apply_own_cues(payload, stable_id, state_db_path)
     return apply_own_waveform(
         apply_own_key_segments(
-            apply_own_beatgrid(
-                payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
-            ),
+            apply_own_beatgrid(payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping),
             stable_id,
             state_db_path,
             has_rb_mapping=has_rb_mapping,

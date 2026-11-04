@@ -4,9 +4,11 @@ Companion to (private path). The checklist's REVIEW table was a
 one-off grep whose literal search strings were themselves scrubbed by #910 and #1326, so
 the numbers there cannot be re-derived. This module pins the INVARIANT instead: the
 tracked tree carries no real home directory, no consumer mailbox, no tailnet name and no
-CGNAT address, and no login the tree reveals in a home path written as a bare word
-anywhere else (scripts/oss_tip_logins.py). It is run by (private path) on every CI pass, so a
-regression fails a PR rather than surfacing in a public fork.
+CGNAT address, no login the tree reveals in a home path written as a bare word
+anywhere else (scripts/oss_tip_logins.py), and no placeholder the filtered mirror
+substitutes for a retired login (scripts/oss_tip_rules.py). It is run by
+(private path) on every CI pass, so a regression fails a
+PR rather than surfacing in a public fork.
 
     python -m scripts.oss_tip_audit            # scan the tracked tree, exit 1 on findings
     python -m scripts.oss_tip_audit --root X   # another checkout

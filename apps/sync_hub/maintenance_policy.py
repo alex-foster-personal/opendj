@@ -70,9 +70,7 @@ SELF: str = "self"
 # ----- parser ----------------------------------------------------------------
 
 
-def add_policy_parser(
-    subcommands: argparse._SubParsersAction, common: argparse.ArgumentParser
-) -> None:
+def add_policy_parser(subcommands: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
     """Register ``policy`` and its verbs on the ``python -m apps.sync_hub`` parser."""
     policy = subcommands.add_parser("policy", help="per-machine sync policy (dry-run default)")
     verbs = policy.add_subparsers(dest="verb", required=True)
@@ -80,9 +78,7 @@ def add_policy_parser(
     show.add_argument("--machine", default=None, help="only this machine (an id or 'self')")
     verbs.add_parser("classes", parents=[common], help="print the data-class registry")
     validate = verbs.add_parser("validate", parents=[common], help="judge the fleet; never writes")
-    validate.add_argument(
-        "--proposal", type=str, default=None, help="JSON file or -; omit to judge the stored fleet"
-    )
+    validate.add_argument("--proposal", type=str, default=None, help="JSON file or -; omit to judge the stored fleet")
     plan = verbs.add_parser("plan", parents=[common], help="rows a proposal would touch; no write")
     plan.add_argument("--proposal", type=str, required=True, help="JSON file, or - for stdin")
     apply = verbs.add_parser("apply", parents=[common], help="apply a proposal file")
@@ -99,9 +95,7 @@ def add_policy_parser(
         edit.add_argument("--machine", required=True, help="a machine id, or 'self'")
         _add_edit_arguments(name, edit)
     for name in ("apply", *edits):
-        verbs.choices[name].add_argument(
-            "--live", action="store_true", help="write; without it this is a dry run"
-        )
+        verbs.choices[name].add_argument("--live", action="store_true", help="write; without it this is a dry run")
 
 
 def _add_edit_arguments(verb: str, parser: argparse.ArgumentParser) -> None:
@@ -139,18 +133,10 @@ def _target(machine: str, author: str) -> str:
 
 
 _EDIT_BUILDERS: dict[str, Callable[[argparse.Namespace, str, str], ProposedPolicy]] = {
-    "set": lambda a, author, m: replace(
-        empty_proposal(author), policies=(PolicyCell(m, a.kind, a.mode, a.budget),)
-    ),
-    "unset": lambda a, author, m: replace(
-        empty_proposal(author), removed_policies=(PolicyKey(m, a.kind),)
-    ),
-    "pin": lambda a, author, m: replace(
-        empty_proposal(author), pins=(PinCell(m, a.playlist, a.mode),)
-    ),
-    "unpin": lambda a, author, m: replace(
-        empty_proposal(author), removed_pins=(PinKey(m, a.playlist),)
-    ),
+    "set": lambda a, author, m: replace(empty_proposal(author), policies=(PolicyCell(m, a.kind, a.mode, a.budget),)),
+    "unset": lambda a, author, m: replace(empty_proposal(author), removed_policies=(PolicyKey(m, a.kind),)),
+    "pin": lambda a, author, m: replace(empty_proposal(author), pins=(PinCell(m, a.playlist, a.mode),)),
+    "unpin": lambda a, author, m: replace(empty_proposal(author), removed_pins=(PinKey(m, a.playlist),)),
     "seed": lambda a, author, m: seed_proposal(author, m, a.machine_class),
 }
 

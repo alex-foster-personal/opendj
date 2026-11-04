@@ -1,0 +1,43 @@
+{
+  "items": [
+    {
+      "played_at": "2026-09-22T09:00:00Z",
+      "track": {
+        "id": "owned0000000000000001",
+        "uri": "spotify:track:owned0000000000000001",
+        "name": "Owned Cut",
+        "artists": [{"name": "Fixture Artist"}],
+        "album": {"name": "Fixture Album"},
+        "duration_ms": 180000,
+        "external_ids": {"isrc": "USFIX2600001"},
+        "is_local": false
+      }
+    },
+    {
+      "played_at": "2026-09-22T10:00:00Z",
+      "track": {
+        "id": "unmatch00000000000001",
+        "uri": "spotify:track:unmatch00000000000001",
+        "name": "Unknown Cut",
+        "artists": [{"name": "Nobody At All"}],
+        "album": {"name": "Fixture Album"},
+        "duration_ms": 240000,
+        "external_ids": {},
+        "is_local": false
+      }
+    },
+    {
+      "played_at": "2026-09-22T11:00:00Z",
+      "track": {
+        "id": "review000000000000001",
+        "uri": "spotify:track:review000000000000001",
+        "name": "Review Cut",
+        "artists": [{"name": "Fixture Artist"}],
+        "album": {"name": "Fixture Album"},
+        "duration_ms": 210000,
+        "external_ids": {},
+        "is_local": false
+      }
+    }
+  ]
+}

@@ -14,4 +14,5 @@ Public surface:
 
 All modules are pure-stdlib; no ML, no network, no subprocess.
 """
+
 from __future__ import annotations

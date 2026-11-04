@@ -41,6 +41,7 @@
 	import { createDragTracker, trackDragMove, type DragTracker } from '$lib/rb/drag-sensitivity.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
+	import { DIAL_SWEEP_DEG } from '$lib/rb/dial-clock';
 
 	interface Props {
 		/** Stable control id from knobId(deckId, role) - the knob-control registry key. */
@@ -84,7 +85,7 @@
 		captionLead
 	}: Props = $props();
 
-	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
+	const SWEEP_DEG = DIAL_SWEEP_DEG; // -135deg .. +135deg like rekordbox knobs (7:30 to 4:30, DIALCLOCK-8341)
 	const RAINBOW_STOPS = ['#e23a32', '#e8a13a', '#d7d83a', '#35c04f'] as const;
 	const visualStyle = $derived.by(() => {
 		if (!Number.isFinite(size) || size <= 0) {

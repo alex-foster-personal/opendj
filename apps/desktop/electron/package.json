@@ -20,7 +20,8 @@
     "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap --test-concurrency=1 'dist-test/e2e/*.e2e.js'",
     "live-proof": "node scripts/live-proof.mjs",
     "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64 && node scripts/verify-pack.mjs && node scripts/read-fuses.mjs \"out/mac-arm64/Open DJ.app/Contents/Frameworks/Electron Framework.framework/Electron Framework\"",
-    "pack:dir:linux": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --linux --publish never"
+    "pack:dir:linux": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --linux --publish never",
+    "pack:dir:win": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && electron-builder --dir --win --x64 -c.win.signExecutable=false"
   },
   "build": {
     "appId": "com.opendj.desktop",
@@ -65,6 +66,18 @@
           "target": "dir",
           "arch": [
             "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "appId": "com.opendj.desktop.electron",
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
           ]
         }
       ]

@@ -22,9 +22,7 @@ _TOKEN_LEVEL_RE = re.compile(
     r"^(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*\s+)?(ERROR|WARNING|WARN)\b",
     re.IGNORECASE,
 )
-_ISO_PREFIX_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)"
-)
+_ISO_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)")
 _SIMPLE_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})")
 
 
@@ -75,9 +73,7 @@ def _parse_line_timestamp(line: str) -> datetime | None:
 
 
 def _format_received_at(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00", "Z"
-    )
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _parse_fault_time(value: object) -> datetime | None:
@@ -177,15 +173,9 @@ def _scan_client_errors(
                     seen_ids.add(event_id)
                 kind = str(record.get("kind", "client-error"))
                 message = str(record.get("message", ""))
-                level: Literal["ERROR", "WARN"] = (
-                    "WARN" if kind == "console-warn" else "ERROR"
-                )
+                level: Literal["ERROR", "WARN"] = "WARN" if kind == "console-warn" else "ERROR"
                 context_raw = record.get("context")
-                context = (
-                    {str(k): v for k, v in context_raw.items()}
-                    if isinstance(context_raw, dict)
-                    else None
-                )
+                context = {str(k): v for k, v in context_raw.items()} if isinstance(context_raw, dict) else None
                 events.append(
                     ErrorEvent(
                         source="client-errors",
@@ -193,12 +183,8 @@ def _scan_client_errors(
                         level=level,
                         kind=kind,
                         message=message,
-                        stack=record.get("stack")
-                        if isinstance(record.get("stack"), str)
-                        else None,
-                        url=record.get("url")
-                        if isinstance(record.get("url"), str)
-                        else None,
+                        stack=record.get("stack") if isinstance(record.get("stack"), str) else None,
+                        url=record.get("url") if isinstance(record.get("url"), str) else None,
                         context=context,
                         event_id=event_id or None,
                     )
@@ -317,8 +303,7 @@ def _scan_engine_warn(
                         "boot_id": record.get("boot_id"),
                         "logger": record.get("logger"),
                     }
-                    if record.get("boot_id") is not None
-                    or record.get("logger") is not None
+                    if record.get("boot_id") is not None or record.get("logger") is not None
                     else None,
                 )
             )
@@ -363,9 +348,7 @@ def _scan_ui_mirror(
                 level="ERROR",
                 kind=kind,
                 message=message,
-                context={"age_ms": fault.get("age_ms")}
-                if fault.get("age_ms") is not None
-                else None,
+                context={"age_ms": fault.get("age_ms")} if fault.get("age_ms") is not None else None,
             )
         )
     return events, SinkStatus(id="ui-mirror", available=True)
@@ -406,9 +389,7 @@ def _sample_error_message(record: dict[str, object]) -> str:
             if deck.get("sync_error"):
                 parts.append(f"deck {deck_id} sync_error: {deck['sync_error']}")
             if deck.get("processor_error"):
-                parts.append(
-                    f"deck {deck_id} processor_error: {deck['processor_error']}"
-                )
+                parts.append(f"deck {deck_id} processor_error: {deck['processor_error']}")
     return "; ".join(parts) if parts else "client-performance-sample error"
 
 
@@ -453,9 +434,7 @@ def _scan_client_samples(
                     kind="client-performance-sample",
                     message=_sample_error_message(record),
                     context=deck_context or None,
-                    event_id=str(record.get("event_id"))
-                    if record.get("event_id") is not None
-                    else None,
+                    event_id=str(record.get("event_id")) if record.get("event_id") is not None else None,
                 )
             )
     return events, SinkStatus(

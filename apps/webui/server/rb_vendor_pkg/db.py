@@ -1,15 +1,15 @@
 """Read-only master.plain.db access: playlist order + cue reads.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C4 (lines 845-948 on
-``af--t4-design``), per ``.planning/t3b-decomposition-map.md`` target #9
+``af--t4-design``), per ``(private path)`` target #9
 (``adapters/rekordbox/db.py``, budget 130 lines). rb_vendor.py re-exports
 these three names so the 10 route importers and the pinning test suite
-(``tests/webui/test_rb_vendor_cache.py``, ``tests/webui/conftest.py``'s
+(``(private path)``, ``tests/webui/conftest.py``'s
 ``_stub_rb_vendor`` fixture) see no behavior change.
 
 ``MASTER_PLAIN_DB`` is read as ``config.MASTER_PLAIN_DB`` inside each
 function body, never imported by value. That is required, not stylistic: it
-is a rebindable override both ``.planning/e2e-gating/run_daemon.py`` and the
+is a rebindable override both ``(private path)`` and the
 test suite assign to (map section 2, target #2), and a
 ``from .config import MASTER_PLAIN_DB`` here would capture the value at
 import time and silently stop honoring them. Until wave 4 the same lookup
@@ -29,7 +29,8 @@ from typing import Any
 
 from apps.adapters.rekordbox import config
 from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_our_ms
-from apps.adapters.rekordbox.cues import HOT_CUE_SLOTS, _cue_snapshot_from_row
+from apps.adapters.rekordbox.cue_kind import is_mapped_kind, kind_to_slot
+from apps.adapters.rekordbox.cues import _cue_snapshot_from_row
 from apps.adapters.rekordbox.errors import _open_ro
 
 # ----- playlist ordering (djmdPlaylist Seq) -----------------------------------
@@ -102,7 +103,7 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
     for row in rows:
         snapshot = _cue_snapshot_from_row(row)
         kind_i = snapshot["kind"]
-        if kind_i is None or not 0 <= int(kind_i) <= 8:
+        if kind_i is None or not is_mapped_kind(int(kind_i)):
             continue  # Kind 9-11 excluded v1: slot mapping unverified (PARITY-TODO)
         in_ms = snapshot["in_ms"]
         out_ms = snapshot["out_ms"]
@@ -116,7 +117,9 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
             slot: str | None = None
         else:
             kind = "hot_cue"
-            slot = HOT_CUE_SLOTS[int(kind_i) - 1]
+            slot = kind_to_slot(int(kind_i))
+            if slot is None:
+                continue
         cues.append(
             {
                 "kind": kind,

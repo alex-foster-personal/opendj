@@ -44,10 +44,13 @@ from .title_fix_core import (
 _CLAIMED = "claimed by a concurrent apply"
 
 
-
-
 def apply_proposals(
-    ctx: Ctx, proposal_ids: list[str], *, kind: str = "manual", policy: str = "manual", scan_id: str | None = None,
+    ctx: Ctx,
+    proposal_ids: list[str],
+    *,
+    kind: str = "manual",
+    policy: str = "manual",
+    scan_id: str | None = None,
     tag_families: tuple[str, ...] | None = None,
 ) -> Outcome:
     """``tag_families`` is the snapshot an auto-applying scan started under; a manual apply reads the current setting."""
@@ -72,18 +75,27 @@ def apply_proposals(
         return outcome
     try:
         batch_id, outcome.applied, chosen = _write_replanning(
-            ctx, chosen, updates, tags_added, outcome, kind=kind, policy=policy, scan_id=scan_id)
+            ctx, chosen, updates, tags_added, outcome, kind=kind, policy=policy, scan_id=scan_id
+        )
     except (CommittedReadbackError, FenceExitError) as exc:
         return _committed_outcome(outcome, exc)
     outcome.batch_id = batch_id or None
-    outcome.skipped += [{"proposal_id": r.proposal_id, "reason": _CLAIMED}
-                        for r in chosen if r.proposal_id not in outcome.applied]
+    outcome.skipped += [
+        {"proposal_id": r.proposal_id, "reason": _CLAIMED} for r in chosen if r.proposal_id not in outcome.applied
+    ]
     return outcome
 
 
 def _write_replanning(
-    ctx: Ctx, chosen: list[ProposalRow], updates: list[TrackUpdate], tags_added: dict[str, list[str]], outcome: Outcome, *,
-    kind: str, policy: str, scan_id: str | None,
+    ctx: Ctx,
+    chosen: list[ProposalRow],
+    updates: list[TrackUpdate],
+    tags_added: dict[str, list[str]],
+    outcome: Outcome,
+    *,
+    kind: str,
+    policy: str,
+    scan_id: str | None,
 ) -> tuple[str, list[str], list[ProposalRow]]:
     """_write_apply_batch, but a track that changed between the plan and the compare-and-swap is marked stale (the same
     verdict the plan gives a row it sees changed) and the batch is re-planned without it, instead of failing whole."""
@@ -91,18 +103,26 @@ def _write_replanning(
         if not updates:
             return "", [], chosen
         try:
-            batch_id, applied = _write_apply_batch(ctx, chosen, updates, tags_added, kind=kind, policy=policy, scan_id=scan_id)
+            batch_id, applied = _write_apply_batch(
+                ctx, chosen, updates, tags_added, kind=kind, policy=policy, scan_id=scan_id
+            )
         except BatchConflictError as exc:
             chosen, updates = _drop_cas_losers(ctx, chosen, updates, exc, outcome)
             if not updates:
                 return "", [], chosen  # every remaining row lost: report them stale instead of a bare 409
         else:
             return batch_id, applied, chosen
-    raise TitleFixError("title_fix_track_conflict", "tracks kept changing while the batch was written; nothing applied", 409)
+    raise TitleFixError(
+        "title_fix_track_conflict", "tracks kept changing while the batch was written; nothing applied", 409
+    )
 
 
 def _drop_cas_losers(
-    ctx: Ctx, chosen: list[ProposalRow], updates: list[TrackUpdate], exc: BatchConflictError, outcome: Outcome,
+    ctx: Ctx,
+    chosen: list[ProposalRow],
+    updates: list[TrackUpdate],
+    exc: BatchConflictError,
+    outcome: Outcome,
 ) -> tuple[list[ProposalRow], list[TrackUpdate]]:
     """Mark the rows whose track lost the compare-and-swap stale and return the plan without them."""
     lost = {c["stable_id"] for c in exc.conflicts}
@@ -114,7 +134,12 @@ def _drop_cas_losers(
 
 
 def _plan_row_apply(
-    ctx: Ctx, row: ProposalRow, track: LibraryTrack | None, seen: set[str], families: set[str], outcome: Outcome,
+    ctx: Ctx,
+    row: ProposalRow,
+    track: LibraryTrack | None,
+    seen: set[str],
+    families: set[str],
+    outcome: Outcome,
 ) -> tuple[TrackUpdate, list[str]] | None:
     """The CAS update (and the tags it adds) for one proposal, or None after recording why it is skipped."""
     reason = _apply_refusal(row, track, seen) or _identity_refusal(ctx, row)
@@ -155,8 +180,14 @@ def _apply_patch(row: ProposalRow, tags_add: list[str]) -> dict[str, object]:
 
 
 def _write_apply_batch(
-    ctx: Ctx, chosen: list[ProposalRow], updates: list[TrackUpdate], tags_added: dict[str, list[str]], *,
-    kind: str, policy: str, scan_id: str | None = None,
+    ctx: Ctx,
+    chosen: list[ProposalRow],
+    updates: list[TrackUpdate],
+    tags_added: dict[str, list[str]],
+    *,
+    kind: str,
+    policy: str,
+    scan_id: str | None = None,
 ) -> tuple[str, list[str]]:
     """Records the batch intent first, then writes; a failed write rolls the proposals back to pending."""
     batch, claimed = _open_batch(ctx, chosen, len(updates), tags_added, kind=kind, policy=policy, scan_id=scan_id)
@@ -179,12 +210,16 @@ def _committed_outcome(outcome: Outcome, exc: CommittedReadbackError | FenceExit
     """A write that COMMITTED and is recorded (and undoable) is a success with a warning, never a failed request."""
     outcome.batch_id = exc.batch_id
     outcome.applied = list(exc.applied)
-    outcome.warning = f"the write committed and is undoable, but its result could not be confirmed ({type(exc).__name__})"
+    outcome.warning = (
+        f"the write committed and is undoable, but its result could not be confirmed ({type(exc).__name__})"
+    )
     return outcome
 
 
 def _raise_committed_readback(
-    readback_error: CommittedReadbackError | FenceExitError | None, batch_id: str, applied: list[str] | None = None,
+    readback_error: CommittedReadbackError | FenceExitError | None,
+    batch_id: str,
+    applied: list[str] | None = None,
 ) -> None:
     """The write landed and is undoable; only its result could not be re-read. The batch id rides on the error so the
     scan's auto-apply links the undoable batch to its row."""
@@ -196,15 +231,22 @@ def _raise_committed_readback(
 
 
 def _open_batch(
-    ctx: Ctx, chosen: list[ProposalRow], count: int, tags_added: dict[str, list[str]], *,
-    kind: str, policy: str, scan_id: str | None,
+    ctx: Ctx,
+    chosen: list[ProposalRow],
+    count: int,
+    tags_added: dict[str, list[str]],
+    *,
+    kind: str,
+    policy: str,
+    scan_id: str | None,
 ) -> tuple[BatchRow, set[str]]:
     """The batch intent and its claim on the proposals, both waited out under contention. If the claim cannot be made
     (the scan lost its lease, or the store stayed busy) nothing was written: the batch is discarded, never left empty."""
     batch = _when_store_free(ctx.store.create_batch, "auto" if kind == "auto" else "manual", policy, count)
     try:
         claimed = _when_store_free(
-            ctx.store.claim_pending, [r.proposal_id for r in chosen], batch.batch_id, tags_added, fence_scan_id=scan_id)
+            ctx.store.claim_pending, [r.proposal_id for r in chosen], batch.batch_id, tags_added, fence_scan_id=scan_id
+        )
     except Exception:  # incl. ScanLeaseLostError: an auto-apply whose scan was taken over claims and writes nothing
         _when_store_free(ctx.store.release_batch, batch.batch_id)
         _when_store_free(ctx.store.discard_batch, batch.batch_id)
@@ -223,7 +265,9 @@ def _record_won_count(ctx: Ctx, batch_id: str, count: int) -> None:
         raise
 
 
-def _by_proposal(won: list[tuple[ProposalRow, TrackUpdate]], written: dict[str, AppliedState]) -> dict[str, dict[str, Any]]:
+def _by_proposal(
+    won: list[tuple[ProposalRow, TrackUpdate]], written: dict[str, AppliedState]
+) -> dict[str, dict[str, Any]]:
     """The write's in-transaction track state, keyed by the proposal that wrote each track."""
     return {row.proposal_id: asdict(written[row.stable_id]) for row, _ in won if row.stable_id in written}
 
@@ -248,17 +292,27 @@ def _write_in_fence(open_fence: Callable[[], contextlib.AbstractContextManager[A
 
 
 def _write_tracks_or_release(
-    ctx: Ctx, batch_id: str, updates: list[TrackUpdate], scan_id: str | None, written: dict[str, AppliedState],
+    ctx: Ctx,
+    batch_id: str,
+    updates: list[TrackUpdate],
+    scan_id: str | None,
+    written: dict[str, AppliedState],
 ) -> CommittedReadbackError | FenceExitError | None:
     """The track write, with the batch's ownership held through the state commit; a failure releases the batch.
     Returns the error of a write that COMMITTED but whose result could not be re-read: the caller keeps the batch."""
     try:
-        _write_in_fence(lambda: ctx.store.write_fence(batch_id, scan_id), lambda: ctx.backend.update_tracks(
-            updates, source=CFG.WRITE_SOURCE, mutation_guard=ctx.write_gate, applied_state=written))
+        _write_in_fence(
+            lambda: ctx.store.write_fence(batch_id, scan_id),
+            lambda: ctx.backend.update_tracks(
+                updates, source=CFG.WRITE_SOURCE, mutation_guard=ctx.write_gate, applied_state=written
+            ),
+        )
     except (CommittedReadbackError, FenceExitError) as exc:  # the write committed: keep the record of it
         return exc
     except Exception as exc:
-        _when_store_free(ctx.store.release_batch, batch_id)  # only this batch's own rows; waited out, or they stay claimed
+        _when_store_free(
+            ctx.store.release_batch, batch_id
+        )  # only this batch's own rows; waited out, or they stay claimed
         _when_store_free(ctx.store.discard_batch, batch_id)
         if isinstance(exc, BatchReleasedError):  # reconciled away while this writer was paused: nothing was written
             raise TitleFixError("title_fix_batch_released", str(exc), 409) from exc
@@ -319,7 +373,9 @@ def reject_proposals(ctx: Ctx, proposal_ids: list[str]) -> Outcome:
     rows = _get_or_404(ctx, list(dict.fromkeys(proposal_ids)))
     outcome = Outcome()
     pending = [r.proposal_id for r in rows if r.state == "pending"]
-    outcome.skipped += [{"proposal_id": r.proposal_id, "reason": f"state is {r.state}"} for r in rows if r.state != "pending"]
+    outcome.skipped += [
+        {"proposal_id": r.proposal_id, "reason": f"state is {r.state}"} for r in rows if r.state != "pending"
+    ]
     outcome.applied = ctx.store.reject_pending(pending)  # conditional: an apply may have claimed a row since we read it
     outcome.skipped += [{"proposal_id": p, "reason": _CLAIMED} for p in pending if p not in outcome.applied]
     return outcome

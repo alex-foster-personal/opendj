@@ -47,8 +47,7 @@ def test_module_level_scripts_import_is_not_flagged(tmp_path: Path) -> None:
 
 
 def test_the_paid_off_allowlist_entries_are_flagged_again(tmp_path: Path) -> None:
-    """Round 12 narrowed the allowlist to one file; the two package-wide entries it
-    carried must not creep back."""
+    """The package-wide allowlist entries, and then controls.py, must not creep back."""
     for rel, text in (
         (
             "apps/analysis_bench/cli.py",
@@ -59,7 +58,7 @@ def test_the_paid_off_allowlist_entries_are_flagged_again(tmp_path: Path) -> Non
         sample = tmp_path / rel
         sample.parent.mkdir(parents=True, exist_ok=True)
         sample.write_text(text, encoding="utf-8")
-    assert ALLOWLIST_PREFIXES == ("apps/analysis_bench/controls.py",)
+    assert ALLOWLIST_PREFIXES == ()
     assert sorted(f.path for f in audit_apps_tree(tmp_path)) == [
         "apps/analysis_bench/cli.py",
         "apps/stems/relay/app.py",

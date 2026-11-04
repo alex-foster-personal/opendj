@@ -13,6 +13,7 @@ Mirrored 1:1 by ``FORBIDDEN_ENV_PREFIXES`` in
 ``test_forbidden_env_prefixes_bash_and_python_agree``, which parses BOTH
 real files rather than trusting a copied value in either direction.
 """
+
 from __future__ import annotations
 
 import sys

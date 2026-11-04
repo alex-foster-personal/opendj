@@ -1,6 +1,6 @@
 """Stage-3 verdict: read the DIFF SHAPE between a lyric sheet and an ASR stream.
 
-Round-0 finding (specs/lyrics-version-check.md): raw match rate alone must
+Round-0 finding ((private path)): raw match rate alone must
 never be the verdict -- hard-for-Whisper songs (Quiero_y_Puedo) sit at 26% on
 a CORRECT sheet. So the classifier reads block structure from difflib opcodes
 and reserves explicit "unverifiable" and "wrong_song" verdicts, and every
@@ -42,7 +42,7 @@ WRONG_SONG_MATCH_CEIL: float = 0.2  # both rates under this + no anchor = wrong 
 MIN_ANCHOR_WORDS: int = 6  # a matched run this long anchors "right song"
 UNVERIFIABLE_ASR_FRACTION: float = 0.3  # ASR heard under 30% of sheet length
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,9 @@ class Verdict:
 
 
 def classify(
-    sheet_words: list[str], asr_words: list[str], asr_probs: list[float] | None = None,
+    sheet_words: list[str],
+    asr_words: list[str],
+    asr_probs: list[float] | None = None,
 ) -> Verdict:
     _validate_classify_inputs(sheet_words, asr_words, asr_probs)
     sheet_norm = [normalize_word(w) for w in sheet_words]
@@ -85,12 +87,10 @@ def classify(
     return Verdict(verdict, ref_rate, asr_rate, longest_anchor, tuple(findings))
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
-def _validate_classify_inputs(
-    sheet_words: list[str], asr_words: list[str], asr_probs: list[float] | None
-) -> None:
+def _validate_classify_inputs(sheet_words: list[str], asr_words: list[str], asr_probs: list[float] | None) -> None:
     if not sheet_words:
         raise ValueError("no sheet words")
     if not asr_words:
@@ -99,9 +99,7 @@ def _validate_classify_inputs(
         raise ValueError("asr_probs must align 1:1 with asr_words")
 
 
-def _match_stats(
-    matcher: SequenceMatcher, sheet_norm: list[str], asr_norm: list[str]
-) -> tuple[float, float, int]:
+def _match_stats(matcher: SequenceMatcher, sheet_norm: list[str], asr_norm: list[str]) -> tuple[float, float, int]:
     """(sheet-side match rate, ASR-side match rate, longest exactly-matched run)."""
     blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
     n_matched = sum(b.size for b in blocks)
@@ -112,16 +110,15 @@ def _match_stats(
     )
 
 
-def _surviving_findings(
-    paired: tuple[Finding, ...], sheet_norm: list[str], asr_norm: list[str]
-) -> tuple[Finding, ...]:
+def _surviving_findings(paired: tuple[Finding, ...], sheet_norm: list[str], asr_norm: list[str]) -> tuple[Finding, ...]:
     """Heard-but-garbled rescue, then repeat direction, in that order.
 
     The rescue is a FILTER evaluated before the mapping (a truly dropped verse
     cannot appear in ASR at all) -- the same order the one comprehension had.
     """
     return tuple(
-        _directional_repeat(f, sheet_norm) for f in paired
+        _directional_repeat(f, sheet_norm)
+        for f in paired
         if not (f.kind == "missing_in_audio" and _occurs_fuzzily(f.text, asr_norm))
     )
 
@@ -137,8 +134,7 @@ def _overall_verdict(
     decisive = [f for f in findings if f.kind != "sheet_repeat_unsupported"]
     if len(asr_norm) < UNVERIFIABLE_ASR_FRACTION * len(sheet_norm):
         return "unverifiable"
-    elif ref_rate < WRONG_SONG_MATCH_CEIL and asr_rate < WRONG_SONG_MATCH_CEIL \
-            and longest_anchor < MIN_ANCHOR_WORDS:  # noqa: RET505 - explicit elif is house style
+    elif ref_rate < WRONG_SONG_MATCH_CEIL and asr_rate < WRONG_SONG_MATCH_CEIL and longest_anchor < MIN_ANCHOR_WORDS:  # noqa: RET505 - explicit elif is house style
         return "wrong_song"
     elif decisive:
         return "structure_mismatch"
@@ -148,7 +144,7 @@ def _overall_verdict(
         return "matched"
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _block_findings(
@@ -177,11 +173,7 @@ def _block_findings(
         if tag in ("insert", "replace") and (j2 - j1) >= MIN_BLOCK_WORDS:
             if asr_probs is not None and sum(asr_probs[j1:j2]) / (j2 - j1) < EXTRA_MIN_MEAN_PROB:
                 continue  # low-confidence garble, not a sung block the sheet lacks
-            extra.append(
-                Finding(
-                    "extra_in_audio", -1, -1, j1, j2 - 1, j2 - j1, " ".join(asr_norm[j1:j2])
-                )
-            )
+            extra.append(Finding("extra_in_audio", -1, -1, j1, j2 - 1, j2 - j1, " ".join(asr_norm[j1:j2])))
     return missing, extra
 
 
@@ -214,8 +206,9 @@ def _directional_repeat(f: Finding, sheet_norm: list[str]) -> Finding:
     step = max(1, len(words) // 2)
     for start in range(0, max(1, len(sheet_norm) - len(words) + 1), step):
         if _similarity(f.text, " ".join(sheet_norm[start : start + len(words)])) >= REPEAT_SIM:
-            return Finding("audio_repeat_unlisted", f.sheet_start, f.sheet_end,
-                           f.asr_start, f.asr_end, f.n_words, f.text)
+            return Finding(
+                "audio_repeat_unlisted", f.sheet_start, f.sheet_end, f.asr_start, f.asr_end, f.n_words, f.text
+            )
     return f
 
 
@@ -245,8 +238,7 @@ def _pair_moves(missing: list[Finding], extra: list[Finding]) -> tuple[Finding, 
         if paired is not None:
             used_extra.add(paired)
             e = extra[paired]
-            out.append(Finding("moved_block", m.sheet_start, m.sheet_end,
-                               e.asr_start, e.asr_end, m.n_words, m.text))
+            out.append(Finding("moved_block", m.sheet_start, m.sheet_end, e.asr_start, e.asr_end, m.n_words, m.text))
         else:
             out.append(m)
     out.extend(e for k, e in enumerate(extra) if k not in used_extra)

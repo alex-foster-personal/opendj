@@ -218,8 +218,15 @@ test.describe('setup entry points', () => {
 			errors.push(`${msg.text()} [${msg.location()?.url ?? ''}]`);
 		});
 
-		// BuildIdentity issues this on first navigation; register before goto so
-		// the initial check cannot race past the test.
+		// BuildIdentity issues GET /api/v1/update/check from onMount on first
+		// navigation; register before goto so the initial check cannot race past
+		// the test. Capture the response as soon as it arrives; wait here for
+		// status and URL only: the JSON body is read later via page.request.get
+		// (below), not from this Response, because Run setup navigates to the
+		// wizard overlay and response.json() on the page's copy fails in the
+		// Electron shell with "No resource with given identifier found" or
+		// "Target page, context or browser has been closed" once navigation
+		// completes, or never finishes loading afterward (main + PR #8351, Tue 3 Nov 2026).
 		const updateCheckResponsePromise = page.waitForResponse((response) =>
 			response.url().includes('/api/v1/update/check')
 		);

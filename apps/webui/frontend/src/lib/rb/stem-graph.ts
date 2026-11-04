@@ -5,6 +5,10 @@
  *   ✔︎ Four decoded parts must be sample-aligned before graph publication.
  *     [if] any part differs in sample rate, frame count, channels, or duration
  *       [then] construction fails before a processor is connected
+ *   ✔︎ ✅ 🎯 STEM-8302: trailing codec slack (at most two MP3 frames) is conformed
+ *     to the source length at the END; the start never moves.
+ *     [if] drums decode 1152 frames long [then] trimmed, not refused
+ *     [if] a part is more than 2304 frames off [then] still refused
  *   ✔︎ INST owns the real bass + other branches.
  *     [if] INST is muted [then] both branches gain 0 without subtraction
  *   ✔︎ One schedule is acknowledged only after every branch acknowledges.
@@ -295,6 +299,64 @@ export function validateStemBufferAlignment(buffers: StemBuffers): StemAlignment
 		channel_count: reference.numberOfChannels,
 		duration_ms: reference.duration * 1000
 	};
+}
+
+/** Samples in one MPEG-1 Layer III frame: the unit an MP3 encode is padded in. */
+export const MP3_FRAME_SAMPLES = 1152;
+
+/**
+ * STEM-8302: the most a decoded part may differ in length from the source and
+ * still be conformed rather than refused, in frames. Two MP3 frames (52 ms at
+ * 44.1 kHz). Every real excess seen is TRAILING codec slack, never a timing
+ * offset: the libsndfile/LAME encoder emits one packet past the Xing frame
+ * count on some parts (CoreAudio decodes it, ffmpeg's gapless path drops it),
+ * and a 48 kHz source resampled to 44.1 kHz rounds to +/-1 frame. A genuinely
+ * wrong stem (another track, another edit) is seconds off and still refuses.
+ */
+export const STEM_LENGTH_TOLERANCE_FRAMES = 2 * MP3_FRAME_SAMPLES;
+
+/**
+ * STEM-8302: trim or silence-pad each part at its END to exactly `targetFrames`
+ * (the decoded source's length) when it is within STEM_LENGTH_TOLERANCE_FRAMES.
+ * The start is never touched: decoders drop the same encoder priming from
+ * every part, so the parts already share sample 0 with the source. A part
+ * that differs in rate or channels, or by more than the tolerance, is
+ * returned unchanged so validateStemBufferAlignment and the engine's
+ * stem/source check still refuse it with their own messages.
+ */
+export function conformStemBuffersToFrameCount(
+	ctx: Pick<BaseAudioContext, 'createBuffer'>,
+	buffers: StemBuffers,
+	targetFrames: number,
+	targetSampleRate: number
+): StemBuffers {
+	if (!Number.isInteger(targetFrames) || targetFrames <= 0) {
+		throw new RangeError(`stem target frame count must be a positive integer, got ${targetFrames}`);
+	}
+	const conformed: StemBuffers = {};
+	for (const [part, buffer] of Object.entries(buffers) as [StemPart, AudioBuffer][]) {
+		const excess = buffer.length - targetFrames;
+		conformed[part] =
+			excess === 0 ||
+			Math.abs(excess) > STEM_LENGTH_TOLERANCE_FRAMES ||
+			buffer.sampleRate !== targetSampleRate
+				? buffer
+				: _withLength(ctx, buffer, targetFrames);
+	}
+	return conformed;
+}
+
+function _withLength(
+	ctx: Pick<BaseAudioContext, 'createBuffer'>,
+	buffer: AudioBuffer,
+	frames: number
+): AudioBuffer {
+	const out = ctx.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
+	const kept = Math.min(frames, buffer.length);
+	for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+		out.copyToChannel(buffer.getChannelData(channel).subarray(0, kept), channel);
+	}
+	return out;
 }
 
 function _aggregateFailures(operation: string, outcomes: readonly PromiseSettledResult<void>[]): void {

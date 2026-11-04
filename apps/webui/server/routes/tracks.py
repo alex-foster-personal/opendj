@@ -332,6 +332,7 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "streaming_provider": row["streaming_provider"],
         "has_remote_copy": bool(row["has_remote_copy"]),
         "cloud_transfer": row["cloud_transfer"],
+        "offload": row["offload"],
         "quality": row["quality"],
         "vocals": row["vocals"],
         "stems": row["stems"],

@@ -60,6 +60,7 @@ function mediaBlock(source, query) {
 // The read-only status tier. 1257px since Tue 6 Oct 2026: the pinned Settings and
 // skin toggle (#5456) moved it up from 1160px (see the note on that tier).
 const NARROW = mediaBlock(topbar, '(max-width: 1257px)');
+const WAVEFORM_GLYPH = mediaBlock(topbar, '(max-width: 1310px)');
 const COMMAND = mediaBlock(topbar, '(max-width: 1023px)');
 
 test('TopBar.svelte still compiles', () => {
@@ -127,6 +128,14 @@ test('every other-component slot in the eviction lists is :global', () => {
 test('the command entry yields only below 1024px, where the e2e gate stops asserting it', () => {
 	assert.match(COMMAND, /\.cmd-entry/);
 	assert.match(NARROW, /refresh-analysis/);
+});
+
+test('the 1310px tier evicts only perf meters for the waveform glyph crush band', () => {
+	const css = WAVEFORM_GLYPH.replaceAll(/\/\*[\s\S]*?\*\//g, '');
+	assert.match(css, /:global\(\.perf-meters-root\)/);
+	assert.doesNotMatch(css, /posture-chip/);
+	assert.doesNotMatch(css, /refresh-analysis/);
+	assert.doesNotMatch(css, /:global\(\.cloudsync-status\)/);
 });
 
 

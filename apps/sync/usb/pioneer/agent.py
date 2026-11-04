@@ -2,7 +2,7 @@
 
 This module drives a live Rekordbox 7 GUI through the Anthropic
 computer-use beta. It is the "skip the format, let Rekordbox do it" path
-from ``docs/rb-usb-export-automation.md``: instead of synthesising the
+from ``(private path)``: instead of synthesising the
 Pioneer USB format ourselves, we delegate the export clicks to a vision-
 capable model.
 
@@ -49,6 +49,7 @@ rolls a newer revision, override via ``beta_header=``.
 
 Requirement: CAT-06.
 """
+
 from __future__ import annotations
 
 import base64
@@ -126,10 +127,7 @@ class AgentResult:
 
     @property
     def estimated_cost_usd(self) -> float:
-        return (
-            self.usage_in_tokens / 1_000_000 * PRICE_IN_PER_M
-            + self.usage_out_tokens / 1_000_000 * PRICE_OUT_PER_M
-        )
+        return self.usage_in_tokens / 1_000_000 * PRICE_IN_PER_M + self.usage_out_tokens / 1_000_000 * PRICE_OUT_PER_M
 
 
 # --------------------------------------------------------------------------- #
@@ -139,19 +137,23 @@ class AgentResult:
 
 def build_system_prompt(cfg: AgentConfig) -> str:
     dry_note = (
-        "\n\n**DRY-RUN MODE IS ACTIVE.** Your clicks are REAL — dismiss any "
-        "preliminary dialogs, open Sync Manager, and select the playlist "
-        "normally. The ONLY click you must not do is the final "
-        "Export/Sync/Start button that begins the USB write. When you have "
-        "the playlist selected and are looking at the export button, STOP: "
-        "describe what the Export button looks like (colour, label, "
-        "coordinates) and end your turn with the literal text "
-        "`END_TURN: DRY-RUN COMPLETE`.\n"
-    ) if cfg.dry_run else (
-        "\n\n**LIVE MODE.** You may click the Export/Sync button once you "
-        "have verified you have the correct playlist selected and the USB "
-        "target is visible. After the click, take screenshots to confirm "
-        "the progress dialog / completion.\n"
+        (
+            "\n\n**DRY-RUN MODE IS ACTIVE.** Your clicks are REAL — dismiss any "
+            "preliminary dialogs, open Sync Manager, and select the playlist "
+            "normally. The ONLY click you must not do is the final "
+            "Export/Sync/Start button that begins the USB write. When you have "
+            "the playlist selected and are looking at the export button, STOP: "
+            "describe what the Export button looks like (colour, label, "
+            "coordinates) and end your turn with the literal text "
+            "`END_TURN: DRY-RUN COMPLETE`.\n"
+        )
+        if cfg.dry_run
+        else (
+            "\n\n**LIVE MODE.** You may click the Export/Sync button once you "
+            "have verified you have the correct playlist selected and the USB "
+            "target is visible. After the click, take screenshots to confirm "
+            "the progress dialog / completion.\n"
+        )
     )
     return f"""You are an expert macOS UI-automation agent. Your job is to drive \
 Rekordbox 7 to export a playlist to a USB stick. Think step-by-step, but \
@@ -346,9 +348,7 @@ def run_export_agent(
     """
     api_key = cfg.api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY missing. Export via doppler or env var."
-        )
+        raise RuntimeError("ANTHROPIC_API_KEY missing. Export via doppler or env var.")
 
     if client is None:  # pragma: no cover - requires network
         import anthropic
@@ -378,9 +378,7 @@ def run_export_agent(
     # so a stray focus check can never cold-start the app.
     if cfg.frontmost_app:
         try:
-            ok = ensure_frontmost(
-                cfg.frontmost_app, max_attempts=3, allow_launch=True
-            )
+            ok = ensure_frontmost(cfg.frontmost_app, max_attempts=3, allow_launch=True)
             trace.record(
                 "preflight_frontmost",
                 {"app": cfg.frontmost_app, "ok": bool(ok)},
@@ -443,9 +441,7 @@ def run_export_agent(
         "display_height_px": scaled_h,
     }
 
-    api_calls: list[dict[str, Any]] = [
-        {"phase": "probe", "probes": probes}
-    ]
+    api_calls: list[dict[str, Any]] = [{"phase": "probe", "probes": probes}]
     total_in = 0
     total_out = 0
     action_summaries: list[str] = []
@@ -581,9 +577,7 @@ def run_export_agent(
                     # changed.
                     cap = actuator.capture()
                     content_blocks.append(_image_block(cap["png_bytes"]))
-                content_blocks.append(
-                    {"type": "text", "text": f"outcome={outcome}"}
-                )
+                content_blocks.append({"type": "text", "text": f"outcome={outcome}"})
 
             tool_results_content.append(
                 {
@@ -610,8 +604,7 @@ def run_export_agent(
             "actions": action_summaries,
             "usage": {"in": total_in, "out": total_out},
             "cost_usd": round(
-                total_in / 1_000_000 * PRICE_IN_PER_M
-                + total_out / 1_000_000 * PRICE_OUT_PER_M,
+                total_in / 1_000_000 * PRICE_IN_PER_M + total_out / 1_000_000 * PRICE_OUT_PER_M,
                 4,
             ),
         },

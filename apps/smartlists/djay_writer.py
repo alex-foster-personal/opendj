@@ -13,6 +13,7 @@ Design:
   * stable_id -> djay_uuid resolution goes through the state-layer
     ``track_vendor_ids`` table (vendor="djay").
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -24,33 +25,25 @@ from pathlib import Path
 from typing import ContextManager
 
 
-def _resolve_djay_uuid(
-    state_conn: sqlite3.Connection, stable_id: str
-) -> str | None:
+def _resolve_djay_uuid(state_conn: sqlite3.Connection, stable_id: str) -> str | None:
     """Return the djay UUID for ``stable_id`` or None."""
     row = state_conn.execute(
-        "SELECT vendor_id FROM track_vendor_ids "
-        "WHERE stable_id = ? AND vendor = 'djay' LIMIT 1",
+        "SELECT vendor_id FROM track_vendor_ids WHERE stable_id = ? AND vendor = 'djay' LIMIT 1",
         (stable_id,),
     ).fetchone()
     return row[0] if row else None
 
 
-def _resolve_stable_id_for_djay(
-    state_conn: sqlite3.Connection, djay_uuid: str
-) -> str | None:
+def _resolve_stable_id_for_djay(state_conn: sqlite3.Connection, djay_uuid: str) -> str | None:
     """Reverse of :func:`_resolve_djay_uuid`: djay UUID -> stable_id."""
     row = state_conn.execute(
-        "SELECT stable_id FROM track_vendor_ids "
-        "WHERE vendor = 'djay' AND vendor_id = ? LIMIT 1",
+        "SELECT stable_id FROM track_vendor_ids WHERE vendor = 'djay' AND vendor_id = ? LIMIT 1",
         (djay_uuid,),
     ).fetchone()
     return row[0] if row else None
 
 
-def _find_djay_playlist(
-    djay_conn: sqlite3.Connection, name: str
-) -> tuple[str, list[int]] | None:
+def _find_djay_playlist(djay_conn: sqlite3.Connection, name: str) -> tuple[str, list[int]] | None:
     """Find exactly one djay playlist by display name.
 
     This legacy name helper refuses duplicate names. New writeback calls use
@@ -58,10 +51,7 @@ def _find_djay_playlist(
     """
     from apps.sync.playlist_tsaf import parse_playlist_blob
 
-    rows = djay_conn.execute(
-        "SELECT key, data FROM database2 "
-        "WHERE collection = 'mediaItemPlaylists'"
-    ).fetchall()
+    rows = djay_conn.execute("SELECT key, data FROM database2 WHERE collection = 'mediaItemPlaylists'").fetchall()
     matches: list[str] = []
     for key, blob in rows:
         if blob is None:
@@ -76,7 +66,8 @@ def _find_djay_playlist(
 
 
 def _find_djay_playlist_by_id(
-    djay_conn: sqlite3.Connection, playlist_id: str,
+    djay_conn: sqlite3.Connection,
+    playlist_id: str,
 ) -> tuple[str, list[int]] | None:
     """Find a playlist by its native database key, never by blob substring."""
     exists = djay_conn.execute(
@@ -128,7 +119,8 @@ class DjayPlaylistWriter:
 
     def _open_djay(self) -> sqlite3.Connection:
         return sqlite3.connect(
-            f"file:{self.djay_db_path}?mode=rwc", uri=True,
+            f"file:{self.djay_db_path}?mode=rwc",
+            uri=True,
             isolation_level=None,
         )
 
@@ -175,12 +167,11 @@ class DjayPlaylistWriter:
 
         con = self._open_djay()
         try:
-            rows = con.execute(
-                "SELECT key, data FROM database2 WHERE collection = 'mediaItemPlaylists'"
-            ).fetchall()
+            rows = con.execute("SELECT key, data FROM database2 WHERE collection = 'mediaItemPlaylists'").fetchall()
             return [
                 VendorPlaylist(playlist_id=str(key), name=str(parsed["name"]))
-                for key, blob in rows if blob is not None
+                for key, blob in rows
+                if blob is not None
                 if (parsed := parse_playlist_blob(bytes(blob))).get("name") is not None
             ]
         finally:
@@ -197,8 +188,7 @@ class DjayPlaylistWriter:
                 uuids.append(u)
         if missing:
             raise RuntimeError(
-                f"djay: no djay_uuid mapping for stable_ids "
-                f"{missing[:5]}{'...' if len(missing) > 5 else ''}"
+                f"djay: no djay_uuid mapping for stable_ids {missing[:5]}{'...' if len(missing) > 5 else ''}"
             )
         return uuids
 
@@ -213,9 +203,7 @@ class DjayPlaylistWriter:
         try:
             con.execute("BEGIN IMMEDIATE")
             try:
-                result = _apply_single_op(
-                    con, op, leaf_type_byte=self.leaf_type_byte
-                )
+                result = _apply_single_op(con, op, leaf_type_byte=self.leaf_type_byte)
                 if result.status == "failed":
                     con.execute("ROLLBACK")
                     raise PlaylistApplyError(result.message)
@@ -246,7 +234,10 @@ class DjayPlaylistWriter:
         self._apply_op(op)
 
     def apply_diff(
-        self, name: str, added: list[str], removed: list[str],
+        self,
+        name: str,
+        added: list[str],
+        removed: list[str],
     ) -> None:
         # P1-B self-guard: refuse BEFORE opening rwc / reading djay DB.
         self._assert_safe_to_write()
@@ -254,16 +245,11 @@ class DjayPlaylistWriter:
         try:
             found = _find_djay_playlist(con, name)
             if found is None:
-                raise RuntimeError(
-                    f"djay: playlist {name!r} not found; cannot apply diff"
-                )
+                raise RuntimeError(f"djay: playlist {name!r} not found; cannot apply diff")
             uuid, current_rowids = found
             row_to_uuid = {
                 int(rowid): key
-                for rowid, key in con.execute(
-                    "SELECT rowid, key FROM database2 "
-                    "WHERE collection = 'mediaItemUserData'"
-                )
+                for rowid, key in con.execute("SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'")
             }
             current_uuids = [row_to_uuid.get(r, "") for r in current_rowids]
         finally:
@@ -309,10 +295,7 @@ class DjayPlaylistWriter:
             _uuid, rowids = found
             row_to_uuid = {
                 int(rowid): key
-                for rowid, key in con.execute(
-                    "SELECT rowid, key FROM database2 "
-                    "WHERE collection = 'mediaItemUserData'"
-                )
+                for rowid, key in con.execute("SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'")
             }
         finally:
             con.close()
@@ -334,9 +317,8 @@ class DjayPlaylistWriter:
                 raise RuntimeError(f"djay: playlist ID {playlist_id!r} not found")
             _uuid, rowids = found
             row_to_uuid = {
-                int(rowid): key for rowid, key in con.execute(
-                    "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
-                )
+                int(rowid): key
+                for rowid, key in con.execute("SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'")
             }
         finally:
             con.close()
@@ -352,8 +334,12 @@ class DjayPlaylistWriter:
         return members
 
     def apply_with_backup_by_id(
-        self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
-        expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
+        self,
+        playlist_id: str,
+        stable_members: list[str],
+        expected_target_revision: str,
+        expected_mapping_revision: str,
+        source_transaction: Callable[[], ContextManager[None]],
     ):
         """Hold one SQLite write lock for CAS, online backup, and mutation."""
         from apps.smartlists.playlist_writeback import WritebackBackup, WritebackConflict
@@ -374,9 +360,12 @@ class DjayPlaylistWriter:
                     if found is None:
                         raise RuntimeError(f"djay: playlist ID {playlist_id!r} not found")
                     _uuid, rowids = found
-                    row_to_uuid = {int(rowid): key for rowid, key in con.execute(
-                        "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
-                    )}
+                    row_to_uuid = {
+                        int(rowid): key
+                        for rowid, key in con.execute(
+                            "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
+                        )
+                    }
                     current: list[str] = []
                     native_current: list[str] = []
                     for rowid in rowids:
@@ -388,30 +377,61 @@ class DjayPlaylistWriter:
                             raise RuntimeError(f"djay: target {playlist_id!r} has unmapped UUID {djay_uuid!r}")
                         current.append(stable_id)
                         native_current.append(str(djay_uuid))
-                    actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    actual = hashlib.sha256(
+                        json.dumps(
+                            {"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")
+                        ).encode()
+                    ).hexdigest()
                     if actual != expected_target_revision:
                         raise WritebackConflict("djay: target revision changed before transaction")
-                    mapping_rows = self.state_conn.execute(
-                        "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
-                        (self.vendor, *dict.fromkeys(stable_members)),
-                    ).fetchall() if stable_members else []
-                    mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    mapping_rows = (
+                        self.state_conn.execute(
+                            "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ("
+                            + ",".join("?" * len(set(stable_members)))
+                            + ")",
+                            (self.vendor, *dict.fromkeys(stable_members)),
+                        ).fetchall()
+                        if stable_members
+                        else []
+                    )
+                    mapping_revision = hashlib.sha256(
+                        json.dumps(
+                            sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest()
                     if mapping_revision != expected_mapping_revision:
                         raise WritebackConflict("djay: mapping changed inside vendor transaction")
                     native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
                     missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
                     if missing:
-                        raise WritebackConflict(f"djay: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
+                        raise WritebackConflict(
+                            f"djay: mapping lost desired IDs inside vendor transaction: {missing[:5]}"
+                        )
                     native_members = [native_mapping[stable_id] for stable_id in stable_members]
                     with sqlite3.connect(f"file:{self.djay_db_path}?mode=ro", uri=True) as snapshot:
                         backup = WritebackBackup(online_backup(snapshot, "djay"))
                     target = list(native_members)
-                    post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                    write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision)
-                    result = _apply_single_op(con, {
-                        "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": playlist_id,
-                        "target_members": [{"djay_uuid": item} for item in target],
-                    }, leaf_type_byte=self.leaf_type_byte)
+                    post_revision = hashlib.sha256(
+                        json.dumps(
+                            {"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")
+                        ).encode()
+                    ).hexdigest()
+                    write_reversal(
+                        "djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision
+                    )
+                    result = _apply_single_op(
+                        con,
+                        {
+                            "rb_id": "",
+                            "rb_name": "",
+                            "op": "update",
+                            "djay_uuid": playlist_id,
+                            "target_members": [{"djay_uuid": item} for item in target],
+                        },
+                        leaf_type_byte=self.leaf_type_byte,
+                    )
                     if result.status == "failed":
                         raise PlaylistApplyError(result.message)
                     con.execute("COMMIT")
@@ -439,6 +459,7 @@ class DjayPlaylistWriter:
         from apps.smartlists.playlist_writeback import WritebackConflict
         from apps.smartlists.writeback_backup import exclusive_target_lock, read_reversal
         from apps.sync.playlist_apply import PlaylistApplyError, _apply_single_op
+
         self._assert_safe_to_write()
         with exclusive_target_lock(self.djay_db_path):
             con = self._open_djay()
@@ -448,9 +469,12 @@ class DjayPlaylistWriter:
                 if found is None:
                     raise RuntimeError(f"djay: playlist ID {target_id!r} not found")
                 _uuid, rowids = found
-                row_to_uuid = {int(rowid): key for rowid, key in con.execute(
-                    "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
-                )}
+                row_to_uuid = {
+                    int(rowid): key
+                    for rowid, key in con.execute(
+                        "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
+                    )
+                }
                 current: list[str] = []
                 for rowid in rowids:
                     djay_uuid = row_to_uuid.get(rowid)
@@ -460,15 +484,32 @@ class DjayPlaylistWriter:
                     if stable_id is None:
                         raise RuntimeError(f"djay: target {target_id!r} has unmapped UUID {djay_uuid!r}")
                     current.append(stable_id)
-                actual = hashlib.sha256(json.dumps({"target_id": target_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                actual = hashlib.sha256(
+                    json.dumps(
+                        {"target_id": target_id, "members": current}, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                ).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("djay: rollback target revision conflict")
-                stable_preimage, native_preimage = read_reversal("djay", backup_id, self.djay_db_path, target_id, expected_target_revision)
-                restored_revision = hashlib.sha256(json.dumps({"target_id": target_id, "members": stable_preimage}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                result = _apply_single_op(con, {
-                    "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": target_id,
-                    "target_members": [{"djay_uuid": item} for item in native_preimage],
-                }, leaf_type_byte=self.leaf_type_byte)
+                stable_preimage, native_preimage = read_reversal(
+                    "djay", backup_id, self.djay_db_path, target_id, expected_target_revision
+                )
+                restored_revision = hashlib.sha256(
+                    json.dumps(
+                        {"target_id": target_id, "members": stable_preimage}, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                ).hexdigest()
+                result = _apply_single_op(
+                    con,
+                    {
+                        "rb_id": "",
+                        "rb_name": "",
+                        "op": "update",
+                        "djay_uuid": target_id,
+                        "target_members": [{"djay_uuid": item} for item in native_preimage],
+                    },
+                    leaf_type_byte=self.leaf_type_byte,
+                )
                 if result.status == "failed":
                     raise PlaylistApplyError(result.message)
                 con.execute("COMMIT")
@@ -504,9 +545,7 @@ def build_djay_writer(
             state_conn = _open_state_ro()
         except Exception:
             return None
-    return DjayPlaylistWriter(
-        djay_db_path=Path(djay_db_path), state_conn=state_conn
-    )
+    return DjayPlaylistWriter(djay_db_path=Path(djay_db_path), state_conn=state_conn)
 
 
 __all__ = [

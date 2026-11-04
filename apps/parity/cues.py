@@ -17,8 +17,7 @@ def refuse_forbidden_cue_banklist_keys(payload: dict[str, Any]) -> None:
     for key in _FORBIDDEN_PAYLOAD_KEYS:
         if key in payload:
             raise ValueError(
-                f"payload contains forbidden key {key!r}; "
-                "PARITY-01 reads djmdCue only, never djmdSongHotCueBanklist"
+                f"payload contains forbidden key {key!r}; PARITY-01 reads djmdCue only, never djmdSongHotCueBanklist"
             )
     tracks = payload.get("tracks")
     if isinstance(tracks, list):
@@ -76,25 +75,18 @@ def _rb_cues_db_list(row: dict[str, Any]) -> list[dict[str, Any]] | None:
         return val
     if row.get("rb_cue_db") is True:
         raise ValueError(
-            f"track {row.get('stable_id')!r} has rb_cue_db=True but no rb_cues_db "
-            "list; a fixture must not invent cues"
+            f"track {row.get('stable_id')!r} has rb_cue_db=True but no rb_cues_db list; a fixture must not invent cues"
         )
     return None
 
 
-def _match(
-    rb: list[NormalisedCue], own: list[NormalisedCue]
-) -> tuple[list[int], list[int], list[int]]:
+def _match(rb: list[NormalisedCue], own: list[NormalisedCue]) -> tuple[list[int], list[int], list[int]]:
     return compare_cue_lists(rb, own, tolerance_msec=TOLERANCE_MSEC)
 
 
-def _match_anlz(
-    rb: list[NormalisedCue], own: list[NormalisedCue]
-) -> tuple[list[int], list[int], list[int]]:
+def _match_anlz(rb: list[NormalisedCue], own: list[NormalisedCue]) -> tuple[list[int], list[int], list[int]]:
     """ANLZ siblings: kind + 20 ms + index; PCO2 name/color is not a conflict."""
-    return compare_cue_lists(
-        rb, own, tolerance_msec=TOLERANCE_MSEC, check_metadata=False
-    )
+    return compare_cue_lists(rb, own, tolerance_msec=TOLERANCE_MSEC, check_metadata=False)
 
 
 def _track_agrees(rb_only: list[int], own_only: list[int], conflicts: list[int]) -> bool:

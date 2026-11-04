@@ -12,10 +12,15 @@ rails (``apps/reconcile/apply.py``).
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
+from apps.shared.state import paths as state_paths
+
 from .client import MissingCredentialsError, SpotifyClient
+from .listen_history import fetch_recent_plays
 from .importer import (
     EXIT_API_ERROR,
     EXIT_OK,
@@ -62,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_imp.add_argument("--no-cache", action="store_true",
                        help="Bypass the 24 h HTTP cache.")
     p_imp.add_argument("--out-dir", type=Path, default=None,
-                       help="Override artifact root (default data/spotify/).")
+                       help="Override artifact root (default (private path)/).")
 
     p_rm = sub.add_parser(
         "rematch",
@@ -75,6 +80,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rm.add_argument("--i-understand-the-risks", action="store_true",
                       help="Required alongside --live.")
 
+    p_recent = sub.add_parser(
+        "recent",
+        help="live listen history, scored owned / review / unmatched",
+    )
+    p_recent.add_argument("--limit", type=int, default=50,
+                          help="Plays to fetch, 1..50 (Spotify's own cap).")
+    p_recent.add_argument("--unowned-only", action="store_true",
+                          help="Only plays the local library does not have.")
+    p_recent.add_argument("--json", action="store_true",
+                          help="Emit JSON rows instead of the text table.")
+
     p_watch = sub.add_parser(
         "watched",
         help="list / ensure durable watched Spotify playlist URLs",
@@ -85,7 +101,44 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write defaults if missing (idempotent).",
     )
 
+    p_login = sub.add_parser(
+        "login",
+        help="sign in once so Open DJ can list all your playlists",
+    )
+    p_login.add_argument("--no-browser", action="store_true",
+                         help="Print the sign-in URL instead of opening it.")
+
     return parser
+
+
+def _cmd_login(args: argparse.Namespace) -> int:
+    import time
+    import webbrowser
+
+    from .account import ClientIdUnreadable, ConnectFlow, NotConnected
+
+    flow = ConnectFlow()
+    try:
+        url = flow.start()
+    except NotConnected as exc:
+        print(f"ERROR: {exc.message}", file=sys.stderr)
+        return EXIT_SAFETY
+    except ClientIdUnreadable as exc:
+        print(f"ERROR: SPOTIFY_CLIENT_ID_UNREADABLE: {exc}", file=sys.stderr)
+        return EXIT_SAFETY
+    except OSError as exc:
+        print(f"ERROR: could not listen for the Spotify redirect: {exc}", file=sys.stderr)
+        return EXIT_API_ERROR
+    print(f"Sign in to Spotify:\n  {url}")
+    if not args.no_browser:
+        webbrowser.open(url)
+    while (status := flow.status())["phase"] == "waiting":
+        time.sleep(0.5)
+    if status["phase"] != "connected":
+        print(f"ERROR: Spotify sign-in failed: {status['detail']}", file=sys.stderr)
+        return EXIT_API_ERROR
+    print("[spotify] signed in; Open DJ can now list all your playlists")
+    return EXIT_OK
 
 
 def _assert_live_safety(args: argparse.Namespace) -> int:
@@ -271,6 +324,39 @@ def _cmd_watched(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_recent(args: argparse.Namespace) -> int:
+    """CLI twin of GET /api/v1/spotify/recently-played (agent-native parity)."""
+    try:
+        client = SpotifyClient.from_env()
+    except MissingCredentialsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_SAFETY
+    try:
+        plays = fetch_recent_plays(client, state_paths.STATE_DB, limit=args.limit)
+    except Exception as exc:  # noqa: BLE001 -- surfaced verbatim, never swallowed
+        print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_API_ERROR
+
+    if args.unowned_only:
+        plays = [play for play in plays if play.ownership != "owned"]
+
+    if args.json:
+        print(json.dumps([asdict(play) for play in plays], indent=2, ensure_ascii=False))
+        return EXIT_OK
+
+    if not plays:
+        print("[spotify] no plays returned for this account in Spotify's recent window")
+        return EXIT_OK
+    for play in plays:
+        mark = {"owned": "OWNED ", "review": "REVIEW", "unmatched": "BUY   "}[play.ownership]
+        print(f"{play.played_at}  {mark}  {play.artist} - {play.title}")
+        if play.ownership != "owned":
+            print(f"    beatport: {play.suggested_sources['beatport']}")
+    unowned = sum(1 for play in plays if play.ownership == "unmatched")
+    print(f"[spotify] {len(plays)} plays, {unowned} not in the local library")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -278,8 +364,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_import(args)
     if args.command == "rematch":
         return _cmd_rematch(args)
+    if args.command == "recent":
+        return _cmd_recent(args)
     if args.command == "watched":
         return _cmd_watched(args)
+    if args.command == "login":
+        return _cmd_login(args)
     parser.print_help()
     return EXIT_SAFETY
 

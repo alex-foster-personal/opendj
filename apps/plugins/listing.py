@@ -35,11 +35,12 @@ Requirements (mini-PRD):
 
 from __future__ import annotations
 
-import re
 import struct
 import zlib
 from dataclasses import dataclass
 from typing import Any
+
+from apps.plugins.manifest import is_sha256
 
 LISTING_STATUSES: tuple[str, ...] = ("stable", "beta", "experiment", "deprecated")
 SCREENSHOT_THEMES: tuple[str, ...] = ("dark", "light", "any")
@@ -55,7 +56,6 @@ _LISTING_KEYS = frozenset(
     {"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"}
 )
 _SHOT_KEYS = frozenset({"path", "sha256", "size", "width", "height", "alt", "theme"})
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ListingError(ValueError):
@@ -137,7 +137,7 @@ def _screenshot(raw: Any, plugin_id: str) -> Screenshot:
     if not isinstance(raw, dict) or set(raw) != _SHOT_KEYS:
         raise ListingError(f"a screenshot needs exactly the keys {sorted(_SHOT_KEYS)}")
     sha = raw["sha256"]
-    if not isinstance(sha, str) or not _SHA256_RE.fullmatch(sha):
+    if not is_sha256(sha):
         raise ListingError("screenshot 'sha256' must be a lowercase sha256 hex digest")
     path = raw["path"]
     allowed = {f"media/{plugin_id}/{sha}.{ext}" for ext in MEDIA_TYPES}

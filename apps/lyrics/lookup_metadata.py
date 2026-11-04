@@ -7,13 +7,17 @@ few lines (PERFBATCH-08 correctness-only).
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Sequence
 
 METADATA_PROBLEMS: tuple[str, ...] = (
-    "has no title", "has no artist", "has invalid artists_json", "has invalid duration_ms",
+    "has no title",
+    "has no artist",
+    "has invalid artists_json",
+    "has invalid duration_ms",
 )
 
 
@@ -46,6 +50,7 @@ def ids_without_lookup_metadata(connection: sqlite3.Connection, stable_ids: Sequ
         "SELECT stable_id, title, artists_json, duration_ms FROM tracks WHERE deleted_at IS NULL"
     ).fetchall()
     return {
-        sid for sid, title, artists, duration in rows
+        sid
+        for sid, title, artists, duration in rows
         if sid in wanted and lookup_metadata_problem(title, artists, duration) is not None
     }

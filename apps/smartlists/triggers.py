@@ -15,6 +15,7 @@ starts emitting field-scoped events. Until then, runners pass either a
 ``FakeEventBus``-style bus in tests or a shim that constructs
 :class:`StateEvent` values directly.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -24,10 +25,12 @@ from apps.smartlists.debounce import Debouncer
 from apps.smartlists.materializer import Materializer, MaterializeResult
 from apps.smartlists.repo import SmartlistsRepo
 
-_MEMBERSHIP_KINDS: frozenset[str] = frozenset({
-    "track.added",
-    "track.removed",
-})
+_MEMBERSHIP_KINDS: frozenset[str] = frozenset(
+    {
+        "track.added",
+        "track.removed",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,8 @@ class TriggerRunner:
         self.materializer = materializer
         if clock is not None:
             self.debouncer = Debouncer(
-                window_seconds=debounce_seconds, clock=clock,
+                window_seconds=debounce_seconds,
+                clock=clock,
             )
         else:
             self.debouncer = Debouncer(window_seconds=debounce_seconds)
@@ -93,11 +97,13 @@ class TriggerRunner:
             changed = frozenset(raw_fields)
         except TypeError:
             changed = frozenset()
-        self.handle_event(StateEvent(
-            kind=getattr(event, "kind", ""),
-            stable_id=getattr(event, "stable_id", None),
-            changed_fields=changed,
-        ))
+        self.handle_event(
+            StateEvent(
+                kind=getattr(event, "kind", ""),
+                stable_id=getattr(event, "stable_id", None),
+                changed_fields=changed,
+            )
+        )
 
     def handle_event(self, event: StateEvent) -> None:
         always_wake = event.kind in _MEMBERSHIP_KINDS
@@ -123,7 +129,9 @@ class TriggerRunner:
         for sid in ready_ids:
             results.append(
                 self.materializer.materialize(
-                    sid, dry_run=self.dry_run, live=self.live,
+                    sid,
+                    dry_run=self.dry_run,
+                    live=self.live,
                 )
             )
         return results

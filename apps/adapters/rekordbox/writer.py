@@ -60,8 +60,8 @@ from fastapi import HTTPException
 from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_our_ms
 from apps.shared.rb_frames import msec_to_frame
 
+from .cue_kind import HOT_CUE_KINDS, HOT_CUE_SLOTS, slot_to_kind
 from .cues import (
-    HOT_CUE_SLOTS,
     _cue_revision,
     _cue_view,
     _live_slot_snapshot,
@@ -83,7 +83,7 @@ from .reversal import (
 #: Zero-argument factory returning an open connection to master.plain.db.
 ConnectMaster = Callable[[], sqlite3.Connection]
 
-_KINDS = tuple(range(1, len(HOT_CUE_SLOTS) + 1))
+_KINDS = tuple(sorted(HOT_CUE_KINDS))
 
 
 def _open_rw(path: Path, label: str) -> sqlite3.Connection:
@@ -184,7 +184,8 @@ def fetch_hot_cue_slots(
                 vendor_id, kind, generations[kind], snapshots[kind]
             ),
         }
-        for kind, slot in enumerate(HOT_CUE_SLOTS, start=1)
+        for slot in HOT_CUE_SLOTS
+        for kind in (slot_to_kind(slot),)
     ]
 
 

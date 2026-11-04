@@ -32,7 +32,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 
-from scripts.b2store import SSH_HOST
+from scripts.b2store import store_ssh_host
 
 #----- pure: constants --------------------------------------------------------
 
@@ -93,7 +93,7 @@ def listing_or_absent(stdout: str) -> str | None:
     return None if stdout.strip() == ABSENT_SENTINEL else stdout
 
 
-def parse_sizes(listing: str, source: str = SSH_HOST) -> dict[str, int]:
+def parse_sizes(listing: str, source: str | None = None) -> dict[str, int]:
     """{relative path: bytes} from `find -printf '%s %P\\n'` output.
 
     Keyed by the root-relative path rather than the bare filename, so a file
@@ -104,6 +104,8 @@ def parse_sizes(listing: str, source: str = SSH_HOST) -> dict[str, int]:
     reads as unarchived and gets re-uploaded forever. ``source`` only labels
     that error; it defaults to the configured store host (#5639).
     """
+    if source is None:
+        source = store_ssh_host()
     sizes: dict[str, int] = {}
     for line in listing.splitlines():
         if not line.strip():

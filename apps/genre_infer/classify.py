@@ -8,7 +8,7 @@ can. On the FMA spike (Thu 24 Sep 2026, 278 embedded full tracks, 10
 genres, 5-fold CV) this head scored 0.62 accuracy against 0.45 for CLAP
 zero-shot text prompts, 0.11 for always guessing the biggest genre and 0.08
 with shuffled labels; details in
-`docs/research/segmentation-genre-spike-20260924.md`.
+`(private path)`.
 
 WHY NUMPY AND NOT SCIKIT-LEARN. scikit-learn lives in the optional `ai` extra
 and this has to run, and be tested, in the default app venv. Full-batch
@@ -182,23 +182,18 @@ def macro_f1(y: np.ndarray, pred: np.ndarray, n_classes: int) -> float:
     return float(np.mean(scores))
 
 
-def _split_classes(
-    counts: Mapping[str, int], min_per_class: int
-) -> tuple[list[str], dict[str, int]]:
+def _split_classes(counts: Mapping[str, int], min_per_class: int) -> tuple[list[str], dict[str, int]]:
     """(genres kept for training, genres dropped with their counts); refuses fewer than 2 kept."""
     kept = sorted(c for c, n in counts.items() if n >= min_per_class)
     dropped = {c: n for c, n in sorted(counts.items()) if n < min_per_class}
     if len(kept) < 2:
         raise ValueError(
-            f"need at least 2 genres with >= {min_per_class} labeled, embedded tracks; "
-            f"have {dict(counts)}"
+            f"need at least 2 genres with >= {min_per_class} labeled, embedded tracks; have {dict(counts)}"
         )
     return kept, dropped
 
 
-def _cross_validate(
-    x: np.ndarray, y: np.ndarray, n_classes: int, k: int, seed: int
-) -> tuple[float, float]:
+def _cross_validate(x: np.ndarray, y: np.ndarray, n_classes: int, k: int, seed: int) -> tuple[float, float]:
     """(accuracy, macro F1) with every track predicted by a head that never saw it."""
     pred = np.empty_like(y)
     for test in _stratified_folds(y, k, seed):
@@ -232,9 +227,7 @@ def train(
     cv_acc, cv_f1 = _cross_validate(x, y, len(kept), k, seed) if k >= 2 else (None, None)
 
     w, b = fit_softmax(x, y, len(kept))
-    digest = hashlib.sha256(
-        json.dumps([[i, labels[i]] for i in ids], separators=(",", ":")).encode()
-    ).hexdigest()[:16]
+    digest = hashlib.sha256(json.dumps([[i, labels[i]] for i in ids], separators=(",", ":")).encode()).hexdigest()[:16]
     return GenreModel(
         classes=kept,
         weights=w,
@@ -250,9 +243,7 @@ def train(
     )
 
 
-def suggest(
-    model: GenreModel, vectors: Mapping[str, Sequence[float]], *, top_k: int = 3
-) -> dict[str, Suggestion]:
+def suggest(model: GenreModel, vectors: Mapping[str, Sequence[float]], *, top_k: int = 3) -> dict[str, Suggestion]:
     """One suggestion per track: the top genre, its probability, and the runners-up."""
     ids = sorted(vectors)
     if not ids:

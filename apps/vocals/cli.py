@@ -10,7 +10,7 @@ absent (status "demucs").
 
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 scan: coverage report pvdi / cached-demucs / missing-file /
-    missing-analysis / todo,
+    missing-analysis / stem_derivable / todo,
     with todo ETA at the SPIKE-B2 1.36x-realtime CPU rate; --playlist
     filter; --json machine-readable (agent-native parity).
     [if] a track has PVDI in its .2EX [then] it counts as pvdi
@@ -62,7 +62,7 @@ Requirements (mini-PRD):
     remedies, no worker spawned
     [if] input is not .wav, no ffmpeg, odj-audio resolves [then] the worker
     is launched and decodes through ``odj-audio decode`` (STEM-50)
-  → per-night budget (--max-minutes) - PARITY-TODO follow-up, not here.
+  ✔︎ ✅ trickle --max-minutes wall budget (skip-and-continue); Supersedes: scripts/fill_vocal_gap.sh.
 
 Exact command lines:
   python -m apps.vocals scan --data-dir /Users/user/code/music-dj-tools/data
@@ -92,12 +92,13 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.argparse_types import nonnegative_float as _nonnegative_float
 from apps.shared.argparse_types import nonnegative_int as _nonnegative_int
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import (
@@ -153,6 +154,7 @@ CATEGORY_CACHED = "cached_demucs"
 CATEGORY_MISSING = "missing_file"
 CATEGORY_MISSING_ANALYSIS = "missing_analysis"
 CATEGORY_TODO = "todo"
+CATEGORY_STEM_DERIVABLE = "stem_derivable"
 CATEGORY_BROKEN_CACHE = "broken_vocal_cache"
 
 
@@ -445,10 +447,16 @@ def _anlz_data_file(track: VocalTrack, path_map: PathMap) -> Path | None:
     return resolved
 
 
-def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
+def classify(
+    ctx: Ctx,
+    tracks: list[VocalTrack],
+    *,
+    stem_roots: Sequence[Path] | None = None,
+) -> None:
     """Assign each track exactly one category (pvdi wins over everything:
     an analyzed track is covered even if its audio has since moved)."""
     path_map = load_path_map(ctx.data_dir)
+    stem_candidates: list[VocalTrack] = []
     for tr in tracks:
         anlz_data = _anlz_data_file(tr, path_map)
         if anlz_data is None:
@@ -476,7 +484,18 @@ def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
         if not tr.audio_on_disk:
             tr.category = CATEGORY_MISSING
             continue
-        tr.category = CATEGORY_TODO
+        stem_candidates.append(tr)
+
+    loadable = vfrom_stems.loadable_bundle_ids(
+        [t.stable_id for t in stem_candidates],
+        stems_dir=vfrom_stems.stems_dir(ctx.data_dir),
+        roots=stem_roots,
+    )
+    for tr in stem_candidates:
+        if tr.stable_id in loadable:
+            tr.category = CATEGORY_STEM_DERIVABLE
+        else:
+            tr.category = CATEGORY_TODO
 
 
 # ----- trickle queue ordering -------------------------------------------------------
@@ -963,6 +982,7 @@ def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
         CATEGORY_MISSING: 0,
         CATEGORY_MISSING_ANALYSIS: 0,
         CATEGORY_TODO: 0,
+        CATEGORY_STEM_DERIVABLE: 0,
         CATEGORY_BROKEN_CACHE: 0,
     }
     for tr in tracks:
@@ -1007,11 +1027,17 @@ def cmd_scan(args: argparse.Namespace) -> int:
     print(f"  missing-file:      {counts[CATEGORY_MISSING]:>6}")
     print(f"  missing-analysis:  {counts[CATEGORY_MISSING_ANALYSIS]:>6}")
     print(f"  broken-cache:      {counts[CATEGORY_BROKEN_CACHE]:>6}")
+    print(f"  stem-derivable:    {counts[CATEGORY_STEM_DERIVABLE]:>6}")
     print(
         f"  todo:              {counts[CATEGORY_TODO]:>6}"
         f"  ({_fmt_dur(todo_audio_s)} audio, "
         f"ETA {_fmt_dur(eta_s)} at {DEMUCS_REALTIME_FACTOR}x realtime)"
     )
+    if counts[CATEGORY_STEM_DERIVABLE]:
+        print(
+            "  (stem-derivable tracks: use "
+            "`python -m apps.vocals from-stems --live`, not demucs trickle)"
+        )
     print(f"  total:             {len(tracks):>6}")
     return 0
 
@@ -1075,7 +1101,26 @@ def _process_one(
     return wall_s, entry
 
 
-def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901
+def track_fits_budget(
+    *, elapsed_s: float, budget_s: float, length_s: float, rate: float
+) -> bool:
+    """True when ``length_s * rate`` fits in the remaining wall-clock budget."""
+    remaining = max(0.0, budget_s - elapsed_s)
+    return (length_s * rate) <= remaining
+
+
+def _trickle_demucs_candidates(
+    tracks: list[VocalTrack], *, demucs_even_if_stems: bool
+) -> list[VocalTrack]:
+    cats = (
+        (CATEGORY_TODO, CATEGORY_STEM_DERIVABLE)
+        if demucs_even_if_stems
+        else (CATEGORY_TODO,)
+    )
+    return [t for t in tracks if t.category in cats]
+
+
+def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901, PLR0912, PLR0915
     ctx = Ctx(data_dir=args.data_dir)
     live = bool(args.live)
     tracks = load_tracks(ctx, args.playlist)
@@ -1109,36 +1154,88 @@ def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901
             f"[skipped {n_missing_analysis} missing-analysis tracks; see stderr]"
         )
 
+    n_stem_derivable = sum(
+        1 for t in tracks if t.category == CATEGORY_STEM_DERIVABLE
+    )
+    if n_stem_derivable and not args.demucs_even_if_stems:
+        print(
+            f"[skipped {n_stem_derivable} stem-derivable tracks; "
+            "run python -m apps.vocals from-stems --live]",
+            file=sys.stderr,
+        )
+
     rank = best_playlist_rank(ctx, tracks)
-    todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
-    batch = todo[: args.limit]
-    batch_audio_s = sum(t.length_s for t in batch)
-    est_s = batch_audio_s * DEMUCS_REALTIME_FACTOR
+    queue = order_todo(
+        _trickle_demucs_candidates(
+            tracks, demucs_even_if_stems=bool(args.demucs_even_if_stems)
+        ),
+        rank,
+    )
+    budget_s: float | None = (
+        None if args.max_minutes is None else float(args.max_minutes) * 60.0
+    )
+    limit = int(args.limit)
 
     mode = "live" if live else "dry-run"
     print(
-        f"[{mode}] {len(batch)} of {len(todo)} todo tracks selected "
-        f"(--limit {args.limit}); est {_fmt_dur(est_s)} "
-        f"at {DEMUCS_REALTIME_FACTOR}x realtime"
+        f"[{mode}] up to {limit} of {len(queue)} demucs-gap track(s) "
+        f"(ordered queue; --limit {limit})"
+        + (
+            f"; wall budget {_fmt_dur(budget_s)} (--max-minutes {args.max_minutes})"
+            if budget_s is not None
+            else ""
+        )
     )
-    for i, tr in enumerate(batch, 1):
+
+    rate = DEMUCS_REALTIME_FACTOR
+    loop_start = time.monotonic() if live else 0.0
+    est_elapsed = 0.0
+    started = 0
+    completed = 0
+    skipped_midrun = 0
+    budget_skipped = 0
+    failed = 0
+    done_audio_s = 0.0
+    done_wall_s = 0.0
+    plan_index = 0
+
+    for idx, tr in enumerate(queue):
+        if started >= limit:
+            break
+        elapsed = (
+            (time.monotonic() - loop_start) if live else est_elapsed
+        )
+        if budget_s is not None and not track_fits_budget(
+            elapsed_s=elapsed,
+            budget_s=budget_s,
+            length_s=tr.length_s,
+            rate=rate,
+        ):
+            remaining = max(0.0, budget_s - elapsed)
+            est_s = tr.length_s * rate
+            print(
+                f"[SKIP budget] {tr.stable_id} {tr.title!r}: "
+                f"est {est_s:.0f}s, remaining {remaining:.0f}s"
+            )
+            budget_skipped += 1
+            continue
+
+        plan_index += 1
         count, name = rank.get(tr.stable_id, (0, ""))
         pl = f"playlist={name!r}({count} on disk)" if count else "no playlist"
         print(
-            f"  {i}. {tr.stable_id} {tr.title!r} {tr.length_s}s {pl} "
-            f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}"
+            f"  {plan_index}. {tr.stable_id} {tr.title!r} {tr.length_s}s {pl} "
+            f"est {_fmt_dur(tr.length_s * rate)}"
         )
-    if not live:
-        print("[dry-run] no work performed; pass --live to execute")
-        return 0
 
-    done_audio_s = 0.0
-    done_wall_s = 0.0
-    completed = 0
-    for i, tr in enumerate(batch, 1):
-        remaining_audio_s = sum(t.length_s for t in batch[i:])
+        if not live:
+            started += 1
+            est_elapsed += tr.length_s * rate
+            continue
+
         if tr.audio_path is None or not tr.audio_path.is_file():
             print(f"[SKIP vanished] {tr.stable_id} {tr.title!r}: {tr.audio_path}")
+            skipped_midrun += 1
             continue
         if (
             vcache.load_valid_entry(
@@ -1147,6 +1244,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901
             is not None
         ):
             print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
+            skipped_midrun += 1
             continue
         cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
         claim = _claim_track(cache_file)
@@ -1154,31 +1252,67 @@ def cmd_trickle(args: argparse.Namespace) -> int:  # noqa: C901
             print(
                 f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it"
             )
+            skipped_midrun += 1
             continue
-        with _managed_track_claim(claim):
-            if vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
-                print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
-                continue
-            print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
-            wall_s, _entry = _process_one(
-                ctx,
-                tr,
-                f"[{i}/{len(batch)}]",
-                args.worker_timeout_s,
-                claim,
+
+        started += 1
+        print(f"[{started}/{limit}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
+        try:
+            with _managed_track_claim(claim):
+                if vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
+                    print(
+                        f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry"
+                    )
+                    skipped_midrun += 1
+                    started -= 1
+                    continue
+                wall_s, _entry = _process_one(
+                    ctx,
+                    tr,
+                    f"[{started}/{limit}]",
+                    args.worker_timeout_s,
+                    claim,
+                )
+        except WorkerCleanupError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[FAIL] {tr.stable_id} {tr.title!r}: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
             )
+            vattempts.record_failure(ctx.data_dir, tr.stable_id, exc)
+            failed += 1
+            continue
+
         completed += 1
         done_audio_s += tr.length_s
         done_wall_s += wall_s
-        live_rate = done_wall_s / done_audio_s if done_audio_s else 0.0
-        print(
-            f"        running: {completed} done, {len(batch) - i} left, "
-            f"est remaining {_fmt_dur(remaining_audio_s * live_rate)} "
-            f"(measured {live_rate:.2f}x realtime)"
+        if done_audio_s:
+            rate = done_wall_s / done_audio_s
+        remaining_in_run = max(0, limit - started)
+        remaining_audio_s = sum(
+            t.length_s for t in queue[idx + 1 :][:remaining_in_run]
         )
+        print(
+            f"        running: {completed} done, {remaining_in_run} left to start, "
+            f"est remaining {_fmt_dur(remaining_audio_s * rate)} "
+            f"(measured {rate:.2f}x realtime)"
+        )
+
+    if not live:
+        print("[dry-run] no work performed; pass --live to execute")
+        return 0
+
+    wall_total = time.monotonic() - loop_start
+    budget_note = ""
+    if budget_s is not None and wall_total > budget_s:
+        budget_note = f", budget exceeded by {_fmt_dur(wall_total - budget_s)}"
     print(
         f"[live] finished: {completed} analysed, "
-        f"{len(batch) - completed} skipped, wall {_fmt_dur(done_wall_s)}"
+        f"{skipped_midrun} skipped, {budget_skipped} budget-skipped, "
+        f"{failed} failed, wall {_fmt_dur(wall_total)}"
+        + (f", budget {_fmt_dur(budget_s)}{budget_note}" if budget_s is not None else "")
     )
     return 0
 
@@ -1364,7 +1498,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit",
         type=_nonnegative_int,
         default=DEFAULT_TRICKLE_LIMIT,
-        help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})",
+        help=f"max tracks started this run (default {DEFAULT_TRICKLE_LIMIT})",
+    )
+    trickle.add_argument(
+        "--max-minutes",
+        type=_nonnegative_float,
+        default=None,
+        help="wall-clock budget for this run in minutes; omit for unlimited",
+    )
+    trickle.add_argument(
+        "--demucs-even-if-stems",
+        action="store_true",
+        help="include stem-derivable tracks in the demucs queue "
+        "(default: leave them to from-stems)",
     )
     trickle.add_argument(
         "--playlist", default=None, help="limit the queue to one playlist name"

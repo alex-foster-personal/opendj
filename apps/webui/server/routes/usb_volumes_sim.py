@@ -72,14 +72,8 @@ class UsbVolumePost(BaseModel):
         if value is None:
             return None
         suffix = value.removeprefix(_SIMULATED_ID_PREFIX)
-        if (
-            not value.startswith(_SIMULATED_ID_PREFIX)
-            or not suffix.strip()
-            or value != value.strip()
-        ):
-            raise ValueError(
-                "simulated volume id must use the reserved 'sim:' namespace"
-            )
+        if not value.startswith(_SIMULATED_ID_PREFIX) or not suffix.strip() or value != value.strip():
+            raise ValueError("simulated volume id must use the reserved 'sim:' namespace")
         return value
 
 

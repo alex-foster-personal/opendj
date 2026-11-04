@@ -64,3 +64,12 @@ class AccessLogRateFilter(logging.Filter):
 def configure_access_log_sampling() -> None:
     gate = AccessLogRateGate()
     logging.getLogger("uvicorn.access").addFilter(AccessLogRateFilter(gate))
+
+
+__all__ = [
+    "ACCESS_LOG_MAX_LINES_PER_SECOND",
+    "ACCESS_LOG_SUSTAINED_SECONDS",
+    "AccessLogRateFilter",
+    "AccessLogRateGate",
+    "configure_access_log_sampling",
+]

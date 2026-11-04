@@ -14,11 +14,14 @@ class LrclibProvider:
     daily_budget: int | None = None
 
     def _get(self, track: Track) -> dict | None:
-        status, body = http_get_json(f"{BASE}/get", {
-            "artist_name": track.artist,
-            "track_name": track.norm_title,
-            "duration": str(track.duration_s),
-        })
+        status, body = http_get_json(
+            f"{BASE}/get",
+            {
+                "artist_name": track.artist,
+                "track_name": track.norm_title,
+                "duration": str(track.duration_s),
+            },
+        )
         return body if status == 200 and isinstance(body, dict) else None
 
     def check(self, track: Track) -> CheckResult:
@@ -30,9 +33,13 @@ class LrclibProvider:
                 instrumental=bool(exact.get("instrumental")),
                 detail="exact",
             )
-        _, results = http_get_json(f"{BASE}/search", {
-            "track_name": track.norm_title, "artist_name": track.primary_artist,
-        })
+        _, results = http_get_json(
+            f"{BASE}/search",
+            {
+                "track_name": track.norm_title,
+                "artist_name": track.primary_artist,
+            },
+        )
         hits = [r for r in (results or []) if r.get("plainLyrics") or r.get("syncedLyrics")]
         return CheckResult(
             found=bool(hits),

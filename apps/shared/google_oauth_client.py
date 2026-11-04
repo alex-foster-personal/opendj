@@ -102,18 +102,14 @@ def env_with_bundled(env: Mapping[str, str]) -> dict[str, str]:
     absent or blank. Never logs the values.
     """
     merged = dict(env)
-    if first_present(merged, CLIENT_ID_ENV_NAMES) and first_present(
-        merged, CLIENT_SECRET_ENV_NAMES
-    ):
+    if first_present(merged, CLIENT_ID_ENV_NAMES) and first_present(merged, CLIENT_SECRET_ENV_NAMES):
         return merged
     bundled = load_bundled_oauth(merged)
     if not bundled:
         return merged
     if not first_present(merged, CLIENT_ID_ENV_NAMES) and bundled.get("client_id"):
         merged[CLIENT_ID_ENV_NAMES[0]] = bundled["client_id"]
-    if not first_present(merged, CLIENT_SECRET_ENV_NAMES) and bundled.get(
-        "client_secret"
-    ):
+    if not first_present(merged, CLIENT_SECRET_ENV_NAMES) and bundled.get("client_secret"):
         merged[CLIENT_SECRET_ENV_NAMES[0]] = bundled["client_secret"]
     return merged
 

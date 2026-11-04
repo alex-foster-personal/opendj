@@ -98,13 +98,22 @@
 		lightboxOpen = false;
 	}
 
-	/** An outside pointer closes only this reopened card. The widget owns a
-	 * separate new-pin draft, so it remains intact. Pointerdown precedes a
-	 * marker click, letting another marker reopen its own card immediately. */
+	/** An outside pointer closes this card only when it is not opening another
+	 * comment and this card has no reply draft. A second comment stays beside
+	 * this one, and typed text stays put until Close or Escape. */
 	function handleOutsidePinPointerDown(event: PointerEvent): void {
 		const target = event.target;
 		if (!(target instanceof Node)) return;
 		if (pinBodyElement?.contains(target) || lightboxElement?.contains(target)) return;
+		if (
+			target instanceof Element &&
+			target.closest(
+				'.fb-pin, .fb-pin-body, .fb-bubble, .fb-place-overlay, .fb-place-skip, .fb-lightbox, .qd'
+			) !== null
+		) {
+			return;
+		}
+		if (replyText.trim() !== '') return;
 		persistPinReplyDraft(localStorage, pin.id, replyText, () => {});
 		onclose();
 	}

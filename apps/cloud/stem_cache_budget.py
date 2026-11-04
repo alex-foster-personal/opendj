@@ -55,6 +55,7 @@ Requirements (mini-PRD):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -150,9 +151,7 @@ def floor_bytes(disk_total_bytes: int, settings: StemCacheSettings) -> int:
     return max(int(settings.floor_gib * GIB), int(settings.floor_fraction * disk_total_bytes))
 
 
-def derived_budget_bytes(
-    cache_bytes: int, disk: DiskUsage, settings: StemCacheSettings
-) -> int:
+def derived_budget_bytes(cache_bytes: int, disk: DiskUsage, settings: StemCacheSettings) -> int:
     """How large the cache may be right now.
 
     Everything the cache gives up becomes free space, so the largest cache
@@ -223,9 +222,7 @@ def _refreshed_upload_queue(
             bundle,
             index,
             known_differs=bundle.stable_id in content_differs,
-            was_differing=(
-                previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
-            ),
+            was_differing=(previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS),
             verified_fingerprint=known.get(bundle.stable_id),
             room_to_hash=room,
         )
@@ -326,9 +323,7 @@ def _measure_cache_position(
     )
 
 
-def _blocked_before_eviction(
-    need_bytes: int, settings: StemCacheSettings, can_rehydrate: bool
-) -> str | None:
+def _blocked_before_eviction(need_bytes: int, settings: StemCacheSettings, can_rehydrate: bool) -> str | None:
     """Why nothing may be evicted at all, or None when eviction may proceed."""
     if need_bytes <= 0:
         return None
@@ -635,7 +630,10 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     )
     if not dry_run and (queue != previous or verified != previous_verified):
         queue = save_upload_queue(
-            data_dir, queue, verified, stems_dir=stems_dir,
+            data_dir,
+            queue,
+            verified,
+            stems_dir=stems_dir,
             seen={bundle.stable_id: bundle.fingerprint for bundle in bundles},
         )
 
@@ -687,9 +685,7 @@ def status(
     ]
     local_only_ids = {bundle.stable_id for bundle in local_only}
     evictable = [
-        bundle
-        for bundle in bundles
-        if bundle.stable_id not in local_only_ids and bundle.stable_id not in protected
+        bundle for bundle in bundles if bundle.stable_id not in local_only_ids and bundle.stable_id not in protected
     ]
     evictable_bytes = sum(bundle.size_bytes for bundle in evictable)
     would_evict_count, would_evict_bytes = _would_evict(evictable, need)

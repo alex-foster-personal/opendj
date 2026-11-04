@@ -49,6 +49,15 @@ the optional-components section below.
     Copyright 2013 Ray Holder
     Copyright 2015 the "retrying" Contributors
 
+* Signalsmith Stretch (MIT)
+    Homepage: https://signalsmith-audio.co.uk/code/stretch/
+    License:  MIT (Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.)
+    Role:     time-stretch / pitch-shift. The desktop app bundles the npm
+              package signalsmith-stretch 1.3.2 (SPA AudioWorklet) and the
+              cargo crate signalsmith-stretch 0.1.3 (Rust engine). The MIT
+              text is staged from docs/legal/signalsmith-stretch-LICENSE.txt
+              into THIRD-PARTY-LICENSES.txt.
+
 Bundled outside the language package managers:
 
 * CPython, via python-build-standalone (PSF-2.0)
@@ -171,10 +180,10 @@ Peer open-source DJ software
     a bugs-as-oracle reference for our Serato and Traktor readers.
 
 Audio analysis (reference oracles for beat, key, onset)
-* CPJKU/madmom (code: BSD-3-Clause; pre-trained models: CC-BY-NC-SA 4.0)
+* CPJKU/madmom (code: BSD-2-Clause; pre-trained models: CC-BY-NC-SA 4.0)
     https://github.com/CPJKU/madmom
     Beat tracking, onset detection, key estimation; used at runtime and
-    as an analysis-quality oracle. The Python package is BSD-3-Clause,
+    as an analysis-quality oracle. The Python package is BSD-2-Clause,
     but the shipped pre-trained model files (``madmom/models/*``) are
     released under Creative Commons Attribution-NonCommercial-ShareAlike
     4.0 International (CC-BY-NC-SA 4.0). Non-commercial use in this

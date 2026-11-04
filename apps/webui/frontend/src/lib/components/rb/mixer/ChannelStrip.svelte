@@ -25,6 +25,10 @@
 		stemDialAssignment,
 		type EqDial
 	} from '$lib/rb/stem-dial-map';
+	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice } from '$lib/rb/color-fx';
+	import { colorFx } from '$lib/rb/color-fx.svelte';
+	import { dialClockLabel } from '$lib/rb/dial-clock';
+	import { quickPickModifier } from '$lib/rb/cmdk-actions';
 	import StemRow from '../deck/StemRow.svelte';
 	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
 	import Knob from './Knob.svelte';
@@ -66,6 +70,8 @@
 		onAutoGainOffset: (offsetDb: number | null, stableId: string) => Promise<{ ok: boolean; error?: unknown }>;
 		oneq: (band: EqBand, value: number) => void;
 		onfilter: (value: number) => void;
+		/** COLORFX-02: pick what the color knob plays on this channel; COLORFX-8341: `next` cycles. */
+		oncolorfx: (effect: ColorFxChoice) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemEqMode: (enabled: boolean) => void;
@@ -90,6 +96,7 @@
 		onAutoGainOffset,
 		oneq,
 		onfilter,
+		oncolorfx,
 		onfader,
 		oncue,
 		onStemEqMode,
@@ -105,6 +112,49 @@
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverLinkId(uiPrefs.deck_hover_link) === deckId);
 	const selected = $derived(isSelected(deckId));
+
+	// ------------------------------------------------------- color FX (COLORFX-02)
+
+	/** Light tints for the non-FILTER effects (MIXUX-02: "lightly color coded"). */
+	const COLOR_FX_TINT: Readonly<Record<(typeof COLOR_FX_EFFECTS)[number], string | undefined>> = {
+		filter: undefined,
+		space: '#a99cff',
+		echo: '#6fd6c6'
+	};
+	const colorSettings = $derived(colorFx[deckId]);
+	const colorTint = $derived(COLOR_FX_TINT[colorSettings.effect]);
+	/** COLORFX-8341: Cmd-click on a Mac, Ctrl-click elsewhere. */
+	const cycleModifier = quickPickModifier(typeof navigator === 'undefined' ? '' : navigator.platform);
+	const cycleHint = `${cycleModifier === 'Meta' ? 'Cmd' : 'Ctrl'}-click cycles FILTER, SPACE, ECHO; switching returns the knob to 12 o'clock`;
+	/** Hover title for the selector, naming the echo's timing as numbers and the knob as a clock time (DIALCLOCK-8341). */
+	const colorFxTitle = $derived.by(() => {
+		const label = COLOR_FX_LABELS[colorSettings.effect];
+		const at = `knob at ${dialClockLabel(filter)}; ${cycleHint}`;
+		if (colorSettings.effect !== 'echo') return `Color FX: ${label}, ${at}`;
+		const bpm = colorSettings.tempo_bpm;
+		if (bpm === null) return `Color FX: ECHO ${colorSettings.echo_beats} beat - inert: this deck has no tempo; ${at}`;
+		const ms = Math.round((60 / bpm) * colorSettings.echo_beats * 1000);
+		return `Color FX: ECHO ${colorSettings.echo_beats} beat at ${bpm.toFixed(1)} BPM = ${ms} ms per repeat; ${at}`;
+	});
+
+	/** COLORFX-8341: a modifier press on the color slot is the cycle gesture, so it
+	 * never also turns the knob (Knob's drag) or opens the native select. */
+	function handleColorSlotPointerDown(event: PointerEvent): void {
+		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		event.preventDefault();
+		event.stopPropagation();
+	}
+	function handleColorSlotMouseDown(event: MouseEvent): void {
+		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		event.preventDefault(); // a native select opens on mousedown
+		event.stopPropagation();
+	}
+	function handleColorSlotClick(event: MouseEvent): void {
+		if (!isColorFxCycleGesture(event, cycleModifier)) return;
+		event.preventDefault();
+		event.stopPropagation(); // not also a MIXUX-08 deck select
+		oncolorfx(COLOR_FX_NEXT);
+	}
 
 	function handleStripClick(event: MouseEvent): void {
 		clickSelect(deckId, event.shiftKey);
@@ -350,15 +400,50 @@
 			onchange={lowDial.onchange}
 		/>
 	</div>
-	<div class="filter-slot">
+	<!-- COLORFX-09: on SPACE / ECHO the whole slot is a Web-Audio-only control, so
+	     Rust engine mode holds the knob inert with the PARITY-TODO title instead of
+	     letting it drive the Rust FILTER. On FILTER the knob stays live there. -->
+	<!-- COLORFX-8341: Cmd-click (Ctrl-click off a Mac) anywhere on the slot, caption
+	     included, cycles to the next effect; the same `color_fx {effect: next}`
+	     an agent sends. -->
+	<div
+		class="filter-slot"
+		data-rust-command={colorSettings.effect === 'filter' ? undefined : 'color_fx'}
+		data-testid={`color-fx-slot-${deckId}`}
+		onpointerdowncapture={handleColorSlotPointerDown}
+		onmousedowncapture={handleColorSlotMouseDown}
+		onclickcapture={handleColorSlotClick}
+		role="group"
+		aria-label={`color FX deck ${deckId}`}
+	>
 		<Knob
 			knobId={knobId(deckId, 'filter')}
-			label="FILTER"
+			label={COLOR_FX_LABELS[colorSettings.effect]}
 			accessibleLabel={`filter deck ${deckId}`}
 			value={filter}
 			size={filterSize}
+			{...(colorTint ? { accentColor: colorTint } : {})}
 			onchange={onfilter}
 		/>
+		<!-- COLORFX-02 / MIXUX-02: a borderless chevron beside the caption opens the
+		     effect list; the native select stays the real, keyboard-reachable control.
+		     Rust engine mode holds the select inert by name (data-rust-command). -->
+		<svg class="color-fx-chevron" width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
+			<path d="M0.5 0.5 L3.5 4 L6.5 0.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+		</svg>
+		<select
+			class="color-fx-select"
+			aria-label={`color FX type deck ${deckId}`}
+			title={colorFxTitle}
+			data-testid={`color-fx-select-${deckId}`}
+			data-rust-command="color_fx"
+			value={colorSettings.effect}
+			onchange={(event) => oncolorfx(event.currentTarget.value as ColorFxChoice)}
+		>
+			{#each COLOR_FX_EFFECTS as effect (effect)}
+				<option value={effect}>{COLOR_FX_LABELS[effect]}</option>
+			{/each}
+		</select>
 	</div>
 	<button
 		class:enabled={cueEnabled}
@@ -594,6 +679,27 @@
 	.filter-slot {
 		margin-top: 1px;
 		margin-bottom: 3px;
+		position: relative;
+	}
+	/* The chevron sits just right of the knob caption; the select is laid
+	   over it, transparent, so the control adds no layout height. */
+	.color-fx-chevron {
+		position: absolute;
+		right: -9px;
+		bottom: 2px;
+		color: var(--rb-text-dim);
+		pointer-events: none;
+	}
+	.color-fx-select {
+		position: absolute;
+		right: -11px;
+		bottom: -2px;
+		width: 12px;
+		height: 12px;
+		opacity: 0;
+		cursor: pointer;
+		border: 0;
+		padding: 0;
 	}
 	.cue-btn {
 		background: var(--rb-panel-raised);

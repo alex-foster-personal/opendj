@@ -58,8 +58,8 @@ def exists_for_audio_open_probe(path: Path) -> bool:
     return not is_dataless_stub(st)
 
 
-def materialised_size(path: Path) -> int | None:
-    """Byte size when materialised regular file; None when missing / stub / not a file."""
+def materialised_stat(path: Path) -> tuple[int, int] | None:
+    """``(st_size, st_mtime_ns)`` when materialised regular file; None when missing / stub / not a file."""
     try:
         st = path.stat()
     except OSError:
@@ -68,4 +68,10 @@ def materialised_size(path: Path) -> int | None:
         return None
     if is_dataless_stub(st):
         return None
-    return st.st_size
+    return st.st_size, st.st_mtime_ns
+
+
+def materialised_size(path: Path) -> int | None:
+    """Byte size when materialised regular file; None when missing / stub / not a file."""
+    measured = materialised_stat(path)
+    return None if measured is None else measured[0]

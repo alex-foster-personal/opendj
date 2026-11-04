@@ -168,11 +168,22 @@ describe('startPendingSettle', () => {
 		assert.equal(await h.fire(), true);
 		assert.equal(h.held[0].file_exists, false);
 	});
+
+	it('STATE_STORE_BUSY on a re-ask is a transient listing busy', () => {
+		const busy = new Error(
+			'GET playlist abc failed (503): state store is busy: database is locked'
+		);
+		assert.equal(mod.isTransientListingBusy(busy), true);
+		assert.equal(mod.isTransientListingBusy(new Error('engine away')), false);
+	});
 });
 
 test('BrowserPanel starts the settle loop for the active pane', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(panel, /startPendingSettle\(\{/);
+	assert.match(panel, /isTransientListingBusy\(exc\)/);
+	assert.match(panel, /console\.debug\(line\)/);
+	assert.match(panel, /console\.error\(line\)/);
 	const support = read('src/lib/components/rb/browser/browser-panel-support.ts');
-	assert.match(support, /startPendingSettle.*from '\.\/pending-availability-settle'/);
+	assert.match(support, /isTransientListingBusy.*startPendingSettle/);
 });

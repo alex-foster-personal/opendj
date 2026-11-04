@@ -355,7 +355,9 @@
 		{:else if ownGridUnavailable !== null}
 			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>
 		{:else if showNativeGridMarker}
-			<span class="native-grid" data-testid="native-grid-marker" title="Measured native beatgrid; rekordbox has no AnalysisDataPath.">native grid</span>
+			<span class="native-grid-wrap">
+				<span class="native-grid" data-testid="native-grid-marker" title="Measured native beatgrid; rekordbox has no AnalysisDataPath.">native grid</span>
+			</span>
 		{/if}
 
 		{#each sectionLabels as item, i (i)}
@@ -477,14 +479,27 @@
 		color: var(--rb-text-dim);
 		letter-spacing: 1px;
 	}
-	.native-grid {
+	.native-grid-wrap {
 		position: absolute;
 		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		pointer-events: none;
+	}
+	.native-grid {
+		/* F08 (#7147): an opaque theme-consistent pill behind the label. Over a
+		   bare canvas the rendered contrast audit cannot resolve a backdrop and
+		   reports the label unmeasured; this pill gives it a real background, and
+		   the pair is the palette-validated one also used by .cue-letter
+		   (color-contrast.ts: fg rb-bg on bg rb-green, body floor 4.5:1). */
+		padding: 0 3px;
+		border-radius: 2px;
+		background: var(--rb-green);
+		color: var(--rb-bg);
 		font-size: var(--rb-fs-label);
-		color: var(--rb-green);
+		font-weight: 600;
+		line-height: 1.2;
 		letter-spacing: 1px;
 		pointer-events: none;
 	}

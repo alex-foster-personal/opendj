@@ -1,7 +1,7 @@
 """JamendoLyrics MultiLang loader -- ground truth for word-level lyric alignment evals.
 
-Dataset: data/datasets/jamendolyrics (pull: `uv run scripts/pull_jamendolyrics.py`).
-Spec: specs/karaoke-lyrics-alignment.md.
+Dataset: (private path) (pull: `uv run scripts/pull_jamendolyrics.py`).
+Spec: (private path).
 
 Format facts (verified against the HF snapshot, Thu 27 Aug 2026):
 - JamendoLyrics.csv: URL,Filepath,Artist,Title,Genre,LicenseType,Language,LyricOverlap,
@@ -47,7 +47,7 @@ class JamendoSong:
         return [w.start_s for w in self.words]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _parse_bool(raw: str) -> bool:
@@ -62,10 +62,7 @@ def _load_word_spans(words_csv: Path, words_txt: Path) -> tuple[WordSpan, ...]:
     with words_csv.open(encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     if len(rows) != len(words):
-        raise ValueError(
-            f"{words_csv.name}: {len(rows)} timestamp rows vs "
-            f"{len(words)} words in {words_txt.name}"
-        )
+        raise ValueError(f"{words_csv.name}: {len(rows)} timestamp rows vs {len(words)} words in {words_txt.name}")
     spans: list[WordSpan] = []
     for word, row in zip(words, rows, strict=True):
         end = float(row["word_end"])
@@ -85,9 +82,7 @@ def load_songs(dataset_dir: Path = DEFAULT_DATASET_DIR) -> list[JamendoSong]:
     """Load all songs with word-level ground truth. Fails fast on any missing piece."""
     index_csv = dataset_dir / "JamendoLyrics.csv"
     if not index_csv.is_file():
-        raise FileNotFoundError(
-            f"{index_csv} missing -- run `uv run scripts/pull_jamendolyrics.py` first"
-        )
+        raise FileNotFoundError(f"{index_csv} missing -- run `uv run scripts/pull_jamendolyrics.py` first")
     songs: list[JamendoSong] = []
     with index_csv.open(encoding="utf-8") as f:
         for row in csv.DictReader(f):

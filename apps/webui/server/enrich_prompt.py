@@ -27,6 +27,10 @@ Requirements (mini-PRD):
     [if] stems failed with nothing pending [then] the line is "failed", not "done", and show is true
     [if] a source refusal filed the missing stems as terminal [then] the line is "no_source" with that count
     [if] nothing is pending, failed or refused [then] the line is "done" and does not raise the card
+  ✔︎ a lane that cannot run is said (ENRICH-08)
+    [if] the enrichment coordinator reports a capability warning [then] it is carried, and a blocking one sets show
+  ✔︎ store cover suggestions wait on the user (LIBM-189)
+    [if] covers are waiting on consent [then] their count is carried and show is true
   ✔︎ the card's numbers are the coverage API's numbers (ENRICH-02)
     [if] the coverage reading names absent rows by folder [then] the summary carries them unchanged
     [if] the drain reports usable values and drain states [then] ``analysis`` carries them unchanged
@@ -36,7 +40,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -170,10 +174,14 @@ def build_summary(
     coverage: Mapping[str, Any] | None,
     coverage_error: str | None,
     decisions: Mapping[str, str],
+    warnings: Sequence[Mapping[str, str]] = (),
+    artwork_suggestions: int = 0,
 ) -> dict[str, Any]:
     stems = stems_ask(coverage, decisions)
     show = (
-        _analysis_left(analysis)
+        any(w.get("severity") == "blocking" for w in warnings)
+        or artwork_suggestions > 0
+        or _analysis_left(analysis)
         or _lyrics_left(coverage)
         or _stems_left(stems, decisions)
         or analysis_error is not None
@@ -198,6 +206,10 @@ def build_summary(
         "coverage_error": coverage_error,
         "stems": stems,
         "decisions": dict(decisions),
+        # ENRICH-08: what cannot run here, and where to set it.
+        "warnings": [dict(w) for w in warnings],
+        # LIBM-189: store covers found, saved only after the user says yes.
+        "artwork_suggestions": artwork_suggestions,
     }
 
 

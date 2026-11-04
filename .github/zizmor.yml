@@ -13,6 +13,23 @@ rules:
       # guard's pass and removed (RUN-COUNT round 3).
       - trunk-job-verdict.yml:24
       - trunk-red-alarm.yml:16
+      # e2e.yml (Wed 4 Nov 2026, ADR-NEW-e2e-after-ci-gate): a pull request's E2E is a
+      # workflow_run of CI so it starts only after `ci gate` is green. Unlike the two
+      # above it DOES check out the triggering pull request's merge ref, as the old
+      # pull_request run did, with the same read-only token (`permissions:` at the top:
+      # contents, actions, checks, pull-requests, all read; the verdict job alone holds
+      # checks: write, to publish `e2e verdict` on the triggering head, and runs the
+      # repository's own scripts/ci_e2e_admission.py), `persist-credentials: false`
+      # on every checkout, and the same R2 artifact secrets the pull_request run already
+      # had. The repository is private, so no fork head reaches it. Review with the rest.
+      - e2e.yml:24
+  github-env:
+    ignore:
+      # The two port-lane steps write MUSIC_DJ_PORT_LANE from RUNNER_NAME alone (the
+      # runner's own name, never pull-request content); they predate the workflow_run
+      # trigger and this audit only fires alongside a dangerous trigger. Wed 4 Nov 2026.
+      - e2e.yml:911
+      - e2e.yml:2096
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch

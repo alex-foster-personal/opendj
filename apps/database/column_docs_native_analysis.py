@@ -126,6 +126,11 @@ NATIVE_ANALYSIS_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "Runner holding the claim. NULL for anything not in flight, which "
         "is what makes an abandoned claim identifiable after a kill."
     ),
+    "claimed_audio_hash": (
+        "tracks.audio_hash snapshotted at claim. The commit is refused when "
+        "the track's hash moved mid-job (#6114). NULL when unclaimed or the "
+        "track had no hash."
+    ),
     "position": (
         "User-lane dispatch order among pending items (PERFBATCH-05). "
         "Analysis backfill still claims by enqueued_at; default 0."

@@ -1,4 +1,5 @@
 """Minimal root ``.env`` reader (no dependency on python-dotenv)."""
+
 from __future__ import annotations
 
 from pathlib import Path

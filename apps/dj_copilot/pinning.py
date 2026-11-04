@@ -1,4 +1,5 @@
 """SET-04 track pinning: peak-window math and reservation planning."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ def _avg_track_minutes() -> float:
     from .solver import AVG_TRACK_MINUTES
 
     return AVG_TRACK_MINUTES
+
 
 PinRole = Literal["opener", "peak", "closer"]
 
@@ -54,19 +56,11 @@ def _opener_occurrence_rank_key(
     open_on_key: str | None,
 ) -> tuple[float, int, str, int]:
     """Deterministic opener/start pick: energy distance, then key, then id."""
-    e_dist = (
-        abs(float(track.energy) - float(floor_energy))
-        if track.energy is not None
-        else _OPENER_ENERGY_DIST_UNKNOWN
-    )
+    e_dist = abs(float(track.energy) - float(floor_energy)) if track.energy is not None else _OPENER_ENERGY_DIST_UNKNOWN
     key_mismatch = _OPENER_KEY_MISMATCH_DEFAULT
     if open_on_key is not None and track.key_camelot is not None:
         try:
-            key_mismatch = int(
-                camelot_distance(
-                    key_to_camelot(open_on_key), key_to_camelot(track.key_camelot)
-                )
-            )
+            key_mismatch = int(camelot_distance(key_to_camelot(open_on_key), key_to_camelot(track.key_camelot)))
         except ValueError:
             key_mismatch = _OPENER_KEY_MISMATCH_INVALID
     return (e_dist, key_mismatch, track.stable_id, position)
@@ -80,11 +74,7 @@ def _first_occurrence(tracks: list[TrackFeature], stable_id: str) -> int | None:
 
 
 def peak_window_slot_indices(goal: SetGoal, total: int) -> list[int]:
-    peak_t = (
-        float(goal.peak_at_min)
-        if goal.peak_at_min is not None
-        else float(goal.duration_min) / 2.0
-    )
+    peak_t = float(goal.peak_at_min) if goal.peak_at_min is not None else float(goal.duration_min) / 2.0
     avg = _avg_track_minutes()
     window_min = max(avg, PEAK_WINDOW_FRAC * float(goal.duration_min))
     return [i for i in range(total) if abs(i * avg - peak_t) <= window_min]
@@ -109,13 +99,9 @@ def assign_peak_pin_slots(goal: SetGoal, total: int) -> dict[int, str]:
 
 
 def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
-    allowed = {
-        i for i, track in enumerate(tracks) if track.stable_id in goal.opener_pins
-    }
+    allowed = {i for i, track in enumerate(tracks) if track.stable_id in goal.opener_pins}
     if not allowed:
-        raise PinUnsatisfiableError(
-            "pin_not_in_playlist", missing=tuple(goal.opener_pins)
-        )
+        raise PinUnsatisfiableError("pin_not_in_playlist", missing=tuple(goal.opener_pins))
 
     def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
         position, track = occurrence
@@ -130,9 +116,7 @@ def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
     return min(candidates, key=key)[0]
 
 
-def plan_reservations(
-    tracks: list[TrackFeature], goal: SetGoal
-) -> dict[int, SlotReservation]:
+def plan_reservations(tracks: list[TrackFeature], goal: SetGoal) -> dict[int, SlotReservation]:
     """Plan fixed slot assignments for pinned roles."""
     total = len(tracks)
     if total == 0:
@@ -141,11 +125,7 @@ def plan_reservations(
     all_pins = list(goal.peak_pins) + list(goal.opener_pins)
     if goal.closer_pin is not None:
         all_pins.append(goal.closer_pin)
-    missing = tuple(
-        sid
-        for sid in all_pins
-        if _first_occurrence(tracks, sid) is None
-    )
+    missing = tuple(sid for sid in all_pins if _first_occurrence(tracks, sid) is None)
     if missing:
         raise PinUnsatisfiableError("pin_not_in_playlist", missing=missing)
 

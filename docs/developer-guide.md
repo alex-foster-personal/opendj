@@ -316,8 +316,10 @@ most strategically loaded artifact in the repo.
 Four vendors, four incompatible storage models, and no provenance anywhere: a BPM is just a
 number, with no record of who analysed it, when, or with what confidence, so a human-corrected
 BPM is silently clobbered by the next app's auto-analysis. open-dj wraps analysed values so
-disagreement between sources is representable rather than resolved by whoever wrote last, and
-canonicalises via RFC 8785 JCS so two independent tools produce byte-identical output.
+disagreement between sources is representable rather than resolved by whoever wrote last (that
+is the interchange format's `x_prior` / `x_history`; the local `track_fields` row keeps the
+latest value and copies the previous envelope to `track_field_history`), and canonicalises
+via RFC 8785 JCS so two independent tools produce byte-identical output.
 
 Spec `open-dj/spec/v0.2/`, schema `open-dj/schema/v0.2/`, reference implementation
 `apps/open_dj/`, write-capable adapters `apps/adapters/{serato,traktor}`. Full treatment in

@@ -59,10 +59,7 @@ PAIRING_CAPTURE_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "snapshot was taken, so a replay knows which deck the other was "
             "following."
         ),
-        "sync_mode": (
-            "CHECK IN ('bar','beat'). Whether the sync was locked at bar or "
-            "at beat granularity."
-        ),
+        "sync_mode": ("CHECK IN ('bar','beat'). Whether the sync was locked at bar or at beat granularity."),
         "a_tempo_ratio": (
             "Playback rate applied to the A-side at capture time, as a "
             "ratio of its own analyzed tempo (1.0 = unpitched). Validated "
@@ -95,12 +92,8 @@ PAIRING_CAPTURE_COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
     },
     "pairing_alignments": {
-        "id": (
-            "Primary key, a uuid4 minted by PairingCaptureRepo.add_alignment."
-        ),
-        "stable_a": (
-            "The A-side track. NOT FK-declared, same as the snapshot table."
-        ),
+        "id": ("Primary key, a uuid4 minted by PairingCaptureRepo.add_alignment."),
+        "stable_a": ("The A-side track. NOT FK-declared, same as the snapshot table."),
         "stable_b": "The B-side track.",
         "anchor_a_kind": (
             "CHECK IN ('hotcue','ms'). Whether the A-side anchor is a named "

@@ -1,6 +1,6 @@
 """Provider framework for lyric sourcing: check availability, fetch text.
 
-One tool, many providers (specs/lyric-sourcing.md verdict). Each provider
+One tool, many providers ((private path) verdict). Each provider
 declares a tier: 'free' (no key, no hard quota), 'keyed' (free key, hard daily
 quota), 'paid' (commercial license). The CLI filters by tier so free sweeps
 and budgeted keyed drips share one codebase instead of diverging scripts.
@@ -23,7 +23,7 @@ from apps.shared.paths import STATE_DIR as STATE_DIR_SHARED
 STATE_DIR = STATE_DIR_SHARED / "lyrics-eval"
 USER_AGENT = "music-dj-tools-lyric-sources/0.1 (personal library tooling)"
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -84,9 +84,9 @@ class Budget:
             )
         self.calls_today += n
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(
-            {"date": datetime.now(UTC).date().isoformat(), "calls": self.calls_today}
-        ), encoding="utf-8")
+        self.path.write_text(
+            json.dumps({"date": datetime.now(UTC).date().isoformat(), "calls": self.calls_today}), encoding="utf-8"
+        )
 
 
 class BudgetExhausted(RuntimeError):
@@ -99,8 +99,9 @@ RETRY_ATTEMPTS = 5
 RETRY_BASE_DELAY_S = 2.0
 
 
-def http_get_json(url: str, params: dict[str, str],
-                  headers: dict[str, str] | None = None) -> tuple[int, dict | list | None]:
+def http_get_json(
+    url: str, params: dict[str, str], headers: dict[str, str] | None = None
+) -> tuple[int, dict | list | None]:
     full = f"{url}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(full, headers={"User-Agent": USER_AGENT, **(headers or {})})
     for attempt in range(1, RETRY_ATTEMPTS + 1):
@@ -113,8 +114,7 @@ def http_get_json(url: str, params: dict[str, str],
             if e.code < 500 or attempt == RETRY_ATTEMPTS:
                 raise
             delay = RETRY_BASE_DELAY_S * 2 ** (attempt - 1)
-            print(f"[WARN] {e.code} from {url} - retry {attempt}/{RETRY_ATTEMPTS - 1} "
-                  f"in {delay:.0f}s")
+            print(f"[WARN] {e.code} from {url} - retry {attempt}/{RETRY_ATTEMPTS - 1} in {delay:.0f}s")
             time.sleep(delay)
     raise AssertionError("unreachable: loop returns or raises")
 

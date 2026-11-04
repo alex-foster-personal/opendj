@@ -1,4 +1,5 @@
 """Public, metadata-only presentation for a shared set history."""
+
 # ruff: noqa: E501
 from __future__ import annotations
 
@@ -60,14 +61,23 @@ def _transition_rows(session: Session) -> list[tuple[str, str, str]]:
         confidence = transition.get("confidence")
         if not isinstance(confidence, int | float) or not isfinite(confidence):
             raise ValueError("shared transition confidence must be finite")
-        rows.append((_elapsed(transition.get("t_change_s")), f"{from_track} to {to_track}", f"{transition.get('predicted_class', 'transition')} - {confidence:.0%} confidence"))
+        rows.append(
+            (
+                _elapsed(transition.get("t_change_s")),
+                f"{from_track} to {to_track}",
+                f"{transition.get('predicted_class', 'transition')} - {confidence:.0%} confidence",
+            )
+        )
     return rows
 
 
 def _list(rows: list[tuple[str, str, str]], empty: str) -> str:
     if not rows:
-        return f"<p class=\"empty\">{escape(empty)}</p>"
-    return "".join(f"<li><time>{escape(elapsed)}</time><div><strong>{escape(title)}</strong><small>{escape(detail)}</small></div></li>" for elapsed, title, detail in rows)
+        return f'<p class="empty">{escape(empty)}</p>'
+    return "".join(
+        f"<li><time>{escape(elapsed)}</time><div><strong>{escape(title)}</strong><small>{escape(detail)}</small></div></li>"
+        for elapsed, title, detail in rows
+    )
 
 
 def _render(session: Session, sets_root: Path | None) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,8 +40,6 @@ def _read_slot_payload(data_dir: Path, slot: int) -> dict[str, Any] | None:
     path = data_dir / "state" / "rescue" / f"ring-{slot}.json"
     if not path.is_file():
         return None
-    import json
-
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

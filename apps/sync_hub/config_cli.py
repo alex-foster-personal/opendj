@@ -29,14 +29,10 @@ def add_config_parser(
     common: argparse.ArgumentParser,
 ) -> None:
     """Register ``config show`` and ``config set`` on the operator CLI."""
-    config_command = subcommands.add_parser(
-        "config", help="show or set this machine's persisted CloudSync config"
-    )
+    config_command = subcommands.add_parser("config", help="show or set this machine's persisted CloudSync config")
     actions = config_command.add_subparsers(dest="config_action", required=True)
     actions.add_parser("show", parents=[common], help="print the config as JSON")
-    set_command = actions.add_parser(
-        "set", parents=[common], help="merge the given fields into the config file"
-    )
+    set_command = actions.add_parser("set", parents=[common], help="merge the given fields into the config file")
     toggle = set_command.add_mutually_exclusive_group()
     toggle.add_argument("--enabled", dest="enabled", action="store_const", const=True)
     toggle.add_argument("--disabled", dest="enabled", action="store_const", const=False)
@@ -53,9 +49,7 @@ def set_config(
 ) -> sync_config.CloudSyncConfig:
     """Merge the given fields onto the stored file, validate, and persist."""
     if enabled is None and hub_url is None and machine_name is None:
-        raise sync_config.CloudSyncConfigError(
-            "config set needs at least one of --enabled/--disabled, --hub, --name"
-        )
+        raise sync_config.CloudSyncConfigError("config set needs at least one of --enabled/--disabled, --hub, --name")
     stored = sync_config.read_config(data_dir)
     base: dict[str, object] = {"enabled": False, "hub_url": None, "machine_name": None}
     merged: dict[str, object] = base if stored is None else stored.model_dump()

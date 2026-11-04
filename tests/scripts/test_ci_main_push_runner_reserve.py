@@ -1,19 +1,26 @@
 """A push to main prefers a reserved runner pool (CI_RUNS_ON_MAIN), Mon 2 Nov 2026.
 
 The throughput session measured 584 runs: main's verdict took a median 34 min,
-p90 62, max 151, and most of it was runner queue behind PR load. Five ci.yml jobs
-sit on main's verdict path (scope, trunk-quarantine-list, trunk-quarantine, test,
-ci-gate), and ci-insights runs after ci-gate while the main-push concurrency group
-holds the next main run pending until it completes. Each of the six now carries,
+p90 62, max 151, and most of it was runner queue behind PR load. The ci.yml jobs
+on main's verdict path (scope, test, ci-gate; the Trunk quarantine pair until Wed 4
+Nov 2026) and ci-insights, which runs after ci-gate while the main-push concurrency
+group holds the next main run pending until it completes, each carry,
 first in its `runs-on`, the guarded disjunct
 `(push && refs/heads/main) && vars.CI_RUNS_ON_MAIN`. The variable is opt-in: unset
 it is the empty string, which is falsy, so `'' || X` is X and every event resolves
 exactly as before. Setting it (a label set on reserved runners) is a repo-variable
 change made after merge, not part of this test.
 
+Wed 4 Nov 2026: contracts, frontend-build, frontend and quality carry it too. They are
+not on `ci gate`'s path, but they hold the RUN's conclusion, which the checkpoint verdict
+reads: on run 41769345830 (repair merge f2b7a4b88b, 03:48Z) quality sat queued 26 min on
+the light pool behind PR load while five main-only and three main-fix runners were idle.
+
 Regression lines:
-  - if a main push does not resolve to CI_RUNS_ON_MAIN on any of the six jobs when it
+  - if a main push does not resolve to CI_RUNS_ON_MAIN on any reserved job when it
     is set then main's verdict keeps queueing behind PR load
+  - if contracts, frontend-build, frontend or quality leaves the reserve then a main
+    run's conclusion waits on the light pool's queue depth again
   - if ci-insights does not take CI_RUNS_ON_MAIN on a main push then every main cycle
     waits for a light-pool seat after ci gate before the next main run can start
   - if an unset CI_RUNS_ON_MAIN resolves differently from the route without the
@@ -35,6 +42,7 @@ from tests.scripts.ci_runner_routes import (
     MAIN_RESERVE_DISJUNCT,
     MAIN_RESERVED_JOBS,
     TOKEN_RUNS_ON,
+    with_main_fix,
     with_main_reserve,
     without_main_reserve,
 )
@@ -144,4 +152,5 @@ def test_unset_main_reserve_is_exactly_todays_routing(
 
 def test_ci_insights_is_reserved() -> None:
     """if ci-insights leaves the reserve then the next main run waits on its light-pool seat"""
-    assert MAIN_RESERVED_JOBS["ci-insights"] == with_main_reserve(TOKEN_RUNS_ON)
+    # Wed 4 Nov 2026: the ci:trunk-repair reserve follows the main-push one on every job.
+    assert MAIN_RESERVED_JOBS["ci-insights"] == with_main_fix(with_main_reserve(TOKEN_RUNS_ON))

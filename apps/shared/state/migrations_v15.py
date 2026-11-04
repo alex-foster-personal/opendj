@@ -15,6 +15,7 @@ Completion is recorded in ``schema_meta_markers`` (v16) so repeat opens do
 not rescan ``track_fields`` or hold a writer lock across O(N) changelog
 probes (issue #3165).
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -83,8 +84,7 @@ def _changelog_has_row(
 ) -> bool:
     return (
         conn.execute(
-            f"SELECT 1 FROM {changelog_table} "
-            "WHERE table_name = ? AND row_pk = ? LIMIT 1",
+            f"SELECT 1 FROM {changelog_table} WHERE table_name = ? AND row_pk = ? LIMIT 1",
             (table, encoded_pk),
         ).fetchone()
         is not None
@@ -146,9 +146,7 @@ def log_stamp_backfill_rows(
     logged = 0
     for pk in row_pks:
         encoded_pk = sync_stamp.encode_row_pk(pk)
-        if not skip_duplicate_check and _changelog_has_row(
-            conn, changelog_table, table, encoded_pk
-        ):
+        if not skip_duplicate_check and _changelog_has_row(conn, changelog_table, table, encoded_pk):
             continue
         stamp = stamp_by_pk[pk]
         origin = origin_by_pk.get(pk)

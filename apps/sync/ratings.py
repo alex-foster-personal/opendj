@@ -19,6 +19,7 @@ Direction policy (Phase 2 cautious; Phase 4 will revisit):
 Only ``direction == "rb->djay"`` records carry a non-None
 ``new_djay_rating`` and are eligible for a live write.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

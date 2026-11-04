@@ -16,6 +16,7 @@ a database that disagrees with itself would hide the disagreement.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,9 +46,7 @@ def state_conn_ro(state_db_path: Path | None = None) -> Any:
 
 
 def table_present(conn: Any, name: str) -> bool:
-    return conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone() is not None
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def effective_lane_source(
@@ -70,9 +69,7 @@ def effective_lane_source(
 
     if conn is not None:
         if has_rb_mapping is not None:
-            return selection.effective_source_for_track(
-                conn, lane, has_rb_mapping=has_rb_mapping
-            )
+            return selection.effective_source_for_track(conn, lane, has_rb_mapping=has_rb_mapping)
         return selection.effective_source(conn, lane)
     toggle = selection.get_toggle(lane)
     if toggle != "unset":
@@ -101,14 +98,12 @@ def canonical_lane_result(conn: Any, stable_id: str, lane: str) -> Any:
     if pointer is None:
         return None
     row = conn.execute(
-        "SELECT record_json FROM analysis "
-        "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+        "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ? AND backend_version = ?",
         (stable_id, pointer[0], pointer[1]),
     ).fetchone()
     if row is None:
         raise RuntimeError(
-            f"canonical {lane} pointer for {stable_id} names {pointer[0]}@"
-            f"{pointer[1]} but no such analysis row exists"
+            f"canonical {lane} pointer for {stable_id} names {pointer[0]}@{pointer[1]} but no such analysis row exists"
         )
     result = AnalysisRecord.from_json(row[0]).lanes.get(lane)
     if result is None:
@@ -117,8 +112,7 @@ def canonical_lane_result(conn: Any, stable_id: str, lane: str) -> Any:
         # its own named lane is the schema disagreeing with itself, not an
         # ordinary "not analyzed yet" state.
         raise RuntimeError(
-            f"canonical {lane} record {pointer[0]}@{pointer[1]} for {stable_id} "
-            f"carries no {lane!r} lane"
+            f"canonical {lane} record {pointer[0]}@{pointer[1]} for {stable_id} carries no {lane!r} lane"
         )
     return result
 

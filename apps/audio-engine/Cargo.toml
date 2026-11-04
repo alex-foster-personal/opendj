@@ -62,6 +62,17 @@ objc2-foundation = { version = "0.3", optional = true, default-features = false,
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+# WASAPI hands cpal a plain thread, and cpal raises it (MMCSS, the Windows
+# scheduler class for audio) only with its `realtime` feature. Without it
+# the device callback runs at normal priority beside every UI and decode
+# thread. Windows only: CoreAudio's callback thread is real-time already,
+# and on Linux the same feature would pull in ALSA for a build that has none.
+cpal = { version = "0.18", optional = true, features = ["realtime"] }
+
+# Reading another process's thread priorities, for the device test that
+# checks the audio callback thread is real-time (tests/device_windows.rs).
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
 
 [profile.release]
 opt-level = 3

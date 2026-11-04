@@ -30,6 +30,7 @@ Requirements (mini-PRD):
     [if] the file is absent [then] the ledger is empty, not an error
     [if] the file is malformed or names an unknown step [then ⛔️] raise
 """
+
 from __future__ import annotations
 
 import json
@@ -74,9 +75,9 @@ class Outcome:
     recorded_at: float
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # pure predicates
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def store_path(data_dir: Path) -> Path:
     return data_dir / "state" / FILENAME
 
@@ -116,9 +117,9 @@ def may_attempt(outcome: Outcome | None, signature: str, *, now: float) -> bool:
     return now >= next_attempt_at(outcome)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the store
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 class OutcomeStore:
     """Read-modify-write over one JSON file, serialized by a process lock."""
 
@@ -151,9 +152,7 @@ class OutcomeStore:
         so it is stored at :data:`MAX_ATTEMPTS` and counts as failed now,
         rather than sitting in a backoff no drain will ever wake from.
         """
-        return self.record_failures(
-            step, [(stable_id, signature)], reason, now=now, terminal=terminal
-        )[0]
+        return self.record_failures(step, [(stable_id, signature)], reason, now=now, terminal=terminal)[0]
 
     def record_failures(
         self,
@@ -184,9 +183,7 @@ class OutcomeStore:
                 self._write(entries)
             return recorded
 
-    def record_no_source(
-        self, step: str, stable_id: str, signature: str, reason: str, *, now: float
-    ) -> Outcome:
+    def record_no_source(self, step: str, stable_id: str, signature: str, reason: str, *, now: float) -> Outcome:
         with self._lock:
             entries = self.load()
             outcome = Outcome(_step(step), stable_id, "no_source", reason, 0, signature, now)
@@ -217,9 +214,7 @@ class OutcomeStore:
             "entries": [asdict(entries[key]) for key in sorted(entries)],
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=self.path.parent, delete=False
-        ) as temporary:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent, delete=False) as temporary:
             json.dump(payload, temporary, indent=1)
             temporary_path = Path(temporary.name)
         try:

@@ -74,7 +74,6 @@ import {
 	masterRepairedFromCue,
 	outputCannotSound,
 	physicalOutputId,
-	sameDeviceSplitText,
 	sameOutputDevice
 } from '$lib/player/main-cue-collision';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
@@ -86,6 +85,7 @@ import type { HeadphoneOutputSnapshot, installCueBridgeHeadphoneLiveness } from 
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 import { assertCueNotWirelessDelayed, outputIsWirelessDelayed } from './wireless-output';
+import { micOpenRefusal } from './io-device-test';
 
 /**
  * One enumerated headphone output -- structurally the `HeadphoneOutputDevice`
@@ -1126,7 +1126,7 @@ export function preferredMasterOutputDeviceId(
 	const notPhones = candidates.find(
 		(output) =>
 			!outputLooksLikeHeadphones(output.label) &&
-			(output.transport === undefined || !_AUTO_PICK_EXCLUDED_TRANSPORTS.has(output.transport))
+			(output.transport == null || !_AUTO_PICK_EXCLUDED_TRANSPORTS.has(output.transport))
 	);
 	return notPhones?.id ?? null;
 }
@@ -1135,19 +1135,29 @@ export type DualSinkAssignment = {
 	masterId: string | null;
 	cueId: string | null;
 	autoPinnedMaster: boolean;
-	/** CUEOUT-26: MAIN and CUE are one physical output, so the cue runs as
-	 * split cue (master L / cue R) on `masterId` instead of two outputs. */
-	splitSameDevice?: true;
+	/** AUDFID-01: MAIN and CUE would be one physical output. The CUE is refused
+	 * (`cueId` is null) and this says why; split cue is never entered for the
+	 * operator, it is only ever their own `output_mode` choice. */
+	cueRefusal?: string;
 };
+
+/** AUDFID-01: why a CUE cannot share MAIN's output. Names the explicit fix. */
+export function sameDeviceCueRefusalText(label: string): string {
+	return (
+		`MAIN and CUE are the same output (${label}), so CUE was not routed there. ` +
+		'Pick another CUE device, or choose Split cue (MAIN left / CUE right) yourself in the I/O panel.'
+	);
+}
 
 export function dualSinkAssignment(args: {
 	outputs: readonly HeadphoneOutput[];
 	selectedCueId: string | null;
 	selectedMasterId: string | null;
 	/** CUEOUT-22: where the room already plays (the macOS default output in
-	 * the Mac app). Preferred over a label guess so auto-pinning MASTER keeps
-	 * the room where it is instead of moving it to the laptop speakers. */
-	currentRoomId?: string | null;
+	 * the Mac app). AUDFID-01: only ever used to see that a CUE would land on
+	 * the room's own output; MAIN is never auto-pinned to it (no hidden
+	 * default: an unpinned MAIN keeps following the system output). */
+	currentRoomId?: string | null | undefined;
 }): DualSinkAssignment {
 	if (args.selectedCueId !== null && typeof args.selectedCueId !== 'string') {
 		throw new TypeError('selected cue output id must be a string or null');
@@ -1158,52 +1168,48 @@ export function dualSinkAssignment(args: {
 	const present = (id: string | null | undefined): id is string =>
 		id !== undefined && id !== null && args.outputs.some((output) => output.id === id);
 	const cueId = present(args.selectedCueId) ? args.selectedCueId : null;
-	const splitOn = (deviceId: string, autoPinnedMaster: boolean): DualSinkAssignment => ({
-		masterId: physicalOutputId(args.outputs, deviceId),
-		cueId,
-		autoPinnedMaster,
-		splitSameDevice: true
+	const labelOf = (id: string): string => args.outputs.find((output) => output.id === id)?.label ?? id;
+	const refuseCue = (masterId: string | null, sharedId: string): DualSinkAssignment => ({
+		masterId,
+		cueId: null,
+		autoPinnedMaster: false,
+		cueRefusal: sameDeviceCueRefusalText(labelOf(sharedId))
 	});
-	// CUEOUT-26: a MAIN the headphone jack has muted is no MAIN: re-picked below.
+	// CUEOUT-26: a MAIN the headphone jack has muted is no MAIN.
 	const usableMaster =
 		present(args.selectedMasterId) && !outputCannotSound(args.outputs, args.selectedMasterId)
 			? args.selectedMasterId
 			: null;
 	// MAIN on the CUE device is not two outputs: the room would get nothing
-	// while every probe reads healthy (silver, Mon 5 Oct 2026). CUEOUT-26: it
-	// is one output, so it runs as split cue on that device.
+	// while every probe reads healthy (silver, Mon 5 Oct 2026). AUDFID-01: nor
+	// is it an automatic split (Tue 3 Nov 2026 the master went mono, left only).
 	if (cueId !== null && usableMaster !== null && sameOutputDevice(args.outputs, usableMaster, cueId)) {
-		return splitOn(cueId, false);
+		return refuseCue(usableMaster, cueId);
 	}
-	const masterStillPresent = usableMaster;
-	const room =
-		present(args.currentRoomId) &&
-		!outputCannotSound(args.outputs, args.currentRoomId) &&
-		(cueId === null || !sameOutputDevice(args.outputs, args.currentRoomId, cueId))
-			? args.currentRoomId
-			: null;
-	if (masterStillPresent === null && room !== null) {
-		return { masterId: room, cueId, autoPinnedMaster: true };
+	const roomKnown = args.currentRoomId !== undefined;
+	if (roomKnown) {
+		// The Mac app: MAIN is never auto-pinned. An unpinned MAIN plays where
+		// the room already is, so a CUE on that same output is refused.
+		const room = present(args.currentRoomId) ? args.currentRoomId : null;
+		if (cueId !== null && usableMaster === null && room !== null && sameOutputDevice(args.outputs, room, cueId)) {
+			return refuseCue(null, cueId);
+		}
+		return { masterId: usableMaster, cueId, autoPinnedMaster: false };
 	}
-	if (cueId !== null && masterStillPresent === null) {
+	// A browser cannot see where the room plays: CUEOUT-09's speaker guess.
+	if (cueId !== null && usableMaster === null) {
 		const preferred = preferredMasterOutputDeviceId(args.outputs, cueId);
-		if (preferred !== null) {
-			return { masterId: preferred, cueId, autoPinnedMaster: true };
-		}
-		// No other output can sound (a MacBook with wired headphones in its
-		// jack): the room and the cue are one output, so split cue on it.
-		return splitOn(cueId, true);
+		if (preferred !== null) return { masterId: preferred, cueId, autoPinnedMaster: true };
+		// No other output can sound (a MacBook with wired headphones in its jack).
+		return refuseCue(null, cueId);
 	}
-	if (masterStillPresent === null) {
+	if (usableMaster === null) {
 		const speakers = preferredMasterOutputDeviceId(args.outputs, cueId);
-		if (speakers !== null) {
-			const label = args.outputs.find((output) => output.id === speakers)?.label ?? '';
-			if (outputLooksLikeSpeakers(label)) {
-				return { masterId: speakers, cueId, autoPinnedMaster: true };
-			}
+		if (speakers !== null && outputLooksLikeSpeakers(labelOf(speakers))) {
+			return { masterId: speakers, cueId, autoPinnedMaster: true };
 		}
 	}
-	return { masterId: masterStillPresent, cueId, autoPinnedMaster: false };
+	return { masterId: usableMaster, cueId, autoPinnedMaster: false };
 }
 
 /** `unknown` rather than a `{ setSinkId?: unknown }` shape: the real
@@ -1274,6 +1280,30 @@ function _probeAcquisitionKind(): HeadphoneAcquisitionKind {
 	return headphoneAcquisitionKind({ enumerateDevices, setSinkId, selectAudioOutput });
 }
 
+/** AUDFID-01: why `output_mode` changed. Only `operator` may enter split cue;
+ * a rollback may only restore a split the operator chose. */
+export type OutputModeChangeReason = 'operator' | 'device_change' | 'cue_pick' | 'cue_pick_rollback';
+
+/** AUDFID-01: the one writer of `output_mode`. Split cue is only ever the
+ * operator's own choice (Tue 3 Nov 2026 the master silently went split_cable,
+ * mono and left only, after a refused pick), and every change is logged with
+ * its reason (AUDFID-03). */
+let _operatorChoseSplit = false;
+/** AUDFID-03: split cue on MAIN is the operator's own choice right now. */
+export function splitCueChosenByOperator(): boolean {
+	return _operatorChoseSplit && mixerState.headphones.output_mode === 'split_cable';
+}
+function _setOutputMode(mode: HeadphoneOutputMode, reason: OutputModeChangeReason): void {
+	const from = mixerState.headphones.output_mode;
+	if (reason === 'operator') _operatorChoseSplit = mode === 'split_cable';
+	if (mode === 'split_cable' && !_operatorChoseSplit) {
+		throw new Error(`split cue is only entered by the operator's own choice; refused a ${reason} switch from ${from}`);
+	}
+	if (from === mode) return;
+	mixerState.headphones.output_mode = mode;
+	recordPerfEvent('output-mode-change', `output_mode ${from} -> ${mode} (reason ${reason})`, null, 'info');
+}
+
 export function setHeadphoneOutputMode(mode: unknown): void {
 	assertHeadphoneOutputMode(mode);
 	if (mode !== 'two_outputs') {
@@ -1281,7 +1311,7 @@ export function setHeadphoneOutputMode(mode: unknown): void {
 	}
 	// The operator picked this mode; it is no longer CUEOUT-26's automatic split.
 	mixerState.headphones.split_reason = null;
-	mixerState.headphones.output_mode = mode;
+	_setOutputMode(mode, 'operator');
 	applyHeadphoneMix();
 }
 
@@ -1938,223 +1968,6 @@ function _unwatchHeadphoneDeviceChanges(): void {
 		navigator.mediaDevices.removeEventListener('devicechange', _onHeadphoneDeviceChange);
 	}
 	_watchingDeviceChanges = false;
-}
-
-/**
- * CUEOUT-26: MAIN and CUE are one physical output, so run the cue as split
- * cue on it (master L / cue R, `split_cable`) instead of two outputs: close
- * the separate cue sink, pin MAIN to that output, and say so. The saved CUE is
- * kept (this is not the operator clearing it), but it is not auto-restored as
- * a second sink while the split holds.
- */
-async function _enterSameDeviceSplit(
-	deviceId: string,
-	monitorSource: MonitorSource | undefined,
-	isCurrent: () => boolean,
-	cueClaim: { serial: number } | null = null
-): Promise<boolean> {
-	if (monitorSource === undefined) {
-		throw new Error(`split cue on ${deviceId} needs the audio graph to pin MAIN, and none is running yet`);
-	}
-	// A teardown retires the split as surely as a newer pick does: one that
-	// settles after /performance unmounted must not clear CUE, publish the
-	// mode or rewire the mount that replaced it.
-	const generation = _headphoneGeneration;
-	const torndown = (): boolean => generation !== _headphoneGeneration;
-	// The sink moves before anything is torn down or published, so a split a
-	// newer pick supersedes during the move leaves CUE (still playing) and the
-	// mode as that pick set them, and returns false.
-	if (torndown() || !isCurrent()) return false;
-	let movedContext: AudioContext | null = null;
-	let reopenFailure: string | null = null;
-	// A MAIN shown on this device while a sink move is still pending has not
-	// landed (it is optimistic, and that move may yet fail), so pin it here too.
-	// Nor has one with no landing known: a remount forgets the landing but keeps
-	// the menu, so the new room may still be on the OS default.
-	const landed = _landedMasterSinkId;
-	const mainPinnedHere =
-		mixerState.headphones.selected_master_output_device_id === deviceId &&
-		_masterMovesPending() === 0 &&
-		landed !== null &&
-		sameOutputDevice(mixerState.headphones.outputs, landed, deviceId);
-	if (!mainPinnedHere) {
-		const { context, masterGain } = monitorSource();
-		ensureHeadphoneGraph(context, masterGain);
-		// A MAIN pick still moving when this split took the MAIN serial can no
-		// longer finish itself: it is superseded and publishes nothing.
-		const supersededMainPick = _masterMovesPending() > 0;
-		const endMainMove = _beginMasterMove();
-		try {
-			await _moveMasterSink(deviceId, context);
-		} catch (error) {
-			const current = (): boolean => !torndown() && isCurrent();
-			if (supersededMainPick && current()) await _settleMainAfterFailedSplit(context, current);
-			throw error;
-		} finally {
-			endMainMove();
-			// A correction deferred behind this move (the fallback's) runs now.
-			if (generation === _headphoneGeneration) _settleDeferredReassert();
-		}
-		if (torndown() || !isCurrent()) {
-			_correctLateSinkMove(deviceId, context, generation);
-			return false;
-		}
-		// IOPIN-18: a moved room can stay `running` on a dead stream, so reopen
-		// it before the split is published, exactly as a plain MAIN pick does.
-		reopenFailure = await _reopenRoomOutput(context);
-		if (torndown() || !isCurrent()) {
-			// The move has landed: a CUE pick that retired the split during the
-			// reopen never moves MAIN, so bring the sink back to the menu here.
-			_correctLateSinkMove(deviceId, context, generation);
-			_logSupersededPick(reopenFailure);
-			return false;
-		}
-		movedContext = context;
-	}
-	// Committed: publish the split in one synchronous step, so a pick that
-	// starts while the old CUE output closes below sees the split and leaves it
-	// the normal way, restoring CUE.
-	_stopHeadphoneLiveness();
-	const cueNodes = _headphoneNodes;
-	// A split from a MAIN pick or a refresh clears CUE, so it retires any CUE
-	// pick still settling, as a newer CUE pick would. Its own check follows.
-	if (cueClaim !== null) cueClaim.serial = ++_cueSelectSerial;
-	mixerState.headphones.selected_output_device_id = null;
-	mixerState.headphones.active = false;
-	mixerState.headphones.routes.cue = { state: 'default', selected: false };
-	_cueClearedByOperator = true;
-	if (movedContext !== null) {
-		_publishMasterSink(movedContext);
-		_lastMonitorSource = monitorSource;
-	}
-	mixerState.headphones.selected_master_output_device_id = deviceId;
-	mixerState.headphones.output_mode = 'split_cable';
-	mixerState.headphones.split_reason = 'same_device';
-	_noteLandedCue();
-	applyHeadphoneMix();
-	const label = mixerState.headphones.outputs.find((output) => output.id === deviceId)?.label ?? deviceId;
-	const message = sameDeviceSplitText(label);
-	recordPerfEvent('cue-split-same-device', message, null, 'warn');
-	pushToast(message, 'info');
-	// The split stands even if the room did not reopen: the sink did move, so
-	// it shows the retry error a plain pick shows rather than undoing the split.
-	if (reopenFailure !== null) _publishReopenFailure(reopenFailure);
-	// Counted as CUE work: a CUE pick that starts while this suspend is pending
-	// sees the context still running and does not resume it, so once all CUE
-	// work settles the sink is reconciled to the CUE shown.
-	// It stays counted until the browser's own suspend or close settles, even
-	// past the operation timeout: a suspend that lands after it timed out would
-	// otherwise silence a newer CUE with no CUE work left to correct it.
-	const closeSerial = _cueSelectSerial;
-	const closeGeneration = _headphoneGeneration;
-	_cuePicksInFlight += 1;
-	const close: { settled: boolean; underlying?: Promise<unknown> } = { settled: true };
-	const trackClose = (underlying: Promise<unknown>): void => {
-		close.settled = false;
-		close.underlying = underlying;
-		const done = (): unknown => (close.settled = true);
-		void underlying.then(done, done);
-	};
-	let closeFailure: string | null;
-	try {
-		closeFailure = await closeCueOutputForSplit(cueNodes, trackClose);
-	} finally {
-		if (close.settled || close.underlying === undefined) _cueWorkSettled(closeSerial !== _cueSelectSerial, closeGeneration);
-		else _settleCueWorkWhen(close.underlying, closeSerial, closeGeneration);
-	}
-	// The split stands either way; the warning is the newest pick's to show,
-	// and a silent MAIN outranks an old CUE output that may still sound.
-	if (closeFailure !== null && !torndown() && isCurrent()) {
-		// Both are shown when the reopen failed too: the room retry first.
-		const shown = mixerState.headphones.error;
-		mixerState.headphones.error = reopenFailure !== null && shown !== null ? `${shown} ${closeFailure}` : closeFailure;
-	}
-	return true;
-}
-
-/**
- * A split that superseded a pending MAIN pick failed its own sink move, so
- * neither finishes MAIN: the menu would show that pick's optimistic device
- * with no route, save or reopen behind it. Settle MAIN on the device the sink
- * last landed on (the superseded pick's, if its move landed, else the one
- * before it; with none since a remount, the saved MAIN, pinned again), reopen
- * the room there and publish it, as a MAIN pick would,
- * unless a newer pick or a teardown takes over during the reopen.
- */
-async function _settleMainAfterFailedSplit(context: AudioContext, current: () => boolean): Promise<void> {
-	let landed = _landedMasterSinkId;
-	if (landed === null) {
-		// No move has landed since the routes were set up (a remount clears the
-		// record): go back to the MAIN the operator last had, and pin it there.
-		const saved = _savedOutputs().master?.id ?? null;
-		landed = mixerState.headphones.outputs.some((output) => output.id === saved) ? saved : null;
-		if (landed !== null) {
-			// A sink move like any other: a newer pick that lands while it is
-			// pending is followed if this one lands last.
-			const generation = _headphoneGeneration;
-			let moved = false;
-			const endMainMove = _beginMasterMove();
-			try {
-				await _moveMasterSink(landed, context);
-				moved = true;
-			} catch (error) {
-				recordPerfEvent('master-output-reassert-failed', _detail(error), null, 'error');
-				landed = null;
-			} finally {
-				endMainMove();
-			}
-			if (!current()) {
-				if (moved) _correctLateSinkMove(landed, context, generation);
-				return;
-			}
-		}
-	}
-	mixerState.headphones.selected_master_output_device_id = landed;
-	if (landed === null) return;
-	const reopenFailure = await _reopenRoomOutput(context);
-	// A newer pick or a teardown during the reopen owns MAIN now.
-	if (!current()) return;
-	_publishMasterSink(context);
-	_rememberSavedOutput('master', landed);
-	if (reopenFailure !== null) _publishReopenFailure(reopenFailure);
-}
-
-/**
- * CUEOUT-26: close the separate CUE output a split replaced. The split is
- * already committed (MAIN moved, mode published, mix rewired), so a close that
- * rejects or times out never undoes it or fails the pick: it is recorded, and
- * the warning to show is returned, because that old output may still sound
- * until it is unplugged or CUE is picked again. Null when it closed.
- */
-export async function closeCueOutputForSplit(
-	nodes: Parameters<typeof silenceVanishedCueOutput>[0],
-	track?: (underlying: Promise<unknown>) => void
-): Promise<string | null> {
-	try {
-		await silenceVanishedCueOutput(nodes, track);
-		return null;
-	} catch (error: unknown) {
-		const detail = _detail(error);
-		recordPerfEvent('cue-split-old-output-close-failed', detail, null, 'error');
-		return (
-			`Split cue is on, but the old CUE output did not close (${detail}). ` +
-			'It may still sound: unplug it or pick CUE again.'
-		);
-	}
-}
-
-/** CUEOUT-26: the output an automatic split ran on is gone, so the split
- * ends: back to master-only two outputs, never a split on whatever remains. */
-function _exitSameDeviceSplitIfItsOutputVanished(): string | null {
-	const hp = mixerState.headphones;
-	if (hp.split_reason !== 'same_device' || hp.output_mode !== 'split_cable') return null;
-	const sharedId = hp.selected_master_output_device_id;
-	if (sharedId !== null && hp.outputs.some((output) => output.id === sharedId)) return null;
-	hp.output_mode = 'two_outputs';
-	hp.split_reason = null;
-	hp.selected_master_output_device_id = null;
-	hp.routes.master = { state: 'default', selected: false };
-	return `The output split cue was running on (${sharedId ?? 'unknown'}) is gone; split cue is off and MAIN follows the system output.`;
 }
 
 function _clearHeadphoneSelection(): void {
@@ -2917,9 +2730,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	if (nativeRoom !== undefined) _nativeRoomOutputId = nativeRoom;
 	mixerState.headphones.outputs = listing.outputs;
 	mixerState.headphones.inputs = listing.inputs;
-	// The MAIN the room was on, even when ending a vanished split clears it.
 	const shownMasterBefore = mixerState.headphones.selected_master_output_device_id;
-	const splitEnded = _exitSameDeviceSplitIfItsOutputVanished();
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
@@ -2934,19 +2745,21 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		outputs: mixerState.headphones.outputs,
 		selectedCueId: mixerState.headphones.selected_output_device_id,
 		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
-		currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
+		currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
 	});
-	// CUEOUT-26: a split is applied below by _enterSameDeviceSplit, which pins
-	// MAIN itself; leave the previous MAIN in place until that pin lands.
-	if (assignment.splitSameDevice !== true) {
-		mixerState.headphones.selected_master_output_device_id = assignment.masterId;
-		// A MAIN pick still in flight is retired: it must not republish, or
-		// fail, a MAIN this device change replaced. A sounding Test is cut too,
-		// even when nothing re-pins (MAIN cleared to the system default).
-		if (assignment.masterId !== shownMasterBefore) {
-			_masterSelectSerial += 1;
-			_outputMoveStarted();
-		}
+	// AUDFID-01: a CUE that now shares MAIN's output is dropped from the live
+	// route (the saved CUE is kept), never turned into an automatic split.
+	if (assignment.cueRefusal !== undefined) {
+		mixerState.headphones.selected_output_device_id = null;
+		mixerState.headphones.routes.cue = { state: 'default', selected: false };
+	}
+	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
+	// A MAIN pick still in flight is retired: it must not republish, or
+	// fail, a MAIN this device change replaced. A sounding Test is cut too,
+	// even when nothing re-pins (MAIN cleared to the system default).
+	if (assignment.masterId !== shownMasterBefore) {
+		_masterSelectSerial += 1;
+		_outputMoveStarted();
 	}
 	if (assignment.masterId === null) {
 		mixerState.headphones.routes.master = { state: 'default', selected: false };
@@ -2959,12 +2772,12 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		nextMasterId: assignment.masterId,
 		previousCueId,
 		nextCueId: mixerState.headphones.selected_output_device_id,
-		rememberedCueId: _rememberedCueId,
+		rememberedCueId: assignment.cueRefusal === undefined ? _rememberedCueId : null,
 		cueClearedByOperator: _cueClearedByOperator,
 		outputs: mixerState.headphones.outputs
 	});
 	if (plan.keepTwoOutputs) {
-		mixerState.headphones.output_mode = 'two_outputs';
+		_setOutputMode('two_outputs', 'device_change');
 	}
 	if (plan.restoreCue && _rememberedCueId !== null) {
 		mixerState.headphones.selected_output_device_id = _rememberedCueId;
@@ -3009,37 +2822,12 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		access.notices.push(message);
 		recordPerfEvent('main-output-repaired-from-cue', message, null, 'warn');
 	}
-	if (splitEnded !== null) {
-		access.notices.push(splitEnded);
-		recordPerfEvent('cue-split-same-device-ended', splitEnded, null, 'warn');
+	if (assignment.cueRefusal !== undefined) {
+		access.notices.push(assignment.cueRefusal);
+		recordPerfEvent('cue-refused-same-device', assignment.cueRefusal, null, 'warn');
 	}
 	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
-	if (assignment.splitSameDevice === true && assignment.masterId !== null) {
-		// The split may move MAIN, so it takes a MAIN serial like a pick: a MAIN
-		// pick that lands during its move wins and the split applies nothing.
-		const splitSerial = ++_masterSelectSerial;
-		const cue = { serial: _cueSelectSerial };
-		try {
-			await _enterSameDeviceSplit(
-				assignment.masterId,
-				monitorSource ?? _lastMonitorSource,
-				() => refresh === _outputRefreshSerial && splitSerial === _masterSelectSerial && cue.serial === _cueSelectSerial,
-				cue
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-		} catch (error) {
-			_assertCurrentHeadphoneOperation(generation, null);
-			// A newer device change, MAIN or CUE pick retired this split: its
-			// failure only logs, so it cannot overwrite the newer route or error.
-			if (refresh !== _outputRefreshSerial || splitSerial !== _masterSelectSerial || cue.serial !== _cueSelectSerial) {
-				_logSupersededPick(_detail(error));
-				return;
-			}
-			throw _headphoneError('split cue on the shared output failed', error);
-		}
-		return;
-	}
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -3181,6 +2969,18 @@ async function _unlockWebviewInputs(generation: number): Promise<boolean> {
 	const decision = labelUnlockDecision(await _microphonePermissionState(), true);
 	_assertCurrentHeadphoneOperation(generation, null);
 	if (decision === 'declined') return false;
+	// AUDFID-04: the name unlock opens a microphone too, so it passes the same
+	// gate as every Mac app mic (CUEOUT-8393): while MAIN plays the inputs stay
+	// unnamed and the refusal is logged, instead of risking a silent MAIN.
+	const roomSignal = mixerState.headphones.signals.master;
+	const refusal = micOpenRefusal({
+		macAppWebview: true,
+		masterRms: roomSignal.state === 'measured' ? roomSignal.rms : null
+	});
+	if (refusal !== null) {
+		recordPerfEvent('mic-open-refused', `input name unlock: ${refusal}`, null, 'warn');
+		return false;
+	}
 	try {
 		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
 	} catch (error) {
@@ -3200,6 +3000,20 @@ async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generat
 	}
 }
 
+/** AUDFID-01: throw the same-output refusal for a CUE pick that would land
+ * on MAIN's output (the pinned MAIN, or in the Mac app the room's output). */
+function _assertCueNotOnMainOutput(cueId: string): void {
+	const assignment = dualSinkAssignment({
+		outputs: mixerState.headphones.outputs,
+		selectedCueId: cueId,
+		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+		currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
+	});
+	if (assignment.cueRefusal === undefined) return;
+	recordPerfEvent('cue-refused-same-device', assignment.cueRefusal, null, 'warn');
+	throw new Error(assignment.cueRefusal);
+}
+
 export async function selectHeadphoneOutput(
 	deviceId: string,
 	monitorSource: MonitorSource
@@ -3211,6 +3025,9 @@ export async function selectHeadphoneOutput(
 	// AIRPLAY-MAIN-01: refused before the try, like CUEOUT-26's MAIN refusal,
 	// so the live CUE route is never marked failed by a pick that cannot work.
 	assertCueNotWirelessDelayed(deviceId, mixerState.headphones.outputs);
+	// AUDFID-01: a CUE on MAIN's own output is refused the same way: the mode
+	// stays what it was (stereo two outputs or practice), never split cue.
+	_assertCueNotOnMainOutput(deviceId);
 	let nodes: HeadphoneNodes | null = null;
 	/** This pick's CUE serial; null until it is a pick (validated, not a no-op). */
 	let cueSerial: number | null = null;
@@ -3233,34 +3050,8 @@ export async function selectHeadphoneOutput(
 		if (_cuePicksInFlight === 0 || _cueRollback === null) _noteLandedCue();
 		cueSerial = ++_cueSelectSerial;
 		_cuePicksInFlight += 1;
-		const sameDevice = dualSinkAssignment({
-			outputs: mixerState.headphones.outputs,
-			selectedCueId: deviceId,
-			selectedMasterId: mixerState.headphones.selected_master_output_device_id,
-			currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
-		});
-		if (sameDevice.splitSameDevice === true && sameDevice.masterId !== null) {
-			// CUEOUT-26: this CUE is the room's own output, so it cannot be a
-			// second sink: split cue on it, and remember it as the operator's CUE.
-			// The split may move MAIN, so it takes a MAIN serial like a pick: a
-			// MAIN pick that lands during its move wins, and this CUE pick then
-			// applies and saves nothing.
-			const splitSerial = ++_masterSelectSerial;
-			const applied = await _enterSameDeviceSplit(
-				sameDevice.masterId,
-				monitorSource,
-				() => splitSerial === _masterSelectSerial && !cueSuperseded()
-			);
-			_assertCurrentHeadphoneOperation(generation, null);
-			// A newer CUE pick owns the route now, even if this split committed.
-			if (!applied || cueSuperseded()) return;
-			_rememberedCueId = deviceId;
-			_rememberSavedOutput('cue', deviceId);
-			_lastMonitorSource = monitorSource;
-			return;
-		}
 		mixerState.headphones.selected_output_device_id = deviceId;
-		mixerState.headphones.output_mode = 'two_outputs';
+		_setOutputMode('two_outputs', 'cue_pick');
 		mixerState.headphones.split_reason = null;
 		mixerState.headphones.error = null;
 		const { context, masterGain } = monitorSource();
@@ -3272,7 +3063,7 @@ export async function selectHeadphoneOutput(
 			outputs: mixerState.headphones.outputs,
 			selectedCueId: deviceId,
 			selectedMasterId: mixerState.headphones.selected_master_output_device_id,
-			currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
+			currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
 		});
 		const cueReady = (async () => {
 			await _applyCueSink(deviceId, liveNodes);
@@ -3301,7 +3092,7 @@ export async function selectHeadphoneOutput(
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.active = true;
 		mixerState.headphones.routes.cue = { state: 'selected', selected: true };
-		mixerState.headphones.output_mode = 'two_outputs';
+		_setOutputMode('two_outputs', 'cue_pick');
 		_rememberedCueId = deviceId;
 		_cueClearedByOperator = false;
 		_rememberSavedOutput('cue', deviceId);
@@ -3320,7 +3111,7 @@ export async function selectHeadphoneOutput(
 		const back = _cueRollback ?? { id: previousId, active: previousActive, mode: previousMode };
 		mixerState.headphones.selected_output_device_id = back.id;
 		mixerState.headphones.active = back.active;
-		mixerState.headphones.output_mode = back.mode;
+		_setOutputMode(back.mode, 'cue_pick_rollback');
 		mixerState.headphones.routes.cue = { state: 'failed', selected: back.id !== null };
 		_assertCurrentHeadphoneOperation(generation, nodes);
 		throw _headphoneError('headphone output selection failed', error);
@@ -3431,47 +3222,14 @@ export async function selectMasterOutput(
 		cueId !== null &&
 		sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)
 	) {
-		// CUEOUT-25 refused this; CUEOUT-26: MAIN on the CUE's own output is
-		// split cue on that output (master L / cue R), never a silent room.
-		// It is a pick, so it supersedes an older one. Like every pick it
-		// checks it is still current before it publishes. A failure while
-		// current is shown as an error, never a failed MAIN route (the live MAIN
-		// keeps playing): the pick it superseded only logs, so this one must
-		// not fail quietly too. No try here, on purpose (see the CUEOUT-26 test).
-		const splitSerial = ++_masterSelectSerial;
-		const cue = { serial: _cueSelectSerial };
-		const splitOutcome = await _enterSameDeviceSplit(
-			physicalOutputId(mixerState.headphones.outputs, cueId),
-			monitorSource,
-			() => splitSerial === _masterSelectSerial && cue.serial === _cueSelectSerial,
-			cue
-		).then(
-			(applied) => ({ failed: false as const, applied }),
-			(error: unknown) => ({ failed: true as const, error })
-		);
-		if (splitOutcome.failed) {
-			const detail = _detail(splitOutcome.error);
-			// A newer pick, a teardown or a CUE pick retired it: it only logs.
-			if (splitSerial !== _masterSelectSerial || generation !== _headphoneGeneration || cue.serial !== _cueSelectSerial) {
-				_logSupersededPick(detail);
-				if (generation === _headphoneGeneration) _settleDeferredReassert();
-				return;
-			}
-			recordPerfEvent('master-output-split-failed', detail, null, 'error');
-			mixerState.headphones.error = `Could not split MAIN and CUE onto one output (${detail}). Pick the device again.`;
-			throw splitOutcome.error;
-		}
-		if (!splitOutcome.applied || splitSerial !== _masterSelectSerial) return;
-		_assertCurrentHeadphoneOperation(generation, null);
-		_rememberSavedOutput('master', deviceId);
-		return;
+		// CUEOUT-25 / AUDFID-01: MAIN on the CUE's own output is refused before
+		// the try, so the live MAIN route is never failed and keeps playing. It
+		// is never turned into split cue: that is only the operator's own mode.
+		const label = mixerState.headphones.outputs.find((output) => output.id === cueId)?.label ?? cueId;
+		const refusal = sameDeviceCueRefusalText(label);
+		recordPerfEvent('master-refused-same-device', refusal, null, 'warn');
+		throw new Error(refusal);
 	}
-	const leavingSplitFrom =
-		mixerState.headphones.split_reason === 'same_device' &&
-		previousId !== null &&
-		!sameOutputDevice(mixerState.headphones.outputs, deviceId, previousId)
-			? previousId
-			: null;
 	// Ordering: validate, THEN take the serial, THEN cause side effects. After
 	// every await the pick asks whether it is still current BEFORE it publishes
 	// anything (route, error, saved output, rollback). A superseded pick
@@ -3610,14 +3368,6 @@ export async function selectMasterOutput(
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('master output selection failed', error);
 	}
-	if (leavingSplitFrom !== null) {
-		// A MAIN on a genuinely different output ends the automatic split: the
-		// shared output goes back to being the separate HEADPHONE CUE sink.
-		mixerState.headphones.split_reason = null;
-		mixerState.headphones.output_mode = 'two_outputs';
-		_cueClearedByOperator = false;
-		await selectHeadphoneOutput(leavingSplitFrom, monitorSource);
-	}
 }
 
 export async function selectAudioInput(deviceId: string): Promise<void> {
@@ -3638,4 +3388,118 @@ export async function selectAudioInput(deviceId: string): Promise<void> {
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('audio input selection failed', error);
 	}
+}
+
+// ---------------------------------------------------------------- AUDFID-05 launch restore
+
+export type LaunchOutputRestorePlan =
+	| { kind: 'skip'; reason: string }
+	| { kind: 'restore'; master: SavedIoDevice; cue: SavedIoDevice }
+	| { kind: 'practice'; missing: SavedIoDevice[] };
+
+/** AUDFID-05 (decided by the maintainer, Tue 3 Nov 2026): restore two_outputs on exactly
+ * the saved MAIN and CUE when both are listed at launch; otherwise practice,
+ * naming what is missing. A listing that could not be read (withheld names,
+ * which only an input open would unlock) restores nothing: inputs are never
+ * opened at launch (IOPIN-14). */
+export function launchOutputRestorePlan(args: {
+	saved: { master: SavedIoDevice | null; cue: SavedIoDevice | null };
+	outputs: readonly HeadphoneOutput[];
+	listed: boolean;
+}): LaunchOutputRestorePlan {
+	const { master, cue } = args.saved;
+	if (master === null || cue === null) return { kind: 'skip', reason: 'no saved MAIN and CUE pair' };
+	if (!args.listed) return { kind: 'skip', reason: 'the device list is not readable without opening an input' };
+	const present = (device: SavedIoDevice): boolean => args.outputs.some((output) => output.id === device.id);
+	const missing = [master, cue].filter((device) => !present(device));
+	if (missing.length > 0) return { kind: 'practice', missing };
+	return { kind: 'restore', master, cue };
+}
+
+export function launchRestoredText(mainLabel: string, cueLabel: string): string {
+	return `Restored: MAIN ${mainLabel}, CUE ${cueLabel}`;
+}
+
+export function launchMissingText(missing: readonly SavedIoDevice[]): string {
+	const names = missing.map((device) => device.label || device.id).join(' and ');
+	return `Started in practice mode: saved ${missing.length === 1 ? 'device' : 'devices'} ${names} ${missing.length === 1 ? 'is' : 'are'} not connected.`;
+}
+
+let _launchRestoreRan = false;
+/** Where the room was before the launch restore moved it, for Undo. */
+let _roomBeforeLaunchRestore: string | null = null;
+
+function _publishLaunchRestore(state: NonNullable<typeof mixerState.headphones.launch_restore>): void {
+	mixerState.headphones.launch_restore = state;
+	recordPerfEvent('launch-output-restore', `${state.status}: ${state.message}`, null, state.status === 'failed' ? 'error' : 'info');
+}
+
+/** AUDFID-05: run once per session, after the mount listing. Never opens an
+ * input; picks only outputs, through the ordinary MAIN and CUE picks. */
+export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource): Promise<void> {
+	if (_launchRestoreRan) return;
+	_launchRestoreRan = true;
+	const plan = launchOutputRestorePlan({
+		saved: _savedOutputs(),
+		outputs: mixerState.headphones.outputs,
+		listed: mixerState.headphones.device_access.status === 'listed'
+	});
+	switch (plan.kind) {
+		case 'skip':
+			_publishLaunchRestore({ status: 'skipped', message: plan.reason, main_label: null, cue_label: null, missing: [] });
+			return;
+		case 'practice': {
+			// The default launch mode is already practice; the saved picks are kept
+			// so the devices come back once they are connected and picked again.
+			const message = launchMissingText(plan.missing);
+			_publishLaunchRestore({ status: 'practice', message, main_label: null, cue_label: null, missing: plan.missing.map((d) => d.label || d.id) });
+			pushToast(message, 'warn');
+			return;
+		}
+		case 'restore': {
+			_roomBeforeLaunchRestore = mixerState.headphones.selected_master_output_device_id ?? _nativeRoomOutputId;
+			try {
+				await selectMasterOutput(plan.master.id, monitorSource);
+				await selectHeadphoneOutput(plan.cue.id, monitorSource);
+			} catch (error) {
+				const message = `Could not restore MAIN ${plan.master.label} and CUE ${plan.cue.label}: ${_detail(error)}`;
+				_publishLaunchRestore({ status: 'failed', message, main_label: plan.master.label, cue_label: plan.cue.label, missing: [] });
+				pushToast(message, 'error');
+				return;
+			}
+			const message = launchRestoredText(plan.master.label, plan.cue.label);
+			_publishLaunchRestore({ status: 'restored', message, main_label: plan.master.label, cue_label: plan.cue.label, missing: [] });
+			pushToast(message, 'info', 15_000, undefined, {}, 'launch-output-restore', {
+				label: 'Undo',
+				handler: () => void undoLaunchOutputRestore(monitorSource)
+			});
+			return;
+		}
+		default: {
+			const unhandled: never = plan;
+			throw new Error(`unhandled launch restore plan: ${String(unhandled)}`);
+		}
+	}
+}
+
+/** AUDFID-05 Undo: back to practice (the CUE route closes) and the room back
+ * on the output it played on before the restore, when that is still listed.
+ * Agents reach the same end state with `output_mode: practice` and
+ * `headphone_master_select`. */
+export async function undoLaunchOutputRestore(monitorSource: MonitorSource): Promise<void> {
+	const restored = mixerState.headphones.launch_restore;
+	if (restored?.status !== 'restored') throw new Error('nothing to undo: the outputs were not restored at launch');
+	setHeadphoneOutputMode('practice');
+	const before = _roomBeforeLaunchRestore;
+	if (before !== null && before !== mixerState.headphones.selected_master_output_device_id && mixerState.headphones.outputs.some((o) => o.id === before)) {
+		await selectMasterOutput(before, monitorSource);
+	}
+	_publishLaunchRestore({ ...restored, status: 'undone', message: `Undone: ${restored.message}` });
+}
+
+/** Test seam: a remount in the same session never restores twice; tests reset. */
+export function resetLaunchRestoreForTest(): void {
+	_launchRestoreRan = false;
+	_roomBeforeLaunchRestore = null;
+	mixerState.headphones.launch_restore = null;
 }

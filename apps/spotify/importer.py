@@ -11,6 +11,7 @@ Exit codes:
     2 -- Spotify API / network error.
     3 -- safety check failed.
 """
+
 from __future__ import annotations
 
 import time
@@ -88,17 +89,14 @@ def run_import(
     progress(f"fetching playlist {playlist_id}")
     playlist = client.fetch_playlist(playlist_id, use_cache=opts.use_cache)
     if opts.max_tracks is not None and len(playlist.tracks) > opts.max_tracks:
-        progress(
-            f"cautious mode: truncating to first {opts.max_tracks} of "
-            f"{len(playlist.tracks)} tracks"
-        )
+        progress(f"cautious mode: truncating to first {opts.max_tracks} of {len(playlist.tracks)} tracks")
         playlist = SpotifyPlaylist(
             id=playlist.id,
             name=playlist.name,
             snapshot_id=playlist.snapshot_id,
             owner=playlist.owner,
             description=playlist.description,
-            tracks=playlist.tracks[:opts.max_tracks],
+            tracks=playlist.tracks[: opts.max_tracks],
         )
 
     progress("loading local tracks from state DB")
@@ -118,7 +116,9 @@ def run_import(
     progress("writing report artifacts")
     reports = build_report_dir(playlist.id, root=opts.out_root)
     write_all_reports(
-        playlist, result, reports,
+        playlist,
+        result,
+        reports,
         runtime_seconds=time.monotonic() - t0,
         live=opts.live,
         include_timestamp=opts.include_timestamp,

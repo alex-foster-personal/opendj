@@ -28,6 +28,7 @@ This module is the single import point for the layout. The asset tier's own
 derivation in :mod:`apps.cloud.asset_store` is re-exported here, never
 copied, so the two cannot drift.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -79,11 +80,7 @@ def canonical_digest(content_hash: str) -> str:
     candidate = content_hash.strip()
     if candidate.startswith(HASH_PREFIX):
         candidate = candidate[len(HASH_PREFIX) :]
-    if (
-        len(candidate) != SHA256_HEX_LEN
-        or ":" in candidate
-        or any(char not in _HEX_DIGITS for char in candidate)
-    ):
+    if len(candidate) != SHA256_HEX_LEN or ":" in candidate or any(char not in _HEX_DIGITS for char in candidate):
         raise R2KeyError(
             f"content_hash must be {SHA256_HEX_LEN} lowercase hex chars "
             f"(optionally prefixed '{HASH_PREFIX}'): got {content_hash!r}"
@@ -114,9 +111,7 @@ def legacy_stem_key(preset: str, stable_id: str, filename: str) -> str:
             f"legacy stem key needs non-empty preset, stable_id, filename; "
             f"got {preset!r} / {stable_id!r} / {filename!r}"
         )
-    return LEGACY_STEMS_TEMPLATE.format(
-        preset=preset, stable_id=stable_id, filename=filename
-    )
+    return LEGACY_STEMS_TEMPLATE.format(preset=preset, stable_id=stable_id, filename=filename)
 
 
 def parse_legacy_stem_key(key: str) -> LegacyStemKey:
@@ -126,16 +121,8 @@ def parse_legacy_stem_key(key: str) -> LegacyStemKey:
     a migration pass can never silently skip or mis-file an object.
     """
     parts = key.split("/")
-    if (
-        len(parts) != 4
-        or parts[0] != "stems"
-        or not parts[1]
-        or not parts[2]
-        or not parts[3]
-    ):
-        raise R2KeyError(
-            f"not a legacy stems/<preset>/<stable_id>/<filename> key: {key!r}"
-        )
+    if len(parts) != 4 or parts[0] != "stems" or not parts[1] or not parts[2] or not parts[3]:
+        raise R2KeyError(f"not a legacy stems/<preset>/<stable_id>/<filename> key: {key!r}")
     return LegacyStemKey(preset=parts[1], stable_id=parts[2], filename=parts[3])
 
 

@@ -24,6 +24,11 @@ import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
 import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
 import {
+	PIN_VISIBLE_DAYS_DEFAULT,
+	PIN_VISIBLE_DAYS_MAX,
+	PIN_VISIBLE_DAYS_MIN
+} from '$lib/rb/feedback-pin-age';
+import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
 	WHEEL_SENSITIVITY_MIN,
@@ -61,6 +66,24 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 				{ value: 'dark', label: 'Dark' },
 				{ value: 'light', label: 'Light' }
 			]
+		}
+	},
+	{
+		id: 'pin_visible_days',
+		label: 'How many days should pins be visible?',
+		group: 'appearance',
+		keywords: ['pin', 'pins', 'comment', 'comments', 'feedback', 'days', 'visible', 'hide', 'age'],
+		title: 'Hide comment pins older than this many days',
+		detail:
+			'0 shows every pin. Any other number hides comment pins older than that many days. The same number is on the comment-pin hover. Saved in this browser only.',
+		implemented: true,
+		control: {
+			kind: 'number',
+			min: PIN_VISIBLE_DAYS_MIN,
+			max: PIN_VISIBLE_DAYS_MAX,
+			step: 1,
+			defaultValue: PIN_VISIBLE_DAYS_DEFAULT,
+			unit: ' days'
 		}
 	},
 	{

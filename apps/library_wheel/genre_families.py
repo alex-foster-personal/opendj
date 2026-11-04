@@ -69,4 +69,3 @@ def simple_genre_family(tag: str | None) -> tuple[str, str] | None:
 
 
 __all__ = ["SIMPLE_GENRE_FAMILIES", "GenreFamily", "simple_genre_family"]
-

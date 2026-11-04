@@ -21,12 +21,14 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 READONLY_KEYWORDS = frozenset({"SELECT", "WITH", "VALUES", "EXPLAIN"})
-_ALLOWED_AUTH = frozenset({
-    sqlite3.SQLITE_SELECT,
-    sqlite3.SQLITE_READ,
-    sqlite3.SQLITE_FUNCTION,
-    sqlite3.SQLITE_RECURSIVE,
-})
+_ALLOWED_AUTH = frozenset(
+    {
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_FUNCTION,
+        sqlite3.SQLITE_RECURSIVE,
+    }
+)
 _QUERY_TIMEOUT_S = 2.0
 
 
@@ -120,7 +122,7 @@ def _readonly_authorizer(
 
 
 def _db_path(request: Request) -> Path:
-    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    return Path(getattr(request.app.state, "state_db_path", "(private path)"))
 
 
 def _raise_http(code: str, message: str, status: int) -> None:

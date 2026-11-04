@@ -42,19 +42,12 @@ exhaustive = true
 ; two-layer contract with `exhaustive = true`: a package under apps/ that is missing
 ; from the first layer FAILS the gate, so the list cannot go stale silently.
 ;
-; DEBT (measured Thu 1 Oct 2026, 13 imports the old list could not see). Never add
+; DEBT (measured Thu 1 Oct 2026, 6 imports the old list could not see). Never add
 ; a line: move the code down into shared, or up out of it, instead.
-;   apps.shared -> apps.sync_hub    (10, two modules in apps/shared/state/)
+;   apps.shared -> apps.sync_hub    (3, apps/shared/state/migrations_v17.py)
 ;   apps.shared -> apps.database    (2, apps/shared/state/agents_md_cache.py)
 ;   apps.shared -> apps.diagnostics (1, apps/shared/machine_pressure.py)
 ignore_imports =
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.capabilities
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.client_transport_ops
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.config
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.engine
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.protocol
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.spoke_credential
-    apps.shared.state.backfill_content_hash -> apps.sync_hub.transport
     apps.shared.state.migrations_v17 -> apps.sync_hub.engine_common
     apps.shared.state.migrations_v17 -> apps.sync_hub.protocol
     apps.shared.state.migrations_v17 -> apps.sync_hub.protocol_common
@@ -90,9 +83,10 @@ exhaustive = true
 ;     low-level services (setup, host_info). Moving those down out of engine_core
 ;     clears them.
 ;   Cleared by SMARTEST-CI round 12 (#3830), measured with lint-imports Tue 6 Oct 2026:
-;   smartlists -> webui (playlist_writeback moved to apps.smartlists), lyrics -> webui,
-;   sync_hub -> webui, and cloud, adapters and webui.server.rb_vendor_pkg ->
-;   engine_core (inverted, or annotation-only under exclude_type_checking_imports).
+;   smartlists -> webui (playlist_writeback moved to apps.smartlists), lyrics -> webui
+;     (stem_artifacts inversion, issue #5010), sync_hub -> webui, and cloud, adapters
+;     and webui.server.rb_vendor_pkg -> engine_core (inverted, or annotation-only under
+;     exclude_type_checking_imports).
 ignore_imports =
     apps.webui.server.preflight_checks -> apps.engine_core.setup.detect
     apps.webui.server.preflight_checks -> apps.engine_core.setup.record
@@ -109,15 +103,10 @@ forbidden_modules =
 ; imports it pulls the whole tree behind one import (the scripts package reaches
 ; every domain package), which is what held the 31-scope import cycle together
 ; until round 12. tests/scripts/test_apps_scripts_import_audit.py guards the
-; function-body form of the same edge with the same single exception.
-;
-; DEBT (measured Tue 22 Sep 2026, beatgrid_lane paid down): controls.py still
-; loads fixtures through scripts.beatbench.report. The report functions now
-; live in apps.analysis_bench.scorers.beatgrid_report, which
-; scripts.beatbench.report re-exports. Delete the line below when controls.py
-; imports that apps module directly.
-ignore_imports =
-    apps.analysis_bench.controls -> scripts.beatbench.report
+; function-body form of the same edge. The beatgrid report used to be the
+; exception (controls.py and scorers/beatgrid_lane.py). Both now import
+; apps.analysis_bench.scorers.beatgrid_report, and this contract has no
+; ignore_imports left.
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:production-code-never-imports-tests]
@@ -174,7 +163,10 @@ composition_roots =
 ; module that defines it (`PROVIDERS["import_module"]`) so a call counts only through that binding;
 ; the names are the data it matches, so they cannot be written as tested-only text. scripts.ci_test_selection_rules
 ; loads nothing either: it reads test files' ASTs to decide selection, and its frozensets name `__import__`,
-; `import_module`, `exec`, `eval` and `compile` as the calls it looks for (Sat 31 Oct 2026). The gate also refuses an entry that no
+; `import_module`, `exec`, `eval` and `compile` as the calls it looks for (Sat 31 Oct 2026). apps.plugins.host is the
+; plugin store's loader: a plugin's module name comes from its signed catalog entry, so it is data (#6522).
+; scripts.suite_census_mutation compiles a mutated copy of a module's AST to test the suite against it (#5636).
+; The gate also refuses an entry that no
 ; longer loads that way, so this list only shrinks; add to it only in a PR that says why
 ; the target cannot be named in source.
 dynamic_loaders =
@@ -184,6 +176,7 @@ dynamic_loaders =
     apps.analysis_bench.cli
     apps.analysis_bench.scorers
     apps.open_dj.registry
+    apps.plugins.host
     apps.sets.classify
     apps.sets.classify.model
     apps.vocals.from_stems
@@ -200,4 +193,5 @@ dynamic_loaders =
     scripts.pytest_tree_read_census
     scripts.selection_reach_census
     scripts.stems_modal_worker
+    scripts.suite_census_mutation
     scripts.worktree_tools

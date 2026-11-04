@@ -1,4 +1,5 @@
 """``StateWriter`` availability upserts with durable events."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

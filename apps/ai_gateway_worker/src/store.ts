@@ -31,12 +31,22 @@ export const utcDay = (at: Date = new Date()): string => at.toISOString().slice(
 
 const nowIso = (): string => new Date().toISOString();
 
-const randomHex = (bytes: number): string =>
-  [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+const bytesToHex = (bytes: Uint8Array): string =>
+  [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+const sha256Bytes = (text: string): Promise<ArrayBuffer> =>
+  crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+
+const randomHex = (bytes: number): string => bytesToHex(crypto.getRandomValues(new Uint8Array(bytes)));
 
 export async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return bytesToHex(new Uint8Array(await sha256Bytes(text)));
+}
+
+/** Constant-time compare of two UTF-8 strings by SHA-256 digest (tokens, admin secrets). */
+export async function sha256SecretEqual(a: string, b: string): Promise<boolean> {
+  const [da, db] = await Promise.all([sha256Bytes(a), sha256Bytes(b)]);
+  return crypto.subtle.timingSafeEqual(da, db);
 }
 
 // ----- install tokens ------------------------------------------------------

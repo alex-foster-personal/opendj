@@ -210,6 +210,7 @@ class Verdict:
 
 # ----------------------------------------------------------------- regex
 
+
 class Rx:
     SITE = re.compile(r"^\s*(?:\[[^\]]*(?:mp3|\.info|\.to)[^\]]*\]|\S+\.(?:to|info|com))\s*-\s*", re.I)
     JUNK = re.compile(
@@ -256,7 +257,8 @@ class Rx:
     EXT = re.compile(r"\.(?:mp3|wav|aiff?|flac|m4a|ogg)$", re.I)
     # A download-site watermark glued into a field: "DANCEDJ.CLUB", "Sub.FM".
     SITE_MARK = re.compile(
-        r"\s*(?<![\w.])[A-Za-z0-9-]{3,}\.(?:club|com|net|org|ru|info|biz|cc|xyz|top|online|site|fm|io)(?![\w.])\s*", re.I
+        r"\s*(?<![\w.])[A-Za-z0-9-]{3,}\.(?:club|com|net|org|ru|info|biz|cc|xyz|top|online|site|fm|io)(?![\w.])\s*",
+        re.I,
     )
     # Producer credit: "- prod. X", "(prod. by X)", "[produced by X]" at the end of the title.
     PRODUCER = re.compile(
@@ -266,7 +268,9 @@ class Rx:
     VS_TAIL = re.compile(r"\s+-\s+(?P<tail>(?:(?!\s-\s)[^()\[\]])+?\svs\.?\s(?:(?!\s-\s)[^()\[\]])+?)\s*$", re.I)
     VS_SPLIT = re.compile(r"\s+vs\.?\s+", re.I)
     # UTF-8 bytes read as cp1252/latin-1: a lead byte char (U+00C2-U+00F4) then a continuation (U+0080-U+00BF).
-    MOJIBAKE = re.compile(r"[\u00c2-\u00f4][\u0080-\u00bf\u2018-\u201e\u2020-\u2022\u2026\u2030\u2039\u203a\u20ac\u2122]")
+    MOJIBAKE = re.compile(
+        r"[\u00c2-\u00f4][\u0080-\u00bf\u2018-\u201e\u2020-\u2022\u2026\u2030\u2039\u203a\u20ac\u2122]"
+    )
     # Characters Windows forbids in filenames, replaced by "_" on the way into tags. Known names only.
     # Bracketed text an LLM-confirmed answer may drop (R21): video/audio/quality junk, download promos, a MIK
     # "(6 - " wrapper, a copy number, a producer credit (moved to Proposal.producer). Anything else is content.
@@ -292,7 +296,11 @@ class Rx:
 
 
 def _sub_named(
-    text: str, name: str, applied: list[str] | None, pattern: re.Pattern[str], repl: str | Callable[[re.Match[str]], str] = " ",
+    text: str,
+    name: str,
+    applied: list[str] | None,
+    pattern: re.Pattern[str],
+    repl: str | Callable[[re.Match[str]], str] = " ",
 ) -> str:
     new = pattern.sub(repl, text)
     if applied is not None and new != text:
@@ -354,18 +362,23 @@ def _split_unspaced(text: str) -> tuple[str, str] | None:
     if Rx.ARTIST_SPLIT.search(text):
         return None
     for m in Rx.UNSPACED_DASH.finditer(text):
-        left, right = text[: m.start()].strip(), text[m.end():].strip()
-        if (len(left) >= 3 and re.search(r"[\s\d-]", left) and not re.search(r"[(\[]", left)
-                and " " in right and not Rx.VERSION_ONLY.fullmatch(right)):
+        left, right = text[: m.start()].strip(), text[m.end() :].strip()
+        if (
+            len(left) >= 3
+            and re.search(r"[\s\d-]", left)
+            and not re.search(r"[(\[]", left)
+            and " " in right
+            and not Rx.VERSION_ONLY.fullmatch(right)
+        ):
             return left, right
     return None
 
 
 def _strip_track_no(title: str, artist_filled: bool) -> str:
     if m := Rx.TRACK_NO_PADDED.match(title):
-        return title[m.end():]
-    if (m := Rx.TRACK_NO_BARE.match(title)) and (artist_filled or _split_artist(title[m.end():])):
-        return title[m.end():]
+        return title[m.end() :]
+    if (m := Rx.TRACK_NO_BARE.match(title)) and (artist_filled or _split_artist(title[m.end() :])):
+        return title[m.end() :]
     return title
 
 
@@ -454,7 +467,7 @@ def _strip_mik(draft: _Draft) -> None:
         # otherwise it is a track number ("3 - Vantor Quill - Glasswork") and still stripped.
         draft.key = m.group(1) or ""
         draft.energy = m.group(2) if draft.key or draft.artist else ""
-        draft.edit("mik-prefix" if draft.energy else "track-number", draft.title[m.end():])
+        draft.edit("mik-prefix" if draft.energy else "track-number", draft.title[m.end() :])
 
 
 def _strip_file_junk(draft: _Draft, track: Track) -> None:
@@ -464,7 +477,7 @@ def _strip_file_junk(draft: _Draft, track: Track) -> None:
         draft.edit("key-bpm-suffix", draft.title[: m.start()])
     draft.title = _strip_junk(draft.title, draft.applied)
     if m := Rx.BEATPORT_ID.match(draft.title):  # Beatport files: "<id>_Title_(Mix)" uses "_" for spaces
-        draft.edit("beatport-id", draft.title[m.end():].replace("_", " "))
+        draft.edit("beatport-id", draft.title[m.end() :].replace("_", " "))
     draft.edit("track-number", _strip_track_no(draft.title, bool(draft.artist)).strip())
     if not draft.title and track.filename:
         draft.edit("filename-title", _strip_junk(Rx.EXT.sub("", track.filename)))
@@ -489,7 +502,7 @@ def _assign_artist(draft: _Draft, track: Track) -> Cover | None:
         draft.artist = split[0]
         draft.edit("artist-split", split[1])
     elif draft.artist and draft.title.lower().startswith(draft.artist.lower() + " - "):
-        draft.edit("artist-dup", draft.title[len(draft.artist) + 3:])
+        draft.edit("artist-dup", draft.title[len(draft.artist) + 3 :])
     draft.title = draft.title.strip()
     return cover
 
@@ -507,10 +520,18 @@ def regex_propose(track: Track) -> Proposal:
         draft.reasons.append(f"underscore in {draft.title!r} may stand for a Windows-illegal character")
     tags = _merge_tags(version_tags(draft.title), cover.tags if cover else (), provenance_tags(track, mik_analyzed))
     return Proposal(
-        artist=draft.artist, title=draft.title, key=draft.key, energy=draft.energy, bpm=draft.bpm, tags=tags,
-        original_artist=cover.original_artist if cover else "", review_reasons=tuple(draft.reasons),
-        mik_analyzed=mik_analyzed, featured_artists=featured_artists(draft.title, track.artist),
-        producer=draft.producer, transforms=tuple(dict.fromkeys(draft.applied)),
+        artist=draft.artist,
+        title=draft.title,
+        key=draft.key,
+        energy=draft.energy,
+        bpm=draft.bpm,
+        tags=tags,
+        original_artist=cover.original_artist if cover else "",
+        review_reasons=tuple(draft.reasons),
+        mik_analyzed=mik_analyzed,
+        featured_artists=featured_artists(draft.title, track.artist),
+        producer=draft.producer,
+        transforms=tuple(dict.fromkeys(draft.applied)),
     )
 
 
@@ -594,7 +615,7 @@ def _song_and_original(head: str) -> tuple[str, str]:
 
 
 def _named_cover(title: str, artist: str) -> Cover | None:
-    """"- Fernwick Cover" names a credited performer; "- Organ Cover" names an instrument."""
+    """ "- Fernwick Cover" names a credited performer; "- Organ Cover" names an instrument."""
     m = Cov.NAMED_COVER.search(title)
     if not m:
         return None
@@ -619,7 +640,7 @@ def _detect_cover(title: str, artist: str) -> Cover | None:
     if m := Cov.COVER_BY.match(title):
         return _cover_by(m, artist, original)
     if credit:
-        rest = re.sub(r"\s{2,}", " ", title[: credit.start()] + title[credit.end():]).strip()
+        rest = re.sub(r"\s{2,}", " ", title[: credit.start()] + title[credit.end() :]).strip()
         return Cover(artist, f"{rest} (Cover)", original, ("cover",), credit.group("how").lower())
     if named := _named_cover(title, artist):
         return named
@@ -629,7 +650,7 @@ def _detect_cover(title: str, artist: str) -> Cover | None:
 
 
 def _cover_by(m: re.Match[str], artist: str, original: str) -> Cover:
-    """"X - guitar cover by Y": a filled artist field wins over Y; the head may carry the original artist."""
+    """ "X - guitar cover by Y": a filled artist field wins over Y; the head may carry the original artist."""
     song, head_original = _song_and_original(m.group("head"))
     instrument = _instrument_tags(m.group("kind") or "")
     marker = f"({m.group('kind').strip().title()} Cover)" if instrument else "(Cover)"
@@ -638,7 +659,7 @@ def _cover_by(m: re.Match[str], artist: str, original: str) -> Cover:
 
 
 def _performer_version(title: str, artist: str) -> Cover | None:
-    """"Song (Me Version)" is a cover only when "Me" is a credited artist."""
+    """ "Song (Me Version)" is a cover only when "Me" is a credited artist."""
     m = Cov.PERFORMER_VERSION.search(title)
     if not (m and any(n.casefold() == m.group("who").strip().casefold() for n in _credited(artist))):
         return None
@@ -717,16 +738,17 @@ def _names_a_remixer(title: str) -> bool:
         text = " ".join(w.strip("'\".,").lower() for w in m.group(1).split())
         for phrase in _MULTI_WORD_DESCRIPTORS:  # a multi-word descriptor is one phrase, not words to test singly
             text = re.sub(rf"\b{re.escape(phrase)}\b", " ", text)
-        if any(w and not w.isdigit() and not re.fullmatch(r"\d+(?:''|'|\")?", w) and w not in MIX_DESCRIPTORS
-               for w in text.split()):
+        if any(
+            w and not w.isdigit() and not re.fullmatch(r"\d+(?:''|'|\")?", w) and w not in MIX_DESCRIPTORS
+            for w in text.split()
+        ):
             return True
     return False
 
 
 def version_tags(title: str) -> tuple[str, ...]:
     return tuple(
-        tag for tag, pattern in VERSION_TAGS
-        if pattern.search(title) or (tag == "remix" and _names_a_remixer(title))
+        tag for tag, pattern in VERSION_TAGS if pattern.search(title) or (tag == "remix" and _names_a_remixer(title))
     )
 
 
@@ -792,6 +814,7 @@ def featured_artists(title: str, artist_field: str) -> tuple[str, ...]:
 
 
 # ----------------------------------------------------------------- openrouter
+
 
 class CallTimeout(RuntimeError):
     """An OpenRouter call passed its wall deadline: CFG.CALL_WALL_S, or the run's wall budget."""
@@ -876,7 +899,8 @@ class SpendBudget:
             if not self._fits(amount):
                 raise SpendCapReached(
                     f"{SPEND_CAP_ERROR}: ${self.spent_usd:.4f} spent and ${self.reserved_usd:.4f} in flight "
-                    f"of ${self.limit_usd:.4f}")
+                    f"of ${self.limit_usd:.4f}"
+                )
             self.reserved_usd += amount
             self._in_flight[cost_class] = self._in_flight.get(cost_class, 0) + 1
             return amount
@@ -945,7 +969,9 @@ class Api:
 def _api_key(api: Api) -> str:
     key = (api.key if api.key is not None else os.environ.get(CFG.OPENROUTER_KEY_ENV, "")).strip()
     if not key:
-        raise RuntimeError(f"{CFG.OPENROUTER_KEY_ENV} is not set and no api_key was passed; title fixing needs OpenRouter")
+        raise RuntimeError(
+            f"{CFG.OPENROUTER_KEY_ENV} is not set and no api_key was passed; title fixing needs OpenRouter"
+        )
     return key
 
 
@@ -1035,7 +1061,11 @@ def _settle_response(budget: SpendBudget, reserve: float, cost_class: str, url: 
         budget.settle(reserve, cost, cost_class)
         return
     budget.abandon(reserve, cost_class)
-    shape = "a JSON object without a valid usage.cost" if isinstance(data, dict) else f"a {type(data).__name__}, not a JSON object"
+    shape = (
+        "a JSON object without a valid usage.cost"
+        if isinstance(data, dict)
+        else f"a {type(data).__name__}, not a JSON object"
+    )
     raise PaidCallError(f"{url} answered 200 with {shape}", reserve)
 
 
@@ -1061,8 +1091,11 @@ def _describe(track: Track, proposal: Proposal) -> str:
         f"RAW title: {track.title}\nRAW artist: {track.artist or '(blank)'}\n"
         f"filename: {track.filename}\n\n"
         f"PROPOSED artist: {proposal.artist or '(blank)'}\nPROPOSED title: {proposal.title}"
-        + (f"\nPROPOSED producer (credit removed from the title, recorded on the proposal only): {proposal.producer}"
-           if proposal.producer else "")
+        + (
+            f"\nPROPOSED producer (credit removed from the title, recorded on the proposal only): {proposal.producer}"
+            if proposal.producer
+            else ""
+        )
     )
 
 
@@ -1107,7 +1140,7 @@ class JevAnswer:
 
 
 def mashup_candidate(track: Track, proposal: Proposal) -> bool:
-    """" x " / " vs " in the title with no explicit mashup word: only JEV can tell a mashup from a collab."""
+    """ " x " / " vs " in the title with no explicit mashup word: only JEV can tell a mashup from a collab."""
     return "mashup" not in proposal.tags and bool(Rx.MASHUP_JOIN.search(f"{track.title} | {proposal.title}"))
 
 
@@ -1123,7 +1156,9 @@ def judge_with_jev(track: Track, proposal: Proposal, api: Api) -> JevAnswer:
 
 def _probability(value: object, what: str) -> float:
     """A model-reported probability: a number in [0, 1] (NaN and infinity fall outside it), never a bool (float(True) would read as certain)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:  # the range test is also False for NaN
+    if (
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0
+    ):  # the range test is also False for NaN
         raise ValueError(f"{what} is not a probability in [0, 1]: {value!r}")
     return float(value)
 
@@ -1193,7 +1228,9 @@ def extract_with_llm(track: Track, api: Api) -> tuple[Proposal, float]:
 def _llm_proposal(track: Track, data: dict[str, Any]) -> tuple[Proposal, float]:
     content = data["choices"][0]["message"].get("content")
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError(f"{CFG.FALLBACK_MODEL} returned no content (finish={data['choices'][0].get('finish_reason')})")
+        raise RuntimeError(
+            f"{CFG.FALLBACK_MODEL} returned no content (finish={data['choices'][0].get('finish_reason')})"
+        )
     parsed = json.loads(content)
     cost = _required_cost(data)
     # A filled artist field is the user's data: the LLM only ever fixes the title then.
@@ -1212,7 +1249,9 @@ class Proj:
     SAMPLER_FILE = re.compile(r"MergeFX Sample Sound", re.I)
     CAPTURE_FILE = re.compile(r"_capture(?:\(\d+\))?\.(?:wav|aiff?)$", re.I)
     REC_FILE = re.compile(r"(?:^|\s)REC-\d{4}-\d{2}-\d{2}")
-    MASTERING_SERVICE = re.compile(r"^LANDR-|(?<![A-Za-z])e-?mastered|-(?:Balanced|Warm|Open)-(?:Low|Medium|High)\b", re.I)
+    MASTERING_SERVICE = re.compile(
+        r"^LANDR-|(?<![A-Za-z])e-?mastered|-(?:Balanced|Warm|Open)-(?:Low|Medium|High)\b", re.I
+    )
     DAW_EXPORT_CS = re.compile(r"(?<![A-Za-z])MASTER(?:ED)?(?![A-Za-z])")  # case-sensitive: "AA 1644 MASTER"
     DAW_EXPORT_CI = re.compile(r"_mastered|_mixdown\d*|_bounce\d*|(?<![a-z])(?:16|24|32)[ -]?bit(?![a-z])", re.I)
     GIG_WORDS = re.compile(r"\b(?:intro|outro|dj tool|sting|jingle|birthday|drop)\b", re.I)
@@ -1281,7 +1320,7 @@ def project_rules(track: Track) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 def project_decision(strong: tuple[str, ...], weak: tuple[str, ...], p_project: float) -> str:
-    """"project", "review" (strong rules that JEV disputes) or "" (not a project file)."""
+    """ "project", "review" (strong rules that JEV disputes) or "" (not a project file)."""
     if strong and p_project >= CFG.PROJECT_THRESHOLD:
         return "project"
     if strong:
@@ -1346,6 +1385,7 @@ def judge_project_with_jev(track: Track, api: Api) -> tuple[float, float]:
 
 # ----------------------------------------------------------------- pipeline
 
+
 def _same(a: Proposal, b: Proposal) -> bool:
     """Punctuation-blind, case-SENSITIVE: 'CANT STOP IT' is not 'Can't Stop It'."""
     norm = lambda s: re.sub(r"\W+", "", s)  # noqa: E731
@@ -1379,7 +1419,7 @@ def _mik_strip_only(track: Track, proposal: Proposal) -> bool:
     if not (track.artist.strip() and proposal.energy and proposal.artist == track.artist.strip()):
         return False
     m = Rx.MIK_PREFIX.match(track.title.strip())
-    return bool(m) and track.title.strip()[m.end():].strip() == proposal.title
+    return bool(m) and track.title.strip()[m.end() :].strip() == proposal.title
 
 
 def _fold(text: str) -> str:
@@ -1428,17 +1468,28 @@ SAFE_TRANSFORMS: tuple[str, ...] = (
 def safe_tier(track: Track, proposal: Proposal) -> bool:
     """Every change is a SAFE_TRANSFORMS edit on a filled-artist row and nothing else needs judging."""
     artist = track.artist.strip()
-    padded = track.artist != artist or track.title != track.title.strip()  # trimming is an unaudited edit: never auto-applied
+    padded = (
+        track.artist != artist or track.title != track.title.strip()
+    )  # trimming is an unaudited edit: never auto-applied
     return (
-        not padded and bool(proposal.transforms) and set(proposal.transforms) <= set(SAFE_TRANSFORMS)
-        and not proposal.review_reasons and bool(artist) and proposal.artist == artist
-        and not _needs_human(proposal, track.title) and not mashup_candidate(track, proposal)
+        not padded
+        and bool(proposal.transforms)
+        and set(proposal.transforms) <= set(SAFE_TRANSFORMS)
+        and not proposal.review_reasons
+        and bool(artist)
+        and proposal.artist == artist
+        and not _needs_human(proposal, track.title)
+        and not mashup_candidate(track, proposal)
         and "mashup" not in proposal.tags  # an explicit mashup is never judged, so it is never safe
     )
 
 
 def fix_track(
-    track: Track, api_key: str | None = None, *, deadline: float | None = None, budget: SpendBudget | None = None,
+    track: Track,
+    api_key: str | None = None,
+    *,
+    deadline: float | None = None,
+    budget: SpendBudget | None = None,
 ) -> Verdict:
     """api_key None reads $OPENROUTER_API_KEY; deadline is a time.monotonic() stamp (the run's wall budget);
     budget is the run's shared spend budget, checked before every paid call."""
@@ -1474,15 +1525,19 @@ def _no_api_verdict(
     if not (strong or weak) and safe_tier(track, proposal):
         status: Status = "clean" if _same(proposal, Proposal(track.artist, track.title)) else "fixed"
         note = f"safe tier: {', '.join(proposal.transforms)}"
-        return with_tags(replace(
-            base, status=status, artist=proposal.artist, title=proposal.title, source="safe-tier", notes=[note]
-        ))
+        return with_tags(
+            replace(base, status=status, artist=proposal.artist, title=proposal.title, source="safe-tier", notes=[note])
+        )
     return None
 
 
 def _demote_to_review(verdict: Verdict, project_note: str) -> Verdict:
     """An auto-applicable verdict goes to review when JEV disputed the project rules or tagged a mashup."""
-    if project_note and verdict.status in ("fixed", "clean", "not_music"):  # every usable verdict, unknown stays unknown
+    if project_note and verdict.status in (
+        "fixed",
+        "clean",
+        "not_music",
+    ):  # every usable verdict, unknown stays unknown
         return replace(verdict, status="review", notes=[*verdict.notes, project_note])
     if CFG.MASHUP_REVIEW and _is_mashup(verdict) and verdict.status in ("fixed", "clean"):
         return replace(verdict, status="review", notes=[*verdict.notes, "mashup: review"])
@@ -1506,15 +1561,22 @@ def with_tags(verdict: Verdict) -> Verdict:
     row_tags = tuple(t for t in regex.tags if t not in version_tags(regex.title))
     mashup = ("mashup",) if _jev_mashup(verdict) else ()
     return replace(
-        verdict, tags=_merge_tags(version_tags(verdict.title), row_tags, mashup), original_artist=regex.original_artist,
-        featured_artists=regex.featured_artists, producer=regex.producer,
+        verdict,
+        tags=_merge_tags(version_tags(verdict.title), row_tags, mashup),
+        original_artist=regex.original_artist,
+        featured_artists=regex.featured_artists,
+        producer=regex.producer,
     )
 
 
 def _fix_title(track: Track, proposal: Proposal, base: Verdict, api: Api) -> Verdict:
     if proposal.review_reasons:
         return replace(
-            base, status="review", artist=proposal.artist, title=proposal.title, source="regex",
+            base,
+            status="review",
+            artist=proposal.artist,
+            title=proposal.title,
+            source="regex",
             notes=list(proposal.review_reasons),
         )
     try:
@@ -1550,7 +1612,12 @@ def _settle_with_llm(base: Verdict, track: Track, proposal: Proposal, llm: Propo
         if dropped := dropped_brackets(track.title, proposal.title):
             note = f"drops bracketed text {', '.join(dropped)} that is not on the strip list"
             return replace(
-                base, status="review", artist=proposal.artist, title=proposal.title, source="regex+deepseek", notes=[note]
+                base,
+                status="review",
+                artist=proposal.artist,
+                title=proposal.title,
+                source="regex+deepseek",
+                notes=[note],
             )
         status: Status = "clean" if unchanged else "fixed"
         return replace(base, status=status, artist=proposal.artist, title=proposal.title, source="regex+deepseek")
@@ -1569,7 +1636,8 @@ def dropped_brackets(raw_title: str, title: str) -> list[str]:
     """Bracketed groups of the raw title that are gone from `title` and are not on the strip list (R21)."""
     kept = _fold(title)
     return [
-        group for group in Rx.BRACKET.findall(raw_title.translate(Rx.FULL_WIDTH))
+        group
+        for group in Rx.BRACKET.findall(raw_title.translate(Rx.FULL_WIDTH))
         if _fold(group) and _fold(group) not in kept and not _is_junk_bracket(group)
     ]
 
@@ -1580,8 +1648,12 @@ def _is_junk_bracket(group: str) -> bool:
 
 
 def fix_tracks(
-    tracks: list[Track], api_key: str | None = None, *, wall_budget_s: float | None = None,
-    spend_budget_usd: float | None = None, spend_budget: SpendBudget | None = None,
+    tracks: list[Track],
+    api_key: str | None = None,
+    *,
+    wall_budget_s: float | None = None,
+    spend_budget_usd: float | None = None,
+    spend_budget: SpendBudget | None = None,
 ) -> list[Verdict]:
     """api_key None reads $OPENROUTER_API_KEY (CLI/eval). wall_budget_s caps the whole run: once it is spent no
     new OpenRouter call starts and in-flight calls stop at it, so those rows come back unknown with the reason.
@@ -1591,8 +1663,11 @@ def fix_tracks(
     deadline = None if wall_budget_s is None else time.monotonic() + wall_budget_s
     if spend_budget is not None and spend_budget_usd is not None:
         raise ValueError("pass spend_budget_usd or spend_budget, not both")
-    budget = spend_budget if spend_budget is not None else (
-        None if spend_budget_usd is None else SpendBudget(spend_budget_usd))
+    budget = (
+        spend_budget
+        if spend_budget is not None
+        else (None if spend_budget_usd is None else SpendBudget(spend_budget_usd))
+    )
     with ThreadPoolExecutor(CFG.WORKERS) as pool:
         return list(pool.map(lambda track: fix_track(track, key, deadline=deadline, budget=budget), tracks))
 

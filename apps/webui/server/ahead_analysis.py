@@ -111,8 +111,8 @@ from typing import Any
 import psutil
 
 from apps.analysis import queue_store
-from apps.shared.process_priority import background_argv, lowered_priority
 from apps.shared.events import publish as publish_engine_event
+from apps.shared.process_priority import background_argv, lowered_priority
 from apps.shared.shutdown_bound import SpawnAfterQuit
 from apps.webui.server import enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
@@ -180,6 +180,8 @@ TAGS_LANE: str = "tags"
 PLAYING_LANES: tuple[str, ...] = ("beatgrid", "key")
 #: AutoPlay next-up ids kept; more is library-wide work by another name.
 NEXT_UP_MAX: int = 4
+#: Newly ingested ids kept at the front behind deck bumps (ENRICH-06).
+INGEST_PRIORITY_MAX: int = 5000
 #: Any new xrun stops while-playing work this long: playback always wins.
 XRUN_COOLDOWN_S: float = 60.0
 #: The detector state a page publishes in ``xrun_sentinel.detector`` while its
@@ -464,6 +466,8 @@ class AheadSources:
     deck_tracks_fn: Callable[[], list[str]] | None = None
     #: The page's session xrun counter, None when unknown (NATIVE-5886).
     xruns_fn: Callable[[], int | None] | None = None
+    #: Drop the cached present-row snapshot so a fresh ingest is seen this tick.
+    invalidate_present_fn: Callable[[], None] | None = None
 
 
 class AheadDrain:
@@ -493,6 +497,8 @@ class AheadDrain:
         self._lane_set_aside: dict[str, list[str]] = {lane: [] for lane, _b in LANE_ORDER}
         self._duds = DudLedger(sources.duds_path)
         self._bumped: list[str] = []
+        #: Ingest batches' ids, oldest batch first (ENRICH-06).
+        self._ingest_priority: list[str] = []
         self._next_up: list[str] = []
         self._xruns_seen: int | None = None
         #: The count sampled at the top of this tick, None when there is none.
@@ -525,6 +531,25 @@ class AheadDrain:
             self._bumped.append(stable_id)
             del self._bumped[:-50]
         self._wake.set()
+
+    def prioritize(self, stable_ids: Sequence[str]) -> None:
+        """Put a fresh ingest batch ahead of the library, behind deck bumps (ENRICH-06).
+
+        Earlier batches keep their place ahead of later ones, so a batch's
+        tracks get every playback lane before the next batch starts any.
+        """
+        with self._bump_lock:
+            fresh = [sid for sid in dict.fromkeys(stable_ids) if sid not in set(self._ingest_priority)]
+            self._ingest_priority.extend(fresh)
+            del self._ingest_priority[:-INGEST_PRIORITY_MAX]
+        if self._src.invalidate_present_fn is not None:
+            self._src.invalidate_present_fn()
+        self._wake.set()
+
+    def _ranking(self) -> list[str]:
+        """Deck bumps first (latest first), then ingest batches in order, as ``front_first`` reads it."""
+        with self._bump_lock:
+            return [*reversed(self._ingest_priority), *self._bumped]
 
     def set_next_up(self, stable_ids: Sequence[str]) -> list[str]:
         """Replace AutoPlay's next-up tracks, the ones analyzed while a deck plays (NATIVE-5886)."""
@@ -593,8 +618,7 @@ class AheadDrain:
             if callable(playback) and not playback():
                 return "paused_playing"
             return PAUSED_XRUN_STATE if xrun_hold else self._playing_tick()
-        with self._bump_lock:
-            bumped = list(self._bumped)
+        bumped = self._ranking()
         present = self._phases.run("present", self._src.present_fn)
         for name, phase in ((TAGS_LANE, self._tags_phase), (STRIP_LANE, self._strip_phase)):
             try:
@@ -793,7 +817,9 @@ class AheadDrain:
             self._lane_set_aside[lane].remove(sid)
             return lane, [sid]
 
-        loaded = front_first([sid for _lane, sid in retries if sid in bumped], bumped)
+        with self._bump_lock:
+            on_deck = list(self._bumped)
+        loaded = front_first([sid for _lane, sid in retries if sid in on_deck], on_deck)
         if loaded:
             return retry_alone(loaded[0])
         slow = {lane for lane, _sid in retries}
@@ -934,6 +960,22 @@ class AheadDrain:
             log.warning("ahead analysis: re-arming unavailable lanes %s", sorted(self._status.unavailable))
         self._status.unavailable.clear()
         self._wake.set()
+
+    def retry_failed_for(self, stable_ids: Iterable[str]) -> None:
+        """Forget these tracks' per-track failures so the next ticks run them again."""
+        ids = set(stable_ids)
+        for failures in (self._strip_failed, self._tags_failed, *self._lane_failed.values()):
+            for sid in ids & set(failures):
+                failures.pop(sid)
+        self._wake.set()
+
+    def failures(self) -> dict[str, dict[str, str]]:
+        """lane -> {stable_id: reason} for every per-track failure the drain holds now."""
+        return {
+            TAGS_LANE: dict(self._tags_failed),
+            STRIP_LANE: dict(self._strip_failed),
+            **{lane: dict(failed) for lane, failed in self._lane_failed.items()},
+        }
 
     # --- coverage ---------------------------------------------------------
     def coverage(self) -> dict[str, Any]:
@@ -1589,6 +1631,10 @@ class PlayableRows:
         self._mapped = set(self._mapped_fn(self._ids))
         self._at = now
 
+    def invalidate(self) -> None:
+        """Re-read the snapshot on the next call (a batch was just ingested)."""
+        self._at = None
+
     def present(self) -> list[str]:
         self._ensure()
         return list(self._ids)
@@ -1686,6 +1732,7 @@ def build_for_app(app: Any) -> AheadDrain:
             duds_path=Path(db).parent / DUDS_FILENAME,
             deck_tracks_fn=lambda: mirror_deck_tracks(mirror()),
             xruns_fn=xruns,
+            invalidate_present_fn=rows.invalidate,
         ),
         startup_grace_s=STARTUP_GRACE_S,
         xrun_anchor=anchor,

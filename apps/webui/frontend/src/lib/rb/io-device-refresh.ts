@@ -53,6 +53,18 @@ const BROWSER_DEPS: IoDeviceRefreshDeps = {
 	publishFailure: publishIoDeviceAccessFailure
 };
 
+/** AUDFID-05 (the maintainer, Tue 3 Nov 2026): the one exception to "mount changes no
+ * route". After the mount listing, restore two_outputs on the saved MAIN and
+ * CUE if both are listed; it picks outputs only and never opens an input. */
+export async function listIoDevicesAndRestoreOutputsOnMount(
+	deps: IoDeviceRefreshDeps = BROWSER_DEPS,
+	restore: () => Promise<void> = () => engine.restoreSavedOutputsAtLaunch()
+): Promise<void> {
+	await refreshIoDeviceList(deps);
+	if (deps.rustUnsupported()) return;
+	await restore();
+}
+
 /** List the devices and guarantee the outcome is visible in
  * `mixerState.headphones.device_access`, whatever happened. Never rejects:
  * the rejection is the state. */

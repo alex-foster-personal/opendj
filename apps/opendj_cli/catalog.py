@@ -28,6 +28,7 @@ from apps.opendj_cli.kinds import (
     auto_gain_offset_value,
     bool_value,
     deck_value,
+    dial_value,
     enum_value,
     false_only_value,
     grid_edit_value,
@@ -36,6 +37,7 @@ from apps.opendj_cli.kinds import (
     int_value,
     loop_value,
     master_delay_ms_value,
+    number_enum_value,
     number_value,
     positive_int_value,
     positive_number_value,
@@ -62,6 +64,8 @@ QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
 ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
+COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
+COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
 #: WAVEQS-8348e: mirrors WAVEFORM_OVERLAYS in src/lib/rb/waveform-overlay-command.ts.
 WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial")
@@ -89,6 +93,8 @@ _SLOT = arg("slot", "enum", enum_value(SLOT_VALUES), "A-H")
 _BAND = arg("band", "enum", enum_value(BAND_VALUES), "low|mid|high")
 _STEM = arg("stem", "enum", enum_value(STEM_VALUES), "vocal|instrumental|drums")
 _UNIT = arg("value", "unit", unit_value, "0..1")
+# DIALCLOCK-8341: a bipolar dial also takes a clock time (3pm, 3 o'clock, 15:00; 12 = centre).
+_DIAL = arg("value", "dial", dial_value, "0..1|clock")
 
 
 @dataclass(frozen=True)
@@ -163,9 +169,16 @@ def _mixer(channel_key: str, expect: str) -> tuple[Observe, ...]:
 
 _VERBS: tuple[Verb, ...] = (
     # ----- transport ----------------------------------------------------
-    Verb("load", "load", (_DECK, arg("stable_id", "text", text_value)),
-         quick_draws=("load",),
-         observes=(Observe(("decks", "{deck}", "stable_id"), "stable_id"),)),
+    Verb("load", "load", (
+        _DECK,
+        arg("stable_id", "text", text_value),
+        arg("replace_playing", "bool", bool_value,
+            "true|false: stop a playing deck and replace its track", optional=True),
+    ), quick_draws=("load",),
+         observes=(Observe(("decks", "{deck}", "stable_id"), "stable_id"),),
+         note="AGENT-8332/54: onto a playing deck the load is refused (verdict blocked, exit 6). "
+              "replace_playing=true stops the deck and loads; send it only when the user's request "
+              "implies replacing a playing deck, otherwise check in with them first."),
     Verb("load_play_intent", "load_play_intent", (
         _DECK,
         arg("generation", "int", positive_int_value),
@@ -252,15 +265,15 @@ _VERBS: tuple[Verb, ...] = (
         _DECK, arg("semitones", "int", int_enum_value(KEY_NUDGE_VALUES), "-1|1"),
     ), quick_draws=("key_nudge.up", "key_nudge.down")),
     # ----- mixer strip --------------------------------------------------
-    Verb("trim", "trim", (_DECK, _UNIT), observes=_mixer("trim", "value")),
+    Verb("trim", "trim", (_DECK, _DIAL), observes=_mixer("trim", "value")),
     Verb("auto_gain_offset", "auto_gain_offset", (
         _DECK, arg("offset_db", "number", auto_gain_offset_value, "-12..12|clear"),
         arg("stable_id", "text", text_value),
     ), note="AUTOGAIN-04: the loaded track's own auto gain dB; clear uses the analysed value. "
             "stable_id names the track meant; a deck holding another one refuses the write."),
-    Verb("eq", "eq", (_DECK, _BAND, _UNIT),
+    Verb("eq", "eq", (_DECK, _BAND, _DIAL),
          observes=(Observe(("mixer", "channels", "{deck}", "eq_{band}"), "value", 1e-6),)),
-    Verb("filter", "filter", (_DECK, _UNIT), observes=_mixer("filter", "value")),
+    Verb("filter", "filter", (_DECK, _DIAL), observes=_mixer("filter", "value")),
     Verb("fader", "fader", (_DECK, _UNIT), observes=_mixer("fader", "value")),
     Verb("assign", "assign", (_DECK, arg("assign", "enum", enum_value(ASSIGN_VALUES), "A|B|THRU")),
          observes=_mixer("assign", "assign")),
@@ -362,6 +375,20 @@ _VERBS: tuple[Verb, ...] = (
     Verb("deck_autocue", "deck_autocue", (_ENABLED,),
          observes=(Observe(("deck_autocue",), "enabled"),),
          note="DECKCTL-6235: the AU switch; a fresh load parks at its first memory cue, else its first beat."),
+    Verb("color_fx", "color_fx", (
+        _DECK,
+        arg("effect", "enum", enum_value(COLOR_FX_EFFECT_VALUES), "filter|space|echo|next", optional=True),
+        arg("echo_beats", "number", number_enum_value(COLOR_FX_ECHO_BEAT_VALUES), "0.25|0.5|0.75|1",
+            optional=True),
+        arg("value", "dial", dial_value, "0..1|clock", optional=True),
+    ), note="COLORFX-01..05: pick what the channel color knob plays (FILTER, SPACE reverb or a "
+            "beat-synced dub ECHO timed to the deck tempo), the echo division in beats, and "
+            "optionally the knob itself (0.5 = center, exactly dry). Sticky across track loads; "
+            "the mirror's color_fx carries it per deck. Refused in Rust engine mode. "
+            "COLORFX-8341: effect=next cycles FILTER, SPACE, ECHO; switching effect removes the "
+            "old one and returns the knob to 12 o'clock unless value is given. DIALCLOCK-8341: "
+            "value takes a clock time (9 o'clock = 0.1667, 12 = centre, 3 o'clock = 0.8333; "
+            "the dial runs 7:30 to 4:30)."),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
     Verb("autoplay", "autoplay", (

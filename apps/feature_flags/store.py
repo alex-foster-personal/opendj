@@ -132,6 +132,19 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=False,
     ),
     FlagDef(
+        flag_id="shell.backstage",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Backstage shell, option A 'Desk' (the maintainer, Tue 13 Oct 2026). ON swaps "
+            "the flat sidebar for Gig + grouped Backstage nav and opens /admin "
+            "panels one at a time by ?p=<id>. OFF (default) leaves the shell "
+            "exactly as before. Retire once Backstage is the only shell."
+        ),
+        retire_by="2027-04-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="ui.react.deck",
         default=False,
         owner="maintainer",
@@ -155,6 +168,19 @@ FLAGS: tuple[FlagDef, ...] = (
             "2026): one in-memory search over the open playlist and the whole "
             "collection, the library's filters as an icon row, deck rings above "
             "the bar. OFF keeps the shipped CMDK-01..03 bar unchanged."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="sets.routes_view",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Set routes view (SET-6586): the Routes toggle, route glyphs on set "
+            "tabs and Make component in a playlist. OFF by default while the "
+            "view is new; OFF hides the controls and the playlist shows the "
+            "plain track table, the HTTP routes stay available."
         ),
         retire_by="2027-03-01",
         sandbox_gated=False,

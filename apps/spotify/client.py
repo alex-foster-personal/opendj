@@ -28,11 +28,13 @@ __all__ = [
     "CACHE_DIR",
     "TOKEN_CACHE_PATH",
     "MissingCredentialsError",
+    "ReauthorizationRequired",
     "SpotifyClient",
     "SpotifyClientProtocol",
     "SpotifyPlaylist",
     "SpotifyTrack",
     "parse_playlist_payload",
+    "parse_track_item",
 ]
 
 _CACHE_TTL_SECONDS: int = 24 * 60 * 60
@@ -65,7 +67,12 @@ TOKEN_CACHE_PATH: Path = Path("~/.music-dj-tools/spotify-token.json").expanduser
 CACHE_DIR: Path = DATA_DIR / "spotify" / "cache"
 
 DEFAULT_REDIRECT_URI: str = "http://127.0.0.1:8888/callback"
-DEFAULT_SCOPES: str = "playlist-read-private playlist-read-collaborative"
+# Adding a scope invalidates the cached token: spotipy notices the scope set
+# changed and re-runs the PKCE browser flow ONCE. That is deliberate and
+# visible, not something to work around by keeping two token caches.
+DEFAULT_SCOPES: str = (
+    "playlist-read-private playlist-read-collaborative user-read-recently-played"
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +121,15 @@ class MissingCredentialsError(RuntimeError):
     """Raised when ``SPOTIFY_CLIENT_ID`` is missing from the environment."""
 
 
+class ReauthorizationRequired(RuntimeError):
+    """Raised when a non-interactive caller has no usable cached token.
+
+    Distinct from ``MissingCredentialsError``: the app IS configured, the
+    user simply has to complete a browser sign-in that only a terminal can
+    drive. The two states want different words in the UI.
+    """
+
+
 class SpotifyClientProtocol(Protocol):
     """Minimal shape we depend on from ``spotipy.Spotify``."""
 
@@ -128,6 +144,12 @@ class SpotifyClientProtocol(Protocol):
         offset: int = 0,
         additional_types: tuple[str, ...] = ("track",),
     ) -> dict: ...  # pragma: no cover -- protocol
+
+    def current_user_recently_played(self, limit: int = 50) -> dict:
+        ...  # pragma: no cover -- protocol
+
+    def me(self) -> dict:
+        ...  # pragma: no cover -- protocol
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +185,7 @@ def _read_cache(path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _parse_track_item(item: dict) -> SpotifyTrack | None:
+def parse_track_item(item: dict) -> SpotifyTrack | None:
     """Convert one ``playlist_items.items[i]`` payload entry.
 
     Returns ``None`` for null / removed entries (Spotify does that).
@@ -197,7 +219,7 @@ def _parse_track_item(item: dict) -> SpotifyTrack | None:
 
 def _parse_playlist_payload(payload: dict) -> SpotifyPlaylist:
     items: Iterable[dict] = payload.get("_items", [])
-    tracks = tuple(t for t in (_parse_track_item(it) for it in items) if t is not None)
+    tracks = tuple(t for t in (parse_track_item(it) for it in items) if t is not None)
     owner_obj = payload.get("owner") or {}
     owner = owner_obj.get("display_name") or owner_obj.get("id") or ""
     return SpotifyPlaylist(
@@ -240,8 +262,23 @@ class SpotifyClient:
         *,
         cache_dir: Path = CACHE_DIR,
         cache_ttl: int = _CACHE_TTL_SECONDS,
+        interactive: bool = True,
     ) -> SpotifyClient:
-        """Build a real client using ``SPOTIFY_CLIENT_ID`` from the env."""
+        """Build a real client using ``SPOTIFY_CLIENT_ID`` from the env.
+
+        ``interactive`` is the difference between a terminal and a daemon.
+        In a terminal (the default) an unusable token opens a browser and
+        waits on the loopback callback, which is the whole point of the CLI.
+
+        A SERVER must never do that: it would open a browser on a host nobody
+        is sitting at and block the HTTP worker until the callback times out.
+        ``interactive=False`` therefore refuses up front with
+        ``ReauthorizationRequired`` rather than starting a flow that cannot
+        complete. This fires on a SCOPE CHANGE too, not only on expiry:
+        spotipy treats a token cached under a narrower scope set as no token
+        at all, so adding a scope makes every daemon call raise this until
+        someone completes the browser sign-in once from a terminal.
+        """
         client_id = os.environ.get("SPOTIFY_CLIENT_ID")
         if not client_id:
             raise MissingCredentialsError(
@@ -257,8 +294,16 @@ class SpotifyClient:
             redirect_uri=DEFAULT_REDIRECT_URI,
             scope=DEFAULT_SCOPES,
             cache_path=str(TOKEN_CACHE_PATH),
-            open_browser=True,
+            open_browser=interactive,
         )
+        if not interactive and auth.get_cached_token() is None:
+            raise ReauthorizationRequired(
+                "No usable cached Spotify token for scopes "
+                f"'{DEFAULT_SCOPES}'. Expected after a scope change. Run "
+                "`doppler run -p construct -c dev_af -- python -m apps.spotify "
+                "recent --limit 1` once in a terminal to complete the browser "
+                "sign-in, then retry."
+            )
         sp = spotipy.Spotify(auth_manager=auth)
         return cls(sp, cache_dir=cache_dir, cache_ttl=cache_ttl)
 
@@ -306,6 +351,25 @@ class SpotifyClient:
 
         meta["_items"] = items
         return meta
+
+    def current_user(self) -> dict:
+        """The authenticated Spotify profile. Raises if the token is unusable."""
+        return self._call(self._sp.me)
+
+    def recently_played(self, *, limit: int = 50) -> list[dict]:
+        """Raw ``/me/player/recently-played`` items, newest first.
+
+        Never cached: the whole point of the pane is what was just played.
+        Spotify caps this endpoint at 50 items and at roughly the last 50
+        plays, so there is no pagination loop to write.
+        """
+        if not 1 <= limit <= 50:
+            raise ValueError(f"limit must be 1..50, got {limit}")
+        payload = self._call(lambda: self._sp.current_user_recently_played(limit=limit))
+        items = payload.get("items")
+        if not isinstance(items, list):
+            raise ValueError("recently-played payload has no 'items' list")
+        return items
 
     def _call(self, thunk) -> Any:
         """One-retry on 401; spotipy refreshes tokens automatically."""

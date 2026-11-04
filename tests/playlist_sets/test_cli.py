@@ -13,18 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared.play_orders.schema import apply_play_order_migrations
-from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
-from apps.shared.state import db as state_db
+from tests.shared.playlist_sets.conftest import seed_playlist_sets_db
 
 pytestmark = pytest.mark.requirement("SET-05")
-
-
-def _seed_db(path: Path) -> None:
-    conn = state_db.open_rw(path)
-    apply_play_order_migrations(conn)
-    apply_playlist_set_migrations(conn)
-    conn.close()
 
 
 def _run_cli(db: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -38,7 +29,7 @@ def _run_cli(db: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def test_create_then_list(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
-    _seed_db(db)
+    seed_playlist_sets_db(db)
     assert _run_cli(db, "create", "--playlist", "pl1", "--name", "A").returncode == 0
     assert _run_cli(db, "create", "--playlist", "pl1", "--name", "B").returncode == 0
     listed = _run_cli(db, "list", "--playlist", "pl1")
@@ -49,7 +40,7 @@ def test_create_then_list(tmp_path: Path) -> None:
 
 def test_perform_increments_membership_unchanged(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
-    _seed_db(db)
+    seed_playlist_sets_db(db)
     created = _run_cli(db, "--json", "create", "--playlist", "pl1", "--name", "Gig")
     set_id = json.loads(created.stdout)["id"]
     conn = sqlite3.connect(db)
@@ -72,7 +63,7 @@ def test_perform_increments_membership_unchanged(tmp_path: Path) -> None:
 
 def test_practice_does_not_increment(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
-    _seed_db(db)
+    seed_playlist_sets_db(db)
     created = _run_cli(db, "--json", "create", "--playlist", "pl1", "--name", "Rehearsal")
     set_id = json.loads(created.stdout)["id"]
     practiced = _run_cli(db, "--json", "practice", "--set", str(set_id))

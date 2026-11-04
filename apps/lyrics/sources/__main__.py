@@ -5,10 +5,10 @@
   uv run --no-sync python -m apps.lyrics.sources fetch --provider lrclib --present-only
   uv run --no-sync python -m apps.lyrics.sources summary
 
-Per-provider JSONL ledgers under data/state/lyrics-eval/source-availability/
+Per-provider JSONL ledgers under (private path)/
 are resumable (a track already in the ledger is never re-queried), and keyed
 providers hard-stop at their daily budget -- rerun tomorrow to continue.
-Fetched text lands in data/state/lyrics-eval/lyrics-text/<provider>/<key>.txt
+Fetched text lands in (private path)/<provider>/<key>.txt
 (musixmatch = ~30% previews by plan, named preview-<key>.txt).
 """
 
@@ -31,7 +31,7 @@ from apps.lyrics.sources.lrclib import LrclibProvider
 AVAIL_DIR = STATE_DIR / "source-availability"
 TEXT_DIR = STATE_DIR / "lyrics-text"
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _make_providers(names: list[str]) -> list[Provider]:
@@ -57,9 +57,11 @@ def _select_tracks(args: argparse.Namespace) -> list[Track]:
     n_dupes = n_all - len(tracks)
     if args.present_only:
         tracks = [t for t in tracks if t.audio_path is not None]
-    print(f"[..] denominator: {len(tracks)} unique tracks"
-          f" ({'audio-resolved, ' if args.present_only else ''}"
-          f"{n_dupes} playlist duplicates collapsed, {n_all} rows in export)")
+    print(
+        f"[..] denominator: {len(tracks)} unique tracks"
+        f" ({'audio-resolved, ' if args.present_only else ''}"
+        f"{n_dupes} playlist duplicates collapsed, {n_all} rows in export)"
+    )
     if args.sample:
         tracks = tracks[: args.sample]
     return tracks
@@ -89,16 +91,25 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 except BudgetExhausted as e:
                     print(f"[STOP] {e}")
                     break
-                out.write(json.dumps({
-                    "key": track.key, "artist": track.artist, "title": track.title,
-                    "found": r.found, "synced": r.synced, "instrumental": r.instrumental,
-                    "detail": r.detail, "audio_present": track.audio_path is not None,
-                }, ensure_ascii=False) + "\n")
+                out.write(
+                    json.dumps(
+                        {
+                            "key": track.key,
+                            "artist": track.artist,
+                            "title": track.title,
+                            "found": r.found,
+                            "synced": r.synced,
+                            "instrumental": r.instrumental,
+                            "detail": r.detail,
+                            "audio_present": track.audio_path is not None,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 out.flush()
-                marker = "SYNC" if r.synced else ("hit " if r.found else
-                         ("inst" if r.instrumental else "MISS"))
-                print(f"[{marker}] {provider.name} {i}/{len(todo)} "
-                      f"{track.artist[:28]} - {track.norm_title[:40]}")
+                marker = "SYNC" if r.synced else ("hit " if r.found else ("inst" if r.instrumental else "MISS"))
+                print(f"[{marker}] {provider.name} {i}/{len(todo)} {track.artist[:28]} - {track.norm_title[:40]}")
                 polite_sleep(provider)
     return _cmd_summary(args)
 
@@ -141,8 +152,10 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
             if synced is not None:
                 out_path.with_suffix(".lrc").write_text(synced, encoding="utf-8")
             fetched += 1
-            print(f"[OK] {track.artist[:28]} - {track.norm_title[:40]} -> "
-                  f"{out_path.name}{' + .lrc' if synced is not None else ''}")
+            print(
+                f"[OK] {track.artist[:28]} - {track.norm_title[:40]} -> "
+                f"{out_path.name}{' + .lrc' if synced is not None else ''}"
+            )
         polite_sleep(provider)
     print(f"[DONE] fetched {fetched}, already-had {skipped}, no-text {missing} -> {out_dir}")
     return 0
@@ -173,11 +186,12 @@ def _cmd_candidates(args: argparse.Namespace) -> int:
         else:
             n_without += 1
         marker = "ok" if cands else ("in" if instr else "--")
-        print(f"[{marker} n={len(cands)}] {i}/{len(todo)} "
-              f"{track.artist[:28]} - {track.norm_title[:40]}")
+        print(f"[{marker} n={len(cands)}] {i}/{len(todo)} {track.artist[:28]} - {track.norm_title[:40]}")
         polite_sleep(provider)
-    print(f"[DONE] {n_with} with candidates, {n_instr} instrumental-declared, "
-          f"{n_without} explicit no-source -> {CANDIDATES_DIR}")
+    print(
+        f"[DONE] {n_with} with candidates, {n_instr} instrumental-declared, "
+        f"{n_without} explicit no-source -> {CANDIDATES_DIR}"
+    )
     return 0
 
 
@@ -205,16 +219,25 @@ def _cmd_merge_musixmatch(_args: argparse.Namespace) -> int:
             text_path = text_dir / f"{key}.txt"
             if text_path.is_file():
                 rank = max((c["rank"] for c in d["candidates"]), default=-1) + 1
-                d["candidates"].append({
-                    "id": f"musixmatch-matcher-get-{rank}",
-                    "source": "musixmatch", "method": "matcher-get", "rank": rank,
-                    "plain_text": text_path.read_text(encoding="utf-8"),
-                    "synced_lrc": None,
-                    "source_track": {"artist": None, "title": None, "album": None,
-                                     "duration_s": None, "source_id": track_id},
-                    "duration_delta_s": None,
-                    "retrieved_at": now,
-                })
+                d["candidates"].append(
+                    {
+                        "id": f"musixmatch-matcher-get-{rank}",
+                        "source": "musixmatch",
+                        "method": "matcher-get",
+                        "rank": rank,
+                        "plain_text": text_path.read_text(encoding="utf-8"),
+                        "synced_lrc": None,
+                        "source_track": {
+                            "artist": None,
+                            "title": None,
+                            "album": None,
+                            "duration_s": None,
+                            "source_id": track_id,
+                        },
+                        "duration_delta_s": None,
+                        "retrieved_at": now,
+                    }
+                )
                 added += 1
                 changed = True
             else:
@@ -224,17 +247,23 @@ def _cmd_merge_musixmatch(_args: argparse.Namespace) -> int:
         if row["instrumental"] and not any(
             ev.get("source") == "musixmatch" for ev in d.get("instrumental_evidence", [])
         ):
-            d.setdefault("instrumental_evidence", []).append({
-                "source": "musixmatch", "method": "matcher-track-get",
-                "source_id": track_id, "retrieved_at": now,
-            })
+            d.setdefault("instrumental_evidence", []).append(
+                {
+                    "source": "musixmatch",
+                    "method": "matcher-track-get",
+                    "source_id": track_id,
+                    "retrieved_at": now,
+                }
+            )
             evidence += 1
             changed = True
         if changed:
             validate_candidate_file(d, expected_key=key)
             path.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"[DONE] musixmatch merge: {added} candidates added, {evidence} instrumental-evidence "
-          f"entries, {skipped} already merged, {corroborated_no_text} found-but-no-text-file")
+    print(
+        f"[DONE] musixmatch merge: {added} candidates added, {evidence} instrumental-evidence "
+        f"entries, {skipped} already merged, {corroborated_no_text} found-but-no-text-file"
+    )
     return 0
 
 
@@ -266,8 +295,7 @@ def _cmd_recover(args: argparse.Namespace) -> int:
         if cands:
             write_candidate_set(track, cands)
             recovered += 1
-            print(f"[ok n={len(cands)}] {i}/{len(todo)} "
-                  f"{track.artist[:28]} - {track.norm_title[:40]}")
+            print(f"[ok n={len(cands)}] {i}/{len(todo)} {track.artist[:28]} - {track.norm_title[:40]}")
         else:
             print(f"[--  ] {i}/{len(todo)} {track.artist[:28]} - {track.norm_title[:40]}")
         polite_sleep(provider)
@@ -300,7 +328,7 @@ def _cmd_crosscheck(_args: argparse.Namespace) -> int:
             declared_with_candidates += 1
         v = verdicts.get(d["track"]["key"], "unclassified")
         matrix[(b, v)] = matrix.get((b, v), 0) + 1
-        label = f'{d["track"]["artist"]} - {d["track"]["title"]}'
+        label = f"{d['track']['artist']} - {d['track']['title']}"
         if b == "instrumental-declared" and v == "vocal":
             contra_declared_vocal.append(label)
         elif b in ("has-candidates", "genius-only") and v == "instrumental":
@@ -314,12 +342,16 @@ def _cmd_crosscheck(_args: argparse.Namespace) -> int:
     print(f"\nCandidate buckets over {total} tracks (partition checked):")
     for b in ("has-candidates", "genius-only", "instrumental-declared", "no-source"):
         print(f"  {b:22s} {buckets.get(b, 0):5d}")
-    print(f"  ({declared_with_candidates} instrumental-declared files also hold candidates; "
-          f"declaration wins for routing, verifier arbitrates)")
+    print(
+        f"  ({declared_with_candidates} instrumental-declared files also hold candidates; "
+        f"declaration wins for routing, verifier arbitrates)"
+    )
     strict = buckets.get("has-candidates", 0)
     print(f"  HONEST coverage: {covered}/{lyric_needing} lyric-needing = {covered / lyric_needing:.1%}")
-    print(f"  STRICT coverage (excl. genius-only; scrape precision measured ~24%, "
-          f"Fri 28 Aug 2026): {strict}/{lyric_needing} = {strict / lyric_needing:.1%}")
+    print(
+        f"  STRICT coverage (excl. genius-only; scrape precision measured ~24%, "
+        f"Fri 28 Aug 2026): {strict}/{lyric_needing} = {strict / lyric_needing:.1%}"
+    )
     print(f"\nBucket x vocal-presence verdict ({len(verdicts)} verdicts on disk):")
     for (b, v), n in sorted(matrix.items()):
         print(f"  {b:22s} {v:12s} {n:5d}")
@@ -327,18 +359,26 @@ def _cmd_crosscheck(_args: argparse.Namespace) -> int:
     print(f"  declared-instrumental but stem says vocal: {len(contra_declared_vocal)}")
     for x in contra_declared_vocal:
         print(f"    {x}")
-    print(f"  has-candidates but stem says instrumental (wrong-match suspects): "
-          f"{len(contra_candidates_instr)}")
+    print(f"  has-candidates but stem says instrumental (wrong-match suspects): {len(contra_candidates_instr)}")
     for x in contra_candidates_instr:
         print(f"    {x}")
     report_path = STATE_DIR / "crosscheck-report.json"
-    report_path.write_text(json.dumps({
-        "buckets": buckets, "total": total, "covered": covered,
-        "lyric_needing": lyric_needing,
-        "verdict_matrix": {f"{b}|{v}": n for (b, v), n in sorted(matrix.items())},
-        "declared_instrumental_but_vocal_stem": contra_declared_vocal,
-        "has_candidates_but_instrumental_stem": contra_candidates_instr,
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            {
+                "buckets": buckets,
+                "total": total,
+                "covered": covered,
+                "lyric_needing": lyric_needing,
+                "verdict_matrix": {f"{b}|{v}": n for (b, v), n in sorted(matrix.items())},
+                "declared_instrumental_but_vocal_stem": contra_declared_vocal,
+                "has_candidates_but_instrumental_stem": contra_candidates_instr,
+            },
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
     print(f"\n[OK] report -> {report_path}")
     return 0
 
@@ -350,8 +390,7 @@ def _cmd_validate(_args: argparse.Namespace) -> int:
     bad = 0
     for path in files:
         try:
-            validate_candidate_file(
-                json.loads(path.read_text(encoding="utf-8")), expected_key=path.stem)
+            validate_candidate_file(json.loads(path.read_text(encoding="utf-8")), expected_key=path.stem)
         except ValueError as e:
             bad += 1
             print(f"[BAD] {path.name}: {e}")
@@ -371,9 +410,13 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         found = sum(r["found"] for r in rows)
         synced = sum(r["synced"] for r in rows)
         p_found = sum(r["found"] for r in present)
-        print(f"  {path.stem:12s} checked {n:5d}  found {found:5d} ({found / n:5.1%})  "
-              f"synced {synced:5d}  | audio-present subset: {p_found}/{len(present)}"
-              f" = {p_found / len(present):5.1%}" if present else "")
+        print(
+            f"  {path.stem:12s} checked {n:5d}  found {found:5d} ({found / n:5.1%})  "
+            f"synced {synced:5d}  | audio-present subset: {p_found}/{len(present)}"
+            f" = {p_found / len(present):5.1%}"
+            if present
+            else ""
+        )
     # the ledger view alone under-reports (it predates remix/genius/recovery
     # passes); the bucket partition is the real scoreboard
     return _cmd_crosscheck(args)
@@ -414,14 +457,17 @@ def _dispatch_command(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m apps.lyrics.sources")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "fetch", "candidates", "recover",
-                 "merge-musixmatch", "crosscheck", "validate", "summary"):
+    for name in ("check", "fetch", "candidates", "recover", "merge-musixmatch", "crosscheck", "validate", "summary"):
         p = sub.add_parser(name)
-        p.add_argument("--provider", dest="providers", action="append", default=None,
-                       help="repeatable; default: all in --tier")
+        p.add_argument(
+            "--provider", dest="providers", action="append", default=None, help="repeatable; default: all in --tier"
+        )
         p.add_argument("--tier", choices=("free", "keyed", "paid", "all"), default="free")
-        p.add_argument("--present-only", action="store_true",
-                       help="only tracks with locally resolved audio (honest karaoke denominator)")
+        p.add_argument(
+            "--present-only",
+            action="store_true",
+            help="only tracks with locally resolved audio (honest karaoke denominator)",
+        )
         p.add_argument("--sample", type=int, default=None)
     args = parser.parse_args()
 

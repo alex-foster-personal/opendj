@@ -67,15 +67,17 @@ test('dualSinkAssignment auto-pins master to speakers when cue is headphones and
 		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: false }
 	);
 	// CUEOUT-25: a MASTER equal to the cue device is the silent-room defect
-	// (silver, Mon 5 Oct 2026). CUEOUT-26: it is one output, so split cue on it.
-	assert.deepEqual(
-		headphones.dualSinkAssignment({
-			outputs: WIRED,
-			selectedCueId: 'hp',
-			selectedMasterId: 'hp'
-		}),
-		{ masterId: 'hp', cueId: 'hp', autoPinnedMaster: false, splitSameDevice: true }
-	);
+	// (silver, Mon 5 Oct 2026). AUDFID-01: the CUE is refused, never an automatic split.
+	const shared = headphones.dualSinkAssignment({
+		outputs: WIRED,
+		selectedCueId: 'hp',
+		selectedMasterId: 'hp'
+	});
+	assert.equal(shared.masterId, 'hp');
+	assert.equal(shared.cueId, null);
+	assert.equal(shared.autoPinnedMaster, false);
+	assert.match(shared.cueRefusal, /MAIN and CUE are the same output .*choose Split cue .* yourself/);
+	assert.equal('splitSameDevice' in shared, false);
 });
 
 test('audioContextSinkIdIsSupported is a function check, not a silent fallback', () => {

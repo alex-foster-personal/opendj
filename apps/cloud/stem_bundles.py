@@ -6,6 +6,7 @@ The requirements (STEM-40, STEM-42) are listed in that module's docstring.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -78,12 +79,7 @@ def scan_bundles(stems_dir: Path) -> list[LocalBundle]:
         return []
     bundles: list[LocalBundle] = []
     for child in sorted(root.iterdir()):
-        if (
-            not child.is_dir()
-            or child.is_symlink()
-            or IN_FLIGHT_MARKER in child.name
-            or EVICTING_MARKER in child.name
-        ):
+        if not child.is_dir() or child.is_symlink() or IN_FLIGHT_MARKER in child.name or EVICTING_MARKER in child.name:
             continue
         bundle = _scan_one(child)
         if bundle is not None:
@@ -113,6 +109,11 @@ def _scan_one(child: Path) -> LocalBundle | None:
         return None
     fingerprint = hashlib.sha256(json.dumps(sorted(stamps)).encode("utf-8")).hexdigest()
     return LocalBundle(child.name, child, size, newest_atime, frozenset(names), fingerprint)
+
+
+def scan_bundle(bundle_dir: Path) -> LocalBundle | None:
+    """One bundle's scan (size, recency, fingerprint), or None when it is gone."""
+    return _scan_one(Path(bundle_dir))
 
 
 def current_fingerprint(bundle_dir: Path) -> str | None:
@@ -298,6 +299,7 @@ __all__ = [
     "index_gap",
     "is_hydrate_pinned",
     "pin_for_hydrate",
+    "scan_bundle",
     "scan_bundles",
     "sweep_abandoned_claims",
     "unconfirmed_reason",

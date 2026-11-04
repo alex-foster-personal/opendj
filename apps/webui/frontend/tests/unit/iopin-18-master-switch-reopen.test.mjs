@@ -10,7 +10,6 @@
 // [if] the device is picked again while its first sink move is still pending and that move fails [then] the repeat pick moves the sink itself and the stale failure is recorded
 // [if] an older pick's sink move lands after a newer pick failed [then] the newer pick's failed route stands
 // [if] a pick is refused by validation while another pick is in flight, during its sink move or its reopen [then] the in-flight pick still lands, reopens, is saved and shows route selected
-// [if] a same-device split pick settles after a newer pick landed [then] it saves nothing over the newer pick, leaves its CUE and mode alone, and the shown MAIN is re-asserted
 // [if] an older pick's sink move lands after a newer pick's [then] the sink is moved back to the device the menu shows and the room is reopened
 // [if] a newer pick lands while that corrective move is pending [then] the correction follows the newest pick
 // [if] an older pick lands while another older move is still pending, and that move then fails [then] the deferred correction runs and moves the sink back to the device shown
@@ -18,15 +17,9 @@
 // [if] the headphone routes are torn down while a corrective sink move is pending [then] the correction stops: no further move, no reopen, no error
 // [if] a repeat pick's OS-default re-assert lands after a newer pick's move [then] the sink is moved back to the device the menu shows
 // [if] a teardown retires a pick and a new mount publishes its own MAIN before the pick settles [then] the pick rejects as stale and neither rolls back nor fails that MAIN
-// [if] a teardown retires a same-device split during its sink move [then] it clears no CUE and publishes no split
 // [if] a pick a teardown retired lands its sink move after the replacement mount picked [then] nothing is moved, reopened or reported through the retired room
 // [if] newer picks keep landing while each corrective pass is pending [then] the correction keeps following until the sink matches the menu
-// [if] a same-device split lands while MAIN's own move to that device is still pending [then] the split pins the sink itself rather than trusting that move
-// [if] a same-device split runs with no MAIN landing known since a remount [then] it pins MAIN itself rather than trusting the menu, and a known landing there still skips (control)
-// [if] a same-device split pick fails while it is the newest pick [then] it shows an error and rejects, and the live MAIN route is not marked failed
 // [if] the app resumes a room a failed reopen left suspended, then pauses it [then] the next pick leaves that pause alone
-// [if] a same-device split moves MAIN onto the CUE's output [then] the room is reopened before the split is published, and a failed reopen shows the retry error while the split stands
-// [if] a teardown retires a same-device split during its reopen [then] it clears no CUE and publishes no split
 // [if] a reopen's suspend fails or times out with the room still running [then] a later pause by the app is left alone
 // [if] a timed-out reopen suspend lands later [then] the next reopen resumes that room
 // [if] a timed-out reopen suspend lands later while a deck plays [then] the watchdog raises no unexpected-pause alarm for it, and a pause after it settles still alarms
@@ -805,27 +798,6 @@ test("a repeat pick's OS-default re-assert that lands after a newer pick is put 
 	assert.equal(audio.mixerState.headphones.routes.master.state, 'selected');
 });
 
-test('a same-device split that lands while a repeat pick re-asserts the OS default pins MAIN itself', async () => {
-	const hp = audio.mixerState.headphones;
-	const ctx = roomContext();
-	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-	await audio.selectMasterOutput(USB, source);
-	setMasterUids.length = 0;
-	holdCommands = 1;
-	// The repeat exists because the OS default may have drifted: until it
-	// lands, MAIN shown on USB is not MAIN pinned there.
-	const repeat = audio.selectMasterOutput(USB, source);
-	await waitFor(() => heldReplies.length === 1, "the repeat pick's set_master to be sent");
-	hp.output_mode = 'two_outputs';
-	hp.selected_output_device_id = USB;
-	hp.split_reason = null;
-	await audio.selectMasterOutput(USB, source);
-	assert.deepEqual(setMasterUids, ['UsbInterface', 'UsbInterface'], 'the split must pin MAIN itself, not trust the pending re-assert');
-	assert.equal(hp.output_mode, 'split_cable');
-	heldReplies.shift()();
-	await repeat;
-});
-
 test('control: a repeat pick with no newer pick re-asserts once and reopens', async () => {
 	const ctx = roomContext();
 	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
@@ -880,29 +852,6 @@ test('control: a pick a teardown retired with no new route still undoes its own 
 		reject(new Error('old setSinkId refused'));
 		await assert.rejects(pick, /stale headphone operation/);
 		assert.equal(hp.selected_master_output_device_id, null, 'nothing the retired pick started is left shown');
-	});
-});
-
-test('a same-device split a teardown retires during its sink move publishes nothing (browser path)', async () => {
-	await onBrowserPath(async () => {
-		const hp = audio.mixerState.headphones;
-		const ctx = roomContext();
-		const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-		let finish;
-		ctx.setSinkId = () => new Promise((resolve) => (finish = resolve));
-		hp.output_mode = 'two_outputs';
-		hp.selected_output_device_id = USB;
-		hp.split_reason = null;
-		const split = audio.selectMasterOutput(USB, source);
-		await waitFor(() => finish !== undefined, 'the split to reach setSinkId');
-		// /performance unmounts with no newer MAIN pick, and the next mount
-		// keeps its two outputs.
-		audio.disposeHeadphoneMonitor();
-		finish();
-		await split.catch(() => {});
-		assert.equal(hp.output_mode, 'two_outputs', 'a retired split must not publish split_cable');
-		assert.equal(hp.selected_output_device_id, USB, 'a retired split must not clear CUE');
-		assert.equal(hp.split_reason, null);
 	});
 });
 
@@ -973,199 +922,6 @@ test('a pick refused by validation does not supersede the pick in flight', async
 		assert.equal(audio.mixerState.headphones.selected_master_output_device_id, SPEAKERS);
 		assert.equal(audio.mixerState.headphones.routes.master.state, 'selected', 'a refusal during the reopen must not leave MAIN failed');
 	});
-});
-
-test('a same-device split pick never saves over a newer pick, and fails visibly (browser path)', async () => {
-	await onBrowserPath(async () => {
-		const hp = audio.mixerState.headphones;
-		const ctx = roomContext();
-		const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-		const enterTwoOutputs = () => {
-			hp.output_mode = 'two_outputs';
-			hp.selected_output_device_id = USB;
-			hp.split_reason = null;
-		};
-		let finishSplit;
-		let splitMoves = 0;
-		const sinkIds = [];
-		ctx.setSinkId = (id) => {
-			sinkIds.push(id);
-			if (id !== 'default' && String(id).includes('Usb')) {
-				splitMoves += 1;
-				return new Promise((resolve, reject) => (finishSplit = { resolve, reject }));
-			}
-			return Promise.resolve();
-		};
-		enterTwoOutputs();
-		const split = audio.selectMasterOutput(USB, source);
-		await waitFor(() => finishSplit !== undefined, 'the split pick to reach setSinkId');
-		hp.output_mode = 'practice';
-		await audio.selectMasterOutput(SPEAKERS, source);
-		assert.equal(savedMainId(), SPEAKERS);
-		const movesBeforeStaleLanding = sinkIds.length;
-		finishSplit.resolve();
-		await split;
-		assert.equal(savedMainId(), SPEAKERS, 'the superseded split pick must not save its device');
-		// Nor publish its route: the newer pick's MAIN, CUE and mode stand, and
-		// the sink the stale move took is put back on the device shown.
-		assert.equal(hp.selected_master_output_device_id, SPEAKERS);
-		assert.equal(hp.selected_output_device_id, USB, 'the superseded split must not clear CUE');
-		assert.notEqual(hp.output_mode, 'split_cable');
-		await waitFor(() => sinkIds.length > movesBeforeStaleLanding, 'the shown MAIN to be re-asserted');
-		assert.equal(sinkIds.at(-1), SPEAKERS);
-
-		// A split that fails while it is the newest pick shows an error.
-		audio.disposeHeadphoneMonitor();
-		hp.selected_master_output_device_id = null;
-		hp.error = null;
-		finishSplit = undefined;
-		enterTwoOutputs();
-		const failing = audio.selectMasterOutput(USB, source);
-		await waitFor(() => finishSplit !== undefined, 'the second split pick to reach setSinkId');
-		finishSplit.reject(new Error('split setSinkId refused'));
-		await assert.rejects(failing);
-		assert.match(hp.error ?? '', /Could not split MAIN and CUE/);
-		assert.notEqual(hp.routes.master.state, 'failed', 'CUEOUT-26: a split never fails the live MAIN route');
-		assert.equal(splitMoves, 2);
-	});
-});
-
-test('a same-device split that lands while MAIN\'s own move to that device is pending pins the sink itself (browser path)', async () => {
-	await onBrowserPath(async () => {
-		const hp = audio.mixerState.headphones;
-		const ctx = roomContext();
-		const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-		let rejectFirst;
-		const sinkIds = [];
-		ctx.setSinkId = (id) => {
-			sinkIds.push(id);
-			if (rejectFirst === undefined && String(id).includes('Usb')) {
-				return new Promise((_, reject) => (rejectFirst = reject));
-			}
-			return Promise.resolve();
-		};
-		await audio.selectMasterOutput(SPEAKERS, source);
-		const first = audio.selectMasterOutput(USB, source);
-		await waitFor(() => rejectFirst !== undefined, 'the MAIN pick to reach setSinkId');
-		// The split sees MAIN shown on USB, but that move has not landed.
-		hp.output_mode = 'two_outputs';
-		hp.selected_output_device_id = USB;
-		hp.split_reason = null;
-		await audio.selectMasterOutput(USB, source);
-		rejectFirst(new Error('first setSinkId refused'));
-		await first.catch(() => {});
-		assert.equal(sinkIds.filter((id) => String(id).includes('Usb')).length, 2, 'the split must pin MAIN itself, not trust the pending move');
-		assert.equal(hp.output_mode, 'split_cable');
-		assert.equal(hp.selected_master_output_device_id, USB);
-	});
-});
-
-test('a same-device split that moves MAIN reopens the room before it publishes', async () => {
-	const hp = audio.mixerState.headphones;
-	const ctx = roomContext();
-	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-	await audio.selectMasterOutput(SPEAKERS, source);
-	ctx.calls.length = 0;
-	let modeAtSuspend;
-	const suspend = ctx.suspend;
-	ctx.suspend = async () => {
-		modeAtSuspend = hp.output_mode;
-		await suspend();
-	};
-	hp.output_mode = 'two_outputs';
-	hp.selected_output_device_id = USB;
-	hp.split_reason = null;
-	await audio.selectMasterOutput(USB, source);
-	assert.deepEqual(ctx.calls, ['suspend', 'resume'], 'the moved room must be reopened, not trusted to be live');
-	assert.equal(modeAtSuspend, 'two_outputs', 'the reopen runs before the split is published');
-	assert.equal(ctx.state, 'running');
-	assert.equal(hp.output_mode, 'split_cable');
-	assert.equal(hp.selected_master_output_device_id, USB);
-	assert.equal(hp.error, null);
-});
-
-test('a same-device split whose reopen fails keeps the split and shows the retry error', async () => {
-	const hp = audio.mixerState.headphones;
-	const ctx = roomContext();
-	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-	await audio.selectMasterOutput(SPEAKERS, source);
-	ctx.resume = async () => {
-		throw new Error('resume died');
-	};
-	hp.output_mode = 'two_outputs';
-	hp.selected_output_device_id = USB;
-	hp.split_reason = null;
-	await audio.selectMasterOutput(USB, source);
-	assert.equal(hp.output_mode, 'split_cable', 'the sink moved, so the split stands');
-	assert.match(hp.error ?? '', /Audio stayed silent .*Pick the device again/);
-	assert.notEqual(hp.routes.master.state, 'failed');
-});
-
-test('control: a same-device split with MAIN already on that output does not reopen the room', async () => {
-	const hp = audio.mixerState.headphones;
-	const ctx = roomContext();
-	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-	await audio.selectMasterOutput(USB, source);
-	ctx.calls.length = 0;
-	hp.output_mode = 'two_outputs';
-	hp.selected_output_device_id = USB;
-	hp.split_reason = null;
-	// MAIN is already on USB with no move pending: the split moves nothing,
-	// so there is no new stream to reopen.
-	await audio.selectMasterOutput(USB, source);
-	assert.equal(hp.output_mode, 'split_cable');
-	assert.deepEqual(ctx.calls, [], 'nothing moved, so nothing is reopened');
-});
-
-test('a same-device split with no landing known since a remount pins MAIN itself, then a known landing skips (browser path)', async () => {
-	await onBrowserPath(async () => {
-		const hp = audio.mixerState.headphones;
-		const ctx = roomContext();
-		const sinkCalls = [];
-		ctx.setSinkId = (id) => (sinkCalls.push(id), Promise.resolve());
-		const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-		// beforeEach disposed the monitor, so no move has landed in this mount:
-		// the menu still shows USB while the new room plays on the OS default.
-		hp.selected_master_output_device_id = USB;
-		hp.routes.master = { state: 'selected', selected: true };
-		hp.output_mode = 'two_outputs';
-		hp.selected_output_device_id = USB;
-		hp.split_reason = null;
-		await audio.selectMasterOutput(USB, source);
-		assert.equal(hp.output_mode, 'split_cable');
-		assert.equal(sinkCalls.length, 1, 'an unknown landing must pin MAIN, not trust the menu');
-		// Control: with the landing now known on USB, the same split moves nothing.
-		sinkCalls.length = 0;
-		hp.output_mode = 'two_outputs';
-		hp.selected_output_device_id = USB;
-		hp.split_reason = null;
-		await audio.selectMasterOutput(USB, source);
-		assert.equal(hp.output_mode, 'split_cable');
-		assert.equal(sinkCalls.length, 0, 'a known landing on that output keeps the split from moving MAIN');
-	});
-});
-
-test('a same-device split a teardown retires during its reopen publishes nothing', async () => {
-	const hp = audio.mixerState.headphones;
-	const ctx = roomContext();
-	const source = () => ({ context: ctx, masterGain: ctx.createGain() });
-	await audio.selectMasterOutput(SPEAKERS, source);
-	let finishResume;
-	ctx.resume = () => {
-		ctx.calls.push('resume');
-		return new Promise((resolve) => (finishResume = resolve));
-	};
-	hp.output_mode = 'two_outputs';
-	hp.selected_output_device_id = USB;
-	hp.split_reason = null;
-	const split = audio.selectMasterOutput(USB, source);
-	await waitFor(() => finishResume !== undefined, 'the split to reach resume');
-	audio.disposeHeadphoneMonitor();
-	finishResume();
-	await split.catch(() => {});
-	assert.equal(hp.output_mode, 'two_outputs', 'a retired split must not publish split_cable');
-	assert.equal(hp.selected_output_device_id, USB, 'a retired split must not clear CUE');
-	assert.equal(hp.split_reason, null);
 });
 
 test('a room the app resumed and then paused is not resumed by the next pick', async () => {

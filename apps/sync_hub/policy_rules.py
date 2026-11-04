@@ -7,7 +7,7 @@
 safe to apply; any ``error`` means it must not be.
 
 Authority: the synced ``sync_policies`` table is the single policy authority
-(pending decision D4b, recorded in ``specs/cloudsync-data-classes.md``);
+(pending decision D4b, recorded in ``(private path)``);
 ``apps/cloud/policy.py`` machine-class defaults are seed input only and are
 not read here.
 
@@ -148,8 +148,7 @@ def _read_fleet(
     cells = {
         (str(m), str(k)): PolicyCell(str(m), str(k), str(mode), budget)
         for m, k, mode, budget in conn.execute(
-            "SELECT machine_id, asset_kind, mode, cache_budget_mb FROM sync_policies "
-            "WHERE deleted_at IS NULL"
+            "SELECT machine_id, asset_kind, mode, cache_budget_mb FROM sync_policies WHERE deleted_at IS NULL"
         )
     }
     cells.update({(c.machine_id, c.asset_kind): c for c in proposed.policies})
@@ -164,10 +163,10 @@ def _read_fleet(
     pins.update({(p.machine_id, p.playlist_id): p for p in proposed.pins})
     for removed_pin in proposed.removed_pins:
         pins.pop((removed_pin.machine_id, removed_pin.playlist_id), None)
-    live = frozenset(
-        str(row[0])
-        for row in conn.execute("SELECT playlist_id FROM playlists WHERE deleted_at IS NULL")
-    ) | extra_live_playlists
+    live = (
+        frozenset(str(row[0]) for row in conn.execute("SELECT playlist_id FROM playlists WHERE deleted_at IS NULL"))
+        | extra_live_playlists
+    )
     defaults = {d.asset_kind: d.mode for d in proposed.defaults}
     return _Fleet(machines, cells, pins, live, defaults)
 
@@ -226,9 +225,7 @@ def proposal_targets(proposed: ProposedPolicy) -> list[tuple[str, str]]:
     targets = [(c.machine_id, f"{c.machine_id}/{c.asset_kind}") for c in proposed.policies]
     targets += [(p.machine_id, f"{p.machine_id}/pin/{p.playlist_id}") for p in proposed.pins]
     targets += [(r.machine_id, f"{r.machine_id}/{r.asset_kind}") for r in proposed.removed_policies]
-    targets += [
-        (r.machine_id, f"{r.machine_id}/pin/{r.playlist_id}") for r in proposed.removed_pins
-    ]
+    targets += [(r.machine_id, f"{r.machine_id}/pin/{r.playlist_id}") for r in proposed.removed_pins]
     return targets
 
 
@@ -253,8 +250,7 @@ def _completeness(fleet: _Fleet) -> list[Violation]:
             "completeness",
             "error",
             f"{machine_id}/{kind}",
-            f"machine {machine_id!r} has no mode for {kind!r} and the "
-            "proposal carries no explicit default for it",
+            f"machine {machine_id!r} has no mode for {kind!r} and the proposal carries no explicit default for it",
         )
         for machine_id in sorted(fleet.machines)
         for kind in _configurable_kinds()
@@ -272,8 +268,7 @@ def _durability(fleet: _Fleet) -> list[Violation]:
                     "durability",
                     "error",
                     kind,
-                    f"{kind!r} is excluded on all {len(modes)} machines, so no "
-                    "durable copy exists (local or R2)",
+                    f"{kind!r} is excluded on all {len(modes)} machines, so no durable copy exists (local or R2)",
                 )
             )
     return found
@@ -290,16 +285,11 @@ def _cache_budget(fleet: _Fleet) -> list[Violation]:
                     "cache_budget",
                     "error",
                     subject,
-                    f"cache_budget_mb={budget} is set but mode is "
-                    f"{cell.mode!r}; a budget applies only to 'cached'",
+                    f"cache_budget_mb={budget} is set but mode is {cell.mode!r}; a budget applies only to 'cached'",
                 )
             )
         elif budget is not None and budget <= 0:
-            found.append(
-                Violation(
-                    "cache_budget", "error", subject, f"cache_budget_mb={budget} must be positive"
-                )
-            )
+            found.append(Violation("cache_budget", "error", subject, f"cache_budget_mb={budget} must be positive"))
     return found
 
 

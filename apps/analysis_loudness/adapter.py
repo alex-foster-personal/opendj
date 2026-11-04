@@ -60,8 +60,7 @@ def _scan_whole_file_rms(path: Path, binary: str) -> float:
     )
     if completed.returncode != 0:
         raise LoudnessError(
-            f"ffmpeg exited {completed.returncode} measuring RMS for {path}:\n"
-            f"{completed.stderr[-2000:]}"
+            f"ffmpeg exited {completed.returncode} measuring RMS for {path}:\n{completed.stderr[-2000:]}"
         )
     matches = _RMS_PATTERN.findall(completed.stderr)
     if not matches:

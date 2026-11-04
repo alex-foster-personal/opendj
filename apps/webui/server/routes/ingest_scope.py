@@ -1,4 +1,5 @@
 """Refresh request validation, separate from the ingest route handlers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,7 +55,6 @@ def unmapped_steps(steps: list[str]) -> tuple[list[str], list[str]]:
     if "analysis" not in steps:
         raise HTTPException(
             422,
-            "scope=unmapped runs the analysis step only, and analysis "
-            "is disabled in the ingest config",
+            "scope=unmapped runs the analysis step only, and analysis is disabled in the ingest config",
         )
     return ["analysis"], [step for step in steps if step != "analysis"]

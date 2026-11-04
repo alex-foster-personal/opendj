@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::engine;
 
 const LOCK_FILE_NAME: &str = ".engine.lock";
+const LOCK_READ_ATTEMPTS: u32 = 5;
+const LOCK_READ_RETRY_MS: u64 = 10;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum LaunchPlan {
@@ -90,8 +92,7 @@ pub fn read_lock_fields(lock_path: &Path) -> Option<(u32, u16)> {
     if !lock_path.is_file() {
         return None;
     }
-    let raw = std::fs::read(lock_path).ok()?;
-    let holder = parse_lock_json(&raw);
+    let holder = read_lock_json_retrying(lock_path);
     let pid = holder.pid?;
     let port = holder.port?;
     if pid == 0 || port == 0 {
@@ -100,23 +101,49 @@ pub fn read_lock_fields(lock_path: &Path) -> Option<(u32, u16)> {
     Some((pid, port))
 }
 
-fn parse_lock_json(raw: &[u8]) -> LockJson {
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(raw) else {
-        return LockJson::default();
-    };
-    let obj = value.as_object();
-    if obj.is_none() {
-        return LockJson::default();
+fn try_parse_lock_json(raw: &[u8]) -> Option<LockJson> {
+    let trimmed = raw
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .map(|start| &raw[start..])
+        .unwrap_or(&[]);
+    if trimmed.is_empty() {
+        return None;
     }
-    let obj = obj.expect("checked");
-    LockJson {
+    let value = serde_json::from_slice::<serde_json::Value>(trimmed).ok()?;
+    let obj = value.as_object()?;
+    Some(LockJson {
         pid: obj.get("pid").and_then(|v| v.as_u64()).map(|v| v as u32),
         host: obj
             .get("host")
             .and_then(|v| v.as_str())
             .map(|v| v.to_string()),
         port: obj.get("port").and_then(|v| v.as_u64()).map(|v| v as u16),
+    })
+}
+
+fn parse_lock_json(raw: &[u8]) -> LockJson {
+    try_parse_lock_json(raw).unwrap_or_default()
+}
+
+fn read_lock_json_retrying(lock_path: &Path) -> LockJson {
+    read_lock_json_with(|| std::fs::read(lock_path).ok())
+}
+
+fn read_lock_json_with(mut read: impl FnMut() -> Option<Vec<u8>>) -> LockJson {
+    use std::thread;
+    use std::time::Duration;
+    for attempt in 0..LOCK_READ_ATTEMPTS {
+        if let Some(raw) = read() {
+            if let Some(holder) = try_parse_lock_json(&raw) {
+                return holder;
+            }
+        }
+        if attempt + 1 < LOCK_READ_ATTEMPTS {
+            thread::sleep(Duration::from_millis(LOCK_READ_RETRY_MS));
+        }
     }
+    LockJson::default()
 }
 
 pub fn inspect_lock(lock_path: &Path, health_check: fn(u16) -> bool) -> LaunchPlan {
@@ -137,9 +164,23 @@ pub fn inspect_lock(lock_path: &Path, health_check: fn(u16) -> bool) -> LaunchPl
         return LaunchPlan::Spawn;
     }
     let mut buffer = [0_u8; 4096];
-    let _ = file.seek(SeekFrom::Start(0));
-    let read = file.read(&mut buffer).unwrap_or(0);
-    let holder = parse_lock_json(&buffer[..read]);
+    let holder = {
+        use std::thread;
+        use std::time::Duration;
+        let mut parsed = LockJson::default();
+        for attempt in 0..LOCK_READ_ATTEMPTS {
+            let _ = file.seek(SeekFrom::Start(0));
+            let read = file.read(&mut buffer).unwrap_or(0);
+            if let Some(next) = try_parse_lock_json(&buffer[..read]) {
+                parsed = next;
+                break;
+            }
+            if attempt + 1 < LOCK_READ_ATTEMPTS {
+                thread::sleep(Duration::from_millis(LOCK_READ_RETRY_MS));
+            }
+        }
+        parsed
+    };
     let pid = holder.pid.unwrap_or(0);
     if pid == 0 {
         return LaunchPlan::StopOrQuit {
@@ -443,5 +484,30 @@ mod tests {
     #[test]
     fn pid_can_act_rejects_zero() {
         assert!(!pid_can_act(0));
+    }
+
+    #[test]
+    fn try_parse_lock_json_distinguishes_unparsable_from_empty_object() {
+        assert!(try_parse_lock_json(b"   ").is_none());
+        assert!(try_parse_lock_json(b"{\"pid\":1,\"pad\":\"x\"}{\"pid\":2}").is_none());
+        let empty = try_parse_lock_json(b"{}").expect("empty object");
+        assert_eq!(empty.pid, None);
+    }
+
+    #[test]
+    fn read_lock_json_with_retries_before_giving_up() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = AtomicUsize::new(0);
+        let holder = read_lock_json_with(|| {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                Some(b"   ".to_vec())
+            } else {
+                Some(br#"{"pid":12,"port":8683}"#.to_vec())
+            }
+        });
+        assert_eq!(holder.pid, Some(12));
+        assert_eq!(holder.port, Some(8683));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

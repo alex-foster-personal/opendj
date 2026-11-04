@@ -97,9 +97,7 @@ class DataClass:
     def tables(self) -> tuple[str, ...]:
         """Every database table this class owns, in declaration order."""
         return tuple(
-            loc.where
-            for loc in self.storage
-            if loc.kind in ("state_db_table", "cache_db_table", "vendor_db_table")
+            loc.where for loc in self.storage if loc.kind in ("state_db_table", "cache_db_table", "vendor_db_table")
         )
 
 

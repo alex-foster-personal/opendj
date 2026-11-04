@@ -378,6 +378,15 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
     ),
     *_each(
         "rust",
+        (("alloc-stdlib", "0.3.0"),),
+        text_relative="docs/legal/alloc-stdlib-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0a81fd6928ea3b33c8cd484aa4575d50ffb98012/LICENSE",
+        sha256="c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae",
+        reason="the crates.io package ships no LICENSE; dropbox/rust-alloc-no-stdlib LICENSE at git SHA 0a81fd69 "
+        "(bytes identical to ae42d220) is staged; arrived with the tao bump, #8330",
+    ),
+    *_each(
+        "rust",
         (("selectors", "0.36.1"),),
         text_relative="docs/legal/selectors-0.36.1-LICENSE.txt",
         source_url="https://raw.githubusercontent.com/servo/stylo/635e1a19d02960588a00e189bd4bd5bdb150ec3d/selectors/lib.rs",
@@ -385,6 +394,16 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
         reason="the crates.io package at 0.36.1 (git SHA 635e1a19, path_in_vcs selectors) ships no "
         "LICENSE; MPL Exhibit A from lib.rs, Cargo.toml authors/license, and the canonical "
         "Mozilla MPL-2.0 text are staged",
+    ),
+    *_each(
+        "rust",
+        (("selectors", "0.38.0"),),
+        text_relative="docs/legal/selectors-0.38.0-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/servo/stylo/572ecba2d1600e7c3d490586692a209faf703baa/selectors/lib.rs",
+        sha256="f9658ebcc5ca4784b44e5a22272bdc6107563ce6cd57cf79c62e12b70e61c9ed",
+        reason="the crates.io package at 0.38.0 (git SHA 572ecba2, path_in_vcs selectors) ships no "
+        "LICENSE; MPL Exhibit A from lib.rs, Cargo.toml authors/license, and the canonical "
+        "Mozilla MPL-2.0 text are staged (same shape as 0.36.1; arrived with the tao bump, #8330)",
     ),
     *_each(
         "rust",

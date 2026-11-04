@@ -36,7 +36,9 @@ layered on top of it: corrected grids, cue points, ratings, keys. Every vendor m
 quietly destroys some of it, and nothing records that it happened.
 
 open-dj's answer is to make every analysed value carry where it came from, so disagreement
-between sources is *representable* rather than resolved by whoever wrote last.
+between sources is *representable* rather than resolved by whoever wrote last. That is the
+interchange format (`x_prior` / `x_history`); the local `track_fields` row keeps the latest
+value and copies the previous envelope to `track_field_history`.
 
 ## Why a new format
 
@@ -152,28 +154,22 @@ deprecation policy. **None of those gates is met today.**
 
 ## Current state, honestly
 
-The spec is ahead of the implementation, and the roadmap does not match what was built.
+Two adapter families coexist. Rekordbox and djay are module-family export-only
+adapters under `apps/open_dj/adapters/` (`import_supported=False` in
+`apps/open_dj/registry.py`); live mutations go through `apps.sync.apply_ratings`
+and `apps.sync.playlist_apply`. Serato and Traktor are class-protocol adapters
+under `apps/adapters/` with `read` / `write`. The adapter-level conformance
+harness skips Rekordbox and djay because they have no `RekordboxAdapter` /
+`DjayAdapter` class; that skip is documented in `tests/test_conformance.py`.
+`apps/adapters/rekordbox/` is the product's hot-cue write surface into
+`master.plain.db`, not an open-dj adapter.
 
-The published roadmap sequences adapters as 0.2 Rekordbox (read/write), 0.3 djay,
-0.4 Traktor, 0.5 Serato. What actually exists in `apps/adapters/` is **Serato and Traktor
-only** - roadmap items 0.4 and 0.5 - while the 0.2 milestone the spec is *named after*,
-a read/write Rekordbox adapter, does not exist. Rekordbox and djay are read-only "module
-family" adapters under `apps/open_dj/adapters/` with no `write()`, and the adapter conformance
-harness skips them with an explicit, documented message ("not available in Phase 16 scope").
-The skip is honest; the roadmap claim above it is not.
+A remaining gap, verified:
 
-Two further gaps, both verified:
-
-- **The spec's own normative example is invalid.** Section 11 states `schema_version: "0.1"`
-  appears at every document root, and the Appendix A canonical example declares
-  `"schema_version":"0.1"`, while the schema enforces `const: "0.2"`. Validating Appendix A
-  against `open-dj/schema/v0.2/open-dj.schema.json` fails with `'0.2' was expected`. Anyone
-  starting from the canonical example gets a document that will not validate.
-- **`content_hash` is often synthesized**, derived from `(size_bytes, mtime, file_path)` rather
-  than hashing file content, flagged `x_content_hash_mode=inferred`. Since `content_hash` is the
-  spec's integrity anchor, an inferred value does not provide the guarantee the field implies.
-
-Tracked in issues odj-5817 (schema_version) and odj-5818 (Rekordbox adapter roadmap).
+- **`content_hash` is often synthesized**, derived from `(size_bytes, mtime,
+  file_path)` rather than hashing file content, flagged
+  `x_content_hash_mode=inferred`. Since `content_hash` is the spec's integrity
+  anchor, an inferred value does not provide the guarantee the field implies.
 
 ## Why the licences are split
 

@@ -86,8 +86,9 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
     assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
     // Codex's case: a hard link is the file it links to under another
     // spelling, so writing it would truncate the track mid-read, or write
-    // the mix and a deck output into one file.
-    #[cfg(unix)]
+    // the mix and a deck output into one file. On every OS: NTFS has hard
+    // links too, and there the answer comes from the volume serial and file
+    // index rather than device and inode.
     {
         std::fs::hard_link(d.join("a.wav"), d.join("linked.wav")).unwrap();
         let o = run(d.join("linked.wav"), None);
@@ -102,6 +103,11 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         assert!(!o.status.success());
         assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
         assert_eq!(std::fs::read(d.join("hl-mix.wav")).unwrap(), b"old", "something was written");
+    }
+    // Symlinks stay Unix-only here: creating one on Windows needs a privilege
+    // or Developer Mode, which a test cannot assume.
+    #[cfg(unix)]
+    {
         // Codex's case: a dangling symlink is followed by the write, which
         // creates its target, so `--out mix.wav -> deck1.wav` beside the deck
         // outputs is deck 1's file before either exists.
@@ -123,6 +129,8 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         let o = run(d.join("sl").join("mix2.wav"), Some(d.join("sl")));
         assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
         assert!(d.join("sl").join("elsewhere.wav").exists() && d.join("sl").join("deck1.wav").exists());
+    }
+    {
         // Control: a copy is a file of its own, and is overwritten.
         std::fs::copy(d.join("a.wav"), d.join("copy.wav")).unwrap();
         let o = run(d.join("copy.wav"), None);
@@ -255,7 +263,6 @@ fn a_session_refuses_to_load_the_file_it_records_to() {
     let d = temp_dir("cli-record");
     write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 0.5));
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 0.5));
-    #[cfg(unix)]
     std::fs::hard_link(d.join("a.wav"), d.join("linked.wav")).unwrap();
     let a_before = std::fs::read(d.join("a.wav")).unwrap();
     let mut child = Command::new(BIN)
@@ -270,11 +277,9 @@ fn a_session_refuses_to_load_the_file_it_records_to() {
     let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
     assert_eq!(next()["type"], "hello");
     let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
-    let mut paths = vec!["a.wav", "./a.wav"];
-    if cfg!(unix) {
-        paths.push("linked.wav");
-    }
-    for path in paths {
+    // The hard link on every OS: on Windows it is the same volume serial
+    // and file index as a.wav.
+    for path in ["a.wav", "./a.wav", "linked.wav"] {
         say(json!({"id": path, "cmd": {"type": "load", "deck": 1, "path": path}}));
         let r = next();
         assert_eq!(r["ok"], false, "{path}: {r}");

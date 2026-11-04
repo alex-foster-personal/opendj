@@ -52,6 +52,7 @@ independent symptoms" design above to one. 0.5 is a principled margin
 above the ~0.489 floor, not a measured one -- it exists only to keep this
 check CAPABLE of firing before round-0 measurement replaces it outright.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

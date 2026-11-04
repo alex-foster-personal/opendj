@@ -1,4 +1,5 @@
 """Pydantic models for the smartlists router."""
+
 from __future__ import annotations
 
 from typing import Any, Literal

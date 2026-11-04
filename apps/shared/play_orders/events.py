@@ -23,6 +23,7 @@ Payload schema (see (private path) for the full contract):
       "action": "created" | "updated" | "deleted",
     }
 """
+
 from __future__ import annotations
 
 import json
@@ -78,8 +79,7 @@ def emit_play_order_changed(
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
         conn.execute(
-            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) VALUES (?, ?, ?, ?, ?)",
             (
                 ts,
                 "play_order_changed",

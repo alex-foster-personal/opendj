@@ -14,6 +14,7 @@ index entry, and on installed build 10 the index took 402 of 828 WAL frames
 index that needed ``REINDEX`` in the Mon 5 Oct 2026 preview corruption
 recovery. ``IF EXISTS`` makes the step safe on a database that never had it.
 """
+
 from __future__ import annotations
 
 _V24: list[str] = [

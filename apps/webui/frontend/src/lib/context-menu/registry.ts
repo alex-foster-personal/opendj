@@ -35,7 +35,9 @@ export type CueSlot = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
 /** Where a library row came from. Anything but collection/playlist is read only. */
 export type TrackSource = 'collection' | 'playlist' | 'usb' | 'readonly-import';
 /** Local audio as the listing reports it (FileAvailabilityStatus, bucketed). */
-export type TrackAudio = 'present' | 'missing' | 'streaming';
+/** OFFLOAD: `offloaded` is in the cloud on purpose (a deck load downloads it first);
+ * `temporary` is back for 24 h and goes to the cloud again after (spec e8da14b8). */
+export type TrackAudio = 'present' | 'missing' | 'streaming' | 'offloaded' | 'temporary';
 
 /** The context each target kind is resolved against. Every field is a finite
  * domain, so the permutation harness can enumerate it. */
@@ -151,8 +153,23 @@ function startsWorker(ctx: MenuContextByKind['track']): boolean {
 const NO_LOCAL_AUDIO: Record<TrackAudio, string | null> = {
 	present: null,
 	missing: 'the audio file is missing - use Relocate first',
-	streaming: 'streaming track - there is no local audio file'
+	streaming: 'streaming track - there is no local audio file',
+	offloaded: 'offloaded to the cloud - use Download for 24h first',
+	temporary: null
 };
+
+/** OFFLOAD menu rules: Spotify / Apple Music "Download / Remove download", mimicked. */
+function offloadDisabled(ctx: { audio: TrackAudio; selection: 'one' | 'many' }): string | null {
+	if (ctx.audio === 'streaming' || ctx.audio === 'missing') return NO_LOCAL_AUDIO[ctx.audio];
+	return ctx.audio === 'offloaded' && ctx.selection === 'one' ? 'already offloaded to the cloud' : null;
+}
+
+function restoreDisabled(ctx: { audio: TrackAudio; selection: 'one' | 'many' }): string | null {
+	if (ctx.selection === 'many') return null;
+	return ctx.audio === 'offloaded' || ctx.audio === 'temporary'
+		? null
+		: 'not offloaded - the audio is already on this machine';
+}
 
 function oneTrackOnly(ctx: { selection: 'one' | 'many' }): string | null {
 	return ctx.selection === 'many' ? 'works on one track at a time - select a single row' : null;
@@ -215,6 +232,33 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		command: 'track.read',
 		when: writable,
 		disabledWhen: (ctx) => (ctx.audio === 'streaming' ? NO_LOCAL_AUDIO.streaming : null)
+	},
+	{
+		id: 'offload',
+		label: (target) => (target.count > 1 ? `Offload ${plural(target.count)} to cloud` : 'Offload to cloud'),
+		command: 'track.offload',
+		when: writable,
+		disabledWhen: offloadDisabled,
+		title: () => 'opendj offload tracks {stable_id}',
+		testId: () => 'context-menu-offload'
+	},
+	{
+		id: 'offload-restore-24h',
+		label: 'Download for 24h',
+		command: 'track.offload_restore',
+		when: writable,
+		disabledWhen: restoreDisabled,
+		title: () => 'opendj offload restore {stable_id} --for-24h',
+		testId: () => 'context-menu-offload-restore-24h'
+	},
+	{
+		id: 'offload-restore-permanent',
+		label: 'Re-download permanently',
+		command: 'track.offload_restore',
+		when: writable,
+		disabledWhen: restoreDisabled,
+		title: () => 'opendj offload restore {stable_id} --permanent',
+		testId: () => 'context-menu-offload-restore-permanent'
 	},
 	{
 		id: 'analyze',
@@ -327,6 +371,24 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			checked: (ctx) => ctx.forbidDuplicates
 		},
 		{ id: 'reveal', label: 'Reveal in tree', command: 'playlist.select' },
+		{
+			id: 'offload-playlist',
+			label: 'Offload to cloud',
+			command: 'playlist.offload',
+			title: () => 'opendj offload playlist {playlist_id}'
+		},
+		{
+			id: 'offload-playlist-restore-24h',
+			label: 'Download for 24h',
+			command: 'playlist.offload_restore',
+			title: () => 'opendj offload restore-playlist {playlist_id} --for-24h'
+		},
+		{
+			id: 'offload-playlist-restore-permanent',
+			label: 'Re-download permanently',
+			command: 'playlist.offload_restore',
+			title: () => 'opendj offload restore-playlist {playlist_id} --permanent'
+		},
 		{
 			// USBEXP-04: opens the USB export screen with this playlist's name.
 			id: 'export-usb',
@@ -525,7 +587,11 @@ export function trackAudioOf(row: {
 	file_availability?: string | null;
 	file_exists?: boolean | null;
 	is_streaming?: boolean | null;
+	offload?: { state: string } | null | undefined;
 }): TrackAudio {
+	const offload = row.offload?.state;
+	if (offload === 'offloaded' || offload === 'restoring') return 'offloaded';
+	if (offload === 'temporary') return 'temporary';
 	const availability = row.file_availability ?? '';
 	if (row.is_streaming === true || availability === 'streaming' || availability.endsWith('-streaming')) {
 		return 'streaming';

@@ -4,6 +4,7 @@ Schema v1 is a decisions map only. Schema v2 adds an ``applies`` map. v1 files
 are readable (``applies`` defaults to empty); the next successful write persists
 v2. Corrupt files fail fast and are never overwritten.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -102,31 +103,19 @@ def _validate_decision_store(store: DecisionStore) -> None:
     for cluster_key, decision in store.decisions.items():
         expected_members = sorted(set(decision.member_stable_ids))
         if cluster_key != decision.cluster_key:
-            raise InvalidDecisionStoreError(
-                f"decision key {cluster_key!r} does not match its cluster_key"
-            )
+            raise InvalidDecisionStoreError(f"decision key {cluster_key!r} does not match its cluster_key")
         if not expected_members or expected_members != decision.member_stable_ids:
-            raise InvalidDecisionStoreError(
-                f"decision {cluster_key!r} has empty, duplicate, or unsorted members"
-            )
+            raise InvalidDecisionStoreError(f"decision {cluster_key!r} has empty, duplicate, or unsorted members")
         if decision.survivor not in expected_members:
-            raise InvalidDecisionStoreError(
-                f"decision {cluster_key!r} names a survivor outside its members"
-            )
+            raise InvalidDecisionStoreError(f"decision {cluster_key!r} names a survivor outside its members")
     for cluster_key, applied in store.applies.items():
         if cluster_key != applied.cluster_key:
-            raise InvalidDecisionStoreError(
-                f"apply key {cluster_key!r} does not match its cluster_key"
-            )
+            raise InvalidDecisionStoreError(f"apply key {cluster_key!r} does not match its cluster_key")
         expected_aliases = sorted(set(applied.alias_stable_ids))
         if expected_aliases != applied.alias_stable_ids:
-            raise InvalidDecisionStoreError(
-                f"apply {cluster_key!r} has duplicate or unsorted alias ids"
-            )
+            raise InvalidDecisionStoreError(f"apply {cluster_key!r} has duplicate or unsorted alias ids")
         if applied.survivor in expected_aliases:
-            raise InvalidDecisionStoreError(
-                f"apply {cluster_key!r} lists the survivor as an alias"
-            )
+            raise InvalidDecisionStoreError(f"apply {cluster_key!r} lists the survivor as an alias")
 
 
 def read_decision_snapshot() -> tuple[DecisionStore, str]:
@@ -137,15 +126,11 @@ def read_decision_snapshot() -> tuple[DecisionStore, str]:
     try:
         payload = DECISIONS_FILE.read_bytes()
     except OSError as exc:
-        raise InvalidDecisionStoreError(
-            f"cannot read {DECISIONS_FILE}: {exc}"
-        ) from exc
+        raise InvalidDecisionStoreError(f"cannot read {DECISIONS_FILE}: {exc}") from exc
     try:
         store = DecisionStore.model_validate_json(payload)
     except (ValidationError, ValueError) as exc:
-        raise InvalidDecisionStoreError(
-            f"{DECISIONS_FILE} is not a valid versioned decision store: {exc}"
-        ) from exc
+        raise InvalidDecisionStoreError(f"{DECISIONS_FILE} is not a valid versioned decision store: {exc}") from exc
     _validate_decision_store(store)
     return store, decision_revision(payload)
 

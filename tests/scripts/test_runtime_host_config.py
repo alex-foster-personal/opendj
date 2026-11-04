@@ -1,11 +1,7 @@
-"""Runtime host names come from explicit env config, defaults unchanged (issue #5639, batch 1).
-
-Stage 1 of moving hardcoded host aliases to documented variables: each variable,
-when set, names the host; unset or blank keeps today's house value, so no machine
-changes behavior before it sets the variable (ADR-0317 disposition on #5639).
+"""Runtime host names require explicit env config with no alias default (#5639 stage 2).
 
 Regression one-liners:
-  - if MDT_B2STORE_SSH_HOST unset or blank is not the house alias then broken
+  - if MDT_B2STORE_SSH_HOST unset or blank does not raise naming the variable then broken
   - if MDT_B2STORE_SSH_HOST set does not name the host for b2store, b2_stems_to_r2
     and backup_music_to_bifrost2 alike then broken
   - if OPENDJ_ERROR_SINK_LOG set does not win over the job-host sink then broken
@@ -15,7 +11,6 @@ Regression one-liners:
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -24,25 +19,17 @@ from pathlib import Path
 import pytest
 
 from apps.shared.telemetry.sink import ERROR_SINK_ENV, JOB_HOST_SINK_REL, sink_path
-from scripts.b2store import B2STORE_SSH_HOST_ENV, DEFAULT_B2STORE_SSH_HOST, store_ssh_host
+from scripts.b2store import B2STORE_SSH_HOST_ENV, store_ssh_host
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-HOUSE_ALIAS = "bifrost2"
 OVERRIDE_HOST = "asset-store-test-host"
-#: Every module that ssh-es to the asset store, and the attribute it reads the host from.
-STORE_HOST_READERS = (
-    ("scripts.b2store", "SSH_HOST"),
-    ("scripts.b2_stems_to_r2", "SSH_HOST"),
-    ("scripts.backup_music_to_bifrost2", "SSH_HOST"),
-)
 
 
-def test_store_host_defaults_to_the_house_alias_when_unset_or_blank() -> None:
-    """[if] MDT_B2STORE_SSH_HOST unset or blank is not the house alias [then] fail, [else stop]."""
-    assert DEFAULT_B2STORE_SSH_HOST == HOUSE_ALIAS
-    assert store_ssh_host({}) == HOUSE_ALIAS
-    assert store_ssh_host({B2STORE_SSH_HOST_ENV: ""}) == HOUSE_ALIAS
-    assert store_ssh_host({B2STORE_SSH_HOST_ENV: "  "}) == HOUSE_ALIAS
+def test_store_host_raises_when_unset_or_blank() -> None:
+    """[if] MDT_B2STORE_SSH_HOST unset or blank does not raise [then] fail, [else stop]."""
+    for environ in ({}, {B2STORE_SSH_HOST_ENV: ""}, {B2STORE_SSH_HOST_ENV: "  "}):
+        with pytest.raises(ValueError, match=B2STORE_SSH_HOST_ENV):
+            store_ssh_host(environ)
 
 
 def test_store_host_override_names_the_host() -> None:
@@ -51,32 +38,40 @@ def test_store_host_override_names_the_host() -> None:
     assert store_ssh_host({B2STORE_SSH_HOST_ENV: f" {OVERRIDE_HOST}\n"}) == OVERRIDE_HOST
 
 
-def _hosts_read_in_a_fresh_process(value: str | None) -> dict[str, str]:
+def _fresh_import_then_host(value: str | None) -> tuple[int, str]:
     env = {k: v for k, v in os.environ.items() if k != B2STORE_SSH_HOST_ENV}
     if value is not None:
         env[B2STORE_SSH_HOST_ENV] = value
     code = (
-        "import importlib, json, sys\n"
-        f"readers = {STORE_HOST_READERS!r}\n"
-        "print(json.dumps({m: getattr(importlib.import_module(m), a) for m, a in readers}))\n"
+        "import importlib, sys\n"
+        "import scripts.b2store, scripts.b2_stems_to_r2, scripts.backup_music_to_bifrost2\n"
+        "from scripts.b2store import store_ssh_host\n"
+        "try:\n"
+        "    print(store_ssh_host())\n"
+        "except ValueError as exc:\n"
+        "    print(exc, file=sys.stderr)\n"
+        "    sys.exit(1)\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code], cwd=REPO_ROOT, env=env,
         capture_output=True, text=True, timeout=120, check=False,
     )
-    assert proc.returncode == 0, proc.stderr[-3000:]
-    return json.loads(proc.stdout.strip().splitlines()[-1])
+    return proc.returncode, (proc.stdout or proc.stderr).strip()
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [(None, HOUSE_ALIAS), ("", HOUSE_ALIAS), (OVERRIDE_HOST, OVERRIDE_HOST)],
-    ids=["unset", "blank", "override"],
-)
-def test_every_store_reader_follows_the_one_variable(value: str | None, expected: str) -> None:
-    """[if] any asset-store module reads its host from anywhere else [then] fail, [else stop]."""
-    hosts = _hosts_read_in_a_fresh_process(value)
-    assert hosts == {module: expected for module, _attr in STORE_HOST_READERS}
+@pytest.mark.parametrize("value", [None, "", "  "], ids=["unset", "blank", "spaces"])
+def test_store_modules_import_then_raise_without_host(value: str | None) -> None:
+    """[if] unset host does not fail on first store_ssh_host after import [then] fail, [else stop]."""
+    code, out = _fresh_import_then_host(value)
+    assert code != 0
+    assert B2STORE_SSH_HOST_ENV in out
+
+
+def test_store_override_in_fresh_process() -> None:
+    """[if] override is not visible after import [then] fail, [else stop]."""
+    code, out = _fresh_import_then_host(OVERRIDE_HOST)
+    assert code == 0
+    assert out.splitlines()[-1] == OVERRIDE_HOST
 
 
 def test_sink_override_wins_over_the_job_host_sink(tmp_path: Path) -> None:
@@ -102,7 +97,5 @@ def test_sink_without_job_host_directory_uses_the_os_log_directory(tmp_path: Pat
     else:
         expected = tmp_path / ".local" / "share" / "opendj" / "error-sink.jsonl"
     assert sink_path({}, home=tmp_path) == expected
-    # A home copied or synced from a Mac carries Library/Logs; that is not a licence to
-    # pick the macOS sink off-Darwin, which OPS-62 pins to the per-OS directory.
     (tmp_path / "Library" / "Logs").mkdir(parents=True)
     assert sink_path({}, home=tmp_path) == expected

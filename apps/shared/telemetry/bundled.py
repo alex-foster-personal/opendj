@@ -55,14 +55,11 @@ def load_bundled_telemetry(environ: Mapping[str, str]) -> BundledTelemetry | Non
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise BundledTelemetryError(
-            f"{BUNDLED_TELEMETRY_ENV}={path} cannot be read as JSON: {exc}"
-        ) from exc
+        raise BundledTelemetryError(f"{BUNDLED_TELEMETRY_ENV}={path} cannot be read as JSON: {exc}") from exc
     dsn = str(data.get("dsn") or "").strip() if isinstance(data, dict) else ""
     if not dsn:
         raise BundledTelemetryError(
-            f"{BUNDLED_TELEMETRY_ENV}={path} carries no 'dsn'; it was not written "
-            "by scripts/payload_telemetry.py"
+            f"{BUNDLED_TELEMETRY_ENV}={path} carries no 'dsn'; it was not written by scripts/payload_telemetry.py"
         )
     frontend = str(data.get("frontend_dsn") or "").strip() if isinstance(data, dict) else ""
     return BundledTelemetry(dsn=dsn, path=path, frontend_dsn=frontend or None)

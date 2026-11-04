@@ -95,6 +95,7 @@ from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
 from apps.sync_hub import first_run as cloudsync_first_run
+from apps.sync_hub import policy_bootstrap as cloudsync_policy_bootstrap
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import (
@@ -505,6 +506,12 @@ def _wrap_lifespan(
             # existing file always wins; no default means nothing changes.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
             cloudsync_first_run.seed_default_config(cloudsync_dir, env=os.environ)
+            # CLOUDSYNC-25 writes the hub file only. Remote playback still
+            # needs a sync_policies row; seed portable class defaults once
+            # when CloudSync is on and this machine has no cells.
+            cloudsync_policy_bootstrap.ensure_enabled_spoke_policy(
+                cloudsync_dir, env=os.environ
+            )
             async with (
                 legacy_lifespan(instance),
                 scheduler_lifespan(

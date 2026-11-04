@@ -171,8 +171,7 @@ def _refuse_bad_grant(product: object, grants: object) -> None:
         isinstance(ids, list) and ids and all(isinstance(f, str) and f.strip() for f in ids)
     ):
         raise HostedConfigError(
-            f"{POLAR_PRODUCTS_ENV} entry {product!r} -> {grants!r} is not a feature id "
-            "or a non-empty list of them"
+            f"{POLAR_PRODUCTS_ENV} entry {product!r} -> {grants!r} is not a feature id or a non-empty list of them"
         )
 
 
@@ -184,7 +183,7 @@ def _polar_product_fee_map(env: Mapping[str, str]) -> dict[str, Any]:
         raise HostedConfigError(f"{POLAR_PRODUCTS_ENV} is not JSON: {exc}") from exc
     if not (isinstance(products, dict) and products):
         raise HostedConfigError(
-            f'{POLAR_PRODUCTS_ENV} must be a JSON object mapping Polar product ids to '
+            f"{POLAR_PRODUCTS_ENV} must be a JSON object mapping Polar product ids to "
             'a feature id or a list of feature ids, e.g. {"<product id>": "<feature id>"}'
         )
     for product, grants in products.items():

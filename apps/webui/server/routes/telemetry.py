@@ -81,9 +81,7 @@ def record_heartbeat(payload: HeartbeatIn, request: Request) -> ClientOut:
         app_version=payload.app_version,
     )
     snapshot = store.snapshot()
-    view = next(
-        row for row in snapshot["clients"] if row["client_id"] == payload.client_id
-    )
+    view = next(row for row in snapshot["clients"] if row["client_id"] == payload.client_id)
     return ClientOut(**view)
 
 

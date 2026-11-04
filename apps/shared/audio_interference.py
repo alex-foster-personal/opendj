@@ -81,10 +81,7 @@ KNOWN_AUDIO_GRABBERS: tuple[AudioGrabber, ...] = (
         key="krisp",
         label="Krisp",
         tokens=("krisp",),
-        why=(
-            "it installs a CoreAudio plugin that processes the input, "
-            "loaded whether or not the app is open"
-        ),
+        why=("it installs a CoreAudio plugin that processes the input, loaded whether or not the app is open"),
     ),
     AudioGrabber(
         key="otter",
@@ -123,9 +120,7 @@ def _is_self(haystack: str) -> bool:
     return any(token in haystack for token in SELF_TOKENS)
 
 
-def _match(
-    names: Iterable[str], kind: AudioGrabberKind
-) -> dict[str, AudioInterference]:
+def _match(names: Iterable[str], kind: AudioGrabberKind) -> dict[str, AudioInterference]:
     found: dict[str, AudioInterference] = {}
     for name in names:
         haystack = name.lower()

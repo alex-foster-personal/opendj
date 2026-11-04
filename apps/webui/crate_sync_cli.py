@@ -4,6 +4,7 @@
 resolution and each status/plan/apply branch live here so ``_run`` stays
 under the complexity ceiling.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,9 +36,7 @@ class CratePaths:
     side: Literal["local", "remote"]
 
 
-def resolve_crate_paths(
-    args: argparse.Namespace, argv: Sequence[str] | None
-) -> CratePaths:
+def resolve_crate_paths(args: argparse.Namespace, argv: Sequence[str] | None) -> CratePaths:
     data_dir = Path(args.data_dir) if args.data_dir else platform_paths.DATA_DIR
     crate_root = (
         Path(args.crate_root)
@@ -62,9 +61,7 @@ def resolve_crate_paths(
         master_db=data_dir / "master.plain.db",
         manifest_path=crate_root / "manifest.json",
         path_map_path=data_dir / "path-map.json",
-        to_explicit=any(
-            a == "--to" or a.startswith("--to=") for a in (argv or sys.argv[1:])
-        ),
+        to_explicit=any(a == "--to" or a.startswith("--to=") for a in (argv or sys.argv[1:])),
         side=cs._operation_side(args),
     )
 
@@ -128,9 +125,7 @@ def _cmd_verify_spike(args: argparse.Namespace, paths: CratePaths) -> int:
         return 1
     manifest = cs.load_manifest(paths.manifest_path)
     if not manifest:
-        raise RuntimeError(
-            f"no crate manifest at {paths.manifest_path}; run --live --preload1 first"
-        )
+        raise RuntimeError(f"no crate manifest at {paths.manifest_path}; run --live --preload1 first")
     manifest["spike_verified"] = True
     cs.write_json(paths.manifest_path, manifest)
     return 0
@@ -139,13 +134,10 @@ def _cmd_verify_spike(args: argparse.Namespace, paths: CratePaths) -> int:
 def _cmd_remote(args: argparse.Namespace, paths: CratePaths) -> int:
     if library_mode.library_mode() != "remote":
         raise RuntimeError(
-            "--remote pull requires MDT_LIBRARY_MODE=remote; refusing to "
-            "write a replica into a local-library process"
+            "--remote pull requires MDT_LIBRARY_MODE=remote; refusing to write a replica into a local-library process"
         )
     owner = args.owner or cs._owner_ssh_default()
-    owner_repo = (
-        Path(args.owner_repo) if args.owner_repo else cs._owner_repo_default()
-    )
+    owner_repo = Path(args.owner_repo) if args.owner_repo else cs._owner_repo_default()
     payload = cs.owner_manifest(
         owner=owner,
         owner_repo=owner_repo,
@@ -156,9 +148,7 @@ def _cmd_remote(args: argparse.Namespace, paths: CratePaths) -> int:
         ),
     )
     if str(payload.get("crate_root")) != str(paths.crate_root):
-        raise RuntimeError(
-            f"owner planned crate {payload.get('crate_root')}; expected {paths.crate_root}"
-        )
+        raise RuntimeError(f"owner planned crate {payload.get('crate_root')}; expected {paths.crate_root}")
     if args.dry_run:
         cs._print_manifest_plan(payload, as_json=args.json)
         return 0
@@ -224,9 +214,7 @@ def _cmd_push(args: argparse.Namespace, paths: CratePaths) -> int:
         cs._print_manifest_plan(payload, as_json=args.json)
         return 0
 
-    cs.assert_push_host(
-        dest_kind=paths.dest_kind, dest_host=args.to, to_explicit=paths.to_explicit
-    )
+    cs.assert_push_host(dest_kind=paths.dest_kind, dest_host=args.to, to_explicit=paths.to_explicit)
     existing = cs.load_destination_manifest(
         dest_kind=paths.dest_kind,
         dest_host=args.to,
@@ -269,9 +257,7 @@ def _cmd_push(args: argparse.Namespace, paths: CratePaths) -> int:
             cs.write_json(tmp_manifest, payload)
             cs._rsync_to_host(tmp_map, args.to, cs.REMOTE_REPO / "data" / "path-map.json")
             cs._rsync_to_host(tmp_manifest, args.to, paths.crate_root / "manifest.json")
-        remote_result = cs.remote_reconcile(
-            dest_host=args.to, crate_root=paths.crate_root
-        )
+        remote_result = cs.remote_reconcile(dest_host=args.to, crate_root=paths.crate_root)
         reconciliation = remote_result["reconciliation"]
     result = {
         "direction": "push",
@@ -292,9 +278,7 @@ def dispatch_crate_command(args: argparse.Namespace, paths: CratePaths) -> int:
     if args.verify_spike:
         return _cmd_verify_spike(args, paths)
     if args.full and cs._filtered(args):
-        raise RuntimeError(
-            "--full cannot combine with --playlist / --stable-ids / --preload1"
-        )
+        raise RuntimeError("--full cannot combine with --playlist / --stable-ids / --preload1")
     if paths.side == "remote":
         return _cmd_remote(args, paths)
     return _cmd_push(args, paths)

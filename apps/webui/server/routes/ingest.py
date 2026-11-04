@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -62,8 +63,9 @@ from pydantic import BaseModel
 
 from apps.analysis import backlog
 from apps.analysis import run as analysis_run
+from apps.analysis.lanes import own_backend
 from apps.shared.events import publish
-from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
+from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, PROJECT_ROOT, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server import coverage_cloud
@@ -127,6 +129,9 @@ ANALYSIS_CHUNK: int = 25                # progress granularity for the analysis 
 #: scoped to one backend, cannot drift apart.
 ANALYSIS_BACKEND: str = backlog.DRAIN_BACKEND
 STEMS_TRICKLE_LIMIT: int = 5
+#: Order kinds that are own analysis lanes, drained through the own-lane
+#: queue rather than the librosa step (NATIVE-37).
+OWN_LANE_ORDER_KINDS: frozenset[str] = frozenset({"beatgrid", "key"})
 BATCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$")
 
 # Registry of pipeline steps. ``requires_rb_row`` steps need the track in
@@ -256,6 +261,64 @@ def _run_analysis_chunk(
             Path(pairs_path).unlink(missing_ok=True)
 
 
+def _queue_cli_json(*args: str) -> dict:
+    """One ``apps.analysis.queue_cli --json`` call whose payload the caller needs."""
+    done = subprocess.run(
+        [sys.executable, "-m", "apps.analysis.queue_cli", "--json", *args],
+        cwd=PROJECT_ROOT, capture_output=True, text=True, check=False,
+    )
+    if done.returncode != 0:
+        raise CliFailed(
+            f"apps.analysis.queue_cli {args[0]} exited {done.returncode}: "
+            f"{(done.stderr or done.stdout).strip()[-500:]}",
+            done.returncode,
+        )
+    return json.loads(done.stdout)
+
+
+#: Item states that answer an order: analyzed now, or already current.
+_ORDER_ANSWERED_STATES: frozenset[str] = frozenset({"done", "skipped"})
+
+
+def _step_own_lane_order(job: _RefreshJob, target: tuple[str, str], lane: str) -> None:
+    """One explicit beatgrid or key order, through the own-lane analysis queue.
+
+    The generic analysis step runs ``ANALYSIS_BACKEND`` (librosa), which
+    never writes the own ``beatgrid`` or ``key`` lane the deck and the
+    library read, and whose missing-only filter skipped every track that
+    already had a librosa row: an order phased ``done`` in seconds and
+    changed nothing (NATIVE-37). This enqueues the ordered lane on its own
+    producer and drains that batch, so the runner's already-current rule
+    decides (a dependency-stale key re-runs, a current grid is skipped by
+    name) and the dependency cascade re-runs a key after a new grid. An
+    item the queue refused or failed fails the order with its reason.
+    """
+    stable_id, _path = target
+    backend = own_backend(lane, "backfill")
+    job.step_total = 1
+    job.step_done = 0
+    _log(job, f"{lane}: ordering {backend} for {stable_id} through the analysis queue")
+    batch_id = _queue_cli_json(
+        "enqueue", "--stable-id", stable_id, "--lane", lane, "--backend", backend,
+        "--note", f"track order: {lane}",
+    )["batch_id"]
+    _run_cli(
+        job,
+        [sys.executable, "-m", "apps.analysis.queue_cli", "run",
+         "--batch-id", batch_id, "--backend", backend],
+    )
+    items = _queue_cli_json("progress", "--batch-id", batch_id)["items"]
+    outcome = next((i for i in items if i["stable_id"] == stable_id), None)
+    job.step_done = 1
+    if outcome is None or outcome["state"] not in _ORDER_ANSWERED_STATES:
+        state = "absent" if outcome is None else outcome["state"]
+        reason = None if outcome is None else outcome["reason"]
+        raise RuntimeError(f"{lane} order for {stable_id} ended {state}: {reason}")
+    _log(job, f"{lane}: {stable_id} {outcome['state']}"
+              + (f" ({outcome['reason']})" if outcome["reason"] else ""))
+    job.recently_done_ids.append(stable_id)
+
+
 def _step_analysis(
     job: _RefreshJob, targets: list[tuple[str, str]], *, backend: str = ANALYSIS_BACKEND
 ) -> None:
@@ -273,6 +336,11 @@ def _step_analysis(
     the state DB - recurs identically on the next chunk, so continuing means
     decoding the whole library to meet the same wall once per chunk.
     """
+    if job.scope == "track":
+        lane = next(iter(job.analysis_orders.values()))
+        if lane in OWN_LANE_ORDER_KINDS:
+            _step_own_lane_order(job, targets[0], lane)
+            return
     job.step_total = len(targets)
     job.step_done = 0
     _log(job, f"analysis: {len(targets)} tracks missing")
@@ -411,7 +479,7 @@ def _unmapped_targets(
     job.queue_signature = queue.signature
     _log(job, f"unmapped scope: {queue.pending_total} of {queue.unmapped} "
               f"rekordbox-unmapped tracks need analysis ({queue.analyzed} already "
-              f"analyzed, {queue.unreachable} unreachable)")
+              f"analyzed, {queue.unreachable} unreachable, {queue.too_long} over the length cap)")
     _log_id_keyed_skips(job, job.skipped_steps, UNMAPPED_SCOPE)
     return {
         "analysis": [

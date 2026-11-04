@@ -23,14 +23,9 @@ export function needsSetupForEmptyLibrary(
 	if (checkStatus(checks, ENGINE_ALIVE_CHECK_ID) !== 'pass') return false;
 	const library = checkStatus(checks, LIBRARY_ATTACHED_CHECK_ID);
 	// 'pending' is NOT a second flavour of 'fail'. On library-attached the engine
-	// returns it in exactly two places, and both say "setup was dismissed" (an
-	// empty library with no state.db, and one with 0 tracks). There is no
-	// still-loading 'pending' on this check, so treating it as a reason to raise
-	// the wizard made dismissal change the engine's answer without changing the
-	// outcome: "Continue without importing" closed the overlay, this predicate
-	// immediately asked for it back, and reopening cleared the incomplete flag
-	// that would have explained why. The escape hatch was unreachable on exactly
-	// the fresh install it exists for.
+	// returns pending when setup was dismissed (empty library) OR when CloudSync
+	// is configured and the first successful pull has not landed yet. Neither
+	// should auto-open the import wizard; only advisory fail should.
 	return library === 'fail';
 }
 

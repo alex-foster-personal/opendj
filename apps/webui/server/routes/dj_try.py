@@ -223,7 +223,7 @@ class ServingTrackSource(EngineTrackSource):
             )
         try:
             return super().audio_path(stable_id)
-        except FileNotFoundError as error:
+        except AudioUnavailable as error:
             _log.warning("try-er: no audio for %s: %s", stable_id, error)  # the server path stays in the log
             raise TrackUnavailable(f"track {stable_id} has no audio on this server: relink or re-import it") from error
 

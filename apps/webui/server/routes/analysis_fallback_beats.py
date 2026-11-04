@@ -1,4 +1,5 @@
 """Helpers for :func:`synthesize_fallback_beats` (complexity split)."""
+
 from __future__ import annotations
 
 from apps.analysis.record import AnalysisRecord
@@ -19,10 +20,14 @@ def fallback_emit(
     *,
     extrapolated: bool = False,
 ) -> None:
-    beats.append(FallbackBeatOut(
-        n=n, bpm=round(240.0 / bar_s, 2), t=round(t, 3),
-        extrapolated=extrapolated,
-    ))
+    beats.append(
+        FallbackBeatOut(
+            n=n,
+            bpm=round(240.0 / bar_s, 2),
+            t=round(t, 3),
+            extrapolated=extrapolated,
+        )
+    )
 
 
 def fallback_tail_beats(
@@ -38,9 +43,7 @@ def fallback_tail_beats(
     else:
         return None
     if tail_bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
-        raise _invalid_record(
-            record.stable_id, f"tempo bar of {tail_bar_s:.4f}s implies >1200 BPM"
-        )
+        raise _invalid_record(record.stable_id, f"tempo bar of {tail_bar_s:.4f}s implies >1200 BPM")
     t = downbeats[-1]
     n = 1
     first_tail = True

@@ -161,7 +161,7 @@ _ROLE_ORDER = {
 _REFERENCES = ("rekordbox", "mik")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def weighted_score(reference: canon.Key | None, estimated: canon.Key | None) -> float:
     """MIREX weighted score, 1.0 / 0.5 / 0.3 / 0.2 / 0.0, descending fifths allowed.
 
@@ -213,7 +213,7 @@ def _mode_match(reference: canon.Key | None, estimated: canon.Key | None) -> boo
     return reference.is_minor == estimated.is_minor
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _parse_reference(value: str | None, source: str) -> canon.Key | None:
     """A truth-file value for one reference, or None for a documented absence."""
     if not value:
@@ -311,16 +311,13 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], _ReferenceMap, _Reference
     truth = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["keys"]
     stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
     refuse_malformed_join(bundle, truth_name, truth, stable_ids)
-    rekordbox = {sid: _parse_reference(truth[sid].get("rekordbox"), "rekordbox")
-                 for sid in stable_ids}
-    mik = {sid: _parse_reference(truth[sid].get("mik_camelot"), "mik")
-           for sid in stable_ids}
+    rekordbox = {sid: _parse_reference(truth[sid].get("rekordbox"), "rekordbox") for sid in stable_ids}
+    mik = {sid: _parse_reference(truth[sid].get("mik_camelot"), "mik") for sid in stable_ids}
     return manifest, rekordbox, mik
 
 
-#-----------------------------------------------------------------------------
-def _score_against(stable_ids: list[str], reference: _ReferenceMap,
-                    answers: _ReferenceMap) -> dict[str, Any]:
+# -----------------------------------------------------------------------------
+def _score_against(stable_ids: list[str], reference: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
     """MIREX/KSEA/mode-accuracy against ONE reference, named denominator = n."""
     scored = [sid for sid in stable_ids if reference[sid] is not None]
     if not scored:
@@ -342,8 +339,9 @@ def _rate_pct(numerator: int, denominator: int) -> float | None:
     return round(100.0 * numerator / denominator, 2) if denominator else None
 
 
-def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
-             mik: _ReferenceMap, answers: _ReferenceMap) -> dict[str, Any]:
+def _buckets(
+    stable_ids: list[str], rekordbox: _ReferenceMap, mik: _ReferenceMap, answers: _ReferenceMap
+) -> dict[str, Any]:
     """AGREE/DISAGREE-RELATED/DISAGREE-UNRELATED, classified by the
     rekordbox/MIK pair's OWN relationship, never by the candidate's answer.
 
@@ -391,8 +389,7 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
     return {
         "agree": {
             "n": len(agree_ids),
-            "mirex_mean_pct": round(100.0 * sum(agree_scores) / len(agree_scores), 2)
-            if agree_scores else None,
+            "mirex_mean_pct": round(100.0 * sum(agree_scores) / len(agree_scores), 2) if agree_scores else None,
         },
         "disagree_related": {
             "n": len(related_ids),
@@ -422,10 +419,8 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
     }
 
 
-#-----------------------------------------------------------------------------
-def _attempt_stats(
-    stable_ids: list[str], results: dict[str, Any], answers: _ReferenceMap
-) -> dict[str, Any]:
+# -----------------------------------------------------------------------------
+def _attempt_stats(stable_ids: list[str], results: dict[str, Any], answers: _ReferenceMap) -> dict[str, Any]:
     """Split one arm's fixtures into omitted / failed / successful.
 
     ATTEMPTED but not SUCCESSFUL: a result entry exists (the candidate tried)
@@ -515,8 +510,10 @@ def render_table(report: dict[str, Any]) -> str:
         rb, mikr, buckets = arm["vs_rekordbox"], arm["vs_mik"], arm["buckets"]
         rb_succ, mikr_succ = arm["vs_rekordbox_successful_only"], arm["vs_mik_successful_only"]
         agree, related, unrelated, no_answer = (
-            buckets["agree"], buckets["disagree_related"],
-            buckets["disagree_unrelated"], buckets["disagree_no_answer"],
+            buckets["agree"],
+            buckets["disagree_related"],
+            buckets["disagree_unrelated"],
+            buckets["disagree_no_answer"],
         )
         # The enumerated ids, not just the count, because rounds.append_round
         # persists only this rendered table -- the raw JSON's stable_ids list
@@ -547,9 +544,7 @@ def render_table(report: dict[str, Any]) -> str:
         producer = arm["producer"] if arm["producer"] is not None else "-"
         producer_version = arm["producer_version"] if arm["producer_version"] is not None else "-"
         generated_at = arm["generated_at"] if arm["generated_at"] is not None else "-"
-        n_failed_reported = (
-            arm["n_failed_reported"] if arm["n_failed_reported"] is not None else "-"
-        )
+        n_failed_reported = arm["n_failed_reported"] if arm["n_failed_reported"] is not None else "-"
         lines.append(
             f"| {name} | {arm['role']} | {producer}/{producer_version} ({generated_at}) | "
             f"{arm['n_omitted']} | "

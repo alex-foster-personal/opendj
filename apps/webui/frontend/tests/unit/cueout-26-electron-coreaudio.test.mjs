@@ -110,17 +110,16 @@ test('listIoDevices default alias inherits enriched CoreAudio fields from its co
 	assert.equal(defaultRow?.transport, 'builtin');
 });
 
-test('speaker plus jack selects split cue on the Chromium headphone id', () => {
+test('speaker plus jack refuses a CUE on the Chromium headphone id instead of auto-splitting (AUDFID-01)', () => {
 	const enriched = io.joinElectronCoreAudioOutputs(browserListing(), CORE_AUDIO);
-	assert.deepEqual(
-		headphones.dualSinkAssignment({
-			outputs: enriched,
-			selectedCueId: CHROMIUM_HP,
-			selectedMasterId: null,
-			currentRoomId: null
-		}),
-		{ masterId: CHROMIUM_HP, cueId: CHROMIUM_HP, autoPinnedMaster: true, splitSameDevice: true }
-	);
+	const assignment = headphones.dualSinkAssignment({
+		outputs: enriched,
+		selectedCueId: CHROMIUM_HP,
+		selectedMasterId: null
+	});
+	assert.equal(assignment.cueId, null);
+	assert.equal(assignment.masterId, null);
+	assert.match(assignment.cueRefusal, /MAIN and CUE are the same output/);
 });
 
 test('assertMasterCanSound refuses the muted Chromium speaker id', () => {

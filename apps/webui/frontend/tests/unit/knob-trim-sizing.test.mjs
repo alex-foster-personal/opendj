@@ -108,8 +108,9 @@ test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', asy
 // [if] the FILTER dial renders at any size other than TRIM's, in MORE or LESS [then] fail, [else stop]
 test('MIXUX-12 ChannelStrip FILTER is the same size as TRIM in both views and wired live', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
-	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
-	const filterKnob = src.match(knobTag('FILTER'));
+	// COLORFX-02: the caption follows the selected color effect (FILTER, SPACE,
+	// ECHO), so the dial is found by its stable knob id, not its label.
+	const filterKnob = src.match(/<Knob\b(?:(?!\/>)[\s\S])*?knobId=\{knobId\(deckId, 'filter'\)\}(?:(?!\/>)[\s\S])*?\/>/);
 	assert.ok(filterKnob, 'FILTER Knob element not found');
 	assert.match(filterKnob[0], /size=\{filterSize\}/);
 	assert.match(

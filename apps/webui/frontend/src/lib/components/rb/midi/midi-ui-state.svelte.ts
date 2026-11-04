@@ -12,10 +12,14 @@
  *     [if] two toggles don't return to the initial state [then] broken
  *   ✔︎ 🎯 requestMidiAccess(): wraps initMidi(); requestPending true only
  *     while the browser prompt is in flight; failure surfaces LOUDLY in
- *     midiUi.lastError + console.error (shown red in the panel - the UI is
- *     the error surface, nothing is swallowed silently).
+ *     midiUi.lastError (shown red in the panel - the UI is the error
+ *     surface, nothing is swallowed silently). Expected grant refusal
+ *     and missing WebMIDI stay out of console.error: ERRCAP-01 samples
+ *     console.error into Sentry (OPEN-DJ-BE-6R). Unexpected failures
+ *     still console.error.
  *     [if] initMidi() rejects and lastError stays null [then ⛔️] broken
  *     [if] a second call while pending doesn't throw [then ⛔️] broken
+ *     [if] a NotAllowedError denial console.errors [then ⛔️] broken
  *   ✔︎ detachMidiGlueForRouteUnmount(): stops the LED effect + channel-meter
  *     pump when the /performance route that owns the audio engine unmounts,
  *     so neither keeps polling a disposed engine on an unrelated route.
@@ -216,6 +220,17 @@ onMidiEnabledHydrated((enabled) => {
 	if (enabled) void maybeAutoEnableMidi();
 });
 
+/** Expected Chrome/Edge grant refusal and Safari-missing-WebMIDI. The panel
+ * already shows lastError; console.error would sample into Sentry (ERRCAP-01). */
+export function isExpectedMidiAccessFailure(exc: unknown): boolean {
+	const text = exc instanceof Error ? `${exc.name}: ${exc.message}` : String(exc);
+	return (
+		text.includes('WebMIDI permission denied') ||
+		text.includes('MIDI is not supported') ||
+		text.includes('NotAllowedError')
+	);
+}
+
 // Every request takes a generation; disableMidi() bumps it. A grant that
 // resolves after MIDI was turned off (the prompt was still open) belongs to a
 // superseded generation, so it neither attaches nor persists anything.
@@ -223,8 +238,8 @@ let _requestGeneration = 0;
 let _inFlight: { generation: number; done: Promise<void> } | null = null;
 
 /** Request WebMIDI access via the core runtime. The catch is NOT silent
- * handling: the error lands in midiUi.lastError (rendered red in the panel)
- * and console.error - the panel IS the failure surface. */
+ * handling: the error lands in midiUi.lastError (rendered red in the panel);
+ * the panel IS the failure surface. Expected denials skip console.error. */
 export async function requestMidiAccess(): Promise<void> {
 	if (midiUi.requestPending) {
 		throw new Error('requestMidiAccess: a request is already pending');
@@ -316,7 +331,9 @@ async function _requestMidiAccess(generation: number): Promise<void> {
 			_detachMidiGlue = null;
 		}
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
-		console.error('[midi-panel] permission request failed', exc);
+		if (!isExpectedMidiAccessFailure(exc)) {
+			console.error('[midi-panel] permission request failed', exc);
+		}
 		// Denied/unsupported: forget the choice so we don't nag on every reload
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
 		// A superseded request leaves the choice alone: the user has already

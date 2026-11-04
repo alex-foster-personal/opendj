@@ -76,6 +76,7 @@ helper_carried_paths:
   - "apps/analysis/selection.py"
   - "apps/analysis/selection_cli.py"
   - "apps/analysis/serving_lanes.py"
+  - "apps/analysis/source_bytes.py"
   - "apps/analysis/store.py"
   - "apps/analysis/time_iso.py"
   - "apps/analysis/worker_sizing.py"
@@ -98,6 +99,7 @@ helper_carried_paths:
   - "apps/database/column_docs_native_analysis.py"
   - "apps/database/column_docs_pair_transitions.py"
   - "apps/database/column_docs_pairing_capture.py"
+  - "apps/database/column_docs_playlist_rollback.py"
   - "apps/database/column_docs_sibling_apps.py"
   - "apps/database/column_docs_sync_gate.py"
   - "apps/database/enrollment_table_docs.py"
@@ -159,6 +161,7 @@ helper_carried_paths:
   - "apps/shared/state/migrations_v24.py"
   - "apps/shared/state/migrations_v25.py"
   - "apps/shared/state/migrations_v26.py"
+  - "apps/shared/state/migrations_v27.py"
   - "apps/shared/state/migrations_v6_v8.py"
   - "apps/shared/state/migrations_v9.py"
   - "apps/shared/state/paths.py"
@@ -389,7 +392,7 @@ scopes:
     sources: ["apps/webui/frontend/"]
     tests: []
     mentions: ["apps/webui/frontend", "frontend"]
-    dependents: ["agentic_testing", "analysis_beatgrid", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
   - name: requirements
     # Round 17. The requirements ledger and the JSON generated from it. On the 60 merges up
     # to d5eb4022c1 it was the ONLY full trigger for 26, so SCOPED goes 9 -> 35 of 60.
@@ -485,3 +488,10 @@ scopes:
     # the mention reader keeps a test that spawns or reads it by name as a consumer.
     mentions: ["scripts/bench/tryer_calibration", "scripts.bench.tryer_calibration"]
     tests: ["tests/bench_tryer_calibration/"]
+  - name: live_core
+    sources: ["apps/live-core/"]
+    tests: ["tests/live_core/"]
+    dependents: ["scripts"]
+    # Rust sources: no Python imports them, so consumers are found by mention
+    # (tests/live_core builds the crate by path).
+    mentions: ["apps/live-core", "live-core"]

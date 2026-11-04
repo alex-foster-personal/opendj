@@ -68,6 +68,16 @@ test('perfReadoutRows passes live values through untouched, including --', () =>
 	);
 });
 
+// PERF-UI-6785: the memory figure is this page plus the engine's measured
+// process tree, so its explainer must say so, not "memory held by the app".
+test('the memory explainer describes the page plus the engine and sidecar processes', () => {
+	const memory = card.perfReadoutRows(LIVE).find((r) => r.key === 'memory');
+	assert.match(memory.explainer, /this page/);
+	assert.match(memory.explainer, /engine and sidecar processes/);
+	assert.match(memory.explainer, /judge this page alone/);
+	assert.doesNotMatch(memory.explainer, /held by the app/);
+});
+
 test('mutation: a dropped row or a blank explainer makes the row check fail', () => {
 	const rows = card.perfReadoutRows(LIVE);
 	assert.throws(() => assertRowModel(rows.slice(0, 3)), /one row per compact readout/);

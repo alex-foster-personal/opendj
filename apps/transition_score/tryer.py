@@ -185,7 +185,11 @@ class EngineTrackSource:
     def audio_path(self, stable_id: str) -> Path:
         from apps.stems.cli import resolve_audio_path
 
-        return resolve_audio_path(self.data_dir, stable_id)
+        try:
+            return resolve_audio_path(self.data_dir, stable_id)
+        except FileNotFoundError as error:
+            _log.warning("try-er: no audio for %s: %s", stable_id, error)
+            raise AudioUnavailable(stable_id) from error
 
 
 # ----- rendering -----------------------------------------------------------------

@@ -24,6 +24,9 @@ from typing import Any
 
 import numpy as np
 
+from apps.analysis_key import canon
+from apps.analysis_key.profiles import Key, estimate_key_krumhansl
+
 from .. import config as _analysis_config
 from ..bpm_status import bpm_status_for
 from ..record import AnalysisRecord
@@ -38,27 +41,10 @@ from .base import (
 
 log = logging.getLogger(__name__)
 
-# Krumhansl-Schmuckler reference profiles (1982).
-_KS_MAJOR = np.array(
-    [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-    dtype=np.float64,
-)
-_KS_MINOR = np.array(
-    [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
-    dtype=np.float64,
-)
-
-# Pitch class (C=0 .. B=11) -> Camelot / open-key labels.
-_CAMELOT_MAJOR = ["8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B"]
-_CAMELOT_MINOR = ["5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A"]
-# Open Key number = Camelot number + 5 (mod 12, 1-indexed), NOT the Camelot
-# number reused directly. The previous tables here reused the Camelot number
-# (a one-position rotation of the correct table, wrong for all 12 pitch
-# classes, not just the A-minor case that surfaced it: A minor is pitch class
-# 9, Camelot 8A, so it must canonicalize to Open Key 1m, not 8m). Source of
-# truth and regression tests: apps/analysis_key/canon.py.
-_OPENKEY_MAJOR = [f"{n}d" for n in [1, 8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6]]
-_OPENKEY_MINOR = [f"{n}m" for n in [10, 5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3]]
+# Fallback key when chroma_cqt fails: pitch class 8 (A), minor. Camelot/Open
+# Key strings come from apps.analysis_key.canon so they stay aligned with the
+# native key lane (see module docstring on the old hand-maintained tables).
+_KEY_ESTIMATE_FALLBACK = Key(pitch_class=8, is_minor=True)
 
 
 def _energy_from_rms_dbfs(rms_dbfs: float, bins: list[list[float]]) -> int:
@@ -71,27 +57,12 @@ def _energy_from_rms_dbfs(rms_dbfs: float, bins: list[list[float]]) -> int:
 
 def _estimate_key(chroma: np.ndarray) -> tuple[str, str, float]:
     """Krumhansl-Schmuckler estimation on a (12, T) chroma matrix."""
-    mean = chroma.mean(axis=1)
-    mean = mean / (np.linalg.norm(mean) + 1e-9)
-    best_corr = -2.0
-    best_tonic = 0
-    best_is_major = True
-    for tonic in range(12):
-        maj = np.roll(_KS_MAJOR, tonic) / (np.linalg.norm(_KS_MAJOR) + 1e-9)
-        minr = np.roll(_KS_MINOR, tonic) / (np.linalg.norm(_KS_MINOR) + 1e-9)
-        cm = float(np.dot(mean, maj))
-        cn = float(np.dot(mean, minr))
-        if cm > best_corr:
-            best_corr = cm
-            best_tonic = tonic
-            best_is_major = True
-        if cn > best_corr:
-            best_corr = cn
-            best_tonic = tonic
-            best_is_major = False
-    if best_is_major:
-        return _CAMELOT_MAJOR[best_tonic], _OPENKEY_MAJOR[best_tonic], max(0.0, best_corr)
-    return _CAMELOT_MINOR[best_tonic], _OPENKEY_MINOR[best_tonic], max(0.0, best_corr)
+    estimate = estimate_key_krumhansl(chroma)
+    return (
+        canon.to_camelot(estimate.key),
+        canon.to_open_key(estimate.key),
+        estimate.confidence,
+    )
 
 
 def _onset_strength_at_beats(
@@ -345,12 +316,11 @@ class LibrosaBackend:
         except Exception as exc:  # pragma: no cover
             log.warning("chroma_cqt/key failed: %s", exc)
             # A fixed, internally-consistent fallback pair (key_confidence=0.0
-            # marks it as a non-estimate either way): _CAMELOT_MINOR[8] and
-            # _OPENKEY_MINOR[8] both describe pitch class 8, unlike the old
-            # literal "1A"/"1m" pair, which stopped agreeing once the Open Key
-            # table above was corrected ("1A" is pitch class 8, but "1m" is
-            # pitch class 9 under the corrected table).
-            key_cam, key_ok, key_conf = _CAMELOT_MINOR[8], _OPENKEY_MINOR[8], 0.0
+            # marks it as a non-estimate either way), canonicalized like a real
+            # estimate so Camelot and Open Key cannot drift apart.
+            key_cam = canon.to_camelot(_KEY_ESTIMATE_FALLBACK)
+            key_ok = canon.to_open_key(_KEY_ESTIMATE_FALLBACK)
+            key_conf = 0.0
 
         features_blob = cls._build_features_blob(
             rms=rms,

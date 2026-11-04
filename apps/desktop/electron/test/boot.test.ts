@@ -8,14 +8,14 @@ import { after, test } from 'node:test';
 import { type BootDeps, defaultBootDeps, startEngine } from '../src/boot';
 import { makeLockProbe } from '../src/launch';
 import { PARENT_FILE, shutdownSupervised } from '../src/supervisor';
-import { fakePayload, scratchDir } from './helpers';
+import { fakePayload, HOLD_LOCK_SCRIPT, POSIX_ONLY, PYTHON, scratchDir } from './helpers';
 
 const held: ChildProcess[] = [];
 after(() => held.forEach((child) => child.kill('SIGKILL')));
 
 function deps(answer: boolean, asked: string[] = []): BootDeps {
 	return {
-		...defaultBootDeps(makeLockProbe('python3'), async (pid, detail) => {
+		...defaultBootDeps(makeLockProbe(PYTHON), async (pid, detail) => {
 			asked.push(`${pid}: ${detail}`);
 			return answer;
 		}),
@@ -23,7 +23,7 @@ function deps(answer: boolean, asked: string[] = []): BootDeps {
 	};
 }
 
-test('no lock: a fresh engine is spawned and .engine.parent names this shell', async () => {
+test('no lock: a fresh engine is spawned and .engine.parent names this shell', { skip: POSIX_ONLY('owner-only permission bits (0o600)') }, async () => {
 	const dir = scratchDir('boot-spawn');
 	const data = path.join(dir, 'data');
 	fs.mkdirSync(data, { recursive: true }); // main.ts creates it before boot
@@ -44,7 +44,7 @@ test('a held lock the user declines to stop fails with the reason, spawning noth
 	fs.mkdirSync(data, { recursive: true });
 	const lock = path.join(data, '.engine.lock');
 	fs.writeFileSync(lock, '{}');
-	const holder = spawn('python3', ['-c', 'import fcntl,os,sys,time\nfd=os.open(sys.argv[1],os.O_RDWR)\nfcntl.flock(fd,fcntl.LOCK_EX)\nprint(1,flush=True)\ntime.sleep(60)', lock], {
+	const holder = spawn(PYTHON, ['-c', HOLD_LOCK_SCRIPT, lock], {
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	held.push(holder);

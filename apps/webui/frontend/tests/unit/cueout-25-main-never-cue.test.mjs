@@ -43,18 +43,17 @@ function headphoneState(overrides) {
 	};
 }
 
-test('a saved MAIN equal to the CUE device runs split cue on it (CUEOUT-26), never a silent room', () => {
-	const split = { masterId: HP, cueId: HP, autoPinnedMaster: false, splitSameDevice: true };
-	assert.deepEqual(headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP }), split);
-	assert.deepEqual(
-		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP, currentRoomId: 'native:lg' }),
-		split,
-		'an explicit MAIN on the cue device is the operator saying one output'
-	);
-	// Control: an UNPINNED MAIN with the room elsewhere still gets the room.
+test('a saved MAIN equal to the CUE device refuses the CUE (AUDFID-01), never a split and never a silent room', () => {
+	for (const currentRoomId of [undefined, 'native:lg']) {
+		const shared = headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP, currentRoomId });
+		assert.equal(shared.masterId, HP, 'MAIN keeps playing where it is');
+		assert.equal(shared.cueId, null);
+		assert.match(shared.cueRefusal, /MAIN and CUE are the same output/);
+	}
+	// Control: an UNPINNED MAIN with the room elsewhere stays unpinned (no hidden default).
 	assert.deepEqual(
 		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: null, currentRoomId: 'native:lg' }),
-		{ masterId: 'native:lg', cueId: HP, autoPinnedMaster: true }
+		{ masterId: null, cueId: HP, autoPinnedMaster: false }
 	);
 });
 
@@ -65,14 +64,15 @@ test('control: a distinct saved MAIN is kept and not re-pinned', () => {
 	);
 });
 
-test('selectMasterOutput turns MAIN-on-the-CUE-device into split cue before its try, so the live MAIN route is never failed', () => {
+test('selectMasterOutput refuses MAIN-on-the-CUE-device before its try, so the live MAIN route is never failed', () => {
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const body = source.slice(source.indexOf('export async function selectMasterOutput('));
-	const split = body.indexOf('_enterSameDeviceSplit(');
+	const refusal = body.indexOf('throw new Error(refusal);');
 	const sameCheck = body.indexOf('sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)');
 	const tryAt = body.indexOf('try {');
-	assert.ok(sameCheck > 0 && split > sameCheck, 'selectMasterOutput must split when MAIN is the CUE output');
-	assert.ok(split < tryAt, 'the split must run before the try that marks routes.master failed');
+	assert.ok(sameCheck > 0 && refusal > sameCheck, 'selectMasterOutput must refuse when MAIN is the CUE output');
+	assert.ok(refusal < tryAt, 'the refusal must run before the try that marks routes.master failed');
+	assert.ok(!source.includes('_enterSameDeviceSplit('), 'AUDFID-01: no automatic split path is left');
 	assert.ok(!source.includes('assertMainIsNotCue('), 'the CUEOUT-25 refusal is superseded, not kept beside the split');
 });
 

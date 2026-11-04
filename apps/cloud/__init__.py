@@ -10,6 +10,7 @@ Ships a ``litestream.yml`` template + ``launchd`` plist for login startup.
 
 Phase 11 requirement coverage: CAT-04, CAT-04a (DB sync), CAT-04b (audio).
 """
+
 from __future__ import annotations
 
 __all__ = ["config", "lock", "replicate", "s3_audio"]

@@ -31,9 +31,7 @@ router = APIRouter(tags=["stems"])
 
 STEM_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {
-        "description": (
-            "Invalid or missing manifest_path, corrupt manifest, or hydrate refused"
-        ),
+        "description": ("Invalid or missing manifest_path, corrupt manifest, or hydrate refused"),
     },
 }
 
@@ -43,12 +41,7 @@ STEM_PUSH_MISSING_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
-    400: {
-        "description": (
-            "Invalid request, missing R2 credentials, or no published stem "
-            "bundle index in R2"
-        )
-    },
+    400: {"description": ("Invalid request, missing R2 credentials, or no published stem bundle index in R2")},
     404: {"description": "Unknown playlist name (detail + known sibling keys)"},
     502: {
         "description": (
@@ -63,7 +56,7 @@ STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
             "and underlying error), or the hub refused with "
             "CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was "
             "never given MDT_CLOUDSTEMS_MONTHLY_CAP"
-        )
+        ),
     },
     429: {
         "model": GateErrorResponse,
@@ -71,7 +64,7 @@ STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
             "CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused because the "
             "owner has used every CloudStems track in the current UTC month; "
             "the allowance resets at the start of the next month"
-        )
+        ),
     },
 }
 
@@ -336,9 +329,7 @@ def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
         # whoever reads the 503 (Codex round 7).
         from apps.webui.server.routes.stems import _hub_endpoint_from_message
 
-        _raise_stem_source_error(
-            exc, endpoint=_hub_endpoint_from_message(exc.message)
-        )
+        _raise_stem_source_error(exc, endpoint=_hub_endpoint_from_message(exc.message))
     except HydrationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StemBulkHydrateOut(

@@ -3,6 +3,7 @@
 Supersedes: the ``_unpack_page_rowids`` body in ``apps/shared/djay_db.py`` and
 the ``parse_page_data`` body in ``apps/sync/playlist_tsaf.py`` (issue #7875).
 """
+
 from __future__ import annotations
 
 import struct

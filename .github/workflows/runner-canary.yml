@@ -480,7 +480,6 @@ jobs:
             --ignore=tests/quality/test_frontend_unit_seam_gate.py
             --ignore=tests/quality/test_mypy_cache.py
             --ignore=tests/perf/test_library_playlist_switch_bench.py
-            --ignore=(private path)
             --ignore=tests/health_lights/test_ahead_analysis_live_engine.py
           )
           # Mode: full | affected | empty, one line on stdout. A selector

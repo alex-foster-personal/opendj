@@ -34,11 +34,12 @@ always 0. Calling it unconditionally made every ``apps.analysis.run`` there
 die before its first track and exit 5 (EXIT_INTERNAL_ERROR) in place of the
 verdict it owed, which also hid a vanished target (exit 3) and an
 unavailable backend (exit 4) from the drain. Where there is no ``getuid``,
-ownership cannot be proven, so this module fails closed rather than assume
-it: no private directory is created, ``ensure_owned_numba_cache_dir``
-returns ``None`` (no purge), ``_ensure_lock_dir`` returns ``False`` (the
-warm-up is refused), and the run goes on to analyze without a warm-up. A
-real Windows lock and ownership check is issue #7227.
+cache-directory ownership cannot be proven: ``ensure_owned_numba_cache_dir``
+returns ``None`` (no purge). The compile lock directory is still provisioned
+as a real non-symlink directory under the per-account temp root, and the
+warm-up takes the cross-process lock through ``apps.shared.file_lock``
+(Windows ``msvcrt.locking``). Callers must stop when the warm-up is refused
+rather than lazy-compile unlocked (issue #7227).
 """
 from __future__ import annotations
 
@@ -118,6 +119,19 @@ def _current_uid() -> int | None:
     return getuid() if getuid is not None else None
 
 
+def _is_real_dir(path: Path) -> bool:
+    """True when ``path`` is a directory reached without a symlink or reparse hop."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode):
+        return False
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    attrs = getattr(st, "st_file_attributes", 0)
+    return not (reparse and attrs & reparse)
+
+
 def _is_owned_dir(path: Path) -> bool:
     """True when ``path`` is a real directory (no symlink hop) owned by us.
 
@@ -146,14 +160,12 @@ def _ensure_lock_dir(path: Path, *, shared: bool) -> bool:
     the operator who named it vouches for it.
     """
     if shared:
-        try:
-            st = os.lstat(path)
-        except OSError:
-            return False
-        return stat.S_ISDIR(st.st_mode)
-    if _current_uid() is None:
-        # No uid to own a private directory by: create nothing, refuse.
-        return False
+        return _is_real_dir(path)
+    uid = _current_uid()
+    if uid is None:
+        with suppress(FileExistsError):
+            os.mkdir(path)
+        return _is_real_dir(path)
     with suppress(FileExistsError):
         os.mkdir(path, 0o700)
     return _is_owned_dir(path)
@@ -281,14 +293,18 @@ def _open_lock_safe(path: Path, *, require_self_owned: bool) -> int | None:
     attack abused. A second trusted user takes the same lock by opening the
     file read-only, which is enough for ``flock``.
     """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o666)
+        fd = os.open(path, os.O_CREAT | os.O_RDWR | nofollow, 0o666)
     except OSError:
+        if _current_uid() is None:
+            # Windows: msvcrt.locking needs a writable fd; a denied open is unusable.
+            return None
         # Exists but not writable by us (another trusted user created it in a
         # shared directory), or a symlink O_NOFOLLOW refused. Retry read-only:
         # flock needs only a readable fd; a symlink is refused again.
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(path, os.O_RDONLY | nofollow)
         except OSError:
             return None
     try:
@@ -296,8 +312,9 @@ def _open_lock_safe(path: Path, *, require_self_owned: bool) -> int | None:
     except OSError:
         os.close(fd)
         return None
+    uid = _current_uid()
     if not stat.S_ISREG(st.st_mode) or (
-        require_self_owned and st.st_uid != _current_uid()
+        require_self_owned and uid is not None and st.st_uid != uid
     ):
         os.close(fd)
         return None

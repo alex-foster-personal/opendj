@@ -27,6 +27,7 @@
 		paneTitle,
 		summary,
 		single,
+		keyShown = null,
 		track,
 		loadError,
 		saveError,
@@ -45,6 +46,8 @@
 		summary: SelectionSummary | null;
 		/** The one selected browser row; null unless exactly one is selected. */
 		single: (InspectorRow & { artwork_available: boolean | null }) | null;
+		/** The single row's key in the user's key_notation; the container resolves it. */
+		keyShown?: string | null;
 		/** The loaded track and its provenance; null until it arrives. */
 		track: Track | null;
 		loadError: string | null;
@@ -161,7 +164,7 @@
 			</dd>
 			<dt>Key</dt>
 			<dd title="Musical key in Camelot notation">
-				{single.key ?? ''}
+				{keyShown ?? ''}
 				{#if sourceOf('key') !== null}<span class="src" title={sourceTitle('key')}>{sourceOf('key')}</span>{/if}
 			</dd>
 			<dt>Genre</dt>

@@ -16,6 +16,7 @@ Ports ``_normalise_for_match`` + indexing strategy from the companion repo
 (``~/Desktop/music-dj/src/sync.py`` lines 86-326) and extends it with the
 signal-based scoring model for Phase 2.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -126,10 +127,9 @@ class UnifiedTrack:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, UnifiedTrack):
             return NotImplemented
-        return (
-            _normalise_for_match(self.title) == _normalise_for_match(other.title)
-            and _normalise_for_match(self.artist) == _normalise_for_match(other.artist)
-        )
+        return _normalise_for_match(self.title) == _normalise_for_match(other.title) and _normalise_for_match(
+            self.artist
+        ) == _normalise_for_match(other.artist)
 
     def __hash__(self) -> int:
         return hash(
@@ -241,9 +241,7 @@ def _signal_filename_exact(rb: Any, dj: DjayTrack) -> tuple[Signal, str | None, 
     return signal, rb_base, dj_base
 
 
-def _signal_filename_fuzzy(
-    rb_base: str | None, dj_base: str | None, exact_fired: bool
-) -> Signal:
+def _signal_filename_fuzzy(rb_base: str | None, dj_base: str | None, exact_fired: bool) -> Signal:
     ratio = 0.0
     fired = False
     if rb_base and dj_base and not exact_fired:
@@ -260,11 +258,7 @@ def _signal_filename_fuzzy(
 def _signal_duration(rb: Any, dj: DjayTrack) -> Signal:
     rb_dur = getattr(rb, "duration_s", None)
     dj_dur = getattr(dj, "duration_s", None)
-    fired = (
-        rb_dur is not None
-        and dj_dur is not None
-        and abs(float(rb_dur) - float(dj_dur)) <= 0.5
-    )
+    fired = rb_dur is not None and dj_dur is not None and abs(float(rb_dur) - float(dj_dur)) <= 0.5
     return Signal(
         name="duration",
         weight=WEIGHTS["duration"],
@@ -279,18 +273,12 @@ def _signal_id3(rb: Any, dj: DjayTrack) -> Signal:
     rb_id3 = _read_id3(getattr(rb, "file_path", None))
     dj_id3 = _read_id3(getattr(dj, "file_path", None))
     if rb_id3 and dj_id3:
-        t_ratio = difflib.SequenceMatcher(
-            None, rb_id3[0].lower(), dj_id3[0].lower()
-        ).ratio()
-        a_ratio = difflib.SequenceMatcher(
-            None, rb_id3[1].lower(), dj_id3[1].lower()
-        ).ratio()
+        t_ratio = difflib.SequenceMatcher(None, rb_id3[0].lower(), dj_id3[0].lower()).ratio()
+        a_ratio = difflib.SequenceMatcher(None, rb_id3[1].lower(), dj_id3[1].lower()).ratio()
         if t_ratio >= 0.9 and a_ratio >= 0.9:
             fired = True
             detail = f"t={t_ratio:.2f},a={a_ratio:.2f}"
-    return Signal(
-        name="id3", weight=WEIGHTS["id3"], fired=fired, detail=detail
-    )
+    return Signal(name="id3", weight=WEIGHTS["id3"], fired=fired, detail=detail)
 
 
 def _signal_chromaprint(
@@ -303,19 +291,13 @@ def _signal_chromaprint(
 ) -> Signal:
     fp_signal: Signal | None = None
     fired_cheap = sum(1 for s in cheap_signals if s.fired)
-    if (
-        not skip
-        and fingerprint_fn is not None
-        and fired_cheap < MIN_SIGNALS_FOR_ACCEPT
-    ):
+    if not skip and fingerprint_fn is not None and fired_cheap < MIN_SIGNALS_FOR_ACCEPT:
         try:
             fp_signal = fingerprint_fn(rb, dj)
         except Exception:
             fp_signal = None
     if fp_signal is None:
-        fp_signal = Signal(
-            name="chromaprint", weight=WEIGHTS["chromaprint"], fired=False
-        )
+        fp_signal = Signal(name="chromaprint", weight=WEIGHTS["chromaprint"], fired=False)
     return fp_signal
 
 
@@ -340,9 +322,7 @@ def score_pair(
     dur_sig = _signal_duration(rb, dj)
     id3_sig = _signal_id3(rb, dj)
     cheap = [isrc_sig, fn_exact_sig, fn_fuzzy_sig, dur_sig, id3_sig]
-    fp_sig = _signal_chromaprint(
-        rb, dj, cheap, fingerprint_fn=fingerprint_fn, skip=_skip_fingerprint
-    )
+    fp_sig = _signal_chromaprint(rb, dj, cheap, fingerprint_fn=fingerprint_fn, skip=_skip_fingerprint)
     signals = [*cheap, fp_sig]
     confidence = sum(s.weight for s in signals if s.fired)
     return confidence, signals
@@ -418,9 +398,7 @@ def _build_rb_indices(
         isrc = (getattr(rb, "isrc", "") or "").strip().upper()
         if isrc:
             isrc_to_rb.setdefault(isrc, rb)
-        mkey = _make_match_key(
-            getattr(rb, "title", "") or "", getattr(rb, "artist", "") or ""
-        )
+        mkey = _make_match_key(getattr(rb, "title", "") or "", getattr(rb, "artist", "") or "")
         key_to_rb.setdefault(mkey, []).append(rb)
     return path_to_rb, isrc_to_rb, key_to_rb
 
@@ -472,17 +450,12 @@ def _find_candidate(
     mkey = _make_match_key(dj.title, dj.artist)
     rb_candidates = key_to_rb.get(mkey, [])
     if rb_candidates:
-        return _pick_best_by_key(
-            rb_candidates, dj, fingerprint_fn=fingerprint_fn
-        )
+        return _pick_best_by_key(rb_candidates, dj, fingerprint_fn=fingerprint_fn)
     return None, None
 
 
 def _classify_status(fired_count: int, confidence: float) -> str:
-    if (
-        fired_count >= MIN_SIGNALS_FOR_ACCEPT
-        and confidence >= MIN_CONFIDENCE_FOR_ACCEPT
-    ):
+    if fired_count >= MIN_SIGNALS_FOR_ACCEPT and confidence >= MIN_CONFIDENCE_FOR_ACCEPT:
         return "matched"
     if fired_count >= 2:
         return "review"
@@ -521,17 +494,13 @@ def _match_one_dj(
     fingerprint_fn: Callable[[Any, DjayTrack], Signal | None] | None,
 ) -> MatchedPair | None:
     """Locate the best RB candidate for one djay track and build its pair."""
-    candidate, precomputed = _find_candidate(
-        dj, path_to_rb, isrc_to_rb, key_to_rb, fingerprint_fn=fingerprint_fn
-    )
+    candidate, precomputed = _find_candidate(dj, path_to_rb, isrc_to_rb, key_to_rb, fingerprint_fn=fingerprint_fn)
     if candidate is None:
         return None
     if precomputed is not None:
         confidence, signals = precomputed
     else:
-        confidence, signals = score_pair(
-            candidate, dj, fingerprint_fn=fingerprint_fn
-        )
+        confidence, signals = score_pair(candidate, dj, fingerprint_fn=fingerprint_fn)
     return _build_matched_pair(candidate, dj, confidence, signals)
 
 
@@ -543,11 +512,7 @@ def _finalize_result(
     matched_dj_uuids: set[str],
 ) -> None:
     """Populate rb_only, djay_only, and stats on ``result`` in place."""
-    result.rb_only = [
-        rb
-        for rb in rb_list
-        if str(getattr(rb, "id", "") or "") not in matched_rb_ids
-    ]
+    result.rb_only = [rb for rb in rb_list if str(getattr(rb, "id", "") or "") not in matched_rb_ids]
     result.djay_only = [dj for dj in dj_list if dj.uuid not in matched_dj_uuids]
     result.stats = {
         "rb_total": len(rb_list),

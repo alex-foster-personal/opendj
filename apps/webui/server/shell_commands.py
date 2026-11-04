@@ -9,11 +9,12 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from fastapi import Request
+
+from .utc_timestamps import utc_now_iso_ms
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +28,6 @@ class ShellCommandConflictError(RuntimeError):
     def __init__(self, command_id: str) -> None:
         super().__init__(command_id)
         self.command_id = command_id
-
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 @dataclass
@@ -71,7 +68,7 @@ class _ShellCommandBroker:
         command_id = uuid4().hex
         self.pending[command_id] = _PendingShellCommand(
             command={"type": "apply-update", "available_version": available_version},
-            enqueued_at_utc=_utc_now(),
+            enqueued_at_utc=utc_now_iso_ms(),
         )
         return command_id
 
@@ -79,7 +76,7 @@ class _ShellCommandBroker:
         for command_id, pending in self.pending.items():
             if not pending.claimed:
                 pending.claimed = True
-                pending.claimed_at_utc = _utc_now()
+                pending.claimed_at_utc = utc_now_iso_ms()
                 return command_id, pending.command
         return None
 
@@ -91,7 +88,7 @@ class _ShellCommandBroker:
             raise RuntimeError(f"shell command {command_id} was not claimed")
         if pending.claimed_at_utc is None:
             raise RuntimeError(f"shell command {command_id} has no claimed_at_utc")
-        completed_at_utc = _utc_now()
+        completed_at_utc = utc_now_iso_ms()
         self.completed.append(
             _CompletedShellCommand(
                 command_id=command_id,

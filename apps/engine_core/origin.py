@@ -12,7 +12,7 @@ A rebound name is not the same object as the module attribute a function
 reads at call time: ``verify_engine_identity`` (defined in
 ``apps.shared.engine_origin``) resolves ``httpx`` and every module-level
 constant from ITS OWN globals, not this shim's. Monkeypatching
-``apps.engine_core.origin.DEFAULT_LOCK_PATH`` (or ``.httpx``, or any other
+``apps.engine_core.origin.default_lock_path`` (or ``.httpx``, or any other
 name re-exported here) silently patches nothing real -- target
 ``apps.shared.engine_origin`` directly instead (claude-review, PR #3831, P3).
 """
@@ -20,7 +20,7 @@ name re-exported here) silently patches nothing real -- target
 from __future__ import annotations
 
 from apps.shared.engine_origin import (
-    DEFAULT_LOCK_PATH,
+    default_lock_path,
     EXPECTED_ENGINE_ROLE,
     HEALTH_PATH,
     IDENTITY_PROBE_TIMEOUT_S,
@@ -37,7 +37,7 @@ from apps.shared.engine_origin import (
 )
 
 __all__ = [
-    "DEFAULT_LOCK_PATH",
+    "default_lock_path",
     "EXPECTED_ENGINE_ROLE",
     "HEALTH_PATH",
     "IDENTITY_PROBE_TIMEOUT_S",

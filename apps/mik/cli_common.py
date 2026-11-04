@@ -4,6 +4,7 @@ subcommand module would otherwise have with ``cli.py`` (the subcommand
 module needs these, and ``cli.py`` needs the subcommand's ``cmd_*``
 function back).
 """
+
 from __future__ import annotations
 
 import argparse

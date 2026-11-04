@@ -1,6 +1,6 @@
 """Dry-run preview for tag unification.
 
-Writes ``data/tags/unified-preview.csv`` with one row per (track, field)
+Writes ``(private path)`` with one row per (track, field)
 where the unified value differs from the current file / RB / djay value.
 Never mutates any file. Idempotent.
 """
@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 from apps.shared import paths
 from apps.shared.tag_writer import TagRead
@@ -17,15 +19,25 @@ from . import collect as tag_collect
 from . import unify as tag_unify
 
 
+class PreviewRow(TypedDict):
+    path: str
+    field: str
+    current_file_value: str | int | float
+    unified_value: str | int | float
+    source: str
+    confidence: float
+    would_change_file: str
+
+
 def build_preview_rows(
     files: list[Path],
     *,
-    fetch_rb=None,
-    fetch_djay=None,
-    fetch_mik=None,
-) -> list[dict]:
+    fetch_rb: Callable[[Path], TagRead | None] | None = None,
+    fetch_djay: Callable[[Path], TagRead | None] | None = None,
+    fetch_mik: Callable[[Path], TagRead | None] | None = None,
+) -> list[PreviewRow]:
     """Return list of CSV-ready dicts for ``files``."""
-    rows: list[dict] = []
+    rows: list[PreviewRow] = []
     for path in files:
         sources = tag_collect.collect_for(
             path, fetch_rb=fetch_rb, fetch_djay=fetch_djay, fetch_mik=fetch_mik
@@ -49,7 +61,7 @@ def build_preview_rows(
     return rows
 
 
-def write_csv(rows: list[dict], out: Path) -> None:
+def write_csv(rows: list[PreviewRow], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     cols = [
         "path",
@@ -71,9 +83,9 @@ def run_preview(
     *,
     paths_arg: list[Path],
     out: Path | None = None,
-    fetch_rb=None,
-    fetch_djay=None,
-    fetch_mik=None,
+    fetch_rb: Callable[[Path], TagRead | None] | None = None,
+    fetch_djay: Callable[[Path], TagRead | None] | None = None,
+    fetch_mik: Callable[[Path], TagRead | None] | None = None,
 ) -> Path:
     out_path = out or paths.TAGS_UNIFIED_PREVIEW_CSV
     rows = build_preview_rows(

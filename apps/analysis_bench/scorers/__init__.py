@@ -25,7 +25,5 @@ def get_scorer(module_path: str) -> ModuleType:
     module = importlib.import_module(module_path)
     missing = [name for name in _REQUIRED if not hasattr(module, name)]
     if missing:
-        raise AttributeError(
-            f"{module_path} is not a lane scorer: it defines no {', '.join(missing)}"
-        )
+        raise AttributeError(f"{module_path} is not a lane scorer: it defines no {', '.join(missing)}")
     return module

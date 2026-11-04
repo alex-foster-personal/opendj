@@ -110,8 +110,7 @@ def _legacy_words(conn: sqlite3.Connection, stable_id: str) -> list[dict[str, An
     would silently re-index every word after it.
     """
     rows = conn.execute(
-        f"SELECT {', '.join(_LEGACY_WORD_COLUMNS)} FROM {LEGACY_WORD_TABLE} "
-        "WHERE stable_id = ? ORDER BY idx",
+        f"SELECT {', '.join(_LEGACY_WORD_COLUMNS)} FROM {LEGACY_WORD_TABLE} WHERE stable_id = ? ORDER BY idx",
         (stable_id,),
     ).fetchall()
     words: list[dict[str, Any]] = []
@@ -152,9 +151,7 @@ def _convert_one(
             s3=s3,
             cfg=cfg,
         )
-        content_hash, n_words, n_lines = (
-            artifact.content_hash, artifact.n_words, artifact.n_lines
-        )
+        content_hash, n_words, n_lines = (artifact.content_hash, artifact.n_words, artifact.n_lines)
     store.upsert_verdict(
         conn,
         stable_id=stable_id,
@@ -202,8 +199,7 @@ def migrate_legacy_words(
     """Convert every legacy row. Drops the legacy tables only on a clean sweep."""
     _require_legacy_tables(conn)
     rows = conn.execute(
-        f"SELECT {', '.join(_LEGACY_VERDICT_COLUMNS)} FROM {LEGACY_VERDICT_TABLE} "
-        "ORDER BY stable_id"
+        f"SELECT {', '.join(_LEGACY_VERDICT_COLUMNS)} FROM {LEGACY_VERDICT_TABLE} ORDER BY stable_id"
     ).fetchall()
     legacy_rows = [dict(zip(_LEGACY_VERDICT_COLUMNS, row, strict=True)) for row in rows]
     convertible = 0
@@ -215,9 +211,7 @@ def migrate_legacy_words(
         try:
             words = _legacy_words(conn, str(legacy["stable_id"]))
             if not dry_run:
-                _convert_one(
-                    conn, data_dir=data_dir, legacy=legacy, words=words, s3=s3, cfg=cfg
-                )
+                _convert_one(conn, data_dir=data_dir, legacy=legacy, words=words, s3=s3, cfg=cfg)
                 overrides += int(_carry_override(conn, legacy))
                 converted += 1
         except (LegacyWordsError, ValueError, RuntimeError, sqlite3.Error) as error:
@@ -225,12 +219,7 @@ def migrate_legacy_words(
         else:
             convertible += 1
             wordless += int(not words)
-    complete = (
-        (not dry_run)
-        and drop_legacy
-        and converted == len(legacy_rows)
-        and not failures
-    )
+    complete = (not dry_run) and drop_legacy and converted == len(legacy_rows) and not failures
     if complete:
         _drop_legacy_tables(conn)
     return LegacyMigrationReport(

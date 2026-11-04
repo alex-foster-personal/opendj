@@ -12,6 +12,15 @@ from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
 from apps.shared.state.schema import apply_migrations
 
 
+def seed_playlist_sets_db(path: Path) -> None:
+    """Apply play-order and playlist-set migrations on a disposable state DB."""
+    conn = sqlite3.connect(str(path), isolation_level=None)
+    conn.execute("PRAGMA foreign_keys = ON")
+    apply_play_order_migrations(conn)
+    apply_playlist_set_migrations(conn)
+    conn.close()
+
+
 @pytest.fixture
 def ps_conn(tmp_path: Path) -> sqlite3.Connection:
     db_path = tmp_path / "state.db"
@@ -43,7 +52,11 @@ def ps_conn_with_memberships(ps_conn: sqlite3.Connection) -> sqlite3.Connection:
 
 
 def seed_playlist_and_tracks(
-    conn: sqlite3.Connection, playlist_id: str, stable_ids: list[str]
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    stable_ids: list[str],
+    *,
+    now: str | None = None,
 ) -> None:
     """Insert the minimal valid `playlists`/`tracks` parent rows a caller
     needs before inserting into `playlist_memberships`.
@@ -56,14 +69,30 @@ def seed_playlist_and_tracks(
     is exercising a state the real schema forbids, so it needs real (if
     minimal) parent rows -- not a laxer fixture.
     """
-    now = datetime.now(UTC).isoformat()
+    stamp = now if now is not None else datetime.now(UTC).isoformat()
     conn.execute(
         "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
         "created_at, updated_at) VALUES (?, ?, 'rekordbox', ?, ?, ?)",
-        (playlist_id, playlist_id, playlist_id, now, now),
+        (playlist_id, playlist_id, playlist_id, stamp, stamp),
     )
     conn.executemany(
         "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
         "VALUES (?, 'inferred', ?, ?)",
-        [(stable_id, now, now) for stable_id in stable_ids],
+        [(stable_id, stamp, stamp) for stable_id in stable_ids],
+    )
+
+
+def seed_playlist_membership(
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    stable_id: str,
+    position: int,
+    *,
+    deleted_at: str | None = None,
+) -> None:
+    """Insert one ``playlist_memberships`` row (``deleted_at`` set = soft-deleted)."""
+    conn.execute(
+        "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
+        "deleted_at) VALUES (?, ?, ?, ?)",
+        (playlist_id, stable_id, position, deleted_at),
     )

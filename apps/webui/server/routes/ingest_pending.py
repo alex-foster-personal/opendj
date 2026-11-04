@@ -4,6 +4,7 @@ Split from :mod:`apps.webui.server.routes.ingest` so ingest.py stays under
 the line-count ceiling. Lists staged batches under INGEST_INBOX that have
 audio files but no ``.rb-imported`` marker; confirm writes the marker only.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -80,4 +81,3 @@ def confirm_pending(batch: str) -> None:
     if not dest_dir.is_dir():
         raise HTTPException(404, f"batch {batch!r} not found")
     (dest_dir / RB_IMPORTED_MARKER).write_text("")
-

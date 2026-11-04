@@ -5,7 +5,7 @@ each part's commit. That is only safe if the commit really changed nothing but
 layout, and only works if the SHA blame is told about is the one main contains.
 
     python -m scripts.format_proof prove --base <rev> [--head <rev>]
-    python -m scripts.format_proof ignore-revs [--file .git-blame-ignore-revs]
+    python -m scripts.format_proof ignore-revs [--file .git-blame-ignore-revs] [--base REV]
 
 Requirements (mini-PRD):
   prove  ✔︎
@@ -51,6 +51,10 @@ Requirements (mini-PRD):
       [if] a SHA names a tag or other object that only peels to a commit [then ⛔️] exit 1
       [if] a SHA is not an ancestor of HEAD (squash or rebase merge) [then ⛔️] exit 1
       [if] the clone is shallow and cannot see a SHA or its parent [then ⛔️] exit 2 UNKNOWN
+      [if] --base is set and a SHA listed at base is missing at HEAD [then ⛔️] exit 1
+      [if] --base is set and every base SHA is kept while HEAD adds more [then ⛔️] exit 0
+      [if] --base is set and the base file is missing or header-only [then ⛔️] exit 0
+      [if] --base is set and the clone cannot read the base rev [then ⛔️] exit 2 UNKNOWN
 
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
@@ -202,6 +206,16 @@ def _changed_entries(repo: Path, base: str, head: str) -> list[tuple[str, str, s
 def _blob(repo: Path, rev: str, path: str) -> bytes:
     """Raw bytes: only Python's own decode knows which of a file's lines its cookie may sit on."""
     return subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True, check=True).stdout
+
+
+def _blobs_or_unknown(repo: Path, base: str, head: str, path: str) -> tuple[bytes, bytes] | Result:
+    """Both sides' bytes, or UNKNOWN. The diff said `M`, so both revs name the path; a failing `git show` means a
+    blob this clone cannot read (partial or shallow clone, runner object store): not provable, not a crash."""
+    try:
+        return _blob(repo, base, path), _blob(repo, head, path)
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else "(no stderr)"
+        return Result(2, lines=[f"[format-proof] UNKNOWN {path}: git show exited {exc.returncode}: {stderr}"])
 
 
 # ----- AST comparison -------------------------------------------------------
@@ -424,14 +438,20 @@ def _runs_a_shebang(data: bytes) -> bool:
 # ----- commands -------------------------------------------------------------
 
 
+def _structural_failure(entries: list[tuple[str, str, str, str]]) -> Result | None:
+    """A FAIL when any file was added, deleted or chmod-ed: no layout change does that."""
+    not_modified = [f"{status} {path}" for status, path, _, _ in entries if status != "M"]
+    mode_changed = [f"{path} {old} -> {new}" for _, path, old, new in entries if old != new]
+    lines = [f"[format-proof] FAIL not format-only, files added/deleted: {x}" for x in not_modified]
+    lines += [f"[format-proof] FAIL not format-only, file mode changed: {x}" for x in mode_changed]
+    return Result(1, lines=lines) if lines else None
+
+
 def prove(repo: Path, base: str, head: str) -> Result:
     entries = _changed_entries(repo, base, head)
-    not_modified = [f"{status} {path}" for status, path, _, _ in entries if status != "M"]
-    if not_modified:
-        return Result(1, lines=[f"[format-proof] FAIL not format-only, files added/deleted: {x}" for x in not_modified])
-    mode_changed = [f"{path} {old} -> {new}" for _, path, old, new in entries if old != new]
-    if mode_changed:
-        return Result(1, lines=[f"[format-proof] FAIL not format-only, file mode changed: {x}" for x in mode_changed])
+    structural_failure = _structural_failure(entries)
+    if structural_failure:
+        return structural_failure
     py_paths = [path for _, path, _, mode in entries if path.endswith(".py") and mode in CFG.REGULAR_FILE_MODES]
     provable = set(py_paths)
     unprovable = [
@@ -443,7 +463,10 @@ def prove(repo: Path, base: str, head: str) -> Result:
         return Result(2, lines=["[format-proof] UNKNOWN no regular .py file changed; nothing was proven", *unprovable])
     result = Result(0, files_checked=len(py_paths))
     for path in py_paths:
-        data_before, data_after = _blob(repo, base, path), _blob(repo, head, path)
+        blobs = _blobs_or_unknown(repo, base, head, path)
+        if isinstance(blobs, Result):
+            return blobs
+        data_before, data_after = blobs
         if _runs_a_shebang(data_before) != _runs_a_shebang(data_after):
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: the shebang moved on or off byte 0, where it runs")
@@ -507,15 +530,49 @@ def _proof_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[str]]
     return 0, []
 
 
-def check_ignore_revs(repo: Path, path: Path) -> Result:
+def _parse_ignore_revs_text(text: str) -> tuple[list[str], Result | None]:
     shas: list[str] = []
-    for number, raw in enumerate(path.read_text().splitlines(), start=1):
+    for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if not CFG.SHA_RE.match(line):
-            return Result(1, lines=[f"[ignore-revs] FAIL line {number}: not a full 40-hex SHA: {line!r}"])
+            return [], Result(1, lines=[f"[ignore-revs] FAIL line {number}: not a full 40-hex SHA: {line!r}"])
         shas.append(line)
+    return shas, None
+
+
+def _ignore_revs_shas_at_rev(repo: Path, rev: str, rel_path: str) -> tuple[list[str] | None, Result | None]:
+    shallow = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    if _git(repo, "cat-file", "-e", f"{rev}^{{commit}}", check=False).returncode != 0:
+        if shallow:
+            return None, Result(2, lines=[f"[ignore-revs] UNKNOWN base {rev} not visible in this shallow clone"])
+        return None, Result(1, lines=[f"[ignore-revs] FAIL base {rev} is not a commit in this repository"])
+    show = _git(repo, "show", f"{rev}:{rel_path}", check=False)
+    if show.returncode != 0:
+        return [], None
+    shas, err = _parse_ignore_revs_text(show.stdout)
+    if err:
+        return None, err
+    return shas, None
+
+
+def check_ignore_revs(repo: Path, path: Path, base: str | None = None) -> Result:
+    shas, parse_err = _parse_ignore_revs_text(path.read_text())
+    if parse_err:
+        return parse_err
+    if base is not None:
+        base_shas, base_err = _ignore_revs_shas_at_rev(repo, base, CFG.IGNORE_REVS_FILE)
+        if base_err:
+            return base_err
+        assert base_shas is not None
+        head_set = set(shas)
+        for sha in base_shas:
+            if sha not in head_set:
+                return Result(
+                    1,
+                    lines=[f"[ignore-revs] FAIL SHA {sha} listed at base {base} is missing at HEAD"],
+                )
     shallow = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     result = Result(0, files_checked=len(shas))
     unknown: list[str] = []
@@ -547,11 +604,12 @@ def main(argv: list[str] | None = None) -> int:
     p_prove.add_argument("--head", default="HEAD")
     p_revs = sub.add_parser("ignore-revs", help="check every SHA in the blame ignore file")
     p_revs.add_argument("--file", type=Path, default=REPO / CFG.IGNORE_REVS_FILE)
+    p_revs.add_argument("--base", default=None, help="rev whose listed SHAs must still appear at HEAD")
     args = parser.parse_args(argv)
     if args.command == "prove":
         result = prove(REPO, args.base, args.head)
     elif args.command == "ignore-revs":
-        result = check_ignore_revs(REPO, args.file)
+        result = check_ignore_revs(REPO, args.file, base=args.base)
     else:
         raise SystemExit(f"unhandled command {args.command}")
     print("\n".join(result.lines))

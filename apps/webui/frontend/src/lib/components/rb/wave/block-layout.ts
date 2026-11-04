@@ -200,14 +200,19 @@ function _mergeAnchors(w: number, changeX: ArrayLike<number>, beatX: ArrayLike<n
 }
 
 /** Beat anchors in px for a band image laid out at `pxPerS`: the lines the
- * grid painter itself selects across the whole track (visibleBeatLines with
- * origin 0), so a beat the grid thins away under BEAT_LINE_MIN_GAP_PX
+ * grid would paint at this stride (visibleBeatLines with origin 0 over the
+ * whole track), so a beat the grid thins away under BEAT_LINE_MIN_GAP_PX
  * (WAVEZOOM-02) bends no block, and each kept line's edge sits on its own
- * rounded pixel. The stride is the one the track's closest beats need, which
- * is every window's stride on a steady tempo. */
-export function beatAnchorsPx(beats: readonly AnlzBeat[] | null, pxPerS: number, barPhaseUntrusted = false): Int32Array {
+ * rounded pixel. Production passes the visible window's stride applied
+ * track-wide; omitted stride uses the whole-track window (steady tempo). */
+export function beatAnchorsPx(
+	beats: readonly AnlzBeat[] | null,
+	pxPerS: number,
+	barPhaseUntrusted = false,
+	stride?: number
+): Int32Array {
 	if (beats === null) return new Int32Array(0);
-	const lines = visibleBeatLines(beats, 0, pxPerS, Infinity, 0, barPhaseUntrusted, 0);
+	const lines = visibleBeatLines(beats, 0, pxPerS, Infinity, 0, barPhaseUntrusted, 0, stride);
 	return Int32Array.from(lines, (l) => l.x);
 }
 
@@ -227,10 +232,11 @@ export function rowBlockEdges(
 	widthPx: number,
 	beats: readonly AnlzBeat[] | null,
 	pxPerS: number,
-	barPhaseUntrusted = false
+	barPhaseUntrusted = false,
+	stride?: number
 ): Int32Array {
 	const changes = changeAnchorsPx(changePointsFor(waveform, durationS, norm), waveform.detail.low.length, widthPx);
-	return snappedBlockEdges(widthPx, changes, beatAnchorsPx(beats, pxPerS, barPhaseUntrusted));
+	return snappedBlockEdges(widthPx, changes, beatAnchorsPx(beats, pxPerS, barPhaseUntrusted, stride));
 }
 
 const _beatsIds = new WeakMap<readonly AnlzBeat[], number>();

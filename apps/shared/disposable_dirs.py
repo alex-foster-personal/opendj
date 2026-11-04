@@ -40,6 +40,12 @@ def protected_roots() -> tuple[Path, ...]:
         if not appdata:
             raise SystemExit("[ERROR] APPDATA is unset; cannot locate the live library roots")
         roots += [Path(appdata) / "Pioneer", Path(appdata) / "com.opendj.desktop"]
+        # The engine library moved to %LOCALAPPDATA% (ADR windows-data-dir-and-app-identity);
+        # the Roaming root above stays protected for builds that predate it.
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if not local_appdata:
+            raise SystemExit("[ERROR] LOCALAPPDATA is unset; cannot locate the live library root")
+        roots.append(Path(local_appdata) / "com.opendj.desktop")
     return tuple(roots)
 
 

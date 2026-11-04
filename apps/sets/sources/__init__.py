@@ -19,6 +19,7 @@ thread), emit :class:`apps.sets.state.Event` rows via a callback, and
 keep errors out of the poll thread so the recorder keeps the other
 sources going if one goes wrong.
 """
+
 from __future__ import annotations
 
 from .djay_source import DjaySource

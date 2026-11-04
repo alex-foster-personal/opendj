@@ -14,6 +14,7 @@ mixins from its own bottom half instead of routing through a common module
 like this one. Neither ``writer`` nor either mixin imports the other two;
 all three import only this module.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -80,8 +81,7 @@ def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connecti
     """
     if conn.in_transaction:
         raise RuntimeError(
-            "immediate transaction requires an idle connection; acquire it "
-            "before reading membership state"
+            "immediate transaction requires an idle connection; acquire it before reading membership state"
         )
     _begin_immediate(conn)
     try:
@@ -100,7 +100,9 @@ def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connecti
 
 
 def next_playlist_revision(
-    conn: sqlite3.Connection, playlist_id: str, candidate: str,
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    candidate: str,
 ) -> str:
     """Return a revision distinct from the playlist's current ``updated_at``.
 
@@ -119,7 +121,8 @@ def next_playlist_revision(
     exists to guarantee.
     """
     row = conn.execute(
-        "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
+        "SELECT updated_at FROM playlists WHERE playlist_id = ?",
+        (playlist_id,),
     ).fetchone()
     if row is None or not _sync_stamp.is_orderable(row[0]):
         return candidate

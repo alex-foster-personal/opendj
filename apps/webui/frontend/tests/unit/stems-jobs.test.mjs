@@ -66,7 +66,7 @@ function engineHealth() {
 	return {
 		status: 'ok',
 		state_db: {
-			path: 'data/state/state.db',
+			path: '(private path)',
 			tracks: 1,
 			playlists: 1,
 			pairings: 0,
@@ -251,6 +251,21 @@ test('a sub-cent estimate says so rather than rounding to $0.00', () => {
 	const summary = mod.stemsPlanSummary(plan({ estimate_usd: 0.004 }));
 	assert.match(summary, /under \$0\.01/);
 	assert.doesNotMatch(summary, /\$0\.00/);
+});
+
+test('a local plan does not quote GPU minutes or a dollar cost', () => {
+	for (const local of [
+		{ executor: 'local', tier: 'LOCAL', tier_name: 'local' },
+		{ transport: 'local' },
+		{ tier: 'LOCAL' }
+	]) {
+		const summary = mod.stemsPlanSummary(
+			plan({ ...local, pending: 50, estimate_seconds: 60, estimate_usd: 0.004 })
+		);
+		assert.match(summary, /50 of 1000/);
+		assert.match(summary, /Runs on this machine/);
+		assert.doesNotMatch(summary, /GPU|\$|min on/i);
+	}
 });
 
 test('fetchStemsPlan asks the engine for the tier it was given', async () => {

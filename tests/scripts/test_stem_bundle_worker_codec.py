@@ -140,12 +140,13 @@ def test_m4a_source_gets_mp3_stem_suffix() -> None:
     assert worker._stem_file_suffix(Path("track.m4a")) == ".mp3"
 
 
-def test_flac_source_gets_flac_stem_suffix() -> None:
-    assert worker._stem_file_suffix(Path("track.flac")) == ".flac"
+def test_flac_source_gets_mp3_stem_suffix() -> None:
+    """STEM-8231: four FLAC parts cannot fit inside one source, so MP3."""
+    assert worker._stem_file_suffix(Path("track.flac")) == ".mp3"
 
 
-def test_wav_source_gets_flac_stem_suffix() -> None:
-    assert worker._stem_file_suffix(Path("track.wav")) == ".flac"
+def test_wav_source_gets_mp3_stem_suffix() -> None:
+    assert worker._stem_file_suffix(Path("track.wav")) == ".mp3"
 
 
 def test_unrecognised_source_extension_raises() -> None:
@@ -237,6 +238,7 @@ def test_mp3_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path) 
         _silence_tensor(),
         SAMPLE_RATE,
         codec="mp3",
+        part="vocals",
         mp3_settings=None,
         source_bytes=1_000_000,
         source_kbps=256.0,
@@ -270,6 +272,7 @@ def test_flac_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path)
         _silence_tensor(),
         SAMPLE_RATE,
         codec="flac",
+        part="vocals",
         mp3_settings=None,
         source_bytes=1_000_000,
         source_kbps=256.0,

@@ -19,6 +19,7 @@
  */
 
 import type {
+	CompleteHeadphoneOutputDevice,
 	HeadphoneOutputDevice,
 	IoDeviceAccess,
 	IoDeviceAccessAction,
@@ -99,9 +100,28 @@ function _systemDefaultOutput(): HeadphoneOutputDevice {
 	return { id: SYSTEM_DEFAULT_OUTPUT_ID, label: SYSTEM_DEFAULT_OUTPUT_LABEL };
 }
 
+/**
+ * GB-6846: serialise a browser device into the COMPLETE DTO the HTTP mirror
+ * returns. The route's model carries `physical_id`, `muted_by_jack` and
+ * `transport` on every device (null in a browser listing); a listing that
+ * omits them is a different DTO, so an exact-object parity comparison saw the
+ * route "adding fields". The keys are therefore always written here, with null
+ * where the browser has nothing to say — never dropped to satisfy an old
+ * exact-object assertion.
+ */
+export function completeOutputDevice(device: HeadphoneOutputDevice): CompleteHeadphoneOutputDevice {
+	return {
+		id: device.id,
+		label: device.label,
+		physical_id: device.physical_id ?? null,
+		muted_by_jack: device.muted_by_jack ?? null,
+		transport: device.transport ?? null
+	};
+}
+
 /** The list a panel may always draw, whatever happened to the enumeration. */
 export function systemDefaultOutputOnly(): HeadphoneOutputDevice[] {
-	return [_systemDefaultOutput()];
+	return [_systemDefaultOutput()].map(completeOutputDevice);
 }
 
 function _listKind(
@@ -183,7 +203,7 @@ export function listIoDevices(devices: readonly EnumeratedDevice[]): IoDeviceLis
 		? _withDefaultPhysicalId(devices, outputs.listed)
 		: [_systemDefaultOutput(), ...outputs.listed];
 	return {
-		outputs: withDefault,
+		outputs: withDefault.map(completeOutputDevice),
 		inputs: inputs.listed,
 		names_withheld: outputs.withheld || inputs.withheld
 	};
@@ -501,21 +521,21 @@ export function joinElectronCoreAudioOutputs(
 	// concrete Chromium device id from `_withDefaultPhysicalId`, not a CoreAudio token.
 	const concreteBrowserId = defaultRow.physical_id;
 	const concreteEnriched =
-		concreteBrowserId === undefined
+		concreteBrowserId == null
 			? undefined
 			: enriched.find(
 					(output) => output.id === concreteBrowserId && output.id !== SYSTEM_DEFAULT_OUTPUT_ID
 				);
-	if (concreteEnriched !== undefined && concreteEnriched.physical_id !== undefined) {
+	if (concreteEnriched !== undefined && concreteEnriched.physical_id != null) {
 		const next = [...enriched];
 		const patched: HeadphoneOutputDevice = {
 			...defaultRow,
 			physical_id: concreteEnriched.physical_id
 		};
-		if (concreteEnriched.muted_by_jack !== undefined) {
+		if (concreteEnriched.muted_by_jack != null) {
 			patched.muted_by_jack = concreteEnriched.muted_by_jack;
 		}
-		if (concreteEnriched.transport !== undefined) {
+		if (concreteEnriched.transport != null) {
 			patched.transport = concreteEnriched.transport;
 		}
 		next[defaultIndex] = patched;

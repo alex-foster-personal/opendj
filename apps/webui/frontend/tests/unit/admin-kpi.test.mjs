@@ -487,9 +487,12 @@ test('the perf ledger parse keeps the start date and the undeclared list', () =>
 // REQ: PERF-DASH-01
 test('perf KPI cards are the second card set: after the farm cards, before the ratchet', () => {
 	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
-	const farm = source.indexOf('<h3>Demucs farm KPI ledger</h3>');
-	const perf = source.indexOf('<h3>Performance KPIs</h3>');
-	const ratchet = source.indexOf('<QualityRatchet />');
+	// The panels are Svelte snippets (BACKSTAGE-6529d), so order is the order of the
+	// legacy one-tab render calls, which are the last ones in the file.
+	assert.ok(source.includes('<h3>Demucs farm KPI ledger</h3>') && source.includes('<h3>Performance KPIs</h3>'));
+	const farm = source.lastIndexOf('{@render farmPanel()}');
+	const perf = source.lastIndexOf('{@render perfPanel()}');
+	const ratchet = source.lastIndexOf('<QualityRatchet />');
 	assert.ok(farm > 0 && perf > farm && ratchet > perf, `order farm=${farm} perf=${perf} ratchet=${ratchet}`);
 	assert.match(source, /fetchPerfKpiLedger\(\)/);
 	assert.match(source, /perf\.sinceLabel/, 'the time period must be stated from the first measurement');

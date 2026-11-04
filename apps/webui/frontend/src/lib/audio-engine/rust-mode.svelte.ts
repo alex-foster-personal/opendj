@@ -41,6 +41,7 @@
  * panels, feedback, hot-cue editing, preview) runs on the page as before.
  */
 
+import { colorFxRustRefusal } from '$lib/rb/color-fx.svelte';
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	electronSaveAudioEngineChoice,
@@ -133,7 +134,9 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'grid_jump',
 	// GRIDEDIT-6235: the native engine keeps the grid it was given at load, so a
 	// live edit would move the waveform but not beat jump or beat loops.
-	'grid_edit'
+	'grid_edit',
+	// COLORFX-05: SPACE / ECHO are Web Audio nodes; the engine has the FILTER only.
+	'color_fx'
 ]);
 
 export type EngineChoice = 'webaudio' | 'rust';
@@ -362,6 +365,12 @@ export async function executeInRustEngine(
 		throw new Error(
 			`RUST_ENGINE_UNAVAILABLE: ${type} is not available with the Rust engine yet - see PARITY-TODO`
 		);
+	}
+	if (command.type === 'filter') {
+		// COLORFX-09: a SPACE / ECHO channel's knob is not a filter move; refuse it
+		// by name rather than let the Rust FILTER play something else.
+		const refusal = colorFxRustRefusal(command.deck);
+		if (refusal !== null) throw new Error(refusal);
 	}
 	// Loaded before the page runs its own commands too: hot-cue triggers are
 	// the page's, and must reach this mode's driver, not the Web Audio one.

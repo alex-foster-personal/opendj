@@ -91,7 +91,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import sys
 import tempfile
 import time
 from collections.abc import Iterator, Sequence
@@ -99,6 +98,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from apps.shared import file_lock
 
 from ._warmup_lock import (
     LOCK_DIR_ENV,
@@ -136,11 +137,10 @@ log = logging.getLogger("apps.analysis.jit_warmup")
 #: tests assert on it, so it is part of this module's contract, not decoration.
 WARMUP_LINE_PREFIX = "jit-warmup"
 
-#: How long a process waits for another process's cold compile before giving
-#: up on the lock. A cold librosa compile is ~30s on a loaded CI host; five
+#: How long a process waits for another process's cold compile before refusing
+#: the warm-up. A cold librosa compile is ~30s on a loaded CI host; five
 #: minutes is several of those and means something is wrong rather than slow.
-#: On timeout the warm-up still runs (serially, in this process) - it just
-#: loses the cross-process guarantee, and says so at ERROR.
+#: On timeout the warm-up is refused rather than compile a cold cache unlocked.
 LOCK_TIMEOUT_S: float = 300.0
 
 _LOCK_POLL_S: float = 0.25
@@ -185,6 +185,15 @@ class WarmupResult:
             f"{WARMUP_LINE_PREFIX} backend={self.backend} "
             f"seconds={self.seconds:.2f} lock={lock} purged={self.purged} "
             f"waited_s={self.waited_s:.2f} {self.detail}"
+        )
+
+
+def raise_if_warmup_refused(warmup: WarmupResult) -> None:
+    """Stop callers when warm-up was refused (#1316 / #7227)."""
+    if warmup.refused:
+        raise RuntimeError(
+            f"jit warm-up refused ({warmup.detail}); analysis would compile a "
+            "cold numba cache unlocked (#1316 / #7227)"
         )
 
 
@@ -291,31 +300,16 @@ def _compile_lock(
 ) -> Iterator[tuple[bool, bool, float]]:
     """Hold an exclusive advisory lock on ``path``; yield (held, proceed, waited_s).
 
-    ``proceed`` is whether the caller may run the compile. It is False only
-    when the lock file itself could not be opened or verified as a safe regular
-    file - a planted symlink, FIFO, or unopenable file at a predictable path
-    (issue #1401). There the warm-up is REFUSED rather than run unlocked:
-    compiling a cold shared cache without the cross-process lock is the state
-    documented as corrupting it permanently. A missing ``fcntl`` (Windows) is
-    the same case, refused for the same reason until a Windows lock exists
-    (issue #7227). A lock-hold timeout still yields ``proceed=True`` -
-    degraded and logged at ERROR, but the caller may warm, as before.
+    ``proceed`` is whether the caller may run the compile. It is False when the
+    lock file could not be opened or verified as a safe regular file (issue
+    #1401), when contention outlasts ``timeout_s``, or when ``file_lock`` raises
+    a non-contention error. Compiling a cold shared cache without the
+    cross-process lock is the state documented as corrupting it permanently.
 
-    ``flock`` is released by the kernel when the fd closes, including when the
-    holder is killed, so a dead process cannot leave a stale lock behind.
+    The lock is released when the fd closes, including when the holder is
+    killed, so a dead process cannot leave a stale lock behind.
     """
     started = time.monotonic()
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover - non-POSIX (Windows)
-        log.error(
-            "jit-warmup: fcntl unavailable on %s; warm-up REFUSED rather "
-            "than compile a cold cache without a cross-process lock (#7227)",
-            sys.platform,
-        )
-        yield False, False, 0.0
-        return
-
     fd = _open_lock_safe(path, require_self_owned=require_self_owned)
     if fd is None:
         log.error(
@@ -331,24 +325,33 @@ def _compile_lock(
         deadline = started + timeout_s
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    log.error(
-                        "jit-warmup: another process held %s for more than "
-                        "%.0fs; warming WITHOUT the cross-process lock",
-                        path,
-                        timeout_s,
-                    )
-                    yield False, True, time.monotonic() - started
-                    return
-                time.sleep(_LOCK_POLL_S)
+                if file_lock.try_lock(fd):
+                    break
+            except OSError as exc:
+                log.error(
+                    "jit-warmup: lock %s failed with %s; warm-up REFUSED "
+                    "rather than treat a lock error as contention (#7227)",
+                    path,
+                    exc,
+                )
+                yield False, False, time.monotonic() - started
+                return
+            if time.monotonic() >= deadline:
+                log.error(
+                    "jit-warmup: another process held %s for more than "
+                    "%.0fs; warm-up REFUSED rather than compile a cold cache "
+                    "unlocked",
+                    path,
+                    timeout_s,
+                )
+                yield False, False, time.monotonic() - started
+                return
+            time.sleep(_LOCK_POLL_S)
         waited = time.monotonic() - started
         try:
             yield True, True, waited
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            file_lock.unlock(fd)
     finally:
         os.close(fd)
 

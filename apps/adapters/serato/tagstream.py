@@ -87,21 +87,15 @@ class TagStream:
         n = len(data)
         while pos < n:
             if n - pos < _HEADER_STRUCT.size:
-                raise TagStreamError(
-                    f"truncated header at offset {pos}: {n - pos} bytes left"
-                )
+                raise TagStreamError(f"truncated header at offset {pos}: {n - pos} bytes left")
             raw_type, length = _HEADER_STRUCT.unpack_from(data, pos)
             pos += _HEADER_STRUCT.size
             try:
                 type_str = raw_type.decode("ascii")
             except UnicodeDecodeError as exc:
-                raise TagStreamError(
-                    f"non-ASCII tag type {raw_type!r} at offset {pos - _HEADER_STRUCT.size}"
-                ) from exc
+                raise TagStreamError(f"non-ASCII tag type {raw_type!r} at offset {pos - _HEADER_STRUCT.size}") from exc
             if n - pos < length:
-                raise TagStreamError(
-                    f"tag {type_str!r} claims {length} bytes but only {n - pos} remain"
-                )
+                raise TagStreamError(f"tag {type_str!r} claims {length} bytes but only {n - pos} remain")
             payload = data[pos : pos + length]
             pos += length
             if type_str in CONTAINER_TYPES:
@@ -125,9 +119,7 @@ class TagStream:
                 raise TypeError(f"unsupported tag type: {type(tag).__name__}")
             type_bytes = tag.type.encode("ascii")
             if len(type_bytes) != 4:
-                raise TagStreamError(
-                    f"tag type must be exactly 4 ASCII bytes; got {tag.type!r}"
-                )
+                raise TagStreamError(f"tag type must be exactly 4 ASCII bytes; got {tag.type!r}")
             chunks.append(_HEADER_STRUCT.pack(type_bytes, len(payload)))
             chunks.append(payload)
         return b"".join(chunks)

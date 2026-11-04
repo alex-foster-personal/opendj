@@ -105,7 +105,6 @@ def _steps() -> list[Step]:
                 "-n", PYTEST_WORKERS,
                 "--dist", PYTEST_DIST,
                 "--collect-floor", PYTEST_COLLECT_FLOOR,
-                "--ignore=(private path)",
             ],
             REPO_ROOT,
             slow=True,

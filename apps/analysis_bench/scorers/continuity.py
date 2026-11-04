@@ -102,10 +102,10 @@ def reference_variations(beats: Sequence[float]) -> list[list[float]]:
     doubled = _interpolate_midpoints(original)
     return [
         original,
-        doubled,               # twice the metrical level
-        doubled[1::2],         # the off-beat
-        original[::2],         # half tempo, odd phase
-        original[1::2],        # half tempo, even phase
+        doubled,  # twice the metrical level
+        doubled[1::2],  # the off-beat
+        original[::2],  # half tempo, odd phase
+        original[1::2],  # half tempo, even phase
     ]
 
 
@@ -161,10 +161,7 @@ def _continuity_pair(
     if len(ref) < 2 or len(cand) < 2:
         return 0.0, 0.0
 
-    correct = [
-        _beat_is_correct(ref, cand, i, phase_tolerance, period_tolerance)
-        for i in range(len(ref))
-    ]
+    correct = [_beat_is_correct(ref, cand, i, phase_tolerance, period_tolerance) for i in range(len(ref))]
 
     total = sum(correct)
     longest = current = 0

@@ -7,7 +7,7 @@ measured 4.5% disagreement on exact-get), and search/relaxed methods rank
 below their direct counterparts.
 
 the maintainer can reorder this from the admin panel; the persisted order lives in
-``data/state/lyrics-config.json`` and is read by BOTH the daemon endpoint
+``(private path)`` and is read by BOTH the daemon endpoint
 and the pipeline scripts, so what the admin UI shows is exactly what the
 next fetch/screen run uses (agent-native parity).
 
@@ -41,9 +41,7 @@ SOURCE_TITLES: dict[str, str] = {
     "musixmatch matcher-get-remix-base": "Musixmatch match on the remix's base title",
     "musixmatch matcher-get-no-feat": "Musixmatch match with the feat. clause stripped",
     "musixmatch matcher-get-bare": "Musixmatch match on bare title only",
-    "lrclib exact-get": (
-        "LRCLIB exact artist+title+duration (4.5% cross-source disagreement measured)"
-    ),
+    "lrclib exact-get": ("LRCLIB exact artist+title+duration (4.5% cross-source disagreement measured)"),
     "lrclib get": "LRCLIB get without duration anchor",
     "lrclib search": "LRCLIB fuzzy search (weakest ranked)",
     "genius scrape": "Genius scrape (leads only: ~24% measured precision)",
@@ -51,7 +49,7 @@ SOURCE_TITLES: dict[str, str] = {
 
 
 def config_path(state_dir: Path) -> Path:
-    """``state_dir`` is the directory holding state.db (data/state)."""
+    """``state_dir`` is the directory holding state.db ((private path))."""
     return state_dir / "lyrics-config.json"
 
 
@@ -70,9 +68,7 @@ def save_source_order(state_dir: Path, order: list[str]) -> None:
     _validate_order(order)
     path = config_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"source_order": order}, indent=2) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps({"source_order": order}, indent=2) + "\n", encoding="utf-8")
 
 
 def source_rank(order: list[str], source: str) -> int:
@@ -93,8 +89,6 @@ def _validate_order(order: object) -> None:
         raise ValueError(f"unknown lyric sources: {unknown}; known: {sorted(KNOWN_SOURCES)}")
     missing = KNOWN_SOURCES - set(order)
     if missing:
-        raise ValueError(
-            f"source_order must rank every known source; missing: {sorted(missing)}"
-        )
+        raise ValueError(f"source_order must rank every known source; missing: {sorted(missing)}")
     if len(order) != len(set(order)):
         raise ValueError("source_order contains duplicates")

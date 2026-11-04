@@ -38,7 +38,7 @@ test('setEq does not call _setParam', () => {
 test('applyStemControl writes controls before setControls', () => {
 	const stem = readSource('src/lib/rb/stem-engine-controls.ts');
 	const controlsWrite = stem.indexOf('st.stems.controls = controls;');
-	const setControls = stem.indexOf('rt.processor.setControls(controls);');
+	const setControls = stem.indexOf('target.setControls(controls);'); // AUDFID-02: the live or held stems
 	assert.notEqual(controlsWrite, -1);
 	assert.notEqual(setControls, -1);
 	assert.ok(controlsWrite < setControls);

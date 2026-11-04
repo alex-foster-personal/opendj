@@ -33,9 +33,7 @@ UrlOpen = Callable[[urllib.request.Request, float], Any]
 def load_xai_config() -> XaiConfig:
     key = (os.environ.get("XAI_API_KEY") or "").strip()
     if not key:
-        raise RuntimeError(
-            "XAI_API_KEY is not set - settings AI search/apply require a key"
-        )
+        raise RuntimeError("XAI_API_KEY is not set - settings AI search/apply require a key")
     base = (os.environ.get("XAI_BASE_URL") or "https://api.x.ai/v1").rstrip("/")
     model = (os.environ.get("XAI_MODEL") or "grok-4-1-fast-non-reasoning").strip()
     return XaiConfig(api_key=key, base_url=base, model=model)
@@ -53,9 +51,7 @@ def chat_json(
     Returns (parsed_json, model_used).
     """
     cfg = config or load_xai_config()
-    opener = urlopen or (
-        lambda req, timeout: urllib.request.urlopen(req, timeout=timeout)
-    )
+    opener = urlopen or (lambda req, timeout: urllib.request.urlopen(req, timeout=timeout))
     payload = {
         "model": cfg.model,
         "temperature": 0,

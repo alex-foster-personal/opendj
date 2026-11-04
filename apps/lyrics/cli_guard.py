@@ -19,8 +19,7 @@ def refuse_direct_run(module: str) -> None:
     """Exit with a usage error naming the real entrypoint and the same argv."""
     argv = " ".join(sys.argv[1:])
     print(
-        f"error: {module} is not an entrypoint; it only registers subcommands. "
-        f"Run: {ENTRYPOINT} {argv}".rstrip(),
+        f"error: {module} is not an entrypoint; it only registers subcommands. Run: {ENTRYPOINT} {argv}".rstrip(),
         file=sys.stderr,
     )
     raise SystemExit(EXIT_USAGE)

@@ -2,6 +2,7 @@
 
 Shared by Copilot and PLAY IT routes.
 """
+
 from __future__ import annotations
 
 from apps.shared.harmonic import TrackFeature, key_to_camelot

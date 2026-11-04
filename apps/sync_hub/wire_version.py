@@ -142,9 +142,7 @@ class UpdateRequiredState:
 
 _UPDATE_REQUIRED_ACTION: str = "install the latest Open DJ"
 _LOCAL_WIRE_RE = re.compile(r"this machine speaks v(\d+)", re.IGNORECASE)
-_PEER_WIRE_RE = re.compile(
-    r"(?:peer|hub) speaks sync wire v(\d+)", re.IGNORECASE
-)
+_PEER_WIRE_RE = re.compile(r"(?:peer|hub) speaks sync wire v(\d+)", re.IGNORECASE)
 
 
 def parse_update_required(error_message: str) -> UpdateRequiredState | None:
@@ -182,9 +180,7 @@ def parse_update_required(error_message: str) -> UpdateRequiredState | None:
 # ----- the gate ----------------------------------------------------------------
 
 
-def incompatibility(
-    peer_wire: int | None, peer_schema: int, *, peer: str
-) -> Incompatibility | None:
+def incompatibility(peer_wire: int | None, peer_schema: int, *, peer: str) -> Incompatibility | None:
     """``None`` only when rows may cross; otherwise the reason, for a 409.
 
     Symmetric: the hub asks it about a spoke's request and the spoke asks it
@@ -282,8 +278,7 @@ def _table_shape(conn: sqlite3.Connection, table: str) -> dict[str, Any]:
     return {
         "columns": columns,
         "foreign_keys": sorted(
-            [str(row[2]), str(row[3]), str(row[4])]
-            for row in conn.execute(f"PRAGMA foreign_key_list({table})")
+            [str(row[2]), str(row[3]), str(row[4])] for row in conn.execute(f"PRAGMA foreign_key_list({table})")
         ),
         "checks": list(check_clauses(create_sql)),
         "unique": _unique_indexes(conn, table),
@@ -317,9 +312,7 @@ def fingerprint_history_problems() -> list[str]:
         )
     values = list(WIRE_FINGERPRINTS.values())
     if len(set(values)) != len(values):
-        problems.append(
-            "two wire versions record the same fingerprint, so one of them was not a wire change"
-        )
+        problems.append("two wire versions record the same fingerprint, so one of them was not a wire change")
     return problems
 
 
@@ -335,10 +328,7 @@ def wire_shape_drift(conn: sqlite3.Connection) -> str | None:
     measured = wire_fingerprint(shape)
     recorded = WIRE_FINGERPRINTS.get(WIRE_VERSION)
     if measured != recorded:
-        columns = {
-            table: [column[0] for column in facts["columns"]]
-            for table, facts in shape["tables"].items()
-        }
+        columns = {table: [column[0] for column in facts["columns"]] for table, facts in shape["tables"].items()}
         problems.append(
             f"the synced row shape measures {measured}, but WIRE_FINGERPRINTS "
             f"records {recorded} for WIRE_VERSION {WIRE_VERSION}. That is a WIRE "

@@ -53,6 +53,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from scripts.payload_output_probe import OUTPUT_PROBE_RELATIVE
+except ImportError:  # run as a file: python -m scripts.electron_payload
+    from payload_output_probe import OUTPUT_PROBE_RELATIVE  # type: ignore[import-not-found,no-redef]
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ELECTRON_OUT = REPO_ROOT / "apps/desktop/electron/out"
 APP_NAME = "Open DJ.app"
@@ -61,6 +66,13 @@ PAYLOAD_DIR = "payload"
 REQUIRED_EXECUTABLES = ("bin/opendj-engine", "bin/odj-audio")
 #: What a fresh pack leaves in resources/payload: apps/desktop/electron/payload/.
 PLACEHOLDER_LISTING = ["README.md"]
+
+
+def required_executables(host: str) -> tuple[str, ...]:
+    """Entry points the packed tree must carry for this host."""
+    if host == "darwin":
+        return (*REQUIRED_EXECUTABLES, OUTPUT_PROBE_RELATIVE)
+    return REQUIRED_EXECUTABLES
 
 
 class PayloadInstallError(RuntimeError):
@@ -90,7 +102,7 @@ def missing_executables(payload: Path, host: str) -> list[str]:
     On Windows the executable bit does not exist, so a regular file is enough.
     """
     missing = []
-    for relative in REQUIRED_EXECUTABLES:
+    for relative in required_executables(host):
         path = payload / relative
         if not path.is_file() or (host != "win32" and not os.access(path, os.X_OK)):
             missing.append(relative)
@@ -170,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
     print(f"[OK] payload installed at {target}")
-    for relative in REQUIRED_EXECUTABLES:
+    for relative in required_executables(sys.platform):
         print(f"[OK] executable {target / relative}")
     return 0
 

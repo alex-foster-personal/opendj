@@ -23,6 +23,7 @@ Mini-PRD
   [if] the comment packet grows   [then] the decoded audio is identical
   [if] the write fails midway     [then] the original file is intact
 """
+
 from __future__ import annotations
 
 import struct

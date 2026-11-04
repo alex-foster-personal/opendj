@@ -106,4 +106,30 @@ mod tests {
             "https://notexistential.audio/blackhole/"
         ));
     }
+
+    // Parity matrix row 35: hosted billing opens Polar checkout and the portal through openUrl.
+    #[test]
+    fn polar_billing_pages_are_allowed_and_lookalikes_are_not() {
+        let patterns = load_allow_urls();
+        for url in [
+            "https://buy.polar.sh/polar_cl_example",
+            "https://checkout.polar.sh/bundle",
+            "https://polar.sh/opendj/portal?customer_session_token=x",
+            "https://sandbox.polar.sh/checkout/polar_c_example",
+        ] {
+            assert!(url_is_allowed(&patterns, url), "billing url refused: {url}");
+        }
+        let at = "@";
+        for url in [
+            "http://buy.polar.sh/c/1".to_owned(),
+            "https://polar.sh.attacker.example/c/1".to_owned(),
+            "https://notpolar.sh/c/1".to_owned(),
+            "https://attacker.example/x.polar.sh/".to_owned(),
+            format!("https://polar.sh{at}attacker.example/"),
+            "https://buy.polar.sh:8443/c/1".to_owned(),
+            "https://example.com/".to_owned(),
+        ] {
+            assert!(!url_is_allowed(&patterns, &url), "non-billing url allowed: {url}");
+        }
+    }
 }

@@ -25,6 +25,7 @@ arrive, and ``failed`` (with the reason) when none arrived within
 :data:`ATTACH_TIMEOUT_S` of the start or for :data:`STALL_TIMEOUT_S` since the
 last one: the page that was recording closed, or its engine stopped.
 """
+
 from __future__ import annotations
 
 import struct
@@ -177,8 +178,7 @@ class MasterMixWriter:
             raise MasterMixChunkRefused(f"sample_rate {sample_rate} is outside 8000..192000")
         if not pcm or len(pcm) % FRAME_BYTES:
             raise MasterMixChunkRefused(
-                f"a chunk is whole stereo int16 frames ({FRAME_BYTES} bytes each); "
-                f"got {len(pcm)} bytes"
+                f"a chunk is whole stereo int16 frames ({FRAME_BYTES} bytes each); got {len(pcm)} bytes"
             )
         if len(pcm) > MAX_CHUNK_BYTES:
             raise MasterMixChunkRefused(f"a {len(pcm)}-byte chunk exceeds {MAX_CHUNK_BYTES}")
@@ -187,9 +187,7 @@ class MasterMixWriter:
                 raise MasterMixRecordingStopped("the recording has stopped")
             if stream != self._stream:
                 if seq != 0:
-                    raise MasterMixChunkRefused(
-                        f"stream {stream!r} must start at seq 0, not {seq}"
-                    )
+                    raise MasterMixChunkRefused(f"stream {stream!r} must start at seq 0, not {seq}")
                 self._stream = stream
                 self.streams += 1
                 self._next_seq = 0

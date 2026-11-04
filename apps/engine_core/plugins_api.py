@@ -126,9 +126,7 @@ class StoreConfig:
 
 
 # ----- boot -----------------------------------------------------------------
-def mount_plugins(
-    app: FastAPI, data_dir: Path, *, config: StoreConfig | None = None
-) -> PluginRuntime:
+def mount_plugins(app: FastAPI, data_dir: Path, *, config: StoreConfig | None = None) -> PluginRuntime:
     """Load enabled modules and mount their routers. Call before the SPA mount.
 
     The blocklist comes from the last VERIFIED cached catalogs, so boot never
@@ -142,9 +140,11 @@ def mount_plugins(
     setattr(app.state, STORE_CONFIG_ATTR, cfg)
     # With nothing installed there is no blocklist to apply, so boot reads only
     # the state file (PLUG-6522), not the cached catalogs; the store page reads them.
-    reads = [
-        read_channel(channel, cache, refresh=False, trusted=cfg.trusted) for channel in CHANNELS
-    ] if state.plugins else []
+    reads = (
+        [read_channel(channel, cache, refresh=False, trusted=cfg.trusted) for channel in CHANNELS]
+        if state.plugins
+        else []
+    )
     catalogs = [read.catalog for read in reads if read.catalog is not None]
     if reads:
         _note_verified(root, reads)
@@ -153,7 +153,11 @@ def mount_plugins(
     # module declaring /plugins would be mounted ahead of them and shadow them.
     taken = taken_routes(app.routes) + taken_routes(router.routes, API_PREFIX)
     runtime = load_enabled(
-        root, data_dir, state, catalogs=catalogs, taken=taken,
+        root,
+        data_dir,
+        state,
+        catalogs=catalogs,
+        taken=taken,
         trusted=cfg.trusted,
         app_version=cfg.app_version,
         held=held,
@@ -163,8 +167,7 @@ def mount_plugins(
             app.include_router(plugin_router, prefix=API_PREFIX, dependencies=[Depends(_require_loaded(plugin_id))])
     for outcome in runtime.outcomes.values():
         level = logging.INFO if outcome.status == "loaded" else logging.WARNING
-        log.log(level, "plugin %s %s: %s %s", outcome.plugin_id, outcome.version,
-                outcome.status, outcome.detail)
+        log.log(level, "plugin %s %s: %s %s", outcome.plugin_id, outcome.version, outcome.status, outcome.detail)
     setattr(app.state, RUNTIME_STATE_ATTR, runtime)
     app.state.plugins_data_dir = data_dir
     app.include_router(router, prefix=API_PREFIX)
@@ -437,8 +440,10 @@ def _pending(installed: InstalledPlugin | None, runtime: PluginRuntime, plugin_i
         return "enable"
     if not installed.enabled and resident:
         return "disable"
-    if installed.enabled and outcome is not None and (
-        outcome.version != installed.version or runtime.install_ids.get(plugin_id) != installed.install_id
+    if (
+        installed.enabled
+        and outcome is not None
+        and (outcome.version != installed.version or runtime.install_ids.get(plugin_id) != installed.install_id)
     ):
         return "update"  # a different version, or the same version reinstalled since this boot
     return None
@@ -535,7 +540,10 @@ def _listing_out(plugin_id: str, listing: Listing) -> ListingOut:
         screenshots=[
             ScreenshotOut(
                 url=f"{API_PREFIX}/plugins/{plugin_id}/media/{shot.sha256}",
-                width=shot.width, height=shot.height, alt=shot.alt, theme=shot.theme,
+                width=shot.width,
+                height=shot.height,
+                alt=shot.alt,
+                theme=shot.theme,
             )
             for shot in listing.screenshots
         ],
@@ -583,9 +591,7 @@ def _channel_out(read: CatalogRead, labs_opt_in: bool) -> ChannelOut:
     )
 
 
-def _rows(
-    reads: Iterable[CatalogRead], state: PluginState, runtime: PluginRuntime
-) -> dict[str, PluginRowOut]:
+def _rows(reads: Iterable[CatalogRead], state: PluginState, runtime: PluginRuntime) -> dict[str, PluginRowOut]:
     """Catalog rows for every visible channel, then installed plugins no catalog lists."""
     rows: dict[str, PluginRowOut] = {}
     for plugin_id, entry in _newest_entries(reads, state.labs_opt_in).items():
@@ -679,7 +685,8 @@ def set_labs(request: Request, body: LabsIn) -> PluginsOut:
         for plugin in state.plugins.values():
             if plugin.enabled and _is_labs(root, plugin):
                 raise _refuse(
-                    409, "labs-module-enabled",
+                    409,
+                    "labs-module-enabled",
                     f"disable {plugin.plugin_id} before leaving the labs channel",
                 )
     _save(root, replace(state, labs_opt_in=body.opt_in))
@@ -697,7 +704,11 @@ def _clearable_reads(request: Request, channel: str, read: CatalogRead) -> dict[
         unverified = reads[needed]
         if unverified.catalog is None:
             fault = unverified.fault or CatalogError("not-fetched", "no catalog")
-            raise _refuse(409, fault.code, f"the {needed} catalog, whose blocklist this install must clear, is unavailable: {fault}")
+            raise _refuse(
+                409,
+                fault.code,
+                f"the {needed} catalog, whose blocklist this install must clear, is unavailable: {fault}",
+            )
     return reads
 
 
@@ -725,12 +736,14 @@ def _check_consent(entry: CatalogEntry, body: InstallIn) -> None:
     manifest = entry.manifest
     if body.archive_sha256 != entry.archive_sha256:
         raise _refuse(
-            409, "build-changed",
+            409,
+            "build-changed",
             f"the store now offers a different build of {manifest.plugin_id} ({manifest.version}); review it again",
         )
     if sorted(body.accept_permissions) != sorted(manifest.permissions):
         raise _refuse(
-            422, "permissions-not-accepted",
+            422,
+            "permissions-not-accepted",
             f"accept exactly these permissions to install: {list(manifest.permissions)}",
         )
     if manifest.needs_terms_notice and not (body.acknowledge_notice and body.notice == manifest.notice):
@@ -856,7 +869,10 @@ def _refuse_replacing_running(runtime: PluginRuntime, plugin_id: str, version: s
 
 #: HTTP status for each sideload refusal; anything else is a bad source (422).
 _SIDELOAD_STATUS = {
-    "dev-mode-off": 403, "labs-not-enabled": 409, "needs-newer-app": 409, "version-running": 409,
+    "dev-mode-off": 403,
+    "labs-not-enabled": 409,
+    "needs-newer-app": 409,
+    "version-running": 409,
 }
 
 
@@ -868,8 +884,12 @@ def sideload_preview(body: SideloadPreviewIn) -> SideloadPreviewOut:
     except InstallError as exc:
         raise _refuse(_SIDELOAD_STATUS.get(exc.code, 422), exc.code, str(exc)) from exc
     return SideloadPreviewOut(
-        plugin_id=manifest.plugin_id, name=manifest.name, version=manifest.version,
-        channel=manifest.channel, permissions=list(manifest.permissions), notice=manifest.notice,
+        plugin_id=manifest.plugin_id,
+        name=manifest.name,
+        version=manifest.version,
+        channel=manifest.channel,
+        permissions=list(manifest.permissions),
+        notice=manifest.notice,
         manifest_sha256=digest,
     )
 
@@ -928,7 +948,11 @@ def sideload(request: Request, body: SideloadIn) -> ChangeOut:
     install_id = uuid.uuid4().hex
     try:
         manifest = install_directory(
-            root, Path(body.path).expanduser(), consent=consent, then=commit, install_id=install_id,
+            root,
+            Path(body.path).expanduser(),
+            consent=consent,
+            then=commit,
+            install_id=install_id,
         )
     except InstallError as exc:
         raise _refuse(_SIDELOAD_STATUS.get(exc.code, 422), exc.code, str(exc)) from exc
@@ -949,8 +973,7 @@ def ui_slots(request: Request) -> list[UiSlotOut]:
         entry = "/".join(quote(part, safe="") for part in manifest.ui.entry.split("/"))
         url = f"{API_PREFIX}/plugins/{plugin_id}/ui/{entry}?v={quote(manifest.version, safe='')}"
         out.extend(
-            UiSlotOut(plugin_id=plugin_id, version=manifest.version, slot=slot, url=url)
-            for slot in manifest.ui.slots
+            UiSlotOut(plugin_id=plugin_id, version=manifest.version, slot=slot, url=url) for slot in manifest.ui.slots
         )
     return out
 
@@ -965,8 +988,10 @@ def ui_file(request: Request, plugin_id: str, path: str) -> Response:
     if digest is None or not path.startswith(UI_DIR):
         raise _refuse(404, "not-listed", f"{path} is not a UI file of {plugin_id}")
     handle = _verified_handle(install_dir(runtime.plugins_dir, plugin_id, manifest.version) / path, path, digest)
-    media = "text/javascript" if path.endswith((".js", ".mjs")) else (
-        mimetypes.guess_type(path)[0] or "application/octet-stream"
+    media = (
+        "text/javascript"
+        if path.endswith((".js", ".mjs"))
+        else (mimetypes.guess_type(path)[0] or "application/octet-stream")
     )
     return StreamingResponse(_chunks(handle), media_type=media, headers={"Cache-Control": "no-cache"})
 
@@ -1022,10 +1047,8 @@ def listing_media(request: Request, plugin_id: str, sha256: str) -> Response:
             continue
         cfg = _config(request)
         try:
-            data = read_screenshot(shot, _root(request) / "catalog" / "media",
-                                   fetch=cfg.fetch, base_url=cfg.base_url)
+            data = read_screenshot(shot, _root(request) / "catalog" / "media", fetch=cfg.fetch, base_url=cfg.base_url)
         except CatalogError as exc:
             raise _refuse(502, exc.code, str(exc)) from exc
-        return Response(content=data, media_type=shot.media_type,
-                        headers={"Cache-Control": "max-age=86400, immutable"})
+        return Response(content=data, media_type=shot.media_type, headers={"Cache-Control": "max-age=86400, immutable"})
     raise _refuse(404, "not-listed", f"{sha256} is not a screenshot of {plugin_id} in a visible listing")

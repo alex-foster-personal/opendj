@@ -24,7 +24,7 @@ from apps.lyrics.perturb import (
     perturb_sheet_prepend_hook,
 )
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -51,49 +51,80 @@ def build_cases(song: JamendoSong, language_peers: list[JamendoSong]) -> list[Ve
     finals = [w.line_final for w in song.words]
     seed = zlib.crc32(song.name.encode())
     identity: list[int | None] = list(range(len(true_words)))
-    cases: list[VersionCase] = [
-        VersionCase("none", true_words, "matched", None, None, source_idx=identity)
-    ]
+    cases: list[VersionCase] = [VersionCase("none", true_words, "matched", None, None, source_idx=identity)]
 
     other = language_peers[(language_peers.index(song) + 1) % len(language_peers)]
     if other.name == song.name:
         raise ValueError(f"{song.language} has a single song; wrong_song case impossible")
-    cases.append(VersionCase(
-        "wrong_song", [w.word for w in other.words], "wrong_song", None, None,
-        wrong_song_name=other.name,
-        source_idx=[None] * len(other.words),
-    ))
+    cases.append(
+        VersionCase(
+            "wrong_song",
+            [w.word for w in other.words],
+            "wrong_song",
+            None,
+            None,
+            wrong_song_name=other.name,
+            source_idx=[None] * len(other.words),
+        )
+    )
 
-    cases.append(version_case_from_perturb(
-        "drop_block", perturb_drop_block(true_words, finals, seed),
-        "structure_mismatch", "extra_in_audio", true_words,
-    ))
-    cases.append(version_case_from_perturb(
-        "move_block", perturb_move_block(true_words, finals, seed),
-        "structure_mismatch", "moved_block", true_words,
-    ))
+    cases.append(
+        version_case_from_perturb(
+            "drop_block",
+            perturb_drop_block(true_words, finals, seed),
+            "structure_mismatch",
+            "extra_in_audio",
+            true_words,
+        )
+    )
+    cases.append(
+        version_case_from_perturb(
+            "move_block",
+            perturb_move_block(true_words, finals, seed),
+            "structure_mismatch",
+            "moved_block",
+            true_words,
+        )
+    )
 
     if find_chorus(lines_of(true_words, finals)) is not None:
         dbl = perturb_sheet_extra_chorus(true_words, finals)
         (cop,) = dbl.ops
         chorus_words = true_words[cop.word_start : cop.word_end + 1]
-        cases.append(VersionCase(
-            "sheet_extra_chorus", dbl.words, "needs_acoustic_check",
-            "sheet_repeat_unsupported", chorus_words, list(dbl.ops),
-            source_idx=dbl.source_idx,
-        ))
+        cases.append(
+            VersionCase(
+                "sheet_extra_chorus",
+                dbl.words,
+                "needs_acoustic_check",
+                "sheet_repeat_unsupported",
+                chorus_words,
+                list(dbl.ops),
+                source_idx=dbl.source_idx,
+            )
+        )
         pre = perturb_sheet_prepend_hook(true_words, finals)
-        cases.append(VersionCase(
-            "sheet_prepend_hook", pre.words, "needs_acoustic_check",
-            "sheet_repeat_unsupported", chorus_words, list(pre.ops),
-            source_idx=pre.source_idx,
-        ))
+        cases.append(
+            VersionCase(
+                "sheet_prepend_hook",
+                pre.words,
+                "needs_acoustic_check",
+                "sheet_repeat_unsupported",
+                chorus_words,
+                list(pre.ops),
+                source_idx=pre.source_idx,
+            )
+        )
         aud = perturb_audio_extra_chorus(true_words, finals)
         (aop,) = aud.ops
-        cases.append(VersionCase(
-            "audio_extra_chorus", aud.words, "structure_mismatch",
-            "audio_repeat_unlisted", true_words[aop.word_start : aop.word_end + 1],
-            list(aud.ops),
-            source_idx=aud.source_idx,
-        ))
+        cases.append(
+            VersionCase(
+                "audio_extra_chorus",
+                aud.words,
+                "structure_mismatch",
+                "audio_repeat_unlisted",
+                true_words[aop.word_start : aop.word_end + 1],
+                list(aud.ops),
+                source_idx=aud.source_idx,
+            )
+        )
     return cases

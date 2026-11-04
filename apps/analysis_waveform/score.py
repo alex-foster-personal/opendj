@@ -171,15 +171,8 @@ def verify_bundle(bundle: Path, *, expected_bundle_id: str | None = None) -> Non
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     bundle_name = manifest.get("bundle")
     if not isinstance(bundle_name, str) or not _BUNDLE_NAME_RE.match(bundle_name):
-        raise SystemExit(
-            f"{bundle} declares bundle {bundle_name!r}, "
-            f"this scorer reads {LANE!r}/<version> bundles"
-        )
-    if (
-        manifest.get("bundle_id") is not None
-        and "sample_seed" in manifest
-        and "sample_size" in manifest
-    ):
+        raise SystemExit(f"{bundle} declares bundle {bundle_name!r}, this scorer reads {LANE!r}/<version> bundles")
+    if manifest.get("bundle_id") is not None and "sample_seed" in manifest and "sample_size" in manifest:
         verify_bundle_id_matches_its_own_contents(bundle, manifest)
     if expected_bundle_id is not None:
         actual_id = manifest.get("bundle_id")
@@ -194,10 +187,7 @@ def verify_bundle(bundle: Path, *, expected_bundle_id: str | None = None) -> Non
             )
     problems = _bundle_problems(bundle, _listed_checksums(bundle))
     if problems:
-        raise SystemExit(
-            f"{bundle} failed verification against its own {CHECKSUM_FILE}:\n  "
-            + "\n  ".join(problems)
-        )
+        raise SystemExit(f"{bundle} failed verification against its own {CHECKSUM_FILE}:\n  " + "\n  ".join(problems))
 
 
 def load_manifest(bundle: Path) -> dict[str, Any]:
@@ -230,10 +220,7 @@ def control_failures(report: dict[str, Any]) -> list[str]:
     for name in decode.BAND_NAMES:
         positive = report["control_positive"][name]["median"]
         if not np.isfinite(positive) or abs(positive - 1.0) > POSITIVE_CONTROL_TOLERANCE:
-            failures.append(
-                f"positive control for {name} is {positive}, not 1.0: "
-                "the correlation itself is wrong"
-            )
+            failures.append(f"positive control for {name} is {positive}, not 1.0: the correlation itself is wrong")
         # control_negative is summarized over |r| (see run()), so this reads a
         # magnitude and a -1.0 pipeline cannot pass by being negative enough.
         negative = report["control_negative"][name]["median"]
@@ -248,9 +235,7 @@ def control_failures(report: dict[str, Any]) -> list[str]:
 def load_truth(bundle: Path, track: dict[str, Any]) -> np.ndarray:
     """``(n, 3)`` truth in 0..1, from the bundle's own JSON (never the library)."""
     payload = json.loads((bundle / track["truth_file"]).read_text(encoding="utf-8"))
-    bands = [
-        np.asarray(payload["bands"][name], dtype=np.float64) for name in decode.BAND_NAMES
-    ]
+    bands = [np.asarray(payload["bands"][name], dtype=np.float64) for name in decode.BAND_NAMES]
     return np.clip(np.stack(bands, axis=1) / float(payload["scale"]), 0.0, 1.0)
 
 
@@ -295,8 +280,7 @@ def resolve_audio_root(manifest: dict[str, Any], audio_root: Path | None) -> Pat
     resolved = Path(root).expanduser().resolve()
     if not resolved.is_dir():
         raise SystemExit(
-            f"--audio-root {resolved} is not a directory; cannot hydrate any "
-            "track's audio_path against it"
+            f"--audio-root {resolved} is not a directory; cannot hydrate any track's audio_path against it"
         )
     return resolved
 
@@ -383,25 +367,19 @@ def score_track(
         return {
             "stable_id": track["stable_id"],
             "unmeasured": (
-                f"{peaks.shape[0]} decoded columns is fewer than the truth's "
-                f"{truth.shape[0]}; nothing to reduce"
+                f"{peaks.shape[0]} decoded columns is fewer than the truth's {truth.shape[0]}; nothing to reduce"
             ),
         }
     ours = align_to_truth(peaks, truth.shape[0])
     metrics = {
-        "r": {
-            name: pearson(ours[:, index], truth[:, index])
-            for index, name in enumerate(decode.BAND_NAMES)
-        },
+        "r": {name: pearson(ours[:, index], truth[:, index]) for index, name in enumerate(decode.BAND_NAMES)},
         "control_positive": {
-            name: pearson(truth[:, index], truth[:, index])
-            for index, name in enumerate(decode.BAND_NAMES)
+            name: pearson(truth[:, index], truth[:, index]) for index, name in enumerate(decode.BAND_NAMES)
         },
         # Magnitude, so a sign flip cannot look like disagreement and cannot
         # cancel against another track when these are summarized.
         "control_negative": {
-            name: abs(pearson(ours[::-1, index], truth[:, index]))
-            for index, name in enumerate(decode.BAND_NAMES)
+            name: abs(pearson(ours[::-1, index], truth[:, index])) for index, name in enumerate(decode.BAND_NAMES)
         },
     }
     undefined = [
@@ -443,18 +421,13 @@ def _summary(values: list[float]) -> dict[str, float]:
 def _metric_summaries(scored: list[dict[str, Any]]) -> dict[str, Any]:
     """Across-track summaries for every per-track metric a scored row carries."""
     per_band = {
-        group: {
-            name: _summary([row[group][name] for row in scored])
-            for name in decode.BAND_NAMES
-        }
+        group: {name: _summary([row[group][name] for row in scored]) for name in decode.BAND_NAMES}
         for group in ("r", "control_positive", "control_negative")
     }
     return {
         **per_band,
         "decode_s": _summary([row["decode_s"] for row in scored]),
-        "realtime_factor": _summary(
-            [row["audio_s"] / row["decode_s"] for row in scored if row["decode_s"] > 0]
-        ),
+        "realtime_factor": _summary([row["audio_s"] / row["decode_s"] for row in scored if row["decode_s"] > 0]),
     }
 
 
@@ -494,9 +467,7 @@ def run(
             "unmeasured": len(unmeasured),
         },
         **_metric_summaries(scored),
-        "unmeasured_reasons": [
-            f"{row['stable_id']}: {row['unmeasured']}" for row in unmeasured
-        ],
+        "unmeasured_reasons": [f"{row['stable_id']}: {row['unmeasured']}" for row in unmeasured],
         "tracks": rows,
     }
     return report
@@ -504,10 +475,7 @@ def run(
 
 def _print(report: dict[str, Any]) -> None:
     counts = report["denominators"]
-    print(
-        f"scorer {report['scorer_version']} on bundle {report['bundle']} "
-        f"(id {report.get('bundle_id')})"
-    )
+    print(f"scorer {report['scorer_version']} on bundle {report['bundle']} (id {report.get('bundle_id')})")
     print(f"graph: {report['producer']['filter_graph']}")
     print(
         f"denominator: {counts['scored']} scored of {counts['attempted']} attempted "
@@ -521,9 +489,7 @@ def _print(report: dict[str, Any]) -> None:
         s = report["r"][name]
         print(f"{name:<6}{s['median']:>10.3f}{s['mean']:>10.3f}{s['min']:>10.3f}{s['n']:>5}")
     for label in ("control_positive", "control_negative"):
-        values = ", ".join(
-            f"{name} {report[label][name]['median']:.3f}" for name in decode.BAND_NAMES
-        )
+        values = ", ".join(f"{name} {report[label][name]['median']:.3f}" for name in decode.BAND_NAMES)
         print(f"{label}: {values}")
     decode_s = report["decode_s"]
     realtime = report["realtime_factor"]

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Changed
+
+- Windows JIT warm-up takes a real cross-process lock through `apps.shared.file_lock` instead of refusing for missing `fcntl`.
+- A lock held past `LOCK_TIMEOUT_S`, or a non-contention `flock`/`msvcrt.locking` error, refuses the warm-up rather than compiling unlocked. POSIX non-contention flock errors previously waited out the timeout as if they were contention (PR #6800 / issue #7227).
+- `apps.analysis.run` and the analysis queue runner stop when the warm-up is refused, so workers cannot lazy-compile a cold cache.
+
 ## [app-v1.0.0-alpha.1] - 2026-10-06
 
 The first public release of the Open DJ desktop app, named **Open DJ 1.0 alpha** and tagged

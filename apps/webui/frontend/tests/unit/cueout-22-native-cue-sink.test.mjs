@@ -5,8 +5,8 @@
 // [if] 128-frame worklet chunks reach the relay [then] they leave in fixed 256-frame batches, in order, nothing lost
 // [if] the shell answers a request [then] the reply resolves the request with the same id, and an error reply rejects it
 // [if] the shell socket drops [then] every pending request rejects and a disconnected event is emitted
-// [if] MASTER is unpinned in the Mac app and a cue is selected [then] MASTER auto-pins to the current macOS default output, not a guessed speaker
-// [if] the current macOS default output IS the selected cue device [then] MASTER falls back to the speaker guess, never the cue device
+// [if] MASTER is unpinned in the Mac app and a cue is selected [then] MASTER stays unpinned on the room, never auto-pinned (AUDFID-01: no hidden default)
+// [if] the current macOS default output IS the selected cue device [then] the CUE is refused, MASTER is never moved to a speaker guess
 // [if] the shell names outputs but the webview withholds its inputs [then] the listing stays withheld and the panel asks for access
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -176,25 +176,26 @@ const NATIVE_OUTPUTS = [
 	{ id: 'native:airpods', label: 'AirPods Pro' }
 ];
 
-test('an unpinned MASTER follows the current macOS output, not the speaker guess', () => {
+test('an unpinned MASTER stays unpinned on the current macOS output, never auto-pinned or guessed', () => {
 	const assignment = headphones.dualSinkAssignment({
 		outputs: NATIVE_OUTPUTS,
 		selectedCueId: 'native:airpods',
 		selectedMasterId: null,
 		currentRoomId: 'native:scarlett'
 	});
-	assert.deepEqual(assignment, { masterId: 'native:scarlett', cueId: 'native:airpods', autoPinnedMaster: true });
+	assert.deepEqual(assignment, { masterId: null, cueId: 'native:airpods', autoPinnedMaster: false });
 });
 
-test('when the macOS output is the cue device, MASTER falls back to speakers, never the cue', () => {
+test('when the macOS output is the cue device, the CUE is refused and MASTER is not moved', () => {
 	const assignment = headphones.dualSinkAssignment({
 		outputs: NATIVE_OUTPUTS,
 		selectedCueId: 'native:airpods',
 		selectedMasterId: null,
 		currentRoomId: 'native:airpods'
 	});
-	assert.equal(assignment.masterId, 'native:spk');
-	assert.notEqual(assignment.masterId, assignment.cueId);
+	assert.equal(assignment.masterId, null);
+	assert.equal(assignment.cueId, null);
+	assert.match(assignment.cueRefusal, /MAIN and CUE are the same output \(AirPods Pro\)/);
 });
 
 test('control: a pinned MASTER and the Chrome call shape are unchanged', () => {

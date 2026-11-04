@@ -1,4 +1,5 @@
 """Private membership checks for analysis string enums. No apps.* imports."""
+
 from __future__ import annotations
 
 from typing import TypeVar
@@ -14,7 +15,5 @@ def require_allowed_value(
     exc_type: type[E],
 ) -> str:
     if value not in allowed:
-        raise exc_type(
-            f"unknown {subject} {value!r}; {allowed_label} are {allowed}"
-        )
+        raise exc_type(f"unknown {subject} {value!r}; {allowed_label} are {allowed}")
     return value

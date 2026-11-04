@@ -57,7 +57,7 @@ const HOOKS = {
 	'rb-knob-stem-tint': { fallback: '42%', files: ['lib/components/rb/mixer/Knob.svelte'] },
 	// UICONTRAST-6037: ink on the stem tags, stem chips and the stems status.
 	'rb-stem-ink': {
-		fallback: /^(#cfefff|#e4f5d8|#ffe7c8|var\(--chip-color\)|var\(--rb-blue, #4aa3ff\))$/,
+		fallback: /^(#cfefff|#e4f5d8|#ffe7c8|var\(--chip-color\)|var\(--rb-blue, #4aa3ff\)|var\(--rb-text\))$/,
 		files: ['lib/components/rb/browser/StemTags.svelte', 'lib/components/rb/deck/StemRow.svelte']
 	}
 };
@@ -108,7 +108,9 @@ test('if a stem tag, chip or status ignores --rb-stem-ink then the light faces p
 	const row = read('lib/components/rb/deck/StemRow.svelte');
 	assert.match(rule(row, '.chip'), /color: var\(--rb-stem-ink, var\(--chip-color\)\);/);
 	assert.match(rule(row, '.status.busy'), /color: var\(--rb-stem-ink, var\(--rb-blue, #4aa3ff\)\);/);
-	assert.match(rule(row, '.status.action'), /color: var\(--rb-stem-ink, var\(--rb-blue, #4aa3ff\)\);/);
+	// The action label's dark-skin ink is the skin text color (its blue border
+	// carries the action cue), so that is the fallback Default and Gothic keep.
+	assert.match(rule(row, '.status.action'), /color: var\(--rb-stem-ink, var\(--rb-text\)\);/);
 });
 
 test('if Gothic does not reset the hooks then Gothic on the light theme gets light wells under light ink', () => {

@@ -69,8 +69,8 @@ The capture / hashcache fd-leak and schema-migration-connection-leak PRs are sti
 Python 3.11 or newer. Same instructions as rc2:
 
 ```bash
-git clone https://github.com/private_owner/music-dj-tools.git
-cd music-dj-tools
+git clone https://github.com/alex-foster-personal/opendj.git
+cd opendj
 git checkout v1.0-rc3
 python3 -m venv .venv
 source .venv/bin/activate

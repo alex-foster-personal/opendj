@@ -22,6 +22,7 @@ The three required env vars are:
 Bucket names default to ``music-dj-state`` and ``music-dj-audio`` but can
 be overridden via ``MUSIC_DJ_STATE_BUCKET`` / ``MUSIC_DJ_AUDIO_BUCKET``.
 """
+
 from __future__ import annotations
 
 import os
@@ -97,9 +98,7 @@ class CloudConfig:
         missing = [v for v in REQUIRED_VARS if not source.get(v)]
         if missing:
             raise MissingEnvError(
-                "Missing required env vars: "
-                + ", ".join(missing)
-                + ". Ensure you invoked under `doppler run -- ...`."
+                "Missing required env vars: " + ", ".join(missing) + ". Ensure you invoked under `doppler run -- ...`."
             )
         return cls(
             r2_account_id=source["R2_ACCOUNT_ID"],

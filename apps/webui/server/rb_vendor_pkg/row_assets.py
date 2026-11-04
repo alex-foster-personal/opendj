@@ -36,7 +36,7 @@ it live on every call.
 MEMORY. One entry is two vendor path strings, a 16-byte digest of what every
 path on the row looked like, the preview strip as base64 and the vocal regions
 as JSON text. The measured figure is in
-``ops/perf/library-listing-boot-round-3/report.md``. The cache is
+``(private path)``. The cache is
 least-recently-used and holds at most :data:`ROW_ASSET_CACHE_MAX_ENTRIES` rows.
 """
 
@@ -85,8 +85,13 @@ log = logging.getLogger(__name__)
 ROW_ASSET_CACHE_MAX_ENTRIES: int = 40_000
 
 __all__ = [
-    "MAX_ASSET_BYTES", "RowAssetSession", "RowAssets", "bulk_rb_row_assets",
-    "pvdi_vocals", "rb_artwork_facts", "rb_row_assets",
+    "MAX_ASSET_BYTES",
+    "RowAssetSession",
+    "RowAssets",
+    "bulk_rb_row_assets",
+    "pvdi_vocals",
+    "rb_artwork_facts",
+    "rb_row_assets",
 ]
 
 _PREVIEW_SUFFIXES: tuple[str, ...] = tuple(suffix for suffix, _reader in anlz._PREVIEW_SOURCES)
@@ -180,8 +185,12 @@ def _plan_for(meta: RbRowMeta) -> _Plan | None:
         artwork_leaves = tuple(dict.fromkeys((parts[-1], config.ARTWORK_FILENAMES["s"])))
     analysis_leaves = tuple(dict.fromkeys((analysis_leaf, *analysis_candidates))) if analysis_leaf else ()
     return _Plan(
-        analysis_dirs, analysis_leaf, analysis_candidates, analysis_leaves,
-        artwork_dirs, artwork_leaves,
+        analysis_dirs,
+        analysis_leaf,
+        analysis_candidates,
+        analysis_leaves,
+        artwork_dirs,
+        artwork_leaves,
     )
 
 
@@ -322,9 +331,7 @@ class RowAssetSession:
                 if relative not in self._directory_witnesses:
                     st = lstat_below(self._root_fd, relative)
                     self._directory_witnesses[relative] = (
-                        None if isinstance(st, OSError)
-                        else _ABSENT if st is None
-                        else directory_witness(st)
+                        None if isinstance(st, OSError) else _ABSENT if st is None else directory_witness(st)
                     )
                 witness = self._directory_witnesses[relative]
                 if witness is None:
@@ -339,9 +346,7 @@ class RowAssetSession:
 
     # -- cold --
 
-    def _read_analysis(
-        self, plan: _Plan, seen: dict[str, bytes], stable_id: str
-    ) -> tuple[str | None, int | None, str]:
+    def _read_analysis(self, plan: _Plan, seen: dict[str, bytes], stable_id: str) -> tuple[str | None, int | None, str]:
         """Preview strip and PVDI vocals JSON, read through the walk."""
         assert self._root_fd is not None
         dirs = plan.analysis_dirs
@@ -376,9 +381,7 @@ class RowAssetSession:
         preview: tuple[str | None, int | None] = (None, None)
         for (suffix, reader), name in zip(anlz._PREVIEW_SOURCES, candidates, strict=True):
             payload = leaves.read(name)
-            strip = None if payload is None else decoded_preview(
-                reader, ReadBytes(payload), suffix, stable_id
-            )
+            strip = None if payload is None else decoded_preview(reader, ReadBytes(payload), suffix, stable_id)
             if strip is not None:
                 preview = strip
                 break
@@ -493,9 +496,7 @@ def rb_row_assets(meta: RbRowMeta, *, resolver: AssetResolver, stable_id: str) -
         return session.assets(meta, stable_id)
 
 
-def bulk_rb_row_assets(
-    metas: dict[str, RbRowMeta], *, resolver: AssetResolver
-) -> dict[str, RowAssets]:
+def bulk_rb_row_assets(metas: dict[str, RbRowMeta], *, resolver: AssetResolver) -> dict[str, RowAssets]:
     """Assets for every mapped row of one bulk pass, keyed like ``metas``.
 
     ``resolver`` is the caller's per-call memo (pin ad59ac); only rows that are

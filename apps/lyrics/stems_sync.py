@@ -132,16 +132,13 @@ def hydrate(
     """Fetch every manifest part by sha256 and strict-read the bundle."""
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 3:
-        raise ValueError(
-            f"stems hydrate requires schema_version 3; got {manifest.get('schema_version')}"
-        )
+        raise ValueError(f"stems hydrate requires schema_version 3; got {manifest.get('schema_version')}")
     files = manifest.get("files") or {}
     hashes = manifest.get("files_sha256") or {}
     missing_parts = [part for part in files if part not in hashes]
     if missing_parts:
         raise ValueError(
-            f"manifest missing files_sha256 for part(s): {missing_parts}; "
-            "run register-stems on a v3 bundle first"
+            f"manifest missing files_sha256 for part(s): {missing_parts}; run register-stems on a v3 bundle first"
         )
 
     stems_root = _stems_root(data_dir)
@@ -153,9 +150,7 @@ def hydrate(
         return 0
 
     if policy.CFG.mode != "cloud":
-        raise HydrationError(
-            "stems hydrate requires cloudsync mode 'cloud'; local mode has no fetch path"
-        )
+        raise HydrationError("stems hydrate requires cloudsync mode 'cloud'; local mode has no fetch path")
     s3, cfg = asset_clients_for_mode(writing=True)
     if s3 is None or cfg is None:
         raise HydrationError("cloud mode but no S3 client / CloudConfig supplied")

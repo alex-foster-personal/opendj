@@ -247,6 +247,10 @@ test('null artwork availability identifies an unavailable reader without request
 		return route.abort();
 	});
 	await page.route('**/api/v1/preflight', (route) => route.fulfill({ json: PREFLIGHT_PASS }));
+	// The performance meters poll this on mount. It is expected here, so it
+	// reaches the real route (the hermetic backend's own answer) and is not
+	// counted as an unexpected request.
+	await page.route('**/api/v1/performance/telemetry/processes', (route) => route.continue());
 	await page.route('**/api/v1/health', (route) =>
 		route.fulfill({
 			json: {
@@ -518,6 +522,25 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/analysis/source', (route) =>
 		route.fulfill({
 			json: { lanes: { beatgrid: { default: 'rbx', toggle: 'unset', effective: 'rbx' } } }
+		})
+	);
+
+	// BTHFP-8319 (BluetoothHeadsetModeBanner.svelte) mounts from
+	// MainOutputFaultBanner on this same /performance route and polls GET
+	// /api/v1/audio-headset-mode immediately and every 5 s
+	// (HEADSET_MODE_POLL_MS). PAST_BOOT_BURST_MS is 5 s, so the immediate
+	// tick plus one interval tick land in the observation window -- the two
+	// GETs CI logged. Declared as a KNOWN request. Answered unsupported so
+	// the banner stays hidden (this hermetic gate has no CoreAudio).
+	await page.route('**/api/v1/audio-headset-mode', (route) =>
+		route.fulfill({
+			json: {
+				supported: false,
+				verdict: 'unsupported',
+				output: null,
+				input: null,
+				error: 'not measured in the e2e gate'
+			}
 		})
 	);
 

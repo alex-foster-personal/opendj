@@ -37,7 +37,6 @@ import hashlib
 import json
 import math
 import os
-import re
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -231,7 +230,6 @@ def _index_body(payload: bytes, channel: str) -> dict[str, Any]:
 
 #: Every key a signed index, entry and blocklist row may carry. Anything else is
 #: refused, so a misspelled "blocklist" cannot sign as no revocations at all.
-_SHA256 = re.compile(r"[0-9a-f]{64}")
 _INDEX_KEYS = frozenset({"schema", "channel", "generated_at", "plugins", "blocklist"})
 _ENTRY_KEYS = frozenset({"manifest", "archive_url", "archive_sha256", "archive_size", "listing"})
 _BLOCK_KEYS = frozenset({"id", "versions", "reason"})
@@ -397,7 +395,7 @@ class CatalogCache:
             return None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise CatalogError("bad-cache", f"{path} is unreadable ({exc}); delete it to reset the replay floor") from exc
-        if stamp.tzinfo is None or not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        if stamp.tzinfo is None or not is_sha256(digest):
             raise CatalogError("bad-cache", f"{path} is malformed; delete it to reset the replay floor")
         return stamp, digest
 

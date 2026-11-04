@@ -179,6 +179,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "tests/standalone/guard.py",
     "tests/support/__init__.py",
     "tests/support/thread_leaks.py",
+    "tests/support/process_leaks.py",
     "apps/analysis/__init__.py",
     "apps/analysis/pcm_fingerprint.py",
     "apps/shared/__init__.py",

@@ -2,6 +2,7 @@
 
 Pure logic for unit tests; HTTP routes in :mod:`routes.shell`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -14,7 +14,12 @@
 # selection on #4871 (a one-file test change selected 1 module and skipped it; red at that head).
 (private path)
 
+# Doc-path leak control walks tests/fixtures/security/doc-path-leak-control from REPO and runs the CLI with cwd=REPO.
+tests/scripts/test_doc_path_leak.py
+
 # Every marked test in tests/ carries an [if]/[then] intent line (REQHYG).
+# This entry, the ratchet below and (private path) are also pinned at distance 0 on
+# a Python change (TREE_BOOKKEEPING_GUARDS in scripts/ci_test_selection_rules.py, main run 9a7f78f300).
 (private path)
 
 # The requirement-marker ratchet re-runs the marker scan over the whole tree.
@@ -34,6 +39,10 @@
 # Every tracked file under apps/ and scripts/ for naive timestamp defaults (D05). Same replay:
 # left out of both selections.
 tests/quality/test_sync_drift_sources.py
+
+# Every tracked apps/ and scripts/ .py for a raw os.kill(<x>, 0) liveness probe (issue #7018).
+# A narrowed head that adds a probe in an otherwise unreferenced module selects only itself.
+tests/quality/test_no_raw_kill_zero.py
 
 # Every tracked file Playwright would load as a config, found by name OR by content, must turn
 # git-info capture off. Selected only when a changed path names a config; a config found by
@@ -90,6 +99,8 @@ tests/scripts/test_ci_lock.py
 tests/open_dj/test_glossary.py
 (private path)
 (private path)
+(private path)
+# Committed (private path) must match scripts.adr_allocate.build_adr_index (#7922).
 (private path)
 
 # Read the real tree and assert over every entry, each under 8 s (Tue 13 Oct 2026): frontend
@@ -178,6 +189,14 @@ tests/quality/test_hosted_runner_pins_are_allowlisted.py
 # Tue 27 Oct; its sibling `helper_carried` guard reads 24.1 s in main's CI durations ledger.
 tests/scripts/test_ci_plan_carry_paths.py
 
+# Round-23 dependent-scope narrowing: `read_reach_index` and declared-walk fixtures; the module text
+# names `git ls-files` in parametrized scanner samples, so the derived index-reader check lists it.
+tests/scripts/test_ci_plan_narrow.py
+
+# OSSPUB-01 companion to test_oss_tip_audit.py: proves audit_index reads indexed blobs, not the
+# working tree; names git ls-files in docstrings and tmp_path subprocess fixtures.
+tests/scripts/test_oss_tip_audit_source.py
+
 # A persistent-profile Chromium launcher without the restore flag can hang an unattended run.
 tests/scripts/test_browser_no_restore_flag.py
 # A plist template that spells a placeholder inside a comment renders unparseable on a `--` path.
@@ -186,3 +205,16 @@ tests/scripts/test_plist_templates_keep_placeholders_out_of_comments.py
 # Every ctypes load in tracked apps/*.py is in the payload runtime-load allowlist (INSTALL-11).
 # dcb0aad6be added two unclassified CDLL sites and main's payload build was refused (#8380).
 tests/scripts/test_engine_payload_source_loads.py
+
+# The Tauri main window keeps HTML5 drag and drop: scans the frontend source for native drop listeners (DECKUX-8350).
+tests/scripts/test_desktop_html5_drag_drop.py
+
+# Every library_changed kind any apps/*.py publishes is declared in the backend and frontend kind
+# lists (#8304): it rglobs apps/, so a new publish site in any module selects only its own tests
+# and never reaches this guard.
+tests/engine_core/test_library_changed_kinds.py
+
+# Issue #8584 guard: `git ls-files` at the repo root and slides a 2-line window over every
+# tracked path for stale "append flags to performance-register.md" agent copy. A new doc
+# outside the perf docs can miss every import-linked selector and still reach this scan.
+(private path)

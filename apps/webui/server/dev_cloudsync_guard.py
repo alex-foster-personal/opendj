@@ -22,6 +22,7 @@ Requirements (mini-PRD):
     [if] the config is absent or disabled [then] boot proceeds
     [if] MDT_DEV_CLOUDSYNC is neither on nor off [then] boot raises
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping

@@ -1,7 +1,7 @@
 """NATIVE-12: the Mixed In Key reference corpus is reference data, not a source.
 
 A full Mixed In Key run was captured on Tue 8 Sep 2026 and kept outside git
-under ``<data-dir>/reference/mik/<date>/`` (D7, ``specs/native-analysis-v1.md``).
+under ``<data-dir>/reference/mik/<date>/`` (D7, ``(private path)``).
 The corpus may be COMPARED against, but nothing from it may be imported into
 audio files, the odj library or ``state.db`` without a decision of its own --
 a separate, recorded, named one. That is not a fact about the corpus; it is a
@@ -149,9 +149,7 @@ def find_import_decision(
     return _lookup(load_import_decisions(registry_path, record_root), module, action)
 
 
-def _lookup(
-    decisions: tuple[MikImportDecision, ...], module: str, action: str
-) -> MikImportDecision | None:
+def _lookup(decisions: tuple[MikImportDecision, ...], module: str, action: str) -> MikImportDecision | None:
     """The decision for ``module`` and ``action``, or None. At most one exists.
 
     ``load_import_decisions`` refuses a registry holding two entries for one
@@ -176,18 +174,14 @@ def require_mik_import_decision(
     the registry to edit and the decision document to write.
     """
     if action not in ALLOWED_ACTIONS:
-        raise MikReferenceImportRefused(
-            f"unknown action {action!r}; NATIVE-12 separates {sorted(ALLOWED_ACTIONS)}"
-        )
+        raise MikReferenceImportRefused(f"unknown action {action!r}; NATIVE-12 separates {sorted(ALLOWED_ACTIONS)}")
     decisions = load_import_decisions(registry_path, record_root)
     decision = _lookup(decisions, module, action)
     if decision is not None:
         return decision
     held = sorted({d.action for d in decisions if d.module == module})
     detail = (
-        f"it holds a {held[0]!r} decision, which does not cover {action!r}"
-        if held
-        else "it has no recorded decision"
+        f"it holds a {held[0]!r} decision, which does not cover {action!r}" if held else "it has no recorded decision"
     )
     raise MikReferenceImportRefused(
         f"{module} may not {action} from the Mixed In Key reference corpus: {detail}. The "
@@ -197,9 +191,7 @@ def require_mik_import_decision(
     )
 
 
-def decision_document_states_the_decision(
-    decision: MikImportDecision, record_root: Path = REPO_ROOT
-) -> Path:
+def decision_document_states_the_decision(decision: MikImportDecision, record_root: Path = REPO_ROOT) -> Path:
     """The record document behind ``decision``, proven to name the decision id.
 
     The path must be relative and must resolve inside ``record_root``: an
@@ -263,15 +255,11 @@ def _string_fields(raw: list[object], registry_path: Path) -> list[dict[str, str
     entries: list[dict[str, str]] = []
     for entry in raw:
         if not isinstance(entry, dict):
-            raise MikImportDecisionUnrecorded(
-                f"{registry_path} has a non-object decision: {entry!r}"
-            )
+            raise MikImportDecisionUnrecorded(f"{registry_path} has a non-object decision: {entry!r}")
         fields: dict[str, str] = {}
         for key, value in entry.items():
             if not isinstance(value, str):
-                raise MikImportDecisionUnrecorded(
-                    f"{registry_path} decision field {key!r} is not a string: {value!r}"
-                )
+                raise MikImportDecisionUnrecorded(f"{registry_path} decision field {key!r} is not a string: {value!r}")
             fields[str(key)] = value
         entries.append(fields)
     return entries

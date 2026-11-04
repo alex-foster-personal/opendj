@@ -38,6 +38,7 @@ class IndexEntry:
     """One ``path_availability`` row plus derived staleness."""
 
     materialised_size: int | None
+    st_mtime_ns: int | None
     checked_at: datetime
     stale: bool
 
@@ -59,18 +60,22 @@ def _is_stale(checked_at: datetime, *, now: datetime | None = None) -> bool:
     return anchor - checked_at > timedelta(seconds=FILE_EXISTS_TTL_S)
 
 
-def measure_logical_path(path: str) -> tuple[int | None, str | None]:
-    """Materialised size of a library path, and the file it was measured at.
+def measure_logical_path(path: str) -> tuple[int | None, int | None, str | None]:
+    """Materialised size and mtime of a library path, and the file measured.
 
-    The size is None when the path does not resolve, is missing, is not a
+    Size and mtime are None when the path does not resolve, is missing, is not a
     file, or is a dataless stub. This is the background refresher's stat;
     request handlers stat through ``track_rows._stat_size`` so the per-request
     budget stays observable in one place.
     """
     resolved = resolve_asset_path(path).resolved
     if resolved is None:
-        return None, None
-    return fs_residency.materialised_size(resolved), str(resolved)
+        return None, None, None
+    measured = fs_residency.materialised_stat(resolved)
+    if measured is None:
+        return None, None, str(resolved)
+    size, mtime_ns = measured
+    return size, mtime_ns, str(resolved)
 
 
 def resolver_namespace(data_dir: Path) -> str:
@@ -101,17 +106,18 @@ def bulk_lookup(
         chunk = wanted[offset : offset + _SQL_CHUNK]
         placeholders = ",".join("?" * len(chunk))
         rows = conn.execute(
-            "SELECT logical_path, materialised_size, checked_at "
+            "SELECT logical_path, materialised_size, mtime_ns, checked_at "
             "FROM path_availability "
             f"WHERE resolver_namespace = ? AND logical_path IN ({placeholders})",
             (namespace, *chunk),
         ).fetchall()
-        for logical_path, materialised_size, checked_at in rows:
+        for logical_path, materialised_size, mtime_ns, checked_at in rows:
             parsed = _parse_checked_at(str(checked_at))
             out[str(logical_path)] = IndexEntry(
                 materialised_size=(
                     None if materialised_size is None else int(materialised_size)
                 ),
+                st_mtime_ns=None if mtime_ns is None else int(mtime_ns),
                 checked_at=parsed,
                 stale=_is_stale(parsed, now=now),
             )
@@ -121,7 +127,7 @@ def bulk_lookup(
 def upsert_rows(
     conn: sqlite3.Connection,
     namespace: str,
-    rows: Sequence[tuple[str, int | None]],
+    rows: Sequence[tuple[str, int | None, int | None]],
 ) -> None:
     """Idempotent write of probed paths under ``namespace``.
 
@@ -133,7 +139,7 @@ def upsert_rows(
     With ``FILE_EXISTS_TTL_S`` at 30 s, shorter than one All Tracks walk, every
     walk rewrote every row: on the silver preview (Mon 5 Oct 2026) that was the
     whole of a 300-500 MB WAL, about 1.5 MB/s, all ``path_availability`` and
-    ``idx_path_availability_checked`` pages. A changed size is always written.
+    ``idx_path_availability_checked`` pages. A changed size or mtime is always written.
     """
     if not rows:
         return
@@ -151,14 +157,19 @@ def upsert_rows(
     try:
         conn.executemany(
             "INSERT INTO path_availability("
-            "resolver_namespace, logical_path, materialised_size, checked_at) "
-            "VALUES (?, ?, ?, ?) "
+            "resolver_namespace, logical_path, materialised_size, mtime_ns, checked_at) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(resolver_namespace, logical_path) DO UPDATE SET "
             "materialised_size = excluded.materialised_size, "
+            "mtime_ns = excluded.mtime_ns, "
             "checked_at = excluded.checked_at "
             "WHERE path_availability.materialised_size IS NOT excluded.materialised_size "
+            "OR path_availability.mtime_ns IS NOT excluded.mtime_ns "
             "OR path_availability.checked_at < ?",
-            [(namespace, path, size, checked_at, rewrite_before) for path, size in rows],
+            [
+                (namespace, path, size, mtime_ns, checked_at, rewrite_before)
+                for path, size, mtime_ns in rows
+            ],
         )
         if owns_txn:
             conn.execute("COMMIT")

@@ -1,6 +1,6 @@
 """Stage-4 repair: apply an arbitrated verdict's findings as edits to the sheet.
 
-specs/lyrics-version-check.md round 3. Repair NEVER acts on its own judgement:
+(private path) round 3. Repair NEVER acts on its own judgement:
 it edits only the decisive findings of an ARBITRATED verdict, and the
 acceptance gate is closing the loop -- the repaired sheet must re-enter the
 full pipeline (classify + arbitrate) and come back `matched` ("green after
@@ -31,7 +31,7 @@ from difflib import SequenceMatcher
 from apps.lyrics.asr_match import normalize_word
 from apps.lyrics.verdict import REPEAT_SIM, Verdict
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -44,9 +44,7 @@ class RepairResult:
 
 def repair_sheet(sheet_words: list[str], asr_words: list[str], verdict: Verdict) -> RepairResult:
     if verdict.verdict in ("unverifiable", "wrong_song", "needs_acoustic_check"):
-        raise ValueError(
-            f"refusing to repair a {verdict.verdict} sheet -- route to review/re-sourcing"
-        )
+        raise ValueError(f"refusing to repair a {verdict.verdict} sheet -- route to review/re-sourcing")
     if not verdict.findings:
         raise ValueError("nothing to repair: verdict carries no findings")
 
@@ -54,9 +52,7 @@ def repair_sheet(sheet_words: list[str], asr_words: list[str], verdict: Verdict)
     asr_norm = [normalize_word(w) for w in asr_words]
     opcodes = SequenceMatcher(a=sheet_norm, b=asr_norm, autojunk=False).get_opcodes()
 
-    deletions, inserts, edits, asr_sourced = _plan_edits(
-        verdict, sheet_norm, asr_words, opcodes
-    )
+    deletions, inserts, edits, asr_sourced = _plan_edits(verdict, sheet_norm, asr_words, opcodes)
 
     words: list[str] = []
     source_idx: list[int | None] = []
@@ -70,12 +66,10 @@ def repair_sheet(sheet_words: list[str], asr_words: list[str], verdict: Verdict)
             source_idx.append(i)
     if not words:
         raise ValueError("repair deleted the entire sheet -- refusing")
-    return RepairResult(
-        words=words, source_idx=source_idx, edits=edits, asr_sourced_spans=asr_sourced
-    )
+    return RepairResult(words=words, source_idx=source_idx, edits=edits, asr_sourced_spans=asr_sourced)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _emit_block(
@@ -107,7 +101,10 @@ def _emit_block(
 
 
 def _plan_edits(
-    verdict: Verdict, sheet_norm: list[str], asr_words: list[str], opcodes: list,
+    verdict: Verdict,
+    sheet_norm: list[str],
+    asr_words: list[str],
+    opcodes: list,
 ) -> tuple[set[int], list[tuple[int, list[tuple], str]], list[str], int]:
     """Turn findings into the edit plan: what to delete, what to insert where.
 
@@ -129,20 +126,14 @@ def _plan_edits(
             deletions.update(range(f.sheet_start, f.sheet_end + 1))
             at = _sheet_position_of_asr_block(opcodes, f.asr_start)
             block = [("keep", i) for i in range(f.sheet_start, f.sheet_end + 1)]
-            inserts.append(
-                (at, block, f"move sheet words {f.sheet_start}-{f.sheet_end} to pos {at}")
-            )
+            inserts.append((at, block, f"move sheet words {f.sheet_start}-{f.sheet_end} to pos {at}"))
         elif f.kind == "audio_repeat_unlisted":
             twin = _best_sheet_window(f.text, sheet_norm)
             if twin is None:
-                raise ValueError(
-                    f"audio_repeat_unlisted finding has no matching sheet window: {f.text[:60]}"
-                )
+                raise ValueError(f"audio_repeat_unlisted finding has no matching sheet window: {f.text[:60]}")
             at = _sheet_position_of_asr_block(opcodes, f.asr_start)
             block = [("dup", i) for i in range(twin[0], twin[1] + 1)]
-            inserts.append(
-                (at, block, f"insert chorus copy (sheet {twin[0]}-{twin[1]}) at pos {at}")
-            )
+            inserts.append((at, block, f"insert chorus copy (sheet {twin[0]}-{twin[1]}) at pos {at}"))
         elif f.kind == "extra_in_audio":
             at = _sheet_position_of_asr_block(opcodes, f.asr_start)
             block = [("asr", [asr_words[i] for i in range(f.asr_start, f.asr_end + 1)])]
@@ -167,9 +158,7 @@ def _best_sheet_window(text: str, sheet_norm: list[str]) -> tuple[int, int] | No
     n = len(words)
     best, best_sim = None, REPEAT_SIM
     for start in range(len(sheet_norm) - n + 1):
-        sim = SequenceMatcher(
-            a=words, b=sheet_norm[start : start + n], autojunk=False
-        ).ratio()
+        sim = SequenceMatcher(a=words, b=sheet_norm[start : start + n], autojunk=False).ratio()
         if sim >= best_sim:
             best, best_sim = (start, start + n - 1), sim
     return best

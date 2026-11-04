@@ -4,6 +4,7 @@ Each caller keeps its regex, missing message, and refusal type. This module
 only centralizes the findall-or-refuse-last-match shape so launchers and
 operational scripts do not duplicate it.
 """
+
 from __future__ import annotations
 
 import re

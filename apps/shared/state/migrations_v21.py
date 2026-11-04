@@ -54,9 +54,7 @@ def trigger_sql(table: str, event: str) -> str:
 
 
 EXPECTED_TRIGGERS: dict[str, str] = {
-    trigger_name(table, event): trigger_sql(table, event)
-    for table in WRITE_TOKEN_TABLES
-    for event in WRITE_EVENTS
+    trigger_name(table, event): trigger_sql(table, event) for table in WRITE_TOKEN_TABLES for event in WRITE_EVENTS
 }
 
 _V21: list[str] = [

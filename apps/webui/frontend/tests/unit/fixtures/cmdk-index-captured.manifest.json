@@ -4,13 +4,13 @@
     "kind": "webui-track-index-body",
     "source": "GET /api/v1/tracks/index from the engine composition root (build_config, apply_env_contract, prepare_layout, create_app) in a child interpreter over a StateWriter-hydrated data dir: tests/webui/capture_cmdk_index.py",
     "captured_on": "2026-10-27",
-    "scenario": "Five rows for the Cmd K v2 tests (CMDK-04, CMDK-05; Codex P1 on PR #6089, thread PRRT_kwDOSEvNd86rCuos): three present real mp3 copies (one a remix, two sharing an album), one local path that does not exist, and one tidal: streaming URI. Re-captured Tue 13 Oct 2026 for a reviewed index wire change: index rows now carry comments (CMDK-04, Codex P2 on #6089), and one row has a comment written through StateWriter.set_field; every other field is byte-identical to the first capture. Local file_path values are rewritten to <data_dir>/audio/<name> because the temp dir differs per run; no test reads them. Re-captured Tue 27 Oct 2026 for a reviewed index wire change (AGENT-31, PR #7594): TrackOut gained the optional `loudness` block, served on the single-track read and null on index rows. Re-captured Tue 27 Oct 2026 (Sol P1 #7594) with invented Lanternfall titles in place of a real song title. Re-captured Wed 28 Oct 2026 for merge of main and PR #7574 (QLTSCAN-02): each row's quality carries the QLT grade block (letter, checked, issues) together with main's loudness nulls and Lanternfall titles (OSSPUB-01).",
+    "scenario": "Five rows for the Cmd K v2 tests (CMDK-04, CMDK-05; Codex P1 on PR #6089, thread PRRT_kwDOSEvNd86rCuos): three present real mp3 copies (one a remix, two sharing an album), one local path that does not exist, and one tidal: streaming URI. Re-captured Tue 13 Oct 2026 for a reviewed index wire change: index rows now carry comments (CMDK-04, Codex P2 on #6089), and one row has a comment written through StateWriter.set_field; every other field is byte-identical to the first capture. Local file_path values are rewritten to <data_dir>/audio/<name> because the temp dir differs per run; no test reads them. Re-captured Tue 27 Oct 2026 for a reviewed index wire change (AGENT-31, PR #7594): TrackOut gained the optional `loudness` block, served on the single-track read and null on index rows. Re-captured Tue 27 Oct 2026 (Sol P1 #7594) with invented Lanternfall titles in place of a real song title. Re-captured Wed 28 Oct 2026 for merge of main and PR #7574 (QLTSCAN-02): each row's quality carries the QLT grade block (letter, checked, issues) together with main's loudness nulls and Lanternfall titles (OSSPUB-01). Re-captured Wed 4 Nov 2026 for a reviewed index wire change (PR #8598, cloud offload backend): each row gains the optional `offload` field, null here; every other field is unchanged.",
     "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture only for a reviewed change to the index wire shape."
   },
   "files": {
     "cmdk-index-captured.json": {
-      "bytes": 7894,
-      "sha256": "67f13f97e04e19a8140fed6b080d58e9e13f5d69f8e5343910a6a1bf5e2f4a64"
+      "bytes": 7979,
+      "sha256": "24ffe0942de1ea1eb4b2924a674d26631e366502164d8fb860efadac5cf3c053"
     }
   }
 }

@@ -52,6 +52,32 @@ def test_kind_one_to_eight_maps_hot():
         assert idx == k - 1
 
 
+def test_iter_cues_drops_kind_nine():
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeCue:
+        ContentID: str
+        Kind: int
+        InMsec: int
+        OutMsec: int | None = None
+        ActiveLoop: bool = False
+        Comment: str | None = None
+        Color: int | None = None
+        rb_local_deleted: int = 0
+
+    class FakeDb:
+        def get_cue(self, ContentID: str | None = None):
+            if ContentID is not None:
+                return [FakeCue(ContentID=ContentID, Kind=9, InMsec=5000)]
+            return []
+
+    from apps.shared.rekordbox_db import iter_cues
+
+    cues = iter_cues(FakeDb(), "cid")
+    assert cues == []
+
+
 def test_kind_none_is_memory():
     kind, _ = _rb_kind_to_normalised(None, None)
     assert kind == "memory"

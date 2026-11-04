@@ -4,6 +4,7 @@ Split out of :mod:`apps.webui.server.routes.auth` so the route module stays a
 thin call site. Tests read :func:`last_capture`; ``POST /login`` also exposes
 ``X-OpenDJ-Auth-Ms``.
 """
+
 from __future__ import annotations
 
 import time

@@ -34,7 +34,9 @@ TABLE_DOCS: dict[str, str] = {
         "(stable_id, field_name), e.g. bpm, key, energy. Mirrors the "
         "open-dj v0 strawman ProvenanceValue envelope "
         "(apps.shared.state.types) -- this is where per-value confidence "
-        "and source live, separate from the vendor-sourced facts on tracks."
+        "and source live, separate from the vendor-sourced facts on tracks. "
+        "The current row is last-write-wins: a later write replaces it "
+        "regardless of confidence; history keeps the prior opinion."
     ),
     "track_field_history": (
         "Append-only audit trail: every value a track_fields cell has ever "
@@ -54,7 +56,8 @@ TABLE_DOCS: dict[str, str] = {
         "library paths (FolderPath / track file_path strings before "
         "containment mapping). Keys are (resolver_namespace, logical_path); "
         "materialised_size is NULL when the path is missing or a dataless "
-        "stub. Written by bounded listing hydration and a background "
+        "stub; mtime_ns holds st_mtime_ns from the same stat when probed. "
+        "Written by bounded listing hydration and a background "
         "refresher (issue #1037, PERF-RB-01); survives process restarts."
     ),
     "unmatched_source_analysis": (

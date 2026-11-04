@@ -11,6 +11,7 @@ and FILTER.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -72,6 +73,61 @@ def unit_value(key: str, raw: str) -> float:
             f"TRIM and FILTER), got {raw!r}"
         )
     return parsed
+
+
+# DIALCLOCK-8341: dial positions as clock times. Twin of
+# apps/webui/frontend/src/lib/rb/dial-clock.ts; the dial sweeps 270 degrees,
+# 7:30 (0) through 12 o'clock (0.5) to 4:30 (1), 30 degrees per hour.
+_DIAL_HALF_SWEEP_HOURS = 4.5
+_CLOCK_PATTERN = re.compile(
+    r"^\s*(\d{1,2})(?::(\d{2}))?\s*(?:o'?\s*clock|am|pm|a\.m\.|p\.m\.)?\s*$", re.IGNORECASE
+)
+_CLOCK_MARKER = re.compile(r":|o'?\s*clock|am|pm|a\.m\.|p\.m\.", re.IGNORECASE)
+
+
+def dial_clock_value(key: str, raw: str) -> float:
+    """A clock time on the dial ("3", "3pm", "3 o'clock", "15:00", "4:30") as 0..1.
+
+    AM/PM and the 24-hour clock only mark the token as a time: 3pm, 3am, 15:00
+    and 3 o'clock are the same position. The gap at the bottom of the dial
+    (after 4:30, before 7:30) is refused.
+    """
+    match = _CLOCK_PATTERN.match(raw)
+    if match is None:
+        raise ValueError(f"{key} must be a clock time like 3, 3pm, 3 o'clock, 3:00 or 15:00, got {raw!r}")
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    if hour > 24 or minute > 59:
+        raise ValueError(f"{key} is not a time of day, got {raw!r}")
+    on_dial = ((hour % 12) + minute / 60) % 12
+    signed = on_dial - 12 if on_dial > 6 else on_dial
+    if abs(signed) > _DIAL_HALF_SWEEP_HOURS + 1e-9:
+        raise ValueError(
+            f"{key} {raw!r} is past the dial's stops: it turns from 7:30 (full left, 0) "
+            f"through 12 o'clock (centre, 0.5) to 4:30 (full right, 1)"
+        )
+    return 0.5 + signed / (2 * _DIAL_HALF_SWEEP_HOURS)
+
+
+def dial_value(key: str, raw: str) -> float:
+    """A bipolar dial: a 0..1 number, or a clock time (DIALCLOCK-8341).
+
+    A plain number in 0..1 is the dial value, so ``1`` stays full right (say
+    ``1pm`` or ``1 o'clock`` for one o'clock). A bare whole number 2..24 has no
+    dial-value reading and is the hour; anything with a colon, am/pm or
+    o'clock is a clock time.
+    """
+    if _CLOCK_MARKER.search(raw) is not None:
+        return dial_clock_value(key, raw)
+    parsed = number_value(key, raw)
+    if 0.0 <= parsed <= 1.0:
+        return parsed
+    if parsed.is_integer() and 2 <= parsed <= 24:
+        return dial_clock_value(key, raw)
+    raise ValueError(
+        f"{key} must be within 0..1 (0.5 = centre) or a clock time like 3pm, "
+        f"3 o'clock or 15:00 (12 o'clock = centre), got {raw!r}"
+    )
 
 
 HEAD_DELAY_MAX_MS = 500  # keep in sync with apps/webui/frontend/src/lib/player/constants.ts
@@ -141,6 +197,19 @@ def enum_value(choices: Sequence[str]) -> Callable[[str, str], Any]:
             f"{key} must be one of {'|'.join(str(choice) for choice in choices)}, "
             f"got {raw!r}"
         )
+
+    return parse
+
+
+def number_enum_value(choices: Sequence[float]) -> Callable[[str, str], Any]:
+    def parse(key: str, raw: str) -> Any:
+        parsed = number_value(key, raw)
+        if parsed not in choices:
+            raise ValueError(
+                f"{key} must be one of {'|'.join(f'{choice:g}' for choice in choices)}, "
+                f"got {raw!r}"
+            )
+        return parsed
 
     return parse
 

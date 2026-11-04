@@ -144,12 +144,15 @@ _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
 }
 _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
 _DEFAULT_MIDI_ENABLED = False
+# The docked Spotify player shrinks Open DJ to make room unless this is off.
+_DEFAULT_SPOTIFY_SHRINK_MAIN = True
 _WHEEL_MIN = 0.05
 _WHEEL_MAX = 4.0
 _LIBRARY_BROWSER_BOOL_KEYS: tuple[str, ...] = (
     "hide_broken_links",
     *tuple(_DEFAULT_LIBRARY_FILTER_BOOLS),
     "midi_enabled",
+    "spotify_shrink_main_for_player",
 )
 
 # Karaoke lyric prefs (PR-4 section C). Every surface ships ON; the loading
@@ -485,6 +488,7 @@ def _library_browser_bool_defaults() -> dict[str, bool]:
         "hide_broken_links": _DEFAULT_HIDE_BROKEN_LINKS,
         **_DEFAULT_LIBRARY_FILTER_BOOLS,
         "midi_enabled": _DEFAULT_MIDI_ENABLED,
+        "spotify_shrink_main_for_player": _DEFAULT_SPOTIFY_SHRINK_MAIN,
     }
 
 
@@ -1080,6 +1084,7 @@ class UiPrefsOut(BaseModel):
     available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
+    spotify_shrink_main_for_player: bool = _DEFAULT_SPOTIFY_SHRINK_MAIN
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
     library_watcher_folders: list[str] = Field(default_factory=list)
@@ -1144,6 +1149,7 @@ class UiPrefsPatch(BaseModel):
     available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
+    spotify_shrink_main_for_player: bool | None = None
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
     library_watcher_folders: list[str] | None = None

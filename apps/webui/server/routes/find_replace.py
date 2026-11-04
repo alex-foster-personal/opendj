@@ -162,9 +162,7 @@ def _regex_deadline(mode: FindReplaceMode) -> float | None:
     return None
 
 
-def _get_field(
-    backend: StateBackend, stable_id: str, field: FindReplaceField
-) -> tuple[object, str, str]:
+def _get_field(backend: StateBackend, stable_id: str, field: FindReplaceField) -> tuple[object, str, str]:
     """Returns (track, current field value, etag). 404s propagate."""
     try:
         track = backend.get_track(stable_id)
@@ -188,9 +186,7 @@ def preview(
     match_count = 0
     for stable_id in body.stable_ids:
         _track, current, etag = _get_field(backend, stable_id, body.field)
-        new_value = _new_value(
-            current, pattern, body.replace, body.mode, regex_deadline
-        )
+        new_value = _new_value(current, pattern, body.replace, body.mode, regex_deadline)
         would_change = new_value != current
         if would_change:
             match_count += 1
@@ -225,9 +221,7 @@ def apply(
     skipped_noop: list[str] = []
     for stable_id in body.stable_ids:
         _track, current, _etag = _get_field(backend, stable_id, body.field)
-        new_value = _new_value(
-            current, pattern, body.replace, body.mode, regex_deadline
-        )
+        new_value = _new_value(current, pattern, body.replace, body.mode, regex_deadline)
         if new_value == current:
             skipped_noop.append(stable_id)
             continue
@@ -237,9 +231,7 @@ def apply(
     updates = [
         TrackUpdate(
             stable_id,
-            {body.field: replacement_by_id[stable_id]}
-            if stable_id in replacement_by_id
-            else {},
+            {body.field: replacement_by_id[stable_id]} if stable_id in replacement_by_id else {},
             body.expected_etags[stable_id],
         )
         for stable_id in body.stable_ids
@@ -262,9 +254,7 @@ def apply(
     ]
     publish("library.changed", {"kind": "tracks", "ids": [r.stable_id for r in results]})
 
-    return FindReplaceApplyOut(
-        applied_count=len(results), skipped_noop=skipped_noop, results=results
-    )
+    return FindReplaceApplyOut(applied_count=len(results), skipped_noop=skipped_noop, results=results)
 
 
 __all__ = ["router"]

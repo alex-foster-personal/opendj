@@ -108,7 +108,7 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 // health-14-coverage-at-mount.test.mjs.
 test('BrowserPanel sends ingestion coverage at mount and never awaits it on the boot path', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /import \{ _pingBackend, _pingFrontend \} from '\$lib\/rb\/browser-health-probes';/);
+	assert.match(src, /import \{\s*_pingBackend,\s*_pingFrontend,[^}]*\} from '\$lib\/rb\/browser-health-probes';/);
 	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
 	// HEALTH-14: the cached read leaves at mount, ahead of the listing. It is
 	// still never awaited on the boot path.

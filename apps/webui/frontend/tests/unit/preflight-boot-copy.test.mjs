@@ -63,6 +63,23 @@ test('scrubBootDetail removes schema_meta version strings', () => {
 	);
 });
 
+test('boot mode maps cloudsync waiting library detail', () => {
+	const waiting = check({
+		id: 'library-attached',
+		label: 'Library attached',
+		status: 'pending',
+		detail: '0 tracks in the library; waiting for CloudSync'
+	});
+	assert.equal(
+		bootCopy.bootCheckDetail(waiting, 'boot'),
+		'Waiting for your library to sync from your hub'
+	);
+	assert.equal(
+		bootCopy.bootCheckDetail(waiting, 'admin'),
+		waiting.detail
+	);
+});
+
 test('bootGateHeading reflects blocked library state and escalates after repeated fails', () => {
 	const { bootGateHeading, BOOT_BLOCKED_HEADING, BOOT_ESCALATED_HEADING, BOOT_STARTING_HEADING } =
 		bootHeading;

@@ -5,8 +5,26 @@
 .planning/REQUIREMENTS.md merge=union
 (private path) merge=union
 (private path) merge=union
+(private path) merge=union
 # reqs.json is generated structured JSON. Leave it unassigned so divergent edits
 # conflict instead of silently producing invalid JSON.
+
+# Line endings (Windows parity, spike S2 / build B0): LF in the working tree on
+# every host, so byte-pinned fixtures hash the same on a Windows checkout with
+# core.autocrlf=true as on macOS. Fixtures are opted out of conversion entirely
+# because they are compared byte-for-byte against MANIFEST.json digests.
+* text=auto eol=lf
+tests/**/fixtures/** -text
+# Committed with CRLF on purpose (upstream artifacts); never renormalize.
+(private path)/*.csv -text
+(private path)/*.csv -text
+apps/desktop/setup/Anybody-OFL.txt -text
+apps/webui/frontend/static/fonts/Anybody-OFL.txt -text
+scripts/bench/model_shootout.json -text
+# Windows shells want CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
 
 # Machine-written files. linguist-generated collapses them in GitHub diffs and
 # drops them from language stats; it changes nothing about merging or checkout.

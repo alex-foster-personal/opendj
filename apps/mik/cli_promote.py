@@ -3,6 +3,7 @@ to keep ``cli.py`` under the file-size review threshold
 (``scripts/quality_gate.py``). Purely mechanical: ``main()`` in ``cli.py``
 still dispatches to ``cmd_promote`` exactly as before.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,19 +20,14 @@ from .cli_common import _emit, _gate, _state_db_path
 # ----------------------------------------------------------------- promote
 
 
-def _promote_assignments(
-    args: argparse.Namespace, conn: sqlite3.Connection
-) -> dict[str, str]:
+def _promote_assignments(args: argparse.Namespace, conn: sqlite3.Connection) -> dict[str, str]:
     """Resolves --discover vs an explicit pair, split out of ``cmd_promote``
     to keep it under the complexity ceiling."""
     if args.discover:
         return promoter.discover(conn, allow_fuzzy=args.allow_fuzzy)
     if args.source_row_id and args.stable_id:
         return {args.source_row_id: args.stable_id}
-    raise SystemExit(
-        "promote needs either --discover or both --source-row-id and "
-        "--stable-id"
-    )
+    raise SystemExit("promote needs either --discover or both --source-row-id and --stable-id")
 
 
 def _promote_live_results(
@@ -55,9 +51,7 @@ def _promote_live_results(
         "fields_written": sum(o.fields_written for o in outcomes),
         "segment_rows": sum(o.segment_rows for o in outcomes),
         "already_promoted": sum(o.already_promoted for o in outcomes),
-        "blocked_by_gate": sorted(
-            {name for o in outcomes for name in o.blocked_by_gate}
-        ),
+        "blocked_by_gate": sorted({name for o in outcomes for name in o.blocked_by_gate}),
     }
 
 
@@ -90,17 +84,10 @@ def cmd_promote(args: argparse.Namespace) -> int:
             f"[{payload['mode']}] promotion against {path}",
             (
                 "  pending staged source rows: "
-                + ", ".join(
-                    f"{k}={v}"
-                    for k, v in sorted(payload["pending_by_reason"].items())
-                )
+                + ", ".join(f"{k}={v}" for k, v in sorted(payload["pending_by_reason"].items()))
             ),
             f"  promotable now: {payload['assignments']}",
-            f"  applied: {results}"
-            if results is not None
-            else "  (dry-run: pass --live to write)",
+            f"  applied: {results}" if results is not None else "  (dry-run: pass --live to write)",
         ],
     )
     return 0
-
-

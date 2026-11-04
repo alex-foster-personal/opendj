@@ -7,6 +7,7 @@ The write guard (the web UI's cloud-lock check) is passed in rather than
 imported, because ``.importlinter`` keeps every domain package below
 ``apps.webui``.
 """
+
 from __future__ import annotations
 
 import sqlite3

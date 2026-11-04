@@ -18,6 +18,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.shared.tag_writer import TagRead, read_tags
@@ -47,9 +48,38 @@ def parse_filename(path: Path) -> TagRead:
 # ---------------------------------------------------------------- RB default
 
 
-_RB_CACHE_LOCK = threading.Lock()
-_RB_INDEX_CACHE: dict[str, TagRead] | None = None
-_RB_UNAVAILABLE: bool = False
+@dataclass
+class _VendorIndexCache:
+    """Thread-safe lazy builder for path -> :class:`TagRead` vendor indexes."""
+
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _index: dict[str, TagRead] | None = None
+    _unavailable: bool = False
+
+    def get(self, build: Callable[[], dict[str, TagRead] | None]) -> dict[str, TagRead] | None:
+        if self._unavailable:
+            return None
+        if self._index is not None:
+            return self._index
+        with self._lock:
+            if self._unavailable:
+                return None
+            if self._index is not None:
+                return self._index
+            built = build()
+            if built is None:
+                self._unavailable = True
+                return None
+            self._index = built
+            return built
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._index = None
+            self._unavailable = False
+
+
+_RB_VENDOR_CACHE = _VendorIndexCache()
 
 
 def _rb_normalise_path(raw: str) -> str:
@@ -109,22 +139,7 @@ def _rb_build_index() -> dict[str, TagRead] | None:
 
 def _rb_index() -> dict[str, TagRead] | None:
     """Lazy + thread-safe accessor for the path -> TagRead index."""
-    global _RB_INDEX_CACHE, _RB_UNAVAILABLE
-    if _RB_UNAVAILABLE:
-        return None
-    if _RB_INDEX_CACHE is not None:
-        return _RB_INDEX_CACHE
-    with _RB_CACHE_LOCK:
-        if _RB_UNAVAILABLE:
-            return None
-        if _RB_INDEX_CACHE is not None:
-            return _RB_INDEX_CACHE
-        built = _rb_build_index()
-        if built is None:
-            _RB_UNAVAILABLE = True
-            return None
-        _RB_INDEX_CACHE = built
-        return built
+    return _RB_VENDOR_CACHE.get(_rb_build_index)
 
 
 def default_fetch_rb(path: Path) -> TagRead | None:
@@ -143,9 +158,7 @@ def default_fetch_rb(path: Path) -> TagRead | None:
 # -------------------------------------------------------------- djay default
 
 
-_DJAY_CACHE_LOCK = threading.Lock()
-_DJAY_INDEX_CACHE: dict[str, TagRead] | None = None
-_DJAY_UNAVAILABLE: bool = False
+_DJAY_VENDOR_CACHE = _VendorIndexCache()
 
 
 def _djay_build_index() -> dict[str, TagRead] | None:
@@ -185,22 +198,7 @@ def _djay_build_index() -> dict[str, TagRead] | None:
 
 
 def _djay_index() -> dict[str, TagRead] | None:
-    global _DJAY_INDEX_CACHE, _DJAY_UNAVAILABLE
-    if _DJAY_UNAVAILABLE:
-        return None
-    if _DJAY_INDEX_CACHE is not None:
-        return _DJAY_INDEX_CACHE
-    with _DJAY_CACHE_LOCK:
-        if _DJAY_UNAVAILABLE:
-            return None
-        if _DJAY_INDEX_CACHE is not None:
-            return _DJAY_INDEX_CACHE
-        built = _djay_build_index()
-        if built is None:
-            _DJAY_UNAVAILABLE = True
-            return None
-        _DJAY_INDEX_CACHE = built
-        return built
+    return _DJAY_VENDOR_CACHE.get(_djay_build_index)
 
 
 def default_fetch_djay(path: Path) -> TagRead | None:
@@ -243,15 +241,9 @@ def default_fetch_mik(_path: Path) -> TagRead | None:
 
 def _reset_caches_for_tests() -> None:
     """Clear module-level caches. Test-only hook."""
-    global _RB_INDEX_CACHE, _RB_UNAVAILABLE
-    global _DJAY_INDEX_CACHE, _DJAY_UNAVAILABLE
     global _MIK_UNAVAILABLE_LOGGED
-    with _RB_CACHE_LOCK:
-        _RB_INDEX_CACHE = None
-        _RB_UNAVAILABLE = False
-    with _DJAY_CACHE_LOCK:
-        _DJAY_INDEX_CACHE = None
-        _DJAY_UNAVAILABLE = False
+    _RB_VENDOR_CACHE.reset_for_tests()
+    _DJAY_VENDOR_CACHE.reset_for_tests()
     _MIK_UNAVAILABLE_LOGGED = False
 
 

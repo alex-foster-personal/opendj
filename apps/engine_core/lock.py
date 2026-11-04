@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,11 +28,14 @@ HEARTBEAT_TTL_S: float = 120.0
 
 # The holder record is always this many bytes: the JSON, padded with spaces.
 # Readers (the CLI, the Electron and Tauri shells) read the file by path without
-# taking the flock, so a write must never expose a half-written or empty file.
-# The file cannot be replaced by rename, because the flock lives on its inode,
-# so every write overwrites one fixed-size record in place and the file never
-# shrinks below it. Trailing spaces are valid JSON in every reader.
+# taking the flock. A completed write is always a whole JSON value plus trailing
+# spaces, but POSIX still lets a concurrent read(2) observe a partial write, so
+# those path-readers retry (LOCK_READ_* below). The file cannot be replaced by
+# rename, because the flock lives on its inode; every write overwrites one
+# fixed-size record in place and only shrinks when trimming a longer leftover.
 RECORD_BYTES: int = 1024
+LOCK_READ_ATTEMPTS: int = 5
+LOCK_READ_RETRY_S: float = 0.01
 
 
 class EngineLockError(RuntimeError):
@@ -169,23 +173,11 @@ class EngineLock:
             data["parent_pid"] = parent_pid
         record = _fixed_size_record(json.dumps(data, sort_keys=True).encode("utf-8"))
         on_disk = os.fstat(fd).st_size
+        payload = record if on_disk <= RECORD_BYTES else record.ljust(on_disk, b" ")
         os.lseek(fd, 0, os.SEEK_SET)
-        if on_disk > RECORD_BYTES:
-            # An older writer left a longer file. Keep st_size above RECORD_BYTES
-            # until the new record is written, so readers that gate on size never
-            # read a torn window; blank first, write the record, then shrink.
-            _write_all(fd, b" " * on_disk, path=self.path)
-            os.fsync(fd)
-        os.lseek(fd, 0, os.SEEK_SET)
-        _write_all(fd, record, path=self.path)
-        os.fsync(fd)
+        _write_all(fd, payload, path=self.path)
         if on_disk > RECORD_BYTES:
             os.ftruncate(fd, RECORD_BYTES)
-        os.lseek(fd, 0, os.SEEK_SET)
-        _write_all(fd, record, path=self.path)
-        os.fsync(fd)
-        os.lseek(fd, 0, os.SEEK_SET)
-        _write_all(fd, record, path=self.path)
         os.fsync(fd)
 
 
@@ -237,18 +229,34 @@ def _holder_from_data(data: dict[str, Any]) -> LockHolder:
     )
 
 
+def _parse_lock_dict(raw: bytes) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text.strip():
+        return None
+    try:
+        loaded = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return loaded
+
+
 def _read_holder(fd: int) -> LockHolder:
-    os.lseek(fd, 0, os.SEEK_SET)
-    raw = os.read(fd, 4096)
-    data: dict[str, Any] = {}
-    if raw:
-        try:
-            loaded = json.loads(raw.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            loaded = None
-        if isinstance(loaded, dict):
-            data = loaded
-    return _holder_from_data(data)
+    for attempt in range(LOCK_READ_ATTEMPTS):
+        os.lseek(fd, 0, os.SEEK_SET)
+        raw = os.read(fd, 4096)
+        parsed = _parse_lock_dict(raw)
+        if parsed is not None:
+            return _holder_from_data(parsed)
+        if attempt + 1 < LOCK_READ_ATTEMPTS:
+            time.sleep(LOCK_READ_RETRY_S)
+    return _holder_from_data({})
 
 
 def read_holder(path: Path) -> LockHolder | None:
@@ -261,23 +269,17 @@ def read_holder(path: Path) -> LockHolder | None:
     except OSError:
         return None
     try:
-        if os.fstat(fd).st_size != RECORD_BYTES:
-            return None
-        raw_b = os.read(fd, RECORD_BYTES)
+        for attempt in range(LOCK_READ_ATTEMPTS):
+            os.lseek(fd, 0, os.SEEK_SET)
+            raw = os.read(fd, 4096)
+            parsed = _parse_lock_dict(raw)
+            if parsed is not None:
+                return _holder_from_data(parsed)
+            if attempt + 1 < LOCK_READ_ATTEMPTS:
+                time.sleep(LOCK_READ_RETRY_S)
     finally:
         os.close(fd)
-    if len(raw_b) != RECORD_BYTES:
-        return None
-    raw = raw_b.decode("utf-8")
-    if not raw.strip():
-        return None
-    try:
-        loaded = json.loads(raw)
-    except (ValueError, UnicodeDecodeError):
-        return None
-    if not isinstance(loaded, dict):
-        return None
-    return _holder_from_data(loaded)
+    return None
 
 
 def inspect_lock(path: Path) -> Literal["free"] | LockHolder:
@@ -349,6 +351,8 @@ def _refusal(path: Path, holder: LockHolder) -> str:
 
 __all__ = [
     "HEARTBEAT_TTL_S",
+    "LOCK_READ_ATTEMPTS",
+    "LOCK_READ_RETRY_S",
     "RECORD_BYTES",
     "EngineLock",
     "EngineLockError",

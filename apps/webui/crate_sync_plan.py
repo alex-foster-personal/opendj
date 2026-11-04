@@ -4,6 +4,7 @@ Keeps SQL forks, Rekordbox asset lookup, file accumulation, and owner-manifest
 grouping under the complexity ceiling so ``collect_plan`` and
 ``_rsync_manifest_from_host`` stay coordinators.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -24,15 +25,9 @@ def selected_track_rows(
     """Load live track rows, honoring the v6-vs-v7 ``deleted_at`` fork."""
     if wanted is None:
         if has_soft_deletes(state, "tracks"):
-            all_tracks_sql = (
-                "SELECT stable_id, file_path FROM tracks "
-                "WHERE deleted_at IS NULL ORDER BY stable_id"
-            )
+            all_tracks_sql = "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id"
         else:
-            all_tracks_sql = (
-                "SELECT stable_id, file_path FROM tracks "
-                "ORDER BY stable_id"
-            )
+            all_tracks_sql = "SELECT stable_id, file_path FROM tracks ORDER BY stable_id"
         return list(state.execute(all_tracks_sql).fetchall())
 
     marks = ",".join("?" * len(wanted))
@@ -42,10 +37,7 @@ def selected_track_rows(
             "AND deleted_at IS NULL ORDER BY stable_id"
         )
     else:
-        in_list_sql = (
-            f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) "
-            "ORDER BY stable_id"
-        )
+        in_list_sql = f"SELECT stable_id, file_path FROM tracks WHERE stable_id IN ({marks}) ORDER BY stable_id"
     rows = list(state.execute(in_list_sql, tuple(wanted)).fetchall())
     found = {str(r["stable_id"]) for r in rows}
     missing = [sid for sid in wanted if sid not in found]
@@ -62,8 +54,7 @@ def load_rb_assets(master_db: Path | None) -> dict[str, RbAsset]:
     master = cs._open_ro(master_db, "MASTER_DB")
     try:
         for row in master.execute(
-            "SELECT ID, FolderPath, ImagePath, AnalysisDataPath FROM djmdContent "
-            "WHERE rb_local_deleted = 0"
+            "SELECT ID, FolderPath, ImagePath, AnalysisDataPath FROM djmdContent WHERE rb_local_deleted = 0"
         ):
             rb_assets[str(row["ID"])] = (
                 row["FolderPath"] or None,
@@ -89,9 +80,7 @@ def add_crate_file(
     if size is None:
         raise RuntimeError(f"source vanished during plan: {source}")
     existing = files.get(key)
-    member_ids = tuple(
-        sorted({stable_id, *(existing.stable_ids if existing else ())})
-    )
+    member_ids = tuple(sorted({stable_id, *(existing.stable_ids if existing else ())}))
     files[key] = cs.CrateFile(
         source=source,
         dest=dest,
@@ -135,9 +124,7 @@ def accumulate_plan_files(
     return files, skipped_streaming, skipped_absent
 
 
-def group_manifest_relatives(
-    manifest: dict[str, object], crate_root: Path
-) -> dict[tuple[Path, Path], list[Path]]:
+def group_manifest_relatives(manifest: dict[str, object], crate_root: Path) -> dict[tuple[Path, Path], list[Path]]:
     """Validate owner-manifest entries and group relatives by source/dest roots."""
     groups: dict[tuple[Path, Path], list[Path]] = {}
     for entry in cs._manifest_files(manifest):

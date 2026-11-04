@@ -10,6 +10,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from apps.analysis.selection import Selection, field_column_sql
+
 GROUP_IDS: tuple[str, ...] = ("genre", "rating", "bpm")
 AutolistGroupId = Literal["genre", "rating", "bpm"]
 
@@ -61,6 +63,11 @@ def _eav_scalar_sql(field_name: str) -> str:
         "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = "
         f"'{field_name}' LIMIT 1)"
     )
+
+
+def _bpm_col_sql(conn: sqlite3.Connection) -> str:
+    """The effective bpm, from the module a bucket's membership rule reads through."""
+    return field_column_sql("bpm", Selection.resolve(conn))
 
 
 def static_rating_buckets() -> list[Bucket]:
@@ -199,7 +206,7 @@ def bucket_counts_for_group(
 ) -> dict[str, int]:
     if group == "genre":
         return {b.id: (b.count or 0) for b in genre_buckets(conn)}
-    col = _eav_scalar_sql("rating" if group == "rating" else "bpm")
+    col = _eav_scalar_sql("rating") if group == "rating" else _bpm_col_sql(conn)
     key_fn = rating_bucket_key if group == "rating" else bpm_bucket_key
     rows = conn.execute(
         f"SELECT {col} AS val, COUNT(*) AS cnt "
@@ -225,7 +232,7 @@ def compact_index_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Compact {stable_id, genre, rating, bpm} rows for the client worker."""
     genre_col = _eav_scalar_sql("genre")
     rating_col = _eav_scalar_sql("rating")
-    bpm_col = _eav_scalar_sql("bpm")
+    bpm_col = _bpm_col_sql(conn)
     rows = conn.execute(
         f"SELECT tracks.stable_id, {genre_col}, {rating_col}, {bpm_col} "
         "FROM tracks WHERE tracks.deleted_at IS NULL"

@@ -1,32 +1,15 @@
-// requirement: CUEOUT-26 (MAIN and CUE on one output run as split cue)
-// [if] a newer CUE pick lands while a same-device split CUE pick is still moving MAIN [then] the split publishes nothing: the newer CUE, its mode and its saved CUE stand
-// [if] a newer CUE pick lands while a committed split is still closing the old CUE output [then] the split saves nothing over the newer CUE
-// [if] a CUE pick starts while a MAIN pick's split is still silencing the old CUE output [then] that late silence is undone and the new CUE sounds
+// requirement: CUEOUT-26 (CUE pick serials; the automatic same-device split was removed by AUDFID-01)
 // [if] a newer CUE pick lands while an older ordinary CUE pick is opening its device [then] the older one publishes and saves nothing, and a failure it hits is recorded without rolling the newer one back
-// [if] no newer CUE pick lands [then] a split CUE pick still publishes and saves its CUE (control)
-// [if] a newer CUE pick lands while a MAIN pick onto the CUE's output is moving MAIN into a split [then] the split publishes nothing over the newer CUE
 // [if] a CUE device is picked again while its own pick is still pending [then] the re-pick is a no-op that supersedes nothing (control against an overshoot)
-// [if] any caller enters a same-device split [then] its freshness check includes the CUE serial
 // [if] an older browser CUE pick fails after a newer one landed, so its rollback lands last [then] the cue sink is put back on the device the menu shows
-// [if] an older browser CUE pick resumes the cue context after a newer split silenced it [then] the cue context is silenced again
 // [if] the newest CUE pick fails and its rollback cannot restore (no superseded pick) [then] the cue stays silenced, never re-applied (control)
 // [if] a stale CUE pick settles while a newer one is still in flight and that newer one then fails [then] nothing re-applies the newer pick's device over its rollback
-// [if] a same-device split supersedes a pending MAIN pick and its own sink move fails [then] MAIN settles on the device the sink last landed on: reopened, published and saved
-// [if] a split with no MAIN pick pending fails its sink move [then] MAIN is left as it was, with no reopen (control)
 // [if] a newer MAIN pick starts while that settle reopens the room [then] the settle publishes and saves nothing
-// [if] that failed split finds no landed move since a remount [then] MAIN goes back to the saved MAIN, pinned, reopened and published, never cleared
 // [if] a CUE pick starts while the stale-pick correction's own sink move is pending, and that move fails [then] its rollback is corrected in turn and the sink ends on the newest CUE
 // [if] that correction fails with no newer CUE pick [then] it is not retried in a loop, and the operator is told to pick the CUE again
 // [if] the routes are torn down while a CUE pick is pending and it then fails [then] it rejects as stale and rolls back nothing over the replacement mount
-// [if] a MAIN pick commits a split onto a device a CUE pick is still opening [then] that CUE pick is retired and republishes nothing over the split
-// [if] a CUE pick lands while the correction's own split-silencing suspend is pending [then] the suspend landing last is corrected and the new CUE sounds
 // [if] stale CUE picks settle and the CUE the menu shows is not active [then] the correction re-applies nothing and the cue stays silent
-// [if] a MAIN pick's split fails to close the old CUE output [then] it still shows that the old output may sound
-// [if] a CUE pick retires a MAIN pick's split while the split reopens the room it already moved [then] the sink is moved back to the MAIN the menu shows
-// [if] a MAIN pick's split move fails after a teardown or a newer CUE pick retired it [then] it only logs, and shows no error over the newer state
-// [if] a MAIN sink move lands after a teardown and a split on the next mount then fails [then] MAIN settles on the saved MAIN, pinned on the new room, never on the old mount's device
 // [if] a newer CUE pick fails while an older one is still opening [then] the menu rolls back to the CUE last published, never the older pick's optimistic device
-// [if] a split commits while CUE picks overlap and a later pick fails [then] it rolls back to the split, not the CUE before it (control)
 // [if] a CUE pick lands while an older one is still opening and a later pick fails [then] it rolls back to the CUE that landed
 // [if] the routes are torn down while a CUE pick is opening and a pick on the new mount fails [then] it rolls back to the CUE that mount showed
 // [if] a retired mount's CUE pick is still pending while the replacement mount's own picks go stale [then] the replacement mount's cue sink is corrected without waiting for it, and it counts as none of that mount's pending work
@@ -35,9 +18,6 @@
 // [if] a newest pick's rollback silence lands only after its grace, with no newer pick [then] nothing re-applies the CUE over that silence (control against an overshoot)
 // [if] such a late suspend lands while a newer CUE pick is still pending [then] its correction waits for that pick, never re-applying the pending device early
 // [if] a retired mount's CUE pick settles while the replacement mount's own pick is pending [then] that pick still reads as pending (control against the old mount releasing the new mount's count)
-// [if] a failed split's fallback move to the saved MAIN lands after a newer MAIN pick published [then] the sink is moved back to the MAIN the menu shows
-// [if] a split's suspend of the old CUE output times out, a newer CUE pick lands, and the suspend then lands [then] the newer CUE is put back on and sounds
-// [if] the correction's split-silencing suspend times out, a newer CUE pick lands, and the suspend then lands [then] the newer CUE is put back on and sounds
 // [if] a failed pick's rollback-silencing suspend times out, a newer CUE pick lands, and the suspend then lands [then] the newer CUE is put back on and sounds
 // [if] a retired mount's superseded CUE pick settles last and the replacement mount has no stale pick of its own [then] nothing re-applies the replacement mount's silenced CUE (control against an overshoot)
 // [if] a vanished CUE's suspend times out, a newer CUE pick lands, and the suspend then lands [then] the newer CUE is put back on and sounds
@@ -46,7 +26,7 @@
 // [if] an older device listing returns after a newer one [then] it is dropped, and the routes follow the newer listing
 // [if] an older device listing fails after a newer one succeeded [then] its failure is not shown over the newer listing
 // [if] a device change's MAIN re-pin is pending before any deck built the live graph [then] a MAIN or AUDIO IN Test refuses rather than beeping a short-lived context
-// [if] an older shell listing naming another room returns after a newer one [then] a later CUE pick still pins MAIN to the newer listing's room
+// [if] an older shell listing naming another room returns after a newer one [then] a CUE pick on the newer room is refused and MAIN is never auto-pinned (AUDFID-01)
 // [if] a device change's MAIN re-pin times out, a newer MAIN pick lands, and the timed-out move then lands [then] the sink is moved back to the MAIN shown, and MAIN counts as switching until then
 // [if] a timed-out MAIN move never settles [then] it stops counting as MAIN switching after the grace
 // [if] a device change's MAIN re-pin starts while a Test is sounding [then] the Test is cut and answers not played; a device change that moves nothing leaves it playing
@@ -55,17 +35,13 @@
 // [if] the Mac shell's connection drops [then] the known MAIN landing is forgotten, so a MAIN Test refuses until MAIN is pinned again
 // [if] a device change restores a CUE and a newer one removes it again before the restore lands [then] the late restore publishes nothing: the CUE stays cleared and off
 // [if] a retired mount's ordinary MAIN move is still inside its timeout at a teardown [then] the replacement mount reads no MAIN switch, and the old move's end does not unbalance the count
-// [if] a device change enters a same-device split and a newer device change lists the outputs apart before the split's MAIN move lands [then] the old split publishes nothing and MAIN is moved back to the MAIN shown
-// [if] a lone device change lists MAIN and CUE on one physical output [then] its split still publishes split_cable (control against an overshoot)
 // [if] a native CUE open times out and lands after a newer CUE pick, or after its own pick rolled back [then] the shell CUE is reopened on the CUE shown
 // [if] a native CUE open lands inside its timeout with no newer pick [then] nothing more is sent (control)
 // [if] a device change's MAIN re-pin is pending when a newer device change clears MAIN to the system default [then] the re-pin publishes no MAIN route, the browser sink goes back to the default, and its failure shows no error
 // [if] a lone device change re-pins MAIN [then] that re-pin still publishes the MAIN route, and its failure is still reported (control)
 // [if] a MAIN pick lands while that move back to the system default is pending [then] the sink is moved back to the MAIN picked once it lands
-// [if] a MAIN pick's split cannot close the old CUE output and its room reopen also fails [then] both failures are shown
 // [if] a device change re-pins MAIN [then] the room is reopened before the route is published, and a failed reopen shows the retry error
 // [if] a MAIN pick lands while that re-pin reopens the room [then] the re-pin's late reopen failure is not shown (control)
-// [if] the output a same-device split ran on vanishes with no output left for MAIN [then] the room is moved to the system default and reopened
 // [if] a refresh lands after a failed room reopen [then] the retry error stays shown until a reopen succeeds
 // [if] a timed-out MAIN move lands late on the MAIN still shown [then] nothing more is moved, and the room is reopened, counted as MAIN switching
 // [if] the Mac shell loses the CUE device, drops the MAIN pin or its connection, or the cue bridge fails, while a Test is sounding [then] the Test is cut and answers not played
@@ -254,55 +230,6 @@ beforeEach(() => {
 	source = () => ({ context: ctx, masterGain: ctx.createGain() });
 });
 
-test('control: a split CUE pick with no newer CUE pick publishes and saves its CUE', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.output_mode, 'two_outputs');
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(state.split_reason, 'same_device');
-	assert.equal(savedCueId(), SPEAKERS);
-});
-
-test('a newer CUE pick during a split CUE pick\'s MAIN move wins, and the split publishes nothing', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(USB, source);
-	// MAIN's move to the speakers is pending, so the split must pin it itself.
-	holdTypes = ['set_master', 'set_master'];
-	const main = hp.selectMasterOutput(SPEAKERS, source);
-	await waitFor(() => held.length === 1, 'the MAIN pick to send set_master');
-	const split = hp.selectHeadphoneOutput(SPEAKERS, source);
-	await waitFor(() => held.length === 2, 'the split to send its own set_master');
-	// The operator picks the USB interface for CUE instead.
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.selected_output_device_id, USB);
-	for (const reply of held) reply.ok();
-	await Promise.allSettled([main, split]);
-	assert.equal(state.selected_output_device_id, USB, 'the older split must not clear the newer CUE');
-	assert.equal(state.output_mode, 'two_outputs', 'the older split must not publish split_cable');
-	assert.equal(state.split_reason, null);
-	assert.equal(state.routes.cue.state, 'selected');
-	assert.equal(savedCueId(), USB);
-});
-
-test('a newer CUE pick while a committed split closes the old CUE output keeps its saved CUE', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['close'];
-	const split = hp.selectHeadphoneOutput(SPEAKERS, source);
-	await waitFor(() => held.length === 1, 'the split to close the old CUE output');
-	assert.equal(state.output_mode, 'split_cable', 'precondition: the split committed');
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.output_mode, 'two_outputs');
-	held[0].ok();
-	await split;
-	assert.equal(savedCueId(), USB, 'the older split must not save its CUE over the newer pick');
-	assert.equal(state.selected_output_device_id, USB);
-	assert.equal(state.output_mode, 'two_outputs');
-});
-
 test('an older ordinary CUE pick settling after a newer one publishes, saves and rolls back nothing', async () => {
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
@@ -326,26 +253,6 @@ test('an older ordinary CUE pick settling after a newer one publishes, saves and
 	}
 });
 
-test('a newer CUE pick during a MAIN pick\'s move into a split wins, and the split publishes nothing', async () => {
-	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['set_master'];
-	// MAIN onto the CUE's own output: a split that moves MAIN first.
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the split to send set_master');
-	await hp.selectHeadphoneOutput(BUS, source);
-	assert.equal(state.selected_output_device_id, BUS);
-	held[0].ok();
-	await split.catch(() => {});
-	assert.equal(state.selected_output_device_id, BUS, 'the split must not clear the newer CUE');
-	assert.equal(state.output_mode, 'two_outputs', 'the split must not publish split_cable');
-	assert.equal(state.split_reason, null);
-	assert.equal(savedCueId(), BUS);
-});
-
 test('control: re-picking a CUE whose pick is still pending is a no-op that supersedes nothing', async () => {
 	const state = hp.mixerState.headphones;
 	await hp.selectMasterOutput(SPEAKERS, source);
@@ -362,15 +269,6 @@ test('control: re-picking a CUE whose pick is still pending is a no-op that supe
 	assert.equal(state.selected_output_device_id, BUS);
 	assert.equal(state.routes.cue.state, 'selected', 'the pending pick must still publish its route');
 	assert.equal(savedCueId(), BUS, 'the pending pick must still save its device');
-});
-
-test('every same-device split checks the CUE serial before it publishes', () => {
-	const source = readFileSync(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
-	const calls = source.split('await _enterSameDeviceSplit(').slice(1).map((rest) => rest.slice(0, rest.indexOf(');')));
-	assert.equal(calls.length, 3, 'the refresh, the CUE pick and the MAIN pick each enter a split');
-	for (const call of calls) {
-		assert.match(call, /(cueSerial|cue\.serial) === _cueSelectSerial|!cueSuperseded\(\)/, `a split call ignores newer CUE picks: ${call}`);
-	}
 });
 
 /** A browser cue context whose setSinkId calls apply in call order, as Chrome's
@@ -466,30 +364,6 @@ test("an older browser CUE pick's late rollback is put back on the CUE the menu 
 	});
 });
 
-test('an older browser CUE pick that resumes the cue context after a newer split is silenced again (browser path)', async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(cue.state, 'running');
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		// CUE onto MAIN's own output: split cue, which silences the cue context.
-		await hp.selectHeadphoneOutput(ROOM, source);
-		assert.equal(state.output_mode, 'split_cable');
-		assert.equal(cue.state, 'suspended');
-		cue.release(BUS_OUT, true);
-		await older;
-		await waitFor(() => cue.state === 'suspended', 'the cue context to be silenced again');
-		assert.equal(state.output_mode, 'split_cable');
-		assert.equal(state.selected_output_device_id, null);
-	});
-});
-
 test('control: the newest CUE pick whose rollback cannot restore stays silenced (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
@@ -536,109 +410,6 @@ test('a stale CUE pick waits for the newest one to settle before it corrects the
 		assert.notEqual(cue.sinkId, DOCK, 'the failed newer device must not be re-applied over its rollback');
 		assert.equal(cue.sinkId, state.selected_output_device_id, 'the sink ends on the CUE the menu shows');
 	});
-});
-
-test('a split that supersedes a pending MAIN pick and then fails settles MAIN where the sink landed', async () => {
-	const state = hp.mixerState.headphones;
-	for (const mainMove of ['lands', 'fails']) {
-		hp.disposeHeadphoneMonitor();
-		store.clear();
-		held.length = 0;
-		state.selected_master_output_device_id = null;
-		state.selected_output_device_id = null;
-		state.output_mode = 'practice';
-		state.routes.master = { state: 'default', selected: false };
-		await hp.selectMasterOutput(USB, source);
-		const suspendsBefore = ctx.suspends;
-		holdTypes = ['set_master', 'set_master'];
-		const main = hp.selectMasterOutput(SPEAKERS, source);
-		await waitFor(() => held.length === 1, 'the MAIN pick to send set_master');
-		// CUE onto the MAIN shown (optimistically the speakers): a split that
-		// must pin MAIN itself, superseding that pending MAIN pick.
-		const split = hp.selectHeadphoneOutput(SPEAKERS, source);
-		await waitFor(() => held.length === 2, 'the split to send its own set_master');
-		if (mainMove === 'lands') held[0].ok();
-		else held[0].fail('set_master refused');
-		held[1].fail('split set_master refused');
-		await main.catch(() => {});
-		await assert.rejects(split);
-		const landed = mainMove === 'lands' ? SPEAKERS : USB;
-		assert.equal(state.selected_master_output_device_id, landed, `${mainMove}: MAIN shows where the sink landed`);
-		assert.equal(state.routes.master.state, 'selected');
-		assert.equal(savedMainId(), landed, `${mainMove}: MAIN is saved where it landed`);
-		assert.equal(ctx.suspends, suspendsBefore + 1, `${mainMove}: the room is reopened once after the failed split`);
-		assert.notEqual(state.output_mode, 'split_cable');
-	}
-});
-
-test('control: a split with no MAIN pick pending that fails leaves MAIN alone and reopens nothing', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	// MAIN onto the CUE's output with MAIN already landed elsewhere: the split
-	// moves MAIN itself, and that move fails.
-	const suspendsBefore = ctx.suspends;
-	holdTypes = ['set_master'];
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the split to send set_master');
-	held[0].fail('split set_master refused');
-	await assert.rejects(split);
-	assert.equal(state.selected_master_output_device_id, SPEAKERS);
-	assert.equal(ctx.suspends, suspendsBefore, 'nothing reopens the room for a MAIN that never changed');
-	assert.equal(savedMainId(), SPEAKERS);
-});
-
-test("a newer MAIN pick during that settle's reopen keeps the settle from publishing", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(USB, source);
-	holdTypes = ['set_master', 'set_master'];
-	const main = hp.selectMasterOutput(SPEAKERS, source);
-	await waitFor(() => held.length === 1, 'the MAIN pick to send set_master');
-	const split = hp.selectHeadphoneOutput(SPEAKERS, source);
-	await waitFor(() => held.length === 2, 'the split to send its own set_master');
-	let finishResume;
-	ctx.resume = () => new Promise((resolve) => (finishResume = () => {
-		ctx.state = 'running';
-		resolve();
-	}));
-	held[0].ok();
-	held[1].fail('split set_master refused');
-	await waitFor(() => finishResume !== undefined, 'the settle to reach resume');
-	ctx.resume = async () => {
-		ctx.state = 'running';
-	};
-	// The operator picks MAIN again while the settle reopens the room.
-	// It lands before the settle's reopen does, so a settle that published
-	// after its reopen would save over it.
-	await hp.selectMasterOutput(USB, source);
-	assert.equal(savedMainId(), USB);
-	finishResume();
-	await Promise.allSettled([main, split]);
-	assert.equal(state.selected_master_output_device_id, USB, 'the newer pick owns MAIN');
-	assert.equal(savedMainId(), USB, 'the stale settle must not save over the newer pick');
-});
-
-test('a failed split with no landed move since a remount goes back to the saved MAIN', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	assert.equal(savedMainId(), SPEAKERS);
-	// /performance remounts: the routes are rebuilt, the shown MAIN is kept.
-	hp.disposeHeadphoneMonitor();
-	assert.equal(state.selected_master_output_device_id, SPEAKERS, 'precondition: a remount keeps the shown MAIN');
-	holdTypes = ['set_master', 'set_master'];
-	const main = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the MAIN pick to send set_master');
-	const split = hp.selectHeadphoneOutput(USB, source);
-	await waitFor(() => held.length === 2, 'the split to send its own set_master');
-	setMasterUids.length = 0;
-	held[0].fail('set_master refused');
-	held[1].fail('split set_master refused');
-	await main.catch(() => {});
-	await assert.rejects(split);
-	assert.equal(state.selected_master_output_device_id, SPEAKERS, 'MAIN must not be cleared');
-	assert.deepEqual(setMasterUids, ['BuiltInSpeakerDevice'], 'the saved MAIN is pinned again');
-	assert.equal(state.routes.master.state, 'selected');
-	assert.equal(savedMainId(), SPEAKERS);
 });
 
 test("a CUE pick during the stale-pick correction's move keeps the sink on the newest CUE (browser path)", async () => {
@@ -848,257 +619,10 @@ function independentRoom() {
 	return room;
 }
 
-test("a failed split's fallback move that lands after a newer MAIN pick is moved back to the MAIN shown (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	await onBrowserPath(() => browserCueContext(), async () => {
-		browserOutputs(state);
-		const oldRoom = independentRoom();
-		await hp.selectMasterOutput(ROOM, () => ({ context: oldRoom, masterGain: oldRoom.createGain() }));
-		assert.equal(savedMainId(), ROOM);
-		// A remount forgets where the sink landed, so a failed split falls back to the saved MAIN.
-		hp.disposeHeadphoneMonitor();
-		const room = independentRoom();
-		const roomSource = () => ({ context: room, masterGain: room.createGain() });
-		room.hold('dock-out#1');
-		room.refuse('dock-out#2');
-		room.hold('room-speakers#1');
-		const pending = hp.selectMasterOutput(DOCK, roomSource);
-		await waitFor(() => room.isHeld('dock-out#1'), 'the MAIN pick to reach setSinkId');
-		// CUE onto the optimistic MAIN: a split that supersedes the pending pick and fails its move.
-		const split = hp.selectHeadphoneOutput(DOCK, roomSource);
-		await waitFor(() => room.isHeld('room-speakers#1'), 'the fallback move to the saved MAIN');
-		room.release('dock-out#1', false);
-		await pending.catch(() => {});
-		const newer = hp.selectMasterOutput(AUX, roomSource);
-		await newer;
-		assert.equal(state.selected_master_output_device_id, AUX, 'the newer pick published');
-		// The fallback lands last.
-		room.release('room-speakers#1', true);
-		await split.catch(() => {});
-		await waitFor(() => room.sinkId === AUX, 'the sink to come back to the MAIN shown');
-		assert.equal(state.selected_master_output_device_id, AUX);
-		assert.equal(state.routes.master.state, 'selected');
-		await waitFor(() => !hp.outputSwitchesPending().master, 'the correction to settle');
-	});
-});
-
-test("control: a failed split's fallback move with no newer pick settles MAIN on the saved MAIN (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	await onBrowserPath(() => browserCueContext(), async () => {
-		browserOutputs(state);
-		const oldRoom = independentRoom();
-		await hp.selectMasterOutput(ROOM, () => ({ context: oldRoom, masterGain: oldRoom.createGain() }));
-		hp.disposeHeadphoneMonitor();
-		const room = independentRoom();
-		const roomSource = () => ({ context: room, masterGain: room.createGain() });
-		room.hold('dock-out#1');
-		room.refuse('dock-out#2');
-		const pending = hp.selectMasterOutput(DOCK, roomSource);
-		await waitFor(() => room.isHeld('dock-out#1'), 'the MAIN pick to reach setSinkId');
-		const split = hp.selectHeadphoneOutput(DOCK, roomSource);
-		await split.catch(() => {});
-		room.release('dock-out#1', false);
-		await pending.catch(() => {});
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(room.sinkId, ROOM);
-		assert.equal(state.selected_master_output_device_id, ROOM);
-		assert.equal(room.sinkCalls.filter((id) => id === ROOM).length, 1, 'no correction moves the sink again');
-	});
-});
-
-test("a split's old-CUE suspend that lands after its timeout does not leave a newer CUE silent (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(cue.state, 'running');
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		const flush = async () => {
-			for (let i = 0; i < 200; i++) await Promise.resolve();
-		};
-		mock.timers.enable({ apis: ['setTimeout'] });
-		let main;
-		try {
-			// MAIN onto the CUE's own output: a split whose old-CUE suspend hangs past the timeout.
-			main = hp.selectMasterOutput(PHONES, source);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flush();
-			assert.notEqual(finishSuspend, undefined, 'the split started silencing the old CUE output');
-			cue.suspend = suspend;
-			mock.timers.tick(5_000);
-			await flush();
-		} finally {
-			mock.timers.reset();
-		}
-		await main;
-		assert.equal(state.output_mode, 'split_cable', 'precondition: the split committed');
-		assert.match(state.error ?? '', /old CUE output did not close/, 'precondition: the close timed out');
-		// The context still reads running, so this pick does not resume it.
-		await hp.selectHeadphoneOutput(DOCK, source);
-		assert.equal(cue.state, 'running');
-		finishSuspend();
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK, 'the new CUE to sound again');
-		await waitFor(() => !hp.outputSwitchesPending().cue, 'every CUE work unit, the late suspend included, to settle');
-		assert.equal(cue.state, 'running');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
-});
-
 /** Settle promise chains while setTimeout is mocked. */
 async function flushMicrotasks() {
 	for (let i = 0; i < 200; i++) await Promise.resolve();
 }
-
-test("the correction's split-silencing suspend that lands after its timeout does not leave a newer CUE silent (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		assert.equal(state.output_mode, 'split_cable');
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(BUS_OUT, true);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the correction started its suspend');
-			cue.suspend = suspend;
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
-		}
-		await older;
-		await hp.selectHeadphoneOutput(DOCK, source);
-		assert.equal(cue.state, 'running', 'precondition: the timed-out suspend has not landed');
-		finishSuspend();
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue, 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
-});
-
-test("a correction's cue silence that never settles stops counting as pending CUE work after its grace (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		let started = false;
-		cue.suspend = () => {
-			started = true;
-			return new Promise(() => {});
-		};
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(BUS_OUT, true);
-			for (let i = 0; i < 50 && !started; i++) await flushMicrotasks();
-			assert.ok(started, 'the correction started its suspend');
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-			assert.equal(hp.outputSwitchesPending().cue, true, 'still held past the operation timeout');
-			mock.timers.tick(5_000);
-			await flushMicrotasks();
-			assert.equal(hp.outputSwitchesPending().cue, false, 'released after the grace');
-		} finally {
-			mock.timers.reset();
-		}
-		await older;
-	});
-});
-
-test("a correction's cue silence that lands after its grace still leaves a newer CUE sounding (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(BUS_OUT, true);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the correction started its suspend');
-			cue.suspend = suspend;
-			mock.timers.tick(10_000);
-			await flushMicrotasks();
-			assert.equal(hp.outputSwitchesPending().cue, false, 'precondition: released after the grace');
-		} finally {
-			mock.timers.reset();
-		}
-		await older;
-		await hp.selectHeadphoneOutput(DOCK, source);
-		assert.equal(cue.state, 'running', 'precondition: the late suspend has not landed');
-		finishSuspend();
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue, 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
-});
-
-test("a cue silence landing after its grace while a newer pick is pending waits for that pick (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		mock.timers.enable({ apis: ['setTimeout'] });
-		try {
-			cue.release(BUS_OUT, true);
-			for (let i = 0; i < 50 && finishSuspend === undefined; i++) await flushMicrotasks();
-			assert.notEqual(finishSuspend, undefined, 'the correction started its suspend');
-			cue.suspend = suspend;
-			mock.timers.tick(10_000);
-			await flushMicrotasks();
-		} finally {
-			mock.timers.reset();
-		}
-		await older;
-		cue.hold(DOCK);
-		const newer = hp.selectHeadphoneOutput(DOCK, source);
-		await waitFor(() => cue.isHeld(DOCK), 'the newer pick to reach setSinkId');
-		finishSuspend();
-		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(cue.sinkCalls.filter((id) => id === DOCK).length, 1, 'no correction re-applies the pending device');
-		cue.release(DOCK, true);
-		await newer;
-		await waitFor(() => cue.state === 'running' && cue.sinkId === DOCK && !hp.outputSwitchesPending().cue, 'the newer CUE to sound');
-		assert.equal(state.selected_output_device_id, DOCK);
-	});
-});
 
 test("control: a newest pick's rollback silence that lands after its grace stays silenced (browser path)", async () => {
 	const state = hp.mixerState.headphones;
@@ -1194,83 +718,6 @@ test('a CUE pick a teardown retires rolls back nothing over the replacement moun
 	assert.equal(state.routes.cue.state, 'selected');
 });
 
-test('a MAIN pick that commits a split retires a CUE pick still opening that device', async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	holdTypes = ['open'];
-	const cuePick = hp.selectHeadphoneOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the CUE pick to open its device');
-	assert.equal(state.output_mode, 'two_outputs', 'precondition: the CUE pick shows two outputs');
-	// MAIN onto the CUE's own output: split cue, committed while CUE is opening.
-	await hp.selectMasterOutput(USB, source);
-	assert.equal(state.output_mode, 'split_cable');
-	held[0].ok();
-	await cuePick;
-	assert.equal(state.output_mode, 'split_cable', 'the retired CUE pick must not republish two outputs');
-	assert.equal(state.selected_output_device_id, null);
-	assert.equal(state.selected_master_output_device_id, USB);
-	assert.notEqual(savedCueId(), USB, 'the retired CUE pick must not save its device');
-});
-
-test("a CUE pick during the correction's split-silencing suspend still sounds (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		cue.hold(BUS_OUT);
-		const older = hp.selectHeadphoneOutput(BUS_OUT, source);
-		await waitFor(() => cue.isHeld(BUS_OUT), 'the older pick to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		assert.equal(state.output_mode, 'split_cable');
-		// Hold the correction's suspend once the stale pick resumes the context.
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		cue.release(BUS_OUT, true);
-		await older;
-		await waitFor(() => finishSuspend !== undefined, 'the correction to start its suspend');
-		cue.suspend = suspend;
-		// The operator picks a CUE while that suspend is pending: the context
-		// still reads running, so this pick does not resume it.
-		await hp.selectHeadphoneOutput(DOCK, source);
-		finishSuspend();
-		await waitFor(() => cue.state === 'running', 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-		assert.equal(cue.sinkId, DOCK);
-	});
-});
-
-test("a CUE pick while a MAIN pick's split is still silencing the old CUE output still sounds (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		assert.equal(cue.state, 'running');
-		// MAIN onto the CUE's own output: a split, which then silences the old
-		// CUE output. Hold that suspend.
-		const suspend = cue.suspend;
-		let finishSuspend;
-		cue.suspend = () => new Promise((resolve) => (finishSuspend = () => suspend().then(resolve)));
-		const main = hp.selectMasterOutput(PHONES, source);
-		await waitFor(() => finishSuspend !== undefined, "the split to start silencing the old CUE output");
-		cue.suspend = suspend;
-		assert.equal(state.output_mode, 'split_cable', 'precondition: the split committed');
-		// The context still reads running, so this pick does not resume it.
-		await hp.selectHeadphoneOutput(DOCK, source);
-		finishSuspend();
-		await main;
-		await waitFor(() => cue.state === 'running', 'the new CUE to sound again');
-		assert.equal(state.selected_output_device_id, DOCK);
-		assert.equal(cue.sinkId, DOCK);
-	});
-});
-
 test('a correction never makes an inactive CUE sound (browser path)', async () => {
 	const state = hp.mixerState.headphones;
 	const cue = browserCueContext();
@@ -1296,156 +743,6 @@ test('a correction never makes an inactive CUE sound (browser path)', async () =
 	});
 });
 
-test("a MAIN pick's split that cannot close the old CUE output says it may still sound", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['close'];
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the split to close the old CUE output');
-	held[0].fail('close refused');
-	await split;
-	assert.equal(state.output_mode, 'split_cable');
-	assert.match(state.error ?? '', /old CUE output did not close .*may still sound/);
-});
-
-test("a MAIN pick's split whose room reopen also fails shows both failures", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	ctx.resume = async () => {
-		throw new Error('resume refused');
-	};
-	holdTypes = ['close'];
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the split to close the old CUE output');
-	held[0].fail('close refused');
-	await split.catch(() => {});
-	assert.equal(state.output_mode, 'split_cable');
-	assert.match(state.error ?? '', /Audio stayed silent after the output change/, 'the room retry is shown');
-	assert.match(state.error ?? '', /old CUE output did not close .*may still sound/, 'and so is the old CUE output');
-});
-
-test("a CUE pick during a MAIN pick's split reopen moves the sink back to the MAIN shown", async () => {
-	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	const speakersUid = setMasterUids.at(-1);
-	let finishResume;
-	ctx.resume = () => new Promise((resolve) => (finishResume = () => {
-		ctx.state = 'running';
-		resolve();
-	}));
-	// MAIN onto the CUE's output: the split moves MAIN there, then reopens.
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => finishResume !== undefined, 'the split to reach its reopen');
-	ctx.resume = async () => {
-		ctx.state = 'running';
-	};
-	assert.notEqual(setMasterUids.at(-1), speakersUid, 'precondition: the split moved MAIN');
-	await hp.selectHeadphoneOutput(BUS, source);
-	finishResume();
-	await split;
-	assert.equal(state.selected_master_output_device_id, SPEAKERS, 'the retired split publishes no MAIN');
-	assert.equal(state.selected_output_device_id, BUS);
-	await waitFor(() => setMasterUids.at(-1) === speakersUid, 'the sink to be moved back to the MAIN shown');
-});
-
-test("control: a MAIN pick's split that stays current keeps MAIN on the split device", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	const before = setMasterUids.length;
-	await hp.selectMasterOutput(USB, source);
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(state.selected_master_output_device_id, USB);
-	assert.equal(setMasterUids.length, before + 1, 'one move, no correction');
-});
-
-test("a MAIN pick's split move that fails after it was retired shows no error", async () => {
-	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
-	for (const retiredBy of ['teardown', 'cue pick']) {
-		hp.disposeHeadphoneMonitor();
-		held.length = 0;
-		state.output_mode = 'practice';
-		state.selected_output_device_id = null;
-		state.error = null;
-		await hp.selectMasterOutput(SPEAKERS, source);
-		await hp.selectHeadphoneOutput(USB, source);
-		holdTypes = ['set_master'];
-		const split = hp.selectMasterOutput(USB, source);
-		await waitFor(() => held.length === 1, 'the split to send set_master');
-		if (retiredBy === 'teardown') {
-			hp.disposeHeadphoneMonitor();
-			state.error = 'the replacement mount error';
-		} else {
-			await hp.selectHeadphoneOutput(BUS, source);
-			state.error = 'the newer CUE pick error';
-		}
-		const shown = state.error;
-		held[0].fail('split set_master refused');
-		await split;
-		assert.equal(state.error, shown, `${retiredBy}: the retired split must not show its failure`);
-	}
-});
-
-test("control: a MAIN pick's split move that fails while current is shown and rejects", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['set_master'];
-	const split = hp.selectMasterOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the split to send set_master');
-	held[0].fail('split set_master refused');
-	await assert.rejects(split);
-	assert.match(state.error ?? '', /Could not split MAIN and CUE/);
-});
-
-test('a MAIN move that lands after a teardown is not trusted as landed by the next mount (browser path)', async () => {
-	const state = hp.mixerState.headphones;
-	await onBrowserPath(() => browserCueContext(), async () => {
-		browserOutputs(state);
-		const oldRoom = browserCueContext();
-		const oldSource = () => ({ context: oldRoom, masterGain: oldRoom.createGain() });
-		await hp.selectMasterOutput(ROOM, oldSource);
-		assert.equal(savedMainId(), ROOM);
-		oldRoom.hold(PHONES);
-		const stale = hp.selectMasterOutput(PHONES, oldSource);
-		await waitFor(() => oldRoom.isHeld(PHONES), 'the old mount pick to reach setSinkId');
-		// /performance unmounts; the old room's move lands only afterwards.
-		hp.disposeHeadphoneMonitor();
-		oldRoom.release(PHONES, true);
-		await stale.catch(() => {});
-		const newRoom = browserCueContext();
-		const newSource = () => ({ context: newRoom, masterGain: newRoom.createGain() });
-		const queue = newRoom.setSinkId;
-		let dockCalls = 0;
-		newRoom.setSinkId = (id) => {
-			if (id === DOCK && ++dockCalls === 2) {
-				newRoom.sinkCalls.push(id);
-				return Promise.reject(new Error('split setSinkId refused'));
-			}
-			return queue(id);
-		};
-		newRoom.hold(DOCK);
-		const main = hp.selectMasterOutput(DOCK, newSource);
-		await waitFor(() => newRoom.isHeld(DOCK), 'the new mount MAIN pick to reach setSinkId');
-		// CUE onto the optimistic MAIN: a split that supersedes the pending pick.
-		const split = hp.selectHeadphoneOutput(DOCK, newSource);
-		await waitFor(() => dockCalls === 2, 'the split to try its own move');
-		newRoom.release(DOCK, false);
-		await main.catch(() => {});
-		await split.catch(() => {});
-		assert.notEqual(state.selected_master_output_device_id, PHONES, 'the new room never reached the old mount device');
-		assert.equal(state.selected_master_output_device_id, ROOM, 'MAIN settles on the saved MAIN');
-		assert.equal(newRoom.sinkId, ROOM, 'the new room is pinned on the MAIN shown');
-	});
-});
-
 test("a CUE pick that fails while an older one is still opening rolls back to the CUE last published", async () => {
 	const state = hp.mixerState.headphones;
 	const BUS = 'native:SecondUsbInterface';
@@ -1466,30 +763,6 @@ test("a CUE pick that fails while an older one is still opening rolls back to th
 	await older;
 	assert.equal(state.selected_output_device_id, BUS);
 	assert.equal(state.output_mode, 'two_outputs');
-});
-
-test('control: a CUE pick that fails after a split committed under overlapping picks rolls back to the split', async () => {
-	const state = hp.mixerState.headphones;
-	const DOCK = 'native:DockOut';
-	state.outputs = [...state.outputs, { id: DOCK, label: 'Dock' }];
-	await hp.selectMasterOutput(SPEAKERS, source);
-	holdTypes = ['open'];
-	const older = hp.selectHeadphoneOutput(USB, source);
-	await waitFor(() => held.length === 1, 'the older pick to open its device');
-	// MAIN onto the CUE shown: split cue, committed while the older pick opens.
-	await hp.selectMasterOutput(USB, source);
-	assert.equal(state.output_mode, 'split_cable');
-	holdTypes = ['open'];
-	const newer = hp.selectHeadphoneOutput(DOCK, source);
-	await waitFor(() => held.length === 2, 'the newer pick to open its device');
-	held[1].fail('dock open refused');
-	await assert.rejects(newer);
-	assert.equal(state.output_mode, 'split_cable', 'the rollback keeps the split that committed');
-	assert.equal(state.selected_output_device_id, null);
-	held[0].ok();
-	await older;
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(state.selected_master_output_device_id, USB);
 });
 
 test('a CUE pick that fails after a newer pick landed, with an older one still opening, rolls back to the one that landed', async () => {
@@ -1794,35 +1067,6 @@ test("a MAIN pick made while a device change's re-pin is pending wins, and the l
 	});
 });
 
-// [if] the newer pick is a split (CUE onto MAIN's device), the late restore
-// must not switch the second output back on.
-test("control: a split picked while a device change's restore is pending stays a split (browser path)", async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		ctx.setSinkId = async () => {};
-		await hp.selectMasterOutput(ROOM, source);
-		await hp.selectHeadphoneOutput(PHONES, source);
-		listOutputs([ROOM, DOCK]);
-		await hp.refreshHeadphoneOutputs(source);
-		cue.hold(PHONES);
-		listOutputs([ROOM, PHONES, DOCK]);
-		const refresh = hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => cue.isHeld(PHONES), 'the restore to reach setSinkId');
-		await hp.selectHeadphoneOutput(ROOM, source);
-		assert.equal(state.output_mode, 'split_cable', 'precondition: the split published');
-		const verdict = state.liveness_verdict;
-		cue.release(PHONES, true);
-		await refresh.catch(() => {});
-		await waitFor(() => !hp.outputSwitchesPending().cue, 'every CUE work unit to settle');
-		assert.equal(state.output_mode, 'split_cable');
-		assert.equal(state.active, false, 'the late restore never switches the second output back on');
-		assert.equal(state.liveness_verdict, verdict, 'nor restarts its output watch');
-		assert.equal(cue.state, 'suspended');
-	});
-});
-
 
 // [if] an older native CUE open lands after a newer pick's, the shell's CUE
 // must be put back on the device the menu shows, not left on the older one.
@@ -1849,43 +1093,6 @@ test('an older native CUE open landing after a newer pick is reopened on the CUE
 	assert.deepEqual(cueCommands.slice(sent), ['open']);
 });
 
-// [if] the overshoot reopened a native CUE the menu shows as a split, the
-// second output would sound behind the split.
-test('control: a native CUE closed for a split stays closed when an older open lands late', async () => {
-	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['open'];
-	const older = hp.selectHeadphoneOutput(BUS, source);
-	await waitFor(() => held.length === 1, 'the older pick to open its device');
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	assert.equal(state.output_mode, 'split_cable', 'precondition: the split committed');
-	held[0].ok();
-	await older;
-	await waitFor(() => !hp.outputSwitchesPending().cue, 'the correction to settle');
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(nativeCueOpen, null, 'the late open is closed again behind the split');
-	// The close is a landing too: picking the late open's device again must open it.
-	await hp.selectHeadphoneOutput(BUS, source);
-	assert.equal(nativeCueOpen, 'SecondUsbInterface', 'the device the late open landed on opens again');
-});
-
-// [if] a split's native close forgot it closed the CUE, picking that CUE again
-// would take the no-op path and leave the headphones silent.
-test("control: picking a CUE again after a split closed it reopens it (native)", async () => {
-	const state = hp.mixerState.headphones;
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(nativeCueOpen, null, 'precondition: the split closed the CUE');
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.output_mode, 'two_outputs');
-	assert.equal(nativeCueOpen, 'UsbInterface');
-});
-
 // [if] a stale native CUE pick fails after a newer one already put the CUE
 // right, the correction must find nothing to do: no reopen, no extra close.
 test('control: a stale native CUE pick that fails late sends no correction when the CUE is already right', async () => {
@@ -1893,7 +1100,8 @@ test('control: a stale native CUE pick that fails late sends no correction when 
 	const BUS = 'native:SecondUsbInterface';
 	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
 	await hp.selectMasterOutput(SPEAKERS, source);
-	for (const newer of [USB, SPEAKERS]) {
+	// AUDFID-01: SPEAKERS is MAIN's own output, so a CUE pick there is refused.
+	for (const newer of [USB]) {
 		await hp.selectHeadphoneOutput(USB, source);
 		holdTypes = ['open'];
 		const older = hp.selectHeadphoneOutput(BUS, source);
@@ -1909,34 +1117,6 @@ test('control: a stale native CUE pick that fails late sends no correction when 
 		assert.equal(nativeCueOpen, where);
 		held.length = 0;
 	}
-});
-
-// [if] a correction's native close lands after a newer pick reopened the CUE,
-// the CUE must be reopened, not left closed while the menu shows it playing.
-test("a correction's native close landing after a newer CUE pick is reopened on the CUE shown", async () => {
-	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
-	state.outputs = [...state.outputs, { id: BUS, label: 'Second USB Interface' }];
-	await hp.selectMasterOutput(SPEAKERS, source);
-	await hp.selectHeadphoneOutput(USB, source);
-	holdTypes = ['open'];
-	const older = hp.selectHeadphoneOutput(BUS, source);
-	await waitFor(() => held.length === 1, 'the older pick to open its device');
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	assert.equal(state.output_mode, 'split_cable', 'precondition: the split committed');
-	// The late open lands behind the split; its correction's close is held.
-	holdTypes = ['close'];
-	held[0].ok();
-	await older;
-	await waitFor(() => held.length === 2, "the correction's close to be sent");
-	// A newer CUE pick lands before that close does.
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(nativeCueOpen, 'UsbInterface', 'precondition: the newer pick opened first');
-	held[1].ok();
-	await waitFor(() => !hp.outputSwitchesPending().cue, 'every CUE work unit to settle');
-	await waitFor(() => nativeCueOpen === 'UsbInterface', 'the CUE to be reopened');
-	assert.equal(state.selected_output_device_id, USB);
-	assert.equal(state.active, true);
 });
 
 // [if] the CUE vanishes and its suspend outlives the timeout, then lands after
@@ -2145,11 +1325,11 @@ function shellDevice(uid, name, isDefault) {
 	return { uid, name, channels: 2, transport: 'usb', is_default: isDefault, muted_by_jack: false, physical_uid: uid };
 }
 
-// [if] the dropped listing still wrote the room it saw, the next CUE pick would
-// auto-pin MAIN to a room the newer listing says is no longer the default.
-test("an older shell listing's room is dropped with it, so a CUE pick pins MAIN to the newer room (native)", async () => {
+// [if] an older shell listing returned last and its room were kept, a CUE
+// pick on the newer room would be routed onto the room's own output.
+// AUDFID-01: the room is only ever used to refuse that, never to pin MAIN.
+test("an older shell listing's room is dropped with it, so a CUE pick on the newer room is refused (native)", async () => {
 	const state = hp.mixerState.headphones;
-	const BUS = 'native:SecondUsbInterface';
 	const listing = (roomUid) =>
 		[
 			shellDevice('BuiltInSpeakerDevice', 'MacBook Pro Speakers', roomUid === 'BuiltInSpeakerDevice'),
@@ -2162,22 +1342,20 @@ test("an older shell listing's room is dropped with it, so a CUE pick pins MAIN 
 	await waitFor(() => held.length === 1, 'the older listing to reach the shell');
 	nativeDevices = listing('SecondUsbInterface');
 	await hp.refreshHeadphoneOutputs(source);
-	assert.ok(state.outputs.some((output) => output.id === BUS), 'precondition: the newer listing published');
-	assert.equal(state.selected_master_output_device_id, BUS, 'precondition: the newer listing pinned MAIN to its room');
 	held[0].ok();
 	await older;
-	assert.equal(state.selected_master_output_device_id, BUS, 'the older listing moved nothing');
-	// The room is remembered past the listing: with no MAIN left, a CUE pick pins
-	// MAIN to it, so the remembered one must be the newer listing's.
 	state.selected_master_output_device_id = null;
-	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.selected_master_output_device_id, BUS, 'MAIN follows the newer listing\'s room');
-	assert.equal(setMasterUids.at(-1), 'SecondUsbInterface');
+	const pins = setMasterUids.length;
+	await assert.rejects(hp.selectHeadphoneOutput('native:SecondUsbInterface', source), /MAIN and CUE are the same output/);
+	await hp.selectHeadphoneOutput('native:BuiltInSpeakerDevice', source);
+	assert.equal(state.selected_output_device_id, 'native:BuiltInSpeakerDevice', 'the older room is just another output now');
+	assert.equal(state.selected_master_output_device_id, null, 'MAIN is never auto-pinned to the room');
+	assert.equal(setMasterUids.length, pins, 'no hidden set_master');
 });
 
-// [if] the fix also dropped the room of the newest listing, MAIN would fall
-// back to a label guess instead of staying where the room already plays.
-test("control: the newest shell listing's room is the one a CUE pick pins MAIN to (native)", async () => {
+// [if] a CUE pick in the Mac app auto-pinned MAIN to the macOS default, the
+// room would move with whatever grabbed the default (AUDFID-01).
+test("control: a CUE pick in the Mac app leaves an unpinned MAIN unpinned (native)", async () => {
 	const state = hp.mixerState.headphones;
 	nativeDevices = [
 		shellDevice('BuiltInSpeakerDevice', 'MacBook Pro Speakers', false),
@@ -2186,8 +1364,11 @@ test("control: the newest shell listing's room is the one a CUE pick pins MAIN t
 	];
 	await hp.refreshHeadphoneOutputs(source);
 	state.selected_master_output_device_id = null;
+	const pins = setMasterUids.length;
 	await hp.selectHeadphoneOutput(USB, source);
-	assert.equal(state.selected_master_output_device_id, 'native:SecondUsbInterface');
+	assert.equal(state.selected_master_output_device_id, null);
+	assert.equal(state.output_mode, 'two_outputs');
+	assert.equal(setMasterUids.length, pins);
 });
 
 // [if] a timed-out re-pin were forgotten, its move landing after a newer pick
@@ -2691,48 +1872,6 @@ test("control: a lone device change that re-pins MAIN still clears the vanished 
 	});
 });
 
-// [if] a device change enters a same-device split and a newer device change
-// lists the outputs apart while the split's MAIN move is pending [then] the old
-// split publishes nothing over the newer listing, and MAIN is moved back.
-test("an older device change's split does not publish over a newer listing that keeps two outputs", async () => {
-	const state = hp.mixerState.headphones;
-	const device = (uid, name, physical) => ({ uid, name, channels: 2, transport: 'usb', is_default: false, muted_by_jack: false, physical_uid: physical });
-	await hp.selectMasterOutput(USB, source);
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	assert.equal(state.output_mode, 'two_outputs', 'precondition: two outputs');
-	// The shell first reports both on one physical output: a split.
-	nativeDevices = [device('BuiltInSpeakerDevice', 'Speakers', 'BuiltInSpeakerDevice'), device('UsbInterface', 'USB', 'BuiltInSpeakerDevice')];
-	holdTypes = ['set_master'];
-	const older = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-	await waitFor(() => held.length === 1, "the split's MAIN move to be sent");
-	// Then it reports them apart again before that move lands.
-	nativeDevices = [device('BuiltInSpeakerDevice', 'Speakers', 'BuiltInSpeakerDevice'), device('UsbInterface', 'USB', 'UsbInterface')];
-	await hp.refreshHeadphoneOutputs(source);
-	held[0].ok();
-	await older;
-	await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-	assert.equal(state.output_mode, 'two_outputs', 'the older split must not publish split_cable');
-	assert.equal(state.split_reason, null);
-	assert.equal(state.selected_output_device_id, SPEAKERS, 'the CUE the newer listing kept stands');
-	assert.equal(state.selected_master_output_device_id, USB);
-	assert.equal(setMasterUids.at(-1), 'UsbInterface', 'MAIN is moved back to the MAIN shown');
-});
-
-test("control: a lone device change that lists MAIN and CUE on one output still publishes the split", async () => {
-	const state = hp.mixerState.headphones;
-	const device = (uid, name, physical) => ({ uid, name, channels: 2, transport: 'usb', is_default: false, muted_by_jack: false, physical_uid: physical });
-	await hp.selectMasterOutput(USB, source);
-	await hp.selectHeadphoneOutput(SPEAKERS, source);
-	nativeDevices = [device('BuiltInSpeakerDevice', 'Speakers', 'BuiltInSpeakerDevice'), device('UsbInterface', 'USB', 'BuiltInSpeakerDevice')];
-	holdTypes = ['set_master'];
-	const refresh = hp.refreshHeadphoneOutputs(source).catch((error) => error);
-	await waitFor(() => held.length === 1, "the split's MAIN move to be sent");
-	held[0].ok();
-	assert.equal(await refresh, undefined);
-	assert.equal(state.output_mode, 'split_cable');
-	assert.equal(state.split_reason, 'same_device');
-});
-
 /** Pick `deviceId` for CUE with its native open held past the timeout. */
 async function timedOutNativeOpen(deviceId) {
 	holdTypes = ['open'];
@@ -3024,35 +2163,6 @@ test('control: a device change with MAIN already on the default moves nothing an
 		} finally {
 			restore();
 		}
-	});
-});
-
-// [if] the output a same-device split ran on vanishes and no output is left for MAIN
-// [then] the room is moved to the system default too, not left on the vanished sink
-test('a vanished same-device split moves the room to the system default (browser path, Codex P1 BLOCKING on #6835)', async () => {
-	const state = hp.mixerState.headphones;
-	const cue = browserCueContext();
-	await onBrowserPath(() => cue, async () => {
-		browserOutputs(state);
-		const moves = [];
-		ctx.setSinkId = async (id) => {
-			moves.push(id);
-			ctx.sinkId = id;
-		};
-		await hp.selectMasterOutput(DOCK, source);
-		// The split on DOCK, as _enterSameDeviceSplit leaves it.
-		state.output_mode = 'split_cable';
-		state.split_reason = 'same_device';
-		moves.length = 0;
-		const suspendsBefore = ctx.suspends;
-		listOutputs([AUX]);
-		await hp.refreshHeadphoneOutputs(source);
-		await waitFor(() => !hp.outputSwitchesPending().master, 'MAIN to settle');
-		assert.equal(state.output_mode, 'two_outputs', 'precondition: the split ended');
-		assert.equal(state.selected_master_output_device_id, null);
-		assert.deepEqual(moves, [''], 'the room leaves the vanished sink for the system default');
-		await waitFor(() => ctx.suspends === suspendsBefore + 1, 'the room to be reopened after the move');
-		assert.equal(state.routes.master.state, 'default');
 	});
 });
 

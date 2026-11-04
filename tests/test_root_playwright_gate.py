@@ -6,6 +6,7 @@ invoked the suite. These checks keep the runnable root command and the E2E
 workflow tied together.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -23,7 +24,7 @@ PERFORMANCE_CONFIG_MARKER = "playwright.performance.config.ts"
 
 def test_root_playwright_config_starts_the_engine_before_vite() -> None:
     """if a root spec requests /api then its proxy has a real engine to reach"""
-    source = ROOT_CONFIG.read_text()
+    source = ROOT_CONFIG.read_text(encoding="utf-8")
 
     assert "'apps.engine_core', 'serve'" in source
     assert "rmSync(FIXTURE_DATA_DIR, { recursive: true, force: true })" in source
@@ -37,7 +38,7 @@ def test_root_playwright_config_starts_the_engine_before_vite() -> None:
 
 def test_e2e_workflow_executes_the_root_playwright_command() -> None:
     """if the default suite is removed from CI then its regressions are invisible"""
-    workflow = yaml.safe_load(E2E_WORKFLOW.read_text())
+    workflow = yaml.safe_load(E2E_WORKFLOW.read_text(encoding="utf-8"))
     commands = [
         step.get("run", "")
         for job in workflow["jobs"].values()
@@ -61,7 +62,7 @@ def test_performance_playwright_config_is_referenced_by_ci() -> None:
 
 def test_e2e_workflow_runs_the_headphone_device_probe_under_performance_config() -> None:
     """if the headphone probe is not exercised in CI then aria-label regressions time out unseen"""
-    workflow = yaml.safe_load(E2E_WORKFLOW.read_text())
+    workflow = yaml.safe_load(E2E_WORKFLOW.read_text(encoding="utf-8"))
     commands = [
         step.get("run", "")
         for job in workflow["jobs"].values()
@@ -76,16 +77,27 @@ def test_e2e_workflow_runs_the_headphone_device_probe_under_performance_config()
 
 def test_root_playwright_command_claims_its_isolated_port_pair() -> None:
     """if a clean checkout runs test:e2e then port validation has a reservation"""
-    script = PACKAGE.read_text()
+    script = PACKAGE.read_text(encoding="utf-8")
 
     assert "test:e2e" in script
     assert "apps.webui.port_config claim" in script
-    assert "uv sync --locked --extra dev --extra analysis" in script
+    assert "uv sync --locked --extra dev --extra analysis --extra spotify" in script
+
+
+def test_root_playwright_sync_keeps_the_spotify_extra() -> None:
+    """if test:e2e syncs without the spotify extra then that exact sync removes
+    spotipy, the engine answers spotify_extra_missing, and
+    spotify-connect-popup.spec.ts never sees Connect"""
+    script = json.loads(PACKAGE.read_text(encoding="utf-8"))["scripts"]["test:e2e"]
+    sync = script.split("&&")[0].split()
+    assert sync[:3] == ["uv", "sync", "--locked"]
+    extras = {sync[i + 1] for i, token in enumerate(sync) if token == "--extra"}
+    assert {"dev", "analysis", "spotify"} <= extras
 
 
 def test_fixture_reset_is_bounded_to_the_repository_fixtures_directory() -> None:
     """if the reset target is not the fixtures dir then the config refuses to run"""
-    source = ROOT_CONFIG.read_text()
+    source = ROOT_CONFIG.read_text(encoding="utf-8")
 
     # The recursive delete is in-process, so the only thing standing between it
     # and an unrelated directory is this bound. Deleting the bound left every
@@ -102,7 +114,7 @@ def test_stem_decode_bench_spec_is_ignored_by_the_root_suite() -> None:
     """if the bench spec is reachable from pnpm test:e2e then the root suite
     loads playwright.stem-decode-bench.config.ts, which throws without a
     production build (CI e2e gate on PR #2028)."""
-    source = ROOT_CONFIG.read_text()
+    source = ROOT_CONFIG.read_text(encoding="utf-8")
     assert "'**/stem-decode-bench.spec.ts'" in source
 
 
@@ -110,7 +122,7 @@ def test_playlist_switch_latency_spec_is_ignored_by_the_root_suite() -> None:
     """if the PERF-UI-05 bench is reachable from pnpm test:e2e then the root
     suite loads playwright.playlist-switch-latency.config.ts, which throws
     without a production build."""
-    source = ROOT_CONFIG.read_text()
+    source = ROOT_CONFIG.read_text(encoding="utf-8")
     assert "'**/library-playlist-switch-latency.spec.ts'" in source
 
 
@@ -120,19 +132,19 @@ def test_every_playlist_switch_config_spec_is_ignored_by_the_root_suite() -> Non
     "Perf 1k" playlist (LIBM-134's fill spec failed that way on PR #4582)."""
     config = (
         REPO / "apps/webui/frontend/tests/e2e/playwright.playlist-switch-latency.config.ts"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     match = re.search(r"testMatch: \[([^\]]*)\]", config)
     assert match, "playlist-switch-latency config has no testMatch list"
     specs = re.findall(r"'([^']+\.spec\.ts)'", match.group(1))
     assert "library-playlist-fill-pages.spec.ts" in specs, specs
-    source = ROOT_CONFIG.read_text()
+    source = ROOT_CONFIG.read_text(encoding="utf-8")
     missing = [spec for spec in specs if f"'**/{spec}'" not in source]
     assert not missing, f"root playwright.config.ts does not ignore {missing}"
 
 
 def test_smoke_console_exemption_stays_specific_to_the_update_failure() -> None:
     """if another resource breaks then a failing update check cannot hide it"""
-    spec = SMOKE_SPEC.read_text()
+    spec = SMOKE_SPEC.read_text(encoding="utf-8")
 
     # `Failed to load resource` is emitted verbatim for EVERY failed request,
     # so a substring exemption swallowed unrelated breakage whenever the update

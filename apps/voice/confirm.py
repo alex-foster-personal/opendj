@@ -12,6 +12,7 @@ Phase 14 Plan 3. Flow:
 The STT + VAD layers are injected so tests can drive the flow without
 a real mic or daemon.
 """
+
 from __future__ import annotations
 
 import re
@@ -102,9 +103,7 @@ class ConfirmEngine:
 
     tts_engine: Any
     listen_fn: Callable[[float], str]
-    log_path: Path = field(
-        default_factory=lambda: voice_data_dir() / "confirmations.jsonl"
-    )
+    log_path: Path = field(default_factory=lambda: voice_data_dir() / "confirmations.jsonl")
     timeout_s: float = 3.0
 
     def confirm(self, prompt: str) -> ConfirmResult:

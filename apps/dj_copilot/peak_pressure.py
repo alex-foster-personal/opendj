@@ -4,6 +4,7 @@ Educational metadata-only score: how hard the DJ has been leaning on
 peak-suitable tracks from library energy and optional peak tags. No
 crowd vision input; metadata is not crowd response.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -23,9 +24,7 @@ RELEASE_BUMP = 0.04
 RELEASE_PENALTY = 0.03
 KEEP_BUMP = 0.02
 
-_PEAK_TAGS = frozenset(
-    {"peak", "peak-time", "peak_time", "peak time", "good for peak"}
-)
+_PEAK_TAGS = frozenset({"peak", "peak-time", "peak_time", "peak time", "good for peak"})
 
 _ADVISORY = "Educational coach from track metadata, not the room."
 _LIMITATION = "Metadata energy is not crowd response."
@@ -82,11 +81,7 @@ def compute_peak_pressure(plays: Sequence[PeakPlay]) -> PeakPressure:
     window = scored[-WINDOW:] if len(scored) > WINDOW else scored
     pressure = 0.0
     for suitable in window:
-        pressure = (
-            min(1.0, pressure + STEP_UP)
-            if suitable
-            else max(0.0, pressure - STEP_DOWN)
-        )
+        pressure = min(1.0, pressure + STEP_UP) if suitable else max(0.0, pressure - STEP_DOWN)
 
     score = round(pressure, 3)
     scored_tracks = len(window)
@@ -110,9 +105,7 @@ def compute_peak_pressure(plays: Sequence[PeakPlay]) -> PeakPressure:
     )
 
 
-def apply_pressure_prior(
-    stage2: list[ScoredCandidate], pressure: PeakPressure
-) -> list[ScoredCandidate]:
+def apply_pressure_prior(stage2: list[ScoredCandidate], pressure: PeakPressure) -> list[ScoredCandidate]:
     """Soft score nudge after pairings; never drops candidates."""
     if pressure.cue in ("hold", "unknown"):
         return stage2
@@ -129,11 +122,7 @@ def apply_pressure_prior(
                 rationale["pressure_release"] = 1.0
             elif energy is not None and energy >= 8:
                 score -= RELEASE_PENALTY
-        elif (
-            pressure.cue == "keep_building"
-            and energy is not None
-            and energy >= 7
-        ):
+        elif pressure.cue == "keep_building" and energy is not None and energy >= 7:
             score += KEEP_BUMP
 
         out.append(

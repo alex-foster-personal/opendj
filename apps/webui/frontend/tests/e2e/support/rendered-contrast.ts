@@ -1,3 +1,6 @@
+import type { Page } from '@playwright/test';
+import { PNG } from 'pngjs';
+
 /**
  * Rendered contrast audit (UICONTRAST-01, orders board W34).
  *
@@ -9,7 +12,8 @@
  * flagged as white.
  *
  * `renderedContrastAudit` is passed to `page.evaluate`, so it must stay
- * self-contained: no imports, no closures over module scope.
+ * self-contained: it never references this module's imports or module scope
+ * (the Node-side sampler below is not serialized).
  */
 
 export interface ContrastFinding {
@@ -25,6 +29,9 @@ export interface ContrastFinding {
 export interface UnmeasuredElement {
 	el: string;
 	why: string;
+	/** Set when the backdrop is a replaced `<svg>`: `sampleSvgBackdrops` measures
+	 * the text against its rendered pixels, found by `data-svg-backdrop`. */
+	svgBackdrop?: { id: string; text: string; fg: number[]; size: number; bold: boolean };
 }
 
 export interface RenderedContrastReport {
@@ -305,6 +312,7 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 	const unmeasured: UnmeasuredElement[] = [];
 	const probes: ContrastFinding[] = [];
 	let measured = 0;
+	let svgCount = 0;
 
 	/** The opacity `el` paints at when it is painted, sized and active, else null. */
 	const visibleOpacity = (el: Element): number | null => {
@@ -371,7 +379,31 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 		for (const at of ats ?? [centerOf(el.getBoundingClientRect())]) {
 			const p = paint(el, fg0, inner, at);
 			if (!p.fg || !p.bg) {
-				unmeasured.push({ el: name, why: p.why ?? 'unmeasured' });
+				const why = p.why ?? 'unmeasured';
+				// A replaced <svg> under the text (a drawn knob) has pixels, not a
+				// CSS color: hand the text to the Node-side pixel sampler, which
+				// needs an opaque color to compare against.
+				// CSS opacity on the text or an ancestor fades the painted pair, which
+				// the sampler's uncomposited color cannot see: that text stays unmeasured.
+				let opacity = 1;
+				for (let e: Element | null = el; e; e = e.parentElement) opacity *= Number(getComputedStyle(e).opacity);
+				if (/^replaced element .*svg$/.test(why) && fg0[3] >= 1 && !inner && opacity >= 1) {
+					const id = String(svgCount++);
+					el.setAttribute('data-svg-backdrop', id);
+					unmeasured.push({
+						el: name,
+						why,
+						svgBackdrop: {
+							id,
+							text: text.slice(0, 24),
+							fg: fg0,
+							size: parseFloat(style.fontSize),
+							bold: Number(style.fontWeight) >= 700
+						}
+					});
+				} else {
+					unmeasured.push({ el: name, why });
+				}
 				return;
 			}
 			const ratio = ratioOf(p.fg, p.bg);
@@ -485,4 +517,102 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 		hit.remove();
 	}
 	return { measured, findings, unmeasured, probes };
+}
+
+function _linear(c: number): number {
+	const v = c / 255;
+	return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+}
+
+function _luminance(rgb: readonly number[]): number {
+	return 0.2126 * _linear(rgb[0]) + 0.7152 * _linear(rgb[1]) + 0.0722 * _linear(rgb[2]);
+}
+
+function _ratio(a: readonly number[], b: readonly number[]): number {
+	const la = _luminance(a);
+	const lb = _luminance(b);
+	return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+function _hex(rgb: readonly number[]): string {
+	return `#${rgb
+		.slice(0, 3)
+		.map((c) => Math.round(c).toString(16).padStart(2, '0'))
+		.join('')}`;
+}
+
+/**
+ * Text over a replaced `<svg>` (a drawn knob) has no CSS backdrop color, so
+ * `renderedContrastAudit` leaves it unmeasured and tags it `svgBackdrop`. This
+ * measures it against what the browser actually rendered behind it: the text
+ * is made transparent, the element is screenshotted, and the WORST pixel
+ * against the text color is the result. That is conservative by design: a
+ * pixel of the drawing that clashes with the text fails it, even if most of
+ * the box is clear. Translucent pixels stay unmeasured, never guessed.
+ */
+export async function sampleSvgBackdrops(
+	page: Page,
+	report: RenderedContrastReport
+): Promise<RenderedContrastReport> {
+	const findings = [...report.findings];
+	const unmeasured: UnmeasuredElement[] = [];
+	let measured = report.measured;
+	for (const u of report.unmeasured) {
+		if (!u.svgBackdrop) {
+			unmeasured.push(u);
+			continue;
+		}
+		const { id, text, fg, size, bold } = u.svgBackdrop;
+		const loc = page.locator(`[data-svg-backdrop="${id}"]`);
+		// The inline color is saved with its priority and put back exactly, so a
+		// second run sees the page it saw the first time.
+		const saved = await loc.evaluate((el) => {
+			const style = (el as HTMLElement).style;
+			const prev = { value: style.getPropertyValue('color'), priority: style.getPropertyPriority('color') };
+			style.setProperty('color', 'transparent', 'important');
+			return prev;
+		});
+		let png: Buffer;
+		try {
+			png = await loc.screenshot({ animations: 'disabled', caret: 'hide' });
+		} catch (err) {
+			unmeasured.push({ el: u.el, why: `${u.why}; screenshot failed: ${String(err)}` });
+			continue;
+		} finally {
+			await loc
+				.evaluate(
+					(el, prev) => {
+						const style = (el as HTMLElement).style;
+						style.removeProperty('color');
+						if (prev.value) style.setProperty('color', prev.value, prev.priority);
+						el.removeAttribute('data-svg-backdrop');
+					},
+					saved
+				)
+				.catch(() => undefined);
+		}
+		const img = PNG.sync.read(png);
+		let worst: { ratio: number; bg: number[] } | null = null;
+		let translucent = false;
+		for (let i = 0; i < img.data.length; i += 4) {
+			if (img.data[i + 3] < 255) {
+				translucent = true;
+				break;
+			}
+			const bg = [img.data[i], img.data[i + 1], img.data[i + 2]];
+			const ratio = _ratio(fg, bg);
+			if (!worst || ratio < worst.ratio) worst = { ratio, bg };
+		}
+		if (translucent || !worst) {
+			unmeasured.push({ el: u.el, why: `${u.why}; ${translucent ? 'translucent pixels' : 'no pixels'}` });
+			continue;
+		}
+		measured++;
+		const displayed = Math.round(worst.ratio * 100) / 100;
+		const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5;
+		if (displayed < need) {
+			findings.push({ el: u.el, text, fg: _hex(fg), bg: _hex(worst.bg), ratio: displayed, need });
+		}
+	}
+	return { ...report, measured, findings, unmeasured };
 }

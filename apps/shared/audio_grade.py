@@ -53,6 +53,7 @@ MINI-PRD
 
 -Claude
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -291,7 +292,10 @@ def grade(
     if facts is not None:
         missing = [key for key in REQUIRED_FACT_KEYS if key not in facts]
         if missing:
-            facts, scan_error = None, f"stored scan facts are incomplete (missing {', '.join(missing)}); a re-scan is needed"
+            facts, scan_error = (
+                None,
+                f"stored scan facts are incomplete (missing {', '.join(missing)}); a re-scan is needed",
+            )
     letter = letter_for(quality.get("venue"), facts, t)
     issues = tuple(facts["issues"]) if facts else ()
     return Grade(

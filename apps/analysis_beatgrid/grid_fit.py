@@ -429,7 +429,50 @@ def grid_from_lines(
     )
 
 
+#: How close a model beat must sit to a served beat to count as landed on.
+#: The same 25 ms `const_regions.PHASE_TOLERANCE_S` cuts steady regions with.
+AGREEMENT_TOLERANCE_S = 0.025
+
+#: Below this share of model beats on the served grid, the grid is published
+#: `static_grid_untrusted` (BEATMAP-8327): the deck then refuses BeatSync snap
+#: and warns. The same half `const_regions.MIN_COVERAGE` demands of a steady
+#: span before it serves one.
+UNTRUSTED_GRID_AGREEMENT = 0.5
+
+
+def grid_agreement(
+    model_beats: Sequence[float],
+    served_beats: Sequence[float],
+    *,
+    tolerance_s: float = AGREEMENT_TOLERANCE_S,
+    offset_s: float = 0.0,
+) -> float:
+    """Share of model beats within `tolerance_s` of a served beat (BEATMAP-8327).
+
+    This is the served grid's own confidence: how much of what the model heard
+    the grid the deck plays against actually lands on. `offset_s` is the
+    constant shift the fit added to every served beat, taken back off first.
+    """
+    if not model_beats:
+        raise ValueError("grid_agreement: no model beats to compare")
+    grid = sorted(t - offset_s for t in served_beats)
+    if not grid:
+        return 0.0
+    landed = 0
+    for t in model_beats:
+        i = bisect.bisect_left(grid, t)
+        nearest = min(
+            (abs(grid[j] - t) for j in (i - 1, i) if 0 <= j < len(grid)),
+            default=math.inf,
+        )
+        landed += nearest <= tolerance_s
+    return round(landed / len(model_beats), 4)
+
+
 __all__ = [
+    "AGREEMENT_TOLERANCE_S",
+    "UNTRUSTED_GRID_AGREEMENT",
+    "grid_agreement",
     "DEFAULT_OFFSET_S",
     "PRE_ZERO_SNAP_S",
     "GRID_FIT_CONST_REGIONS",

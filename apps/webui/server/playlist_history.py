@@ -5,6 +5,7 @@ Rebuilds a bounded inverse-command stack from ``playlist.edit`` /
 caches the result and rebuilds on construct so a daemon restart restores
 the same cursor.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

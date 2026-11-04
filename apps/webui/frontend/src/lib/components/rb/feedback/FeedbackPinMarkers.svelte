@@ -6,6 +6,7 @@
 	 * A pin drawn on a fallback tier carries a subtle dashed ring. Badges
 	 * surface anchor/route drift, harvest, and regression without hiding the pin.
 	 */
+	import { isNewPin } from '$lib/rb/feedback-pin-age';
 	import { isPinUnread, pinStyle, type PinSeen } from '$lib/rb/feedback';
 	import { resolvedPinStyle, type ResolvedPinPosition } from '$lib/rb/feedback-pin-position';
 	import {
@@ -65,6 +66,7 @@
 		type="button"
 		class="fb-pin fb-{state}"
 		class:fb-agent={pin.author === 'agent'}
+		class:fb-new={isNewPin(pin.created_at, Date.now())}
 		class:fb-unread={isPinUnread(pin, seen)}
 		class:fb-harvested={board.collapsed}
 		class:fb-pos-fallback={pos?.fallback === true}
@@ -187,6 +189,22 @@
 	}
 	.fb-merged .fb-mark path {
 		fill: currentColor;
+	}
+	/* New comments (under 3 days) are a yellow outline again. Partial keeps
+	   its two-tone split and only gains a yellow ring. */
+	.fb-new:not(.fb-partial) {
+		color: #ffb43a;
+	}
+	.fb-new:not(.fb-partial) .fb-mark path,
+	.fb-new:not(.fb-partial) .fb-robot {
+		fill: none;
+		stroke: #ffb43a;
+		stroke-width: 1.3;
+		stroke-linejoin: round;
+	}
+	.fb-new.fb-partial {
+		outline: 1.5px solid #ffb43a;
+		outline-offset: 1px;
 	}
 	.fb-issued::before {
 		content: '';

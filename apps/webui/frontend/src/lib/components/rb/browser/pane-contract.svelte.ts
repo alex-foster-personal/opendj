@@ -27,7 +27,7 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
-import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import type { CloudTransferWire, OffloadWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
@@ -115,6 +115,8 @@ export interface BrowserRow extends Pick<
 	has_remote_copy?: boolean;
 	/** Live CloudSync bytes from the same listing snapshot as this row. */
 	cloud_transfer?: CloudTransferWire | null;
+	/** OFFLOAD: an offloaded row stays listed and reads as in the cloud, not missing. */
+	offload?: OffloadWire | null;
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
 	spotify_pending?: boolean;

@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 
 from scripts.sink_triage import (
+    LOCAL_SOURCE_NAME_ENV,
+    SSH_SOURCES_ENV,
     AllSourcesUnreachable,
     FingerprintStats,
     HostSource,
@@ -43,6 +45,13 @@ from scripts.sink_triage import (
 )
 
 pytestmark = pytest.mark.requirement("OPS-34")
+
+
+@pytest.fixture(autouse=True)
+def _sink_triage_host_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stage-1 triage host names in this module only (#5639 stage 2)."""
+    monkeypatch.setenv(LOCAL_SOURCE_NAME_ENV, "nucbox")
+    monkeypatch.setenv(SSH_SOURCES_ENV, "silver,air")
 
 
 def _record(

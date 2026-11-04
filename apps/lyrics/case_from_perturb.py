@@ -22,11 +22,7 @@ def version_case_from_perturb(
     from apps.lyrics.cases import VersionCase
 
     (op,) = sheet.ops
-    block = (
-        target_words
-        if target_words is not None
-        else true_words[op.word_start : op.word_end + 1]
-    )
+    block = target_words if target_words is not None else true_words[op.word_start : op.word_end + 1]
     return VersionCase(
         case,
         sheet.words,

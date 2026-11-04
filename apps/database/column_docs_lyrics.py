@@ -8,7 +8,7 @@ so callers still read one map.
 
 Schema authority: ``apps/shared/state/migrations_v10.py`` (``_V10``), mirrored
 into the consolidated engine schema's ``lyrics`` domain.
-Design: ``specs/karaoke-lyrics-operational-plan.md`` D13.1 and D13.2.
+Design: ``(private path)`` D13.1 and D13.2.
 
 -Claude
 """
@@ -42,8 +42,7 @@ LYRICS_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "source LIKE <prefix>%, so this column IS the licensing lever."
         ),
         "language_iso3": (
-            "ISO 639-3 language code the aligner detected for the lyric "
-            "text, or NULL when undetermined."
+            "ISO 639-3 language code the aligner detected for the lyric text, or NULL when undetermined."
         ),
         "n_words": (
             "Number of words in the karaoke_words artifact. Denormalised "

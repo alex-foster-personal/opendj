@@ -19,15 +19,10 @@ from apps.parity.lanes import (
 )
 
 
-def classify_remaining(
-    lane: str, rows: list[dict[str, Any]], *, measured_at: str
-) -> LaneFigure:
+def classify_remaining(lane: str, rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
     """Name the ungradable set for a lane this round does not score."""
     if lane in SCORED_THIS_ROUND:
-        raise ValueError(
-            f"lane {lane!r} is scored this round; classify_remaining is for "
-            "remaining lanes only"
-        )
+        raise ValueError(f"lane {lane!r} is scored this round; classify_remaining is for remaining lanes only")
     if lane in DELEGATED_THIS_ROUND:
         return LaneFigure(
             lane=lane,
@@ -36,10 +31,7 @@ def classify_remaining(
             denominator_name=DENOMINATOR_NAME[lane],
             denominator_n=0,
             owner=BEATMAP_OWNER,
-            reason=(
-                f"{BEATMAP_OWNER} owns this lane. PARITY-01 does not restate "
-                "a second beat metric."
-            ),
+            reason=(f"{BEATMAP_OWNER} owns this lane. PARITY-01 does not restate a second beat metric."),
         )
     return LaneFigure(
         lane=lane,

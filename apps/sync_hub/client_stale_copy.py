@@ -64,9 +64,7 @@ class SyncStaleTracks(RuntimeError):
 # -----------------------------------------------------------------------------
 
 
-def foreign_candidates(
-    rows: Sequence[protocol.RowChange], machine_id: str
-) -> list[stale_copy.Candidate]:
+def foreign_candidates(rows: Sequence[protocol.RowChange], machine_id: str) -> list[stale_copy.Candidate]:
     """Live ``tracks`` rows in ``rows`` that a machine other than this one wrote."""
     return [
         candidate
@@ -172,9 +170,7 @@ def raise_if_stale_library(
 # -----------------------------------------------------------------------------
 
 
-def local_foreign_candidates(
-    conn: sqlite3.Connection, machine_id: str
-) -> list[stale_copy.Candidate]:
+def local_foreign_candidates(conn: sqlite3.Connection, machine_id: str) -> list[stale_copy.Candidate]:
     """Every live track in this library that another machine wrote."""
     return [
         stale_copy.Candidate(stable_id=str(stable_id), origin_device_id=str(origin))
@@ -248,9 +244,7 @@ def add_parser(subcommands: argparse._SubParsersAction, common: argparse.Argumen
 
 def run_cli(args: argparse.Namespace, *, transport: HubTransport | None = None) -> int:
     """``stale-tracks``: print the orphans and what was done with them."""
-    channel = transport or HttpTransport(
-        args.hub, bearer=spoke_credential.read_credential(Path(args.data_dir))
-    )
+    channel = transport or HttpTransport(args.hub, bearer=spoke_credential.read_credential(Path(args.data_dir)))
     orphans = resolve(Path(args.data_dir), channel, action=args.action)
     for stable_id in orphans:
         print(stable_id)
@@ -258,10 +252,7 @@ def run_cli(args: argparse.Namespace, *, transport: HubTransport | None = None) 
         print("no stale tracks: the hub holds every track this library got from the fleet")
         return 0
     if args.action is None:
-        print(
-            f"{len(orphans)} stale track(s). Re-run with --remove or --keep; "
-            f"nothing was changed."
-        )
+        print(f"{len(orphans)} stale track(s). Re-run with --remove or --keep; nothing was changed.")
         return EXIT_STALE_LISTED
     print(f"{len(orphans)} stale track(s): {args.action} done. Sync again.")
     return 0

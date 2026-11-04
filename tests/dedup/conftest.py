@@ -7,9 +7,8 @@ from pathlib import Path
 import pytest
 
 from apps.shared import fingerprints as fp_mod
+from tests.dedup.phase7_support import FIXTURE_ROOT
 from tests.fingerprint_fakes import fake_fingerprint
-
-FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
 
 class _FakeAcoustid:

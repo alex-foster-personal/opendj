@@ -26,6 +26,7 @@ CI_WORKFLOW_NAME="CI"
 CI_JOB_NAME="production frontend build"
 MAX_WAIT_S="${MDT_CI_FRONTEND_ARTIFACT_WAIT_S:-900}"
 POLL_S="${MDT_CI_FRONTEND_ARTIFACT_POLL_S:-20}"
+SUCCESS_GRACE_S="${MDT_CI_FRONTEND_ARTIFACT_SUCCESS_GRACE_S:-30}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Test seam only: production callers never set this, so it always resolves
 # to the real script. Mirrors the existing MDT_CI_FRONTEND_ARTIFACT_*_S
@@ -130,6 +131,7 @@ _build_locally() {
 }
 
 deadline=$(( $(date +%s) + MAX_WAIT_S ))
+success_deadline=""
 while true; do
   _probe_artifact
   if [ "$ARTIFACT_STATE" = "published" ]; then
@@ -155,8 +157,21 @@ while true; do
       echo "::error::CI state for ${SHA} is unreadable (a gh api query failed); refusing to build locally"
       exit 1
       ;;
-    running|success)
-      : # the job is on track; keep polling for the shared artifact below
+    running)
+      success_deadline=""
+      # The job is on track; keep polling for the shared artifact below.
+      ;;
+    success)
+      # A completed producer has no further work that can publish this
+      # artifact. Give GitHub's artifact service a short, bounded grace period
+      # before using the verified local-build path instead of the 900s budget.
+      if [ -z "$success_deadline" ]; then
+        success_deadline=$(( $(date +%s) + SUCCESS_GRACE_S ))
+      fi
+      if [ "$(date +%s)" -ge "$success_deadline" ]; then
+        _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} succeeded but its artifact was not published after ${SUCCESS_GRACE_S}s"
+        exit 0
+      fi
       ;;
     *)
       echo "::error::unexpected CI job state '${CI_JOB_STATE}' for ${SHA}"

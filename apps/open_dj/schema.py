@@ -131,7 +131,7 @@ class Track:
     album: str = ""
     bpm: float | None = None
     key_camelot: str | None = None
-    rating: int | None = None          # 0-5; None == unset
+    rating: int | None = None  # 0-5; None == unset
     duration_ms: int | None = None
     play_count: int = 0
     color_rgb: int | None = None
@@ -227,9 +227,7 @@ class AdapterReport:
         action: WarningAction,
         reason: str,
     ) -> None:
-        self.warnings.append(
-            Warning(field=field, track_id=track_id, action=action, reason=reason)
-        )
+        self.warnings.append(Warning(field=field, track_id=track_id, action=action, reason=reason))
 
 
 # ---------------------------------------------------------- Adapter API
@@ -249,9 +247,7 @@ class Adapter(Protocol):
 
     def read(self, source: Path) -> tuple[OpenDjLibrary, AdapterReport]: ...
 
-    def write(
-        self, library: OpenDjLibrary, target: Path
-    ) -> AdapterReport: ...
+    def write(self, library: OpenDjLibrary, target: Path) -> AdapterReport: ...
 
     def capabilities(self) -> Capabilities: ...
 

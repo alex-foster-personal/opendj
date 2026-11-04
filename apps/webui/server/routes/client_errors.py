@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -29,20 +29,26 @@ log = logging.getLogger(__name__)
 ContextValue = str | int | float | bool | None
 
 
+ClientErrorKind = Literal[
+    "window-error",
+    "unhandled-rejection",
+    "sveltekit",
+    "ui-error",
+    "console-error",
+    "console-warn",
+    "resource-error",
+    "csp-violation",
+    "webview-console",
+    "webview-navigation",
+]
+CLIENT_ERROR_KINDS: tuple[str, ...] = get_args(ClientErrorKind)
+#: Most records one filtered read returns (AGENT-8304).
+CLIENT_ERRORS_MAX_LIMIT = 1000
+
+
 class ClientErrorIn(BaseModel):
     client_event_id: str = Field(min_length=1, max_length=128)
-    kind: Literal[
-        "window-error",
-        "unhandled-rejection",
-        "sveltekit",
-        "ui-error",
-        "console-error",
-        "console-warn",
-        "resource-error",
-        "csp-violation",
-        "webview-console",
-        "webview-navigation",
-    ]
+    kind: ClientErrorKind
     message: str = Field(min_length=1, max_length=4096)
     name: str | None = Field(default=None, max_length=256)
     stack: str | None = Field(default=None, max_length=32768)
@@ -96,6 +102,7 @@ class ClientErrorRecord(BaseModel):
     url: str | None = None
     name: str | None = None
     context: dict[str, ContextValue] | None = None
+    build_sha: str | None = None
 
 
 def _daily_logs(log_dir: Path) -> list[Path]:
@@ -198,18 +205,66 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     )
 
 
+def _parse_since(since: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422, detail=f"since must be an ISO 8601 time, got {since!r}"
+        ) from error
+    if parsed.tzinfo is None:
+        raise HTTPException(
+            status_code=422, detail=f"since must carry a timezone (Z or +hh:mm), got {since!r}"
+        )
+    return parsed
+
+
+def _matches(
+    record: dict[str, object],
+    *,
+    since: datetime | None,
+    build_sha: str | None,
+    kind: str | None,
+    contains: str | None,
+) -> bool:
+    if since is not None:
+        received = datetime.fromisoformat(str(record["received_at"]).replace("Z", "+00:00"))
+        if received < since:
+            return False
+    if build_sha is not None and not str(record.get("build_sha") or "").startswith(build_sha):
+        return False
+    if kind is not None and record.get("kind") != kind:
+        return False
+    return contains is None or contains.casefold() in str(record.get("message", "")).casefold()
+
+
 @router.get("", response_model=list[ClientErrorRecord])
 def list_client_errors(
-    request: Request, untriaged: bool = Query(default=False)
+    request: Request,
+    untriaged: bool = Query(default=False),
+    since: str | None = Query(default=None, description="ISO 8601 time; records received at or after it"),
+    build_sha: str | None = Query(default=None, min_length=1, description="build_sha prefix"),
+    kind: str | None = Query(default=None, description="exact client error kind"),
+    contains: str | None = Query(default=None, min_length=1, description="case-insensitive message substring"),
+    limit: int | None = Query(default=None, ge=1, le=CLIENT_ERRORS_MAX_LIMIT, description="newest N, oldest first"),
 ) -> list[ClientErrorRecord]:
+    """Every stored client error, oldest first, optionally filtered (AGENT-8304)."""
+    if kind is not None and kind not in CLIENT_ERROR_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"kind must be one of {', '.join(CLIENT_ERROR_KINDS)}, got {kind!r}",
+        )
+    since_at = _parse_since(since) if since is not None else None
     log_dir = _log_dir(request)
     triaged_ids = _triaged_event_ids(log_dir) if untriaged else set()
-    return [
+    records = [
         ClientErrorRecord.model_validate(record)
         for daily_path in _daily_logs(log_dir)
         for record in _read_jsonl(daily_path)
-        if not untriaged or str(record["event_id"]) not in triaged_ids
+        if (not untriaged or str(record["event_id"]) not in triaged_ids)
+        and _matches(record, since=since_at, build_sha=build_sha, kind=kind, contains=contains)
     ]
+    return records[-limit:] if limit is not None else records
 
 
 @router.patch("/{event_id}", response_model=ClientErrorTriageOut)

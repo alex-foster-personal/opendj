@@ -1,7 +1,7 @@
 """open-dj v0 PlayOrder round-trip.
 
 The on-disk representation of a play-order mirrors open-dj v0
-(``docs/open-dj-v0-strawman.md`` §4.6). Only the subset that is
+(``(private path)`` §4.6). Only the subset that is
 relevant to ``PlayOrder`` + its entries lives here -- playlist-level
 context (``playlist_id``) is included as a sibling key because the
 open-dj schema references it for cross-document joins.
@@ -26,6 +26,7 @@ The document shape:
       ]
     }
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -51,11 +52,7 @@ def _entry_from_opendj(data: dict[str, Any]) -> PlayOrderEntry:
         stable_id=data["track_id"],
         position=int(data["position"]),
         target_key=data.get("target_key"),
-        target_tempo=(
-            None
-            if data.get("target_tempo") is None
-            else float(data["target_tempo"])
-        ),
+        target_tempo=(None if data.get("target_tempo") is None else float(data["target_tempo"])),
         key_sync=data.get("key_sync"),
         transition_hint=data.get("transition_hint"),
     )
@@ -83,9 +80,7 @@ def play_order_from_opendj(data: dict[str, Any]) -> PlayOrder:
     """
     for required in ("playlist_id", "name", "entries"):
         if required not in data:
-            raise KeyError(
-                f"open-dj PlayOrder missing required field {required!r}"
-            )
+            raise KeyError(f"open-dj PlayOrder missing required field {required!r}")
     return PlayOrder(
         id=None,
         playlist_id=str(data["playlist_id"]),

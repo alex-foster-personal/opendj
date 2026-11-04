@@ -40,7 +40,7 @@ class PathAvailabilityRefresher:
         self._pending: set[str] = set()
         # Answers waiting to be persisted, keyed by (resolver namespace, path)
         # so a re-probe before the next flush replaces rather than duplicates.
-        self._unpersisted: dict[tuple[str, str], int | None] = {}
+        self._unpersisted: dict[tuple[str, str], tuple[int | None, int | None]] = {}
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -89,10 +89,12 @@ class PathAvailabilityRefresher:
         selected = config.STATE_DB if state_db_path is None else Path(state_db_path)
         return self._state_db_path.resolve() == selected.resolve()
 
-    def record(self, namespace: str, rows: Sequence[tuple[str, int | None]]) -> None:
+    def record(self, namespace: str, rows: Sequence[tuple[str, int | None, int | None]]) -> None:
         """Queue answers a request already statted; this thread persists them."""
         with self._lock:
-            self._unpersisted.update(((namespace, path), size) for path, size in rows)
+            self._unpersisted.update(
+                ((namespace, path), (size, mtime_ns)) for path, size, mtime_ns in rows
+            )
 
     def _run(self) -> None:
         # PERF-BOOT-01: the first pass waits for the launch's library index. Paths
@@ -126,9 +128,18 @@ class PathAvailabilityRefresher:
         if not measured:
             return
         with config._FILE_EXISTS_LOCK:
-            for path, (size, measured_path) in measured.items():
-                config._FILE_EXISTS_CACHE[path] = (now, size, measured_path, namespace)
-        self.record(namespace, [(path, size) for path, (size, _) in measured.items()])
+            for path, (size, mtime_ns, measured_path) in measured.items():
+                config._FILE_EXISTS_CACHE[path] = (
+                    now,
+                    size,
+                    measured_path,
+                    namespace,
+                    mtime_ns,
+                )
+        self.record(
+            namespace,
+            [(path, size, mtime_ns) for path, (size, mtime_ns, _) in measured.items()],
+        )
         with self._lock:
             for path in paths:
                 self._pending.discard(path)
@@ -158,10 +169,10 @@ class PathAvailabilityRefresher:
                 exc,
             )
             with self._lock:
-                for key, size in taken.items():
-                    self._unpersisted.setdefault(key, size)
+                for key, value in taken.items():
+                    self._unpersisted.setdefault(key, value)
 
-    def _persist(self, rows: dict[tuple[str, str], int | None]) -> None:
+    def _persist(self, rows: dict[tuple[str, str], tuple[int | None, int | None]]) -> None:
         """Upsert into an EXISTING state.db only, in one connection.
 
         Never creates it: ``open_rw`` on a missing file makes the file first
@@ -172,9 +183,9 @@ class PathAvailabilityRefresher:
         """
         if not self._state_db_path.exists():
             return
-        by_namespace: dict[str, list[tuple[str, int | None]]] = {}
-        for (namespace, path), size in rows.items():
-            by_namespace.setdefault(namespace, []).append((path, size))
+        by_namespace: dict[str, list[tuple[str, int | None, int | None]]] = {}
+        for (namespace, path), (size, mtime_ns) in rows.items():
+            by_namespace.setdefault(namespace, []).append((path, size, mtime_ns))
         conn = state_db.open_rw(self._state_db_path)
         try:
             for namespace, namespace_rows in by_namespace.items():
@@ -226,7 +237,7 @@ def schedule(paths: Iterable[str]) -> None:
 
 def record(
     namespace: str,
-    rows: Sequence[tuple[str, int | None]],
+    rows: Sequence[tuple[str, int | None, int | None]],
     *,
     state_db_path: Path | None = None,
 ) -> bool:

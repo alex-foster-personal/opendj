@@ -12,6 +12,7 @@ Two modes
 The shim stays behind the same :class:`CanonicalTrack` contract so the
 diff engine is blind to which backend sourced the data.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -27,15 +28,15 @@ class CanonicalTrack:
     """A track selected by a profile, ready for diff/copy."""
 
     stable_id: str
-    playlist: str              # which profile-selected playlist this came from
-    source_path: Path          # absolute path on local disk
+    playlist: str  # which profile-selected playlist this came from
+    source_path: Path  # absolute path on local disk
     title: str
     artist: str
     album: str
     duration_ms: int | None
     size_bytes: int
     isrc: str | None
-    content_hash: str          # "sha256:<hex>"
+    content_hash: str  # "sha256:<hex>"
 
 
 def _compute_content_hash(
@@ -114,7 +115,7 @@ def load_from_rekordbox(
         out: list[CanonicalTrack] = []
         for name, pl in playlists.items():
             songs = list(getattr(pl, "Songs", []) or [])
-            songs.sort(key=lambda s: (getattr(s, "TrackNo", 0) or 0))
+            songs.sort(key=lambda s: getattr(s, "TrackNo", 0) or 0)
             for song in songs:
                 cid = getattr(song, "ContentID", None)
                 if cid is None:
@@ -123,9 +124,7 @@ def load_from_rekordbox(
                 if track is None:
                     continue
                 folder_path = getattr(track, "FolderPath", "") or ""
-                if not folder_path or folder_path.startswith(
-                    ("spotify:", "tidal:", "http://", "https://")
-                ):
+                if not folder_path or folder_path.startswith(("spotify:", "tidal:", "http://", "https://")):
                     continue
                 src = Path(folder_path).expanduser()
                 if not src.exists():

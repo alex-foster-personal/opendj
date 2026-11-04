@@ -1,6 +1,6 @@
 """Explicit learned beat/downbeat backend using librosa and madmom.
 
-librosa code is ISC. madmom code is BSD-3-Clause, while its bundled
+librosa code is ISC. madmom code is BSD-2-Clause, while its bundled
 pre-trained models are CC-BY-NC-SA 4.0 and restricted to non-commercial
 use. madmom itself is a git-HEAD install (requirements.txt,
 ``--no-build-isolation``) that no pyproject extra can supply, so this
@@ -12,6 +12,7 @@ an automatic fallback for the portable ``librosa`` default.
 * Everything else (onsets, RMS, key, energy): inherited from
   :class:`~apps.analysis.backends.librosa.LibrosaBackend`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,14 +63,13 @@ class LibrosaMadmomBackend(LibrosaBackend):
         return cls.version
 
     @classmethod
-    def _beats_and_bpm(
-        cls, y: np.ndarray, sr: int
-    ) -> tuple[float, float, list[float], list[float]]:
+    def _beats_and_bpm(cls, y: np.ndarray, sr: int) -> tuple[float, float, list[float], list[float]]:
         from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
         from madmom.features.downbeats import (
             DBNDownBeatTrackingProcessor,
             RNNDownBeatProcessor,
         )
+
         try:
             rnn_beat = RNNBeatProcessor()(y.astype(np.float32))
             beats = DBNBeatTrackingProcessor(fps=100)(rnn_beat)

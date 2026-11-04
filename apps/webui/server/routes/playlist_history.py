@@ -12,6 +12,7 @@ mismatch reuses the write-router ConflictError -> 409 ``conflict``. No
 If-Match: the before/after snapshot is the CAS truth. 503 when state.db is
 missing (same ``get_playlist_store`` as the write router).
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any
@@ -62,10 +63,15 @@ class HistoryApplyOut(BaseModel):
 
 def _row_out(row: PlaylistRow) -> PlaylistWriteOut:
     return PlaylistWriteOut(
-        playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
-        vendor_pl_id=row.vendor_pl_id, items=list(row.items),
-        track_count=len(row.items), created_at=row.created_at,
-        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
+        playlist_id=row.playlist_id,
+        name=row.name,
+        vendor=row.vendor,
+        vendor_pl_id=row.vendor_pl_id,
+        items=list(row.items),
+        track_count=len(row.items),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        forbid_duplicates=row.forbid_duplicates,
     )
 
 

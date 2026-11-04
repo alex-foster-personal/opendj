@@ -77,17 +77,13 @@ class AutoGain:
 
 def validate_target_lufs(value: float) -> float:
     if not math.isfinite(value) or not TARGET_MIN_LUFS <= value <= TARGET_MAX_LUFS:
-        raise ValueError(
-            f"auto gain target must be {TARGET_MIN_LUFS}..{TARGET_MAX_LUFS} LUFS, got {value}"
-        )
+        raise ValueError(f"auto gain target must be {TARGET_MIN_LUFS}..{TARGET_MAX_LUFS} LUFS, got {value}")
     return float(value)
 
 
 def validate_user_offset_db(value: float) -> float:
     if not math.isfinite(value) or not OFFSET_MIN_DB <= value <= OFFSET_MAX_DB:
-        raise ValueError(
-            f"auto gain user offset must be {OFFSET_MIN_DB}..{OFFSET_MAX_DB} dB, got {value}"
-        )
+        raise ValueError(f"auto gain user offset must be {OFFSET_MIN_DB}..{OFFSET_MAX_DB} dB, got {value}")
     return float(value)
 
 

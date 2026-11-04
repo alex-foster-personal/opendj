@@ -111,8 +111,9 @@ from apps.shared.runtime_policy import FILE_EXISTS_TTL_S  # noqa: E402
 
 _FILE_EXISTS_LOCK = threading.Lock()
 # path -> (monotonic time, materialised size, the file that size was measured at,
-# the resolver namespace it was measured under: another namespace is a miss)
-_FILE_EXISTS_CACHE: dict[str, tuple[float, int | None, str | None, str]] = {}
+# the resolver namespace it was measured under: another namespace is a miss,
+# materialised st_mtime_ns from the same stat)
+_FILE_EXISTS_CACHE: dict[str, tuple[float, int | None, str | None, str, int | None]] = {}
 
 
 __all__ = [

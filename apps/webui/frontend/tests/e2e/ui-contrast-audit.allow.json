@@ -1,6 +1,18 @@
 {
   "findings": [
     {
+      "el": "enrich-pill > span.enrich-flag",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-hover"
+      ],
+      "reason": "Found by the SVG pixel sampler (this PR, Nov 4 2026): the enrich pill's \"needs you\" flag is #e8a13a text over a light panel, light #1.94:1 and theme-light #2.15:1 (needs 4.5:1). The pill sits over a replaced svg, so this text was unmeasured before and is measured now. Product decision for CORE (flag color or panel): listed on #5638."
+    },
+    {
       "el": "rb-topbar > button.bsm-toggle.topbar-slot-bsm.on",
       "skins": [
         "default"
@@ -233,18 +245,6 @@
         "performance-hover"
       ],
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"\u203a\" #2f6fd6 on #14171d = 3.73:1 (needs 4.5:1). BrowserPanel.svelte (hotspot). Listed in the W34 findings table on #5638 for triage."
-    },
-    {
-      "el": "rb-topbar > span.free-badge",
-      "skins": [
-        "light",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"Free\" #14171d on #927000 = 3.88:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage."
     },
     {
       "el": "summary > span.lane",

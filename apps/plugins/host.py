@@ -451,9 +451,7 @@ def _request_samples(path: str) -> list[str] | None:
     # would only ever vary the last parameters).
     base = [options[0] for options in choices]
     return ["".join(base)] + [
-        "".join([*base[:i], option, *base[i + 1:]])
-        for i, options in enumerate(choices)
-        for option in options[1:]
+        "".join([*base[:i], option, *base[i + 1 :]]) for i, options in enumerate(choices) for option in options[1:]
     ]
 
 
@@ -484,7 +482,10 @@ def _unload_packages(manifest: PluginManifest) -> None:
 
 
 def _verified_manifest(
-    plugins_dir: Path, installed: InstalledPlugin, trusted: Mapping[str, str] | None, app_version: str,
+    plugins_dir: Path,
+    installed: InstalledPlugin,
+    trusted: Mapping[str, str] | None,
+    app_version: str,
     labs_opt_in: bool,
 ) -> PluginManifest:
     """The installed manifest, its files re-hashed and, for a store install, its signed receipt checked.
@@ -562,7 +563,8 @@ def load_enabled(  # noqa: PLR0913 - each keyword is one independent boot input.
     """
     _forget_resident()
     runtime = PluginRuntime(
-        plugins_dir=plugins_dir, install_ids={p.plugin_id: p.install_id for p in state.plugins.values()},
+        plugins_dir=plugins_dir,
+        install_ids={p.plugin_id: p.install_id for p in state.plugins.values()},
     )
     verified = tuple(catalogs)
     blocked = tuple(b for catalog in verified for b in catalog.blocklist)
@@ -586,8 +588,11 @@ def load_enabled(  # noqa: PLR0913 - each keyword is one independent boot input.
             continue
         missing = _unchecked(installed, checked, state.blocklist_channels)
         if missing is not None:
-            _record("no-catalog", f"the {missing} catalog, whose blocklist it must clear, is missing or does "
-                    "not verify; refresh the store, then restart the engine")
+            _record(
+                "no-catalog",
+                f"the {missing} catalog, whose blocklist it must clear, is missing or does "
+                "not verify; refresh the store, then restart the engine",
+            )
             continue
         if installed.source == "sideload" and not developer:
             _record("dev-only", "sideloaded (unsigned); start the engine with MDT_PLUGIN_DEV=1 to load it")

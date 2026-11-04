@@ -95,21 +95,15 @@ def runner_input(audio_path: Path, *, decode_dir: Path | None = None) -> Iterato
             try:
                 engine_decode.decode_to_wav(audio_path, wav)
             except engine_decode.EngineDecoderUnavailable as exc:
-                raise BackendNotAvailable(
-                    f"the engine cannot decode {audio_path}: {exc}"
-                ) from exc
+                raise BackendNotAvailable(f"the engine cannot decode {audio_path}: {exc}") from exc
             except engine_decode.EngineDecodeFailed as exc:
                 if not audio_path.exists():
-                    raise TrackVanished(
-                        f"{audio_path} vanished before the engine decoded it"
-                    ) from None
+                    raise TrackVanished(f"{audio_path} vanished before the engine decoded it") from None
                 raise TrackUnreadable(str(exc)) from None
             except OSError as exc:
                 # Writing the WAV failed (a full disk, a permission): the
                 # host's fault, and it fails the next track the same way.
-                raise BackendNotAvailable(
-                    f"could not write the engine decode {wav}: {exc}"
-                ) from exc
+                raise BackendNotAvailable(f"could not write the engine decode {wav}: {exc}") from exc
             yield wav
         finally:
             wav.unlink(missing_ok=True)

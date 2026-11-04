@@ -1,4 +1,5 @@
 """Smartlist rule AST + validator (SMART-01)."""
+
 from __future__ import annotations
 
 from .ast import is_logical, is_predicate, referenced_fields, walk

@@ -24,6 +24,7 @@ import * as path from 'node:path';
 import type { Readable } from 'node:stream';
 
 import { appendRotated, ENGINE_LOG_MAX_BYTES, rotateLogIfNeeded } from './engine-log';
+import { engineLauncher, launchInvocation, windowsSystemTool } from './platform';
 import { HEALTH_PATH } from './shell-health';
 import { appendShellLog, EngineError, verifyLogWritable } from './shell-log';
 
@@ -31,8 +32,6 @@ export { EngineError } from './shell-log';
 
 /** The payload directory inside the app's resources. */
 export const PAYLOAD_DIR = 'payload';
-/** The one entry point the shell knows. */
-export const ENGINE_LAUNCHER = 'bin/opendj-engine';
 /** Measured cold boots are ~1.5 s; 30 s is a bound, not a wait. */
 export const BOOT_TIMEOUT_MS = 30_000;
 export { HEALTH_PATH };
@@ -314,10 +313,7 @@ export function windowsTaskkill(
 	env: NodeJS.ProcessEnv = process.env,
 	exists: (file: string) => boolean = fs.existsSync
 ): string | null {
-	const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
-	if (!root || !path.win32.isAbsolute(root)) return null;
-	const taskkill = path.win32.join(root, 'System32', 'taskkill.exe');
-	return exists(taskkill) ? taskkill : null;
+	return windowsSystemTool('taskkill.exe', env, exists);
 }
 
 /**
@@ -632,9 +628,18 @@ export function spawnProcess(spec: ProcessSpec): Engine {
 
 	let child: ChildProcess;
 	try {
-		// detached: the child leads a new process group on POSIX, so one
-		// signal reaches the jobs it spawns too.
-		child = spawnChild(launcher, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+		const call = launchInvocation(launcher, args);
+		child = spawnChild(call.command, call.args, {
+			env,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			// POSIX: lead a new process group so one signal reaches the jobs the
+			// engine spawns. Windows: no groups (stop uses taskkill /T by pid), and a
+			// detached child loses its piped stdout and stderr (measured), so not there.
+			detached: process.platform !== 'win32',
+			windowsVerbatimArguments: call.windowsVerbatimArguments,
+			// A batch launcher must not flash a console beside the app.
+			windowsHide: true
+		});
 	} catch (error) {
 		throw new EngineError(`Open DJ could not start its ${name}.`, `Launching ${launcher} failed: ${(error as Error).message}`);
 	}
@@ -664,7 +669,7 @@ export function spawnEngine(payloadDir: string, dataDir: string, logPath: string
 	if (profile !== null) args.push('--build-profile', profile);
 	return spawnProcess({
 		name: 'engine',
-		launcher: path.join(payloadDir, ENGINE_LAUNCHER),
+		launcher: path.join(payloadDir, engineLauncher()),
 		dataDir,
 		logPath,
 		port,

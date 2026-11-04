@@ -13,6 +13,7 @@ explicit ``--source``, so a script and the button cannot disagree.
 A master start is pushed to the open /performance page, which connects its tap
 before the start answers; `rec start` returns once audio is really written.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,14 +53,11 @@ def _call(base_url: str, method: str, path: str, body: dict[str, Any] | None = N
 def start_body(source: str, device_name: str | None, sources: list[str]) -> dict[str, Any]:
     """The start request the picker would send for this source."""
     if (source in ("loopback", "external")) != (device_name is not None):
-        raise RecCommandFailed(
-            f"--source {source} {'needs' if device_name is None else 'takes no'} --device-name"
-        )
+        raise RecCommandFailed(f"--source {source} {'needs' if device_name is None else 'takes no'} --device-name")
     body: dict[str, Any] = {"session_id": None, "source": source, "sources": sources}
     if device_name is not None:
         body["device_name"] = device_name
     return body
-
 
 
 def wait_until_recording(
@@ -88,6 +86,7 @@ def wait_until_recording(
     if status.get("capture") in ("failed", "stopped"):
         raise RecCommandFailed(f"the capture failed: {status.get('capture_error') or status}")
     return status
+
 
 def dispatch(args: argparse.Namespace) -> int:
     if args.rec_cmd == "start":
@@ -125,7 +124,9 @@ def add_parser(sub: Any) -> None:
             cmd.add_argument("--source", required=True, choices=RECORD_SOURCES)
             cmd.add_argument("--device-name", default=None)
             cmd.add_argument(
-                "--sources", nargs="*", default=["djay_monitor", "opendj_decks"],
+                "--sources",
+                nargs="*",
+                default=["djay_monitor", "opendj_decks"],
                 help="deck-state sources (the picker's are djay_monitor opendj_decks)",
             )
     rec.set_defaults(func=dispatch)

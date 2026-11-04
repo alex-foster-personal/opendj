@@ -19,6 +19,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from apps.shared.rekordbox_cue_kind import (
+    HOT_CUE_KINDS,
+    HOT_CUE_SLOTS,
+    is_mapped_kind,
+    kind_to_slot,
+)
+
 from . import paths, platform_paths
 from .numeric_coerce import coerce_optional
 
@@ -372,8 +379,10 @@ def _rb_kind_to_normalised(kind: int | None, index_hint: int | None) -> tuple[st
     k = coerce_optional(kind, int)
     if k is None or k == 0:
         return "memory", None
-    if 1 <= k <= 8:
-        return "hot", (index_hint if index_hint is not None else k - 1)
+    if k in HOT_CUE_KINDS:
+        slot = kind_to_slot(k)
+        assert slot is not None
+        return "hot", HOT_CUE_SLOTS.index(slot)
     if k == 4:
         return "loop", None
     return "hot", index_hint
@@ -395,10 +404,13 @@ def iter_cues(db: Rekordbox6Database, content_id: str) -> list:
         except Exception:
             rows = []
     for row in rows:
+        kind = getattr(row, "Kind", None)
+        kind_i = coerce_optional(kind, int)
+        if kind_i is not None and not is_mapped_kind(kind_i):
+            continue
         in_msec = coerce_optional(getattr(row, "InMsec", None), int)
         if in_msec is None:
             continue
-        kind = getattr(row, "Kind", None)
         color_idx = coerce_optional(getattr(row, "Color", None), int)
         active_loop = bool(getattr(row, "ActiveLoop", False))
         out_msec = coerce_optional(getattr(row, "OutMsec", None), int)
@@ -433,7 +445,7 @@ def iter_cues(db: Rekordbox6Database, content_id: str) -> list:
     return cues
 
 
-def iter_analysis(db: Rekordbox6Database) -> "Iterator":
+def iter_analysis(db: Rekordbox6Database) -> Iterator:
     """Yield ``NormalisedAnalysis`` for every RB track.
 
     BPM is read from ``DjmdContent.BPM`` (stored as BPM×100). Key is
@@ -471,15 +483,15 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
 
 
 __all__ = [
-    "RBTrack",
     "RBPlaylist",
+    "RBTrack",
     "RekordboxDecryptError",
     "decrypt_to_plain",
     "ensure_plain_db",
-    "open_db",
-    "iter_tracks",
-    "iter_playlists",
-    "iter_cues",
-    "iter_analysis",
     "is_streaming_path",
+    "iter_analysis",
+    "iter_cues",
+    "iter_playlists",
+    "iter_tracks",
+    "open_db",
 ]

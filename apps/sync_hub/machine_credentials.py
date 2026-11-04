@@ -29,7 +29,7 @@ request rather than cached, so an operator flips it by restarting nothing.
 ENFORCE also refuses to ACTIVATE while :func:`enforce_blockers` names any
 machine: switching it on over an unowned or uncredentialed machine would lock
 that machine out, and a hub that silently stayed in observe instead would be
-the false sense of authentication ``.claude/rules/verification.md`` is about.
+the false sense of authentication ``(private path)`` is about.
 """
 
 from __future__ import annotations
@@ -119,8 +119,7 @@ def configured_mode(env: Mapping[str, str] | None = None) -> CredentialMode:
     if raw == "enforce":
         return "enforce"
     raise CredentialModeError(
-        f"{MODE_ENV}={raw!r} is not a credential mode; use one of "
-        f"{list(MODES)} (unset means {DEFAULT_MODE!r})."
+        f"{MODE_ENV}={raw!r} is not a credential mode; use one of {list(MODES)} (unset means {DEFAULT_MODE!r})."
     )
 
 
@@ -150,11 +149,7 @@ def mint_credential(conn: sqlite3.Connection, machine_id: str, *, now: str | Non
     owns the transaction.
     """
     token = CREDENTIAL_PREFIX + secrets.token_urlsafe(32)
-    stamp = (
-        sync_stamp.canonical_from(sync_stamp.parse_canonical(now))
-        if now
-        else sync_stamp.canonical_now()
-    )
+    stamp = sync_stamp.canonical_from(sync_stamp.parse_canonical(now)) if now else sync_stamp.canonical_now()
     conn.execute(
         f"INSERT INTO {CREDENTIAL_TABLE}(machine_id, credential_sha256, minted_at) "
         f"VALUES (?, ?, ?) ON CONFLICT(machine_id) DO UPDATE SET "
@@ -167,9 +162,7 @@ def mint_credential(conn: sqlite3.Connection, machine_id: str, *, now: str | Non
 
 def minted_at(conn: sqlite3.Connection, machine_id: str) -> str | None:
     """When ``machine_id``'s live credential was minted, or None if it has none."""
-    row = conn.execute(
-        f"SELECT minted_at FROM {CREDENTIAL_TABLE} WHERE machine_id = ?", (machine_id,)
-    ).fetchone()
+    row = conn.execute(f"SELECT minted_at FROM {CREDENTIAL_TABLE} WHERE machine_id = ?", (machine_id,)).fetchone()
     return None if row is None else str(row[0])
 
 
@@ -227,9 +220,7 @@ def verify(
     return "valid"
 
 
-def enforce_blockers(
-    conn: sqlite3.Connection, *, hub_machine_id: str | None
-) -> list[EnforceBlocker]:
+def enforce_blockers(conn: sqlite3.Connection, *, hub_machine_id: str | None) -> list[EnforceBlocker]:
     """Every machine that would be locked out if ENFORCE activated now.
 
     Skips the hub's own row (it never calls itself) and revoked machines

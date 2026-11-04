@@ -3,6 +3,7 @@
 Kept separate from :mod:`apps.shared.pairings.repo` so the model can be
 imported by CLI / serialiser code without pulling in ``sqlite3``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,8 +27,8 @@ class PairingEdge:
 
     from_stable_id: str
     to_stable_id: str
-    direction: str           # one of DIRECTIONS
-    source: str              # one of SOURCES
+    direction: str  # one of DIRECTIONS
+    source: str  # one of SOURCES
     notes: str | None
     confidence: float | None
     created_at: datetime

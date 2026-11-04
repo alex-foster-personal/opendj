@@ -50,9 +50,13 @@ class MusixmatchProvider:
         return message.get("body") or None
 
     def check(self, track: Track) -> CheckResult:
-        body = self._call("matcher.track.get", {
-            "q_artist": track.primary_artist, "q_track": track.norm_title,
-        })
+        body = self._call(
+            "matcher.track.get",
+            {
+                "q_artist": track.primary_artist,
+                "q_track": track.norm_title,
+            },
+        )
         if body is None or "track" not in body:
             return CheckResult(found=False, detail="no-match")
         t = body["track"]
@@ -65,9 +69,13 @@ class MusixmatchProvider:
 
     def fetch(self, track: Track) -> str | None:
         """FULL lyrics on the Basic v2 plan (probed Fri 28 Aug 2026)."""
-        body = self._call("matcher.lyrics.get", {
-            "q_artist": track.primary_artist, "q_track": track.norm_title,
-        })
+        body = self._call(
+            "matcher.lyrics.get",
+            {
+                "q_artist": track.primary_artist,
+                "q_track": track.norm_title,
+            },
+        )
         if body is None or "lyrics" not in body:
             return None
         text = (body["lyrics"].get("lyrics_body") or "").strip()

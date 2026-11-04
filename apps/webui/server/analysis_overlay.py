@@ -58,15 +58,18 @@ def lane_owned_fields(
     """Lane-owned scalars from :func:`effective_fields`, with a safe skip.
 
     Skips the projection query only when every track in the batch is
-    rekordbox-mapped and every lane's per-track effective source is rbx
-    (including PARITY-02 toggles). Unmapped standalone libraries always
+    rekordbox-mapped, every lane's per-track effective source is rbx
+    (including PARITY-02 toggles), and no track has an ok own bpm/key beside
+    a missing rekordbox one (PGCL-7693). Unmapped standalone libraries always
     read ``analysis_projection`` even when the global default is still rbx
     (STANDALONE-02/06).
     """
     if not stable_ids:
         return {}
     rb_mapped = _rb_mapped_for_batch(stable_ids)
-    if not _batch_needs_lane_owned_fields(conn, stable_ids, rb_mapped):
+    if not _batch_needs_lane_owned_fields(
+        conn, stable_ids, rb_mapped
+    ) and not analysis_selection.batch_has_missing_rbx_with_own(conn, stable_ids):
         return {}
     selection = analysis_selection.Selection.resolve(conn)
     fields = analysis_selection.effective_fields(

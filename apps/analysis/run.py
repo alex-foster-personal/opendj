@@ -53,6 +53,7 @@ import argparse
 import hashlib
 import json
 import logging
+import sqlite3
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -70,7 +71,8 @@ from .bpm_status import bpm_status_for
 from .jit_warmup import warm_backend_jit
 from .pool import analyze_one, run_pool
 from .record import AnalysisRecord
-from .store import fetch_records_by_ids, open_conn, upsert_record
+from .source_bytes import StaleSourceBytesError, assert_source_bytes_unchanged, read_track_audio_hash
+from .store import UpsertResult, fetch_records_by_ids, open_conn, upsert_record
 
 log = logging.getLogger("apps.analysis.run")
 console = Console()
@@ -291,6 +293,41 @@ class RunSummary:
     errors: list[tuple[str, str]] = field(default_factory=list)
 
 
+def _claimed_audio_hashes(queue: list[TrackRef], db_path: Path | None) -> dict[str, str | None]:
+    """Each queued track's stored audio hash, read once on a short-lived connection."""
+    conn = open_conn(db_path)
+    try:
+        return {r.stable_id: read_track_audio_hash(conn, r.stable_id) for r in queue}
+    finally:
+        conn.close()
+
+
+def upsert_unless_source_moved(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    record: AnalysisRecord,
+    claimed_audio_hash: str | None,
+    *,
+    db_path: Path | None,
+) -> UpsertResult:
+    """Check the claimed ``audio_hash`` and write ``record`` in ONE write transaction (#6114).
+
+    The shared connection is autocommit, so without ``BEGIN IMMEDIATE`` a folder
+    rescan could commit a byte replacement between the check and the upsert, and
+    the stale record would be written back after ingest dropped its analysis.
+    Same shape as the queue runner's ``_commit_record``.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        assert_source_bytes_unchanged(conn, stable_id, claimed_audio_hash)
+        result = upsert_record(record, db_path=db_path, conn=conn)
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+    return result
+
+
 def run(  # noqa: C901, PLR0912
     queue: list[TrackRef],
     *,
@@ -357,6 +394,17 @@ def run(  # noqa: C901, PLR0912
         backend, backend_name=backend_name, purge_stale=owned_cache is not None
     )
     console.print(f"[cyan]{warmup.render()}[/cyan]")
+    if warmup.refused:
+        raise RuntimeError(
+            f"jit warm-up refused ({warmup.detail}); analysis would compile a "
+            "cold numba cache unlocked (#1316 / #7227)"
+        )
+
+    # The bytes each track had when this batch claimed it, read BEFORE either
+    # dispatch path runs: a folder rescan that rewrites a file mid-analysis
+    # changes the stored hash, and a snapshot taken after the analysis would
+    # read the replacement and accept the stale record.
+    claimed_hashes = {} if dry_run else _claimed_audio_hashes(queue, db_path)
 
     if workers > 1:
         rows.extend(
@@ -403,7 +451,15 @@ def run(  # noqa: C901, PLR0912
                 continue
             status = "dry-run" if dry_run else "-"
             if not dry_run:
-                result = upsert_record(rec, db_path=db_path, conn=shared_conn)
+                try:
+                    result = upsert_unless_source_moved(
+                        shared_conn, sid, rec, claimed_hashes.get(sid), db_path=db_path
+                    )
+                except StaleSourceBytesError as exc:
+                    summary.failed += 1
+                    summary.errors.append((sid, str(exc)))
+                    table.add_row(sid[:14], "-", "-", "-", "-", f"[red]{exc}[/red]")
+                    continue
                 status = (
                     "new" if result.inserted
                     else "unchanged" if result.unchanged

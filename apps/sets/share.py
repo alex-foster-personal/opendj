@@ -32,9 +32,7 @@ class SetShareConfig:
         try:
             _port = parsed.port
         except ValueError as exc:
-            raise SetShareError(
-                f"{SET_SHARE_BASE_URL_ENV} must have a valid HTTPS port"
-            ) from exc
+            raise SetShareError(f"{SET_SHARE_BASE_URL_ENV} must have a valid HTTPS port") from exc
         if (
             parsed.scheme != "https"
             or not parsed.netloc
@@ -45,8 +43,7 @@ class SetShareConfig:
             or parsed.password
         ):
             raise SetShareError(
-                f"{SET_SHARE_BASE_URL_ENV} must be an HTTPS origin without "
-                "credentials, query, or fragment"
+                f"{SET_SHARE_BASE_URL_ENV} must be an HTTPS origin without credentials, query, or fragment"
             )
         object.__setattr__(self, "base_url", urlunsplit(("https", parsed.netloc, "", "", "")))
 

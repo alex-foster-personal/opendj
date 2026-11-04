@@ -189,8 +189,7 @@ def checkout(request: Request, payload: CheckoutRequest) -> BillingUrlResponse:
             detail={
                 "code": UNKNOWN_FEATURE_CODE,
                 "message": (
-                    f"feature {payload.feature_id!r} is not sold on this hub; sold: "
-                    f"{source.config.sold_features()}"
+                    f"feature {payload.feature_id!r} is not sold on this hub; sold: {source.config.sold_features()}"
                 ),
             },
         )

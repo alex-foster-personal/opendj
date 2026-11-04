@@ -4,6 +4,7 @@ Builds a paste-ready pinned-comment tracklist with SoundCloud-clickable
 timestamps from SET-01 ``timeline.jsonl``. Does not upload audio and does
 not offer takeover or an oDj browser player.
 """
+
 from __future__ import annotations
 
 import math
@@ -135,9 +136,7 @@ def _display_name(artist: str | None, title: str | None, stable_id: str | None) 
 def _timestamp_s(event: dict[str, Any]) -> float:
     raw = event.get("timestamp_s")
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        raise SoundcloudExportError(
-            f"track_loaded row missing numeric timestamp_s: {raw!r}"
-        )
+        raise SoundcloudExportError(f"track_loaded row missing numeric timestamp_s: {raw!r}")
     if raw < 0:
         raise SoundcloudExportError(f"timestamp_s must be >= 0, got {raw!r}")
     return float(raw)
@@ -182,9 +181,7 @@ def _comment_from(rows: list[SoundcloudTracklistRow]) -> str:
     return "".join(f"{row.timestamp_label} {row.display_name}\n" for row in rows)
 
 
-def build_soundcloud_export(
-    session_id: str, *, sets_root: Path | None = None
-) -> SoundcloudExport:
+def build_soundcloud_export(session_id: str, *, sets_root: Path | None = None) -> SoundcloudExport:
     """Read ``timeline.jsonl`` for a finalized session and build the export."""
     session = get_session(session_id, sets_root=sets_root)
     if session is None:

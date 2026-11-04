@@ -45,9 +45,7 @@ import httpx
 
 # ----- CFG -------------------------------------------------------------------
 TOKENINFO_URL: str = "https://oauth2.googleapis.com/tokeninfo"
-GOOGLE_ISSUERS: frozenset[str] = frozenset(
-    {"accounts.google.com", "https://accounts.google.com"}
-)
+GOOGLE_ISSUERS: frozenset[str] = frozenset({"accounts.google.com", "https://accounts.google.com"})
 VERIFY_TIMEOUT_S: float = 10.0
 
 CLIENT_ID_ENV: str = "MDT_STEMS_RELAY_GOOGLE_CLIENT_ID"
@@ -72,8 +70,7 @@ class RateCapReached(Exception):
 
     def __init__(self, used: int, limit: int, resets_at: datetime) -> None:
         super().__init__(
-            f"rate cap reached: {used} of {limit} tracks used; "
-            f"resets at {resets_at.isoformat(timespec='seconds')}"
+            f"rate cap reached: {used} of {limit} tracks used; resets at {resets_at.isoformat(timespec='seconds')}"
         )
         self.used = used
         self.limit = limit
@@ -159,9 +156,7 @@ def load_allowlist(raw: str | None = None) -> frozenset[str]:
     never be the same state.
     """
     source = raw if raw is not None else os.environ.get(ALLOWLIST_ENV, "")
-    emails = {
-        entry.strip().lower() for entry in source.split(",") if entry.strip()
-    }
+    emails = {entry.strip().lower() for entry in source.split(",") if entry.strip()}
     if not emails:
         raise ValueError(
             f"{ALLOWLIST_ENV} is empty. Set it to the comma-separated tester "
@@ -173,9 +168,7 @@ def load_allowlist(raw: str | None = None) -> frozenset[str]:
 
 def assert_allowlisted(caller: Caller, allowlist: frozenset[str]) -> None:
     if caller.email not in allowlist:
-        raise NotAllowlisted(
-            f"{caller.email} is not on the tester allowlist for this build"
-        )
+        raise NotAllowlisted(f"{caller.email} is not on the tester allowlist for this build")
 
 
 # ----- gate 3: the rate cap --------------------------------------------------
@@ -200,15 +193,9 @@ class RateCap:
     reliably-failing file spend without limit.
     """
 
-    def __init__(
-        self, limit: int | None = None, window: timedelta | None = None
-    ) -> None:
-        self.limit = limit if limit is not None else _env_int(
-            RATE_LIMIT_ENV, DEFAULT_TRACKS_PER_WINDOW
-        )
-        self.window = window or timedelta(
-            hours=_env_int(RATE_WINDOW_ENV, DEFAULT_WINDOW_HOURS)
-        )
+    def __init__(self, limit: int | None = None, window: timedelta | None = None) -> None:
+        self.limit = limit if limit is not None else _env_int(RATE_LIMIT_ENV, DEFAULT_TRACKS_PER_WINDOW)
+        self.window = window or timedelta(hours=_env_int(RATE_WINDOW_ENV, DEFAULT_WINDOW_HOURS))
         if self.limit <= 0:
             raise ValueError(f"{RATE_LIMIT_ENV} must be positive, got {self.limit}")
         self._windows: dict[str, _Window] = {}

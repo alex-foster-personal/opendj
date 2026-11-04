@@ -1,4 +1,5 @@
 """Mint the share cookie so a friend URL can carry ``?share=`` once."""
+
 from __future__ import annotations
 
 import hmac

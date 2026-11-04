@@ -24,6 +24,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 import httpx
 
 from apps.opendj_cli.api_cli import HTTP_METHODS, _parse_field, _parse_header, _request_body
+from apps.opendj_cli.blocked import annotate_blocked
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     ORDER_TIMEOUT_S,
@@ -34,9 +35,12 @@ from apps.opendj_cli.client import (
     OrderTimedOut,
 )
 from apps.opendj_cli.engine_status import build_engine_status
+from apps.opendj_cli.mcp_client_errors_tools import register_client_errors_tools
 from apps.opendj_cli.mcp_dj_tools import register_dj_tools
 from apps.opendj_cli.mcp_energy_tools import register_energy_tools
+from apps.opendj_cli.mcp_enrichment_tools import register_enrichment_tools
 from apps.opendj_cli.mcp_genre_tools import register_genre_tools
+from apps.opendj_cli.mcp_offload_tools import register_offload_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
@@ -376,7 +380,23 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         verb: str | None = None,
         args: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Dispatch one AGENT-03 order and return the page result document."""
+        """Dispatch one AGENT-03 order and return the page result document.
+
+        A load onto a playing deck is refused: ``verdict: "blocked"`` plus
+        ``blocked`` (deck, playing track, ``override_order``/``override_cli``).
+        The override is ``load`` with ``replace_playing: true`` (it stops that
+        deck, then loads). Send it only if the user's request implied replacing
+        a playing deck (e.g. "load four decks now"); if unclear, ask the user first.
+
+        Dial positions (DIALCLOCK-8341) are clock times: 12 o'clock is centre (0.5,
+        flat or dry), 9 o'clock is 0.1667, 3 o'clock is 0.8333, and the dial runs
+        from 7:30 (0) to 4:30 (1). With ``verb`` + ``args`` the trim, eq, filter
+        and color_fx values take "3pm", "3 o'clock", "15:00" or a 0..1 number
+        (``1`` is full right; say "1pm" for one o'clock). A raw ``order`` takes
+        the 0..1 number only. ``color_fx`` with ``effect=next`` cycles FILTER,
+        SPACE, ECHO; switching effect removes the old one and returns the knob
+        to 12 o'clock unless ``value`` is given (COLORFX-8341).
+        """
         try:
             origin = _resolve_verified_origin()
             parsed_order = _parse_order_payload(order, verb, args)
@@ -407,7 +427,10 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
 
-        document: dict[str, Any] = dict(result)
+        try:
+            document = annotate_blocked(dict(result))  # AGENT-8332/54
+        except MalformedResult as error:
+            raise _tool_error({"error": "order_failed", "message": str(error)}) from error
         if safety:
             document["safety"] = safety
         return document
@@ -567,6 +590,24 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         engine_not_running=_engine_not_running,
     )
     register_energy_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_client_errors_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_enrichment_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_offload_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

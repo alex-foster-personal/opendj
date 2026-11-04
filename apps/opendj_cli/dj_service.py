@@ -65,6 +65,7 @@ from apps.autodj.http import (
 from apps.autodj.http import (
     with_in_track as _with_in_track,
 )
+from apps.autodj.setscore import MirrorError, SetPlan, check_mirror, next_transition, plan_set, print_set_score
 from apps.opendj_cli.client import (
     MIRROR_TIMEOUT_S,
     EngineClient,
@@ -531,17 +532,18 @@ class DjService:
         document["anchored_from"] = plan.anchor
         return self._parsed(document)
 
-    # ----- execute -------------------------------------------------------
-    def schedule(self, plan: Mapping[str, Any]) -> dict[str, Any]:
+    def schedule(self, plan: Mapping[str, Any], mirror: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Schedule ``plan`` on ``mirror``, the snapshot the caller checked it against, or on a fresh read."""
         # One schedule transaction at a time across every process on this engine: two callers that both
         # read an idle mirror would otherwise both load, and the late load could replace the first track.
         with _schedule_lock(self.origin.lock_path.with_name(SCHEDULE_LOCK_NAME)):
-            return self._schedule_locked(plan)
+            return self._schedule_locked(plan, mirror)
 
-    def _schedule_locked(self, plan: Mapping[str, Any]) -> dict[str, Any]:
+    def _schedule_locked(self, plan: Mapping[str, Any], mirror: Mapping[str, Any] | None = None) -> dict[str, Any]:
         parsed = self._parsed(plan)
         audio = self._audio_mode()
-        mirror = self._mirror()
+        if mirror is None:
+            mirror = self._mirror()
         # Refuse a busy page BEFORE loading: the idle incoming deck may be the one its running plan still needs.
         _refuse_active_plan(mirror)
         _refuse_autoplay_handoff(mirror)
@@ -707,6 +709,67 @@ class DjService:
             raise DjError("amend_refused", str(failed[0].get("error")), plan_id=plan_id)
         return {"plan_id": plan_id, "action": action, "page": steps[0].get("result") if steps else None}
 
+    # ----- sets (AGENT-27) -------------------------------------------------
+    def plan_set(
+        self,
+        stable_ids: list[str],
+        *,
+        intent: str | None = None,
+        first_deck: int | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """A whole set: the best validated transition for each neighbor pair.
+
+        When the first track is already playing, the set starts on its deck
+        and its first transition leaves after the bar the deck is at now.
+        Otherwise (no page open, the track not playing, or no position) it
+        plans from bar 1 on ``first_deck`` and says so in ``notes``. A mirror
+        that is open but malformed is refused (``mirror_invalid``).
+        """
+        _check_set_args(stable_ids, first_deck)
+        profiles = [self.profile(stable_id) for stable_id in stable_ids]
+        live_deck, after_bar, notes = self._live_start(profiles[0])
+        deck = _set_first_deck(first_deck, live_deck)
+        try:
+            planned = plan_set(profiles, first_deck=deck, intent=intent, name=name, after_bar=after_bar)
+        except PlanError as error:
+            raise DjError("plan_invalid", str(error)) from error
+        document: dict[str, Any] = {"set": planned.to_json(), "score": print_set_score(planned)}
+        if notes:
+            document["notes"] = notes
+        return document
+
+    def _live_start(self, first: TrackProfile) -> tuple[int | None, float | None, list[str]]:
+        """Where the live mix has the first track, or why it is not playing: its deck, bar, and any notes."""
+        try:
+            mirror = self._mirror()
+        except DjError as error:
+            if error.code != "no_performance_page":
+                raise
+            return None, None, [f"planned without the live mix: {error}"]
+        try:
+            decks = check_mirror(mirror)
+        except MirrorError as error:
+            raise DjError("mirror_invalid", str(error)) from error
+        live_deck, after_bar, why_not = _playing_at(decks, first)
+        return live_deck, after_bar, [f"planned without the live mix: {why_not}"] if why_not else []
+
+    def schedule_set_next(self, planned: SetPlan) -> dict[str, Any]:
+        """Schedule the set's transition that is due now, or say why none is."""
+        # One snapshot for the due check and the scheduling: a track that starts on another deck between two
+        # reads would otherwise be loaded twice.
+        mirror = self._mirror()
+        try:
+            step = next_transition(planned, mirror)
+        except MirrorError as error:
+            raise DjError("mirror_invalid", str(error)) from error
+        if step.index is None:
+            return {"scheduled": False, "reason": step.reason, "transitions": len(planned.transitions)}
+        document = self.schedule(planned.transitions[step.index].to_json(), mirror)
+        document["set_index"] = step.index
+        document["transitions"] = len(planned.transitions)
+        return document
+
     def plan_status(self) -> dict[str, Any]:
         return {"agent_plan": self._mirror().get("agent_plan")}
 
@@ -718,6 +781,49 @@ class DjService:
         """AUTOPLAN-06: the Decide now button's twin. The page answers with the decision it starts from."""
         self._order({"single": {"type": "auto_play_decide_now"}})
         return self.autoplay_decision()
+
+
+def _set_first_deck(requested: int | None, live_deck: int | None) -> int:
+    """The set's first deck: the live one when the first track plays, else the request, else 1."""
+    if live_deck is None:
+        return 1 if requested is None else requested
+    if requested is not None and requested != live_deck:
+        raise DjError(
+            "usage",
+            f"the first track is playing on D{live_deck}, so the set starts there; first_deck {requested} conflicts",
+        )
+    return live_deck
+
+
+def _check_set_args(stable_ids: list[str], first_deck: int | None) -> None:
+    """Refuse a set of fewer than two tracks, a track twice, or a first deck that is not 1..4."""
+    if len(stable_ids) < 2:
+        raise DjError("usage", "a set needs at least two stable_ids")
+    repeated = sorted({stable_id for stable_id in stable_ids if stable_ids.count(stable_id) > 1})
+    if repeated:
+        raise DjError("usage", f"{repeated[0]} appears twice in the running order; a set plays each track once")
+    if first_deck is not None and (type(first_deck) is not int or first_deck not in _PARTNER):
+        raise DjError("usage", f"first_deck must be a deck 1..4, got {first_deck!r}")
+
+
+def _playing_at(
+    decks: Mapping[str, Mapping[str, Any]], profile: TrackProfile
+) -> tuple[int | None, float | None, str | None]:
+    """The deck playing ``profile``'s track, the bar a plan may start after, and why not live.
+
+    ``decks`` is the checked mirror (:func:`check_mirror`). The third value is
+    None when the set starts from the live mix, else what kept it from doing so.
+    """
+    track = profile.stable_id
+    loaded = sorted(deck_id for deck_id, state in decks.items() if state["stable_id"] == track)
+    playing = [deck_id for deck_id in loaded if decks[deck_id]["playing"]]
+    if not playing:
+        where = f"is loaded on D{loaded[0]} but not playing" if loaded else "is not on any deck"
+        return None, None, f"{track} {where}, so the set starts from bar 1"
+    bar = _live_bar(profile, decks[playing[0]])
+    if bar is None:
+        return int(playing[0]), None, f"D{playing[0]} plays {track} but publishes no position, so the set starts from bar 1"
+    return int(playing[0]), bar + ANCHOR_LEAD_BARS, None
 
 
 def _check_decks(out_deck: Any, in_deck: int | None) -> None:

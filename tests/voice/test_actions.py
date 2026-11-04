@@ -7,15 +7,9 @@ import pytest
 
 from apps.voice import actions, grammar
 
+from tests.voice.helpers import events_of_kind, make_intent
+
 pytestmark = pytest.mark.requirement("VOICE-01")
-
-
-def _intent(kind: str, slots: dict | None = None, raw: str = "") -> grammar.Intent:
-    return grammar.Intent(kind=kind, slots=slots or {}, raw_transcript=raw)
-
-
-def _published(bus, kind: str):
-    return [e for e in bus.events if e.get("kind") == kind]
 
 
 # ----- Read-only handlers --------------------------------------------------
@@ -23,71 +17,71 @@ def _published(bus, kind: str):
 
 class TestHandleSearch:
     def test_publishes_search_event_and_speaks(self, voice_context):
-        intent = _intent("SEARCH", {"query": "daft punk"}, raw="find daft punk")
+        intent = make_intent("SEARCH", {"query": "daft punk"}, raw="find daft punk")
         resp = actions.handle_search(intent, voice_context)
         assert resp.published is True
-        evts = _published(voice_context.event_bus, "SEARCH")
+        evts = events_of_kind(voice_context.event_bus, "SEARCH")
         assert len(evts) == 1
         assert evts[0]["slots"]["query"] == "daft punk"
         assert "searching for daft punk" in voice_context.tts_engine.spoken[0]
 
     def test_empty_query(self, voice_context):
-        resp = actions.handle_search(_intent("SEARCH", {"query": "   "}), voice_context)
+        resp = actions.handle_search(make_intent("SEARCH", {"query": "   "}), voice_context)
         assert resp.published is False
         assert "didn't catch" in voice_context.tts_engine.spoken[0]
 
 
 class TestHandleReadBpm:
     def test_no_deck_state(self, voice_context):
-        resp = actions.handle_read_bpm(_intent("READ_BPM"), voice_context)
+        resp = actions.handle_read_bpm(make_intent("READ_BPM"), voice_context)
         assert resp.published is False
         assert "no deck playing" in voice_context.tts_engine.spoken[0]
 
     def test_speaks_rounded_bpm(self, voice_context):
         voice_context.event_bus.publish({"kind": "deck_state", "bpm": 128.4})
         voice_context.tts_engine.spoken.clear()
-        resp = actions.handle_read_bpm(_intent("READ_BPM"), voice_context)
+        resp = actions.handle_read_bpm(make_intent("READ_BPM"), voice_context)
         assert resp.published is True
         assert voice_context.tts_engine.spoken[-1] == "128 BPM"
 
     def test_missing_bpm_field(self, voice_context):
         voice_context.event_bus.publish({"kind": "deck_state"})
         voice_context.tts_engine.spoken.clear()
-        resp = actions.handle_read_bpm(_intent("READ_BPM"), voice_context)
+        resp = actions.handle_read_bpm(make_intent("READ_BPM"), voice_context)
         assert resp.published is False
         assert "bpm unknown" in voice_context.tts_engine.spoken[0]
 
 
 class TestHandleReadKey:
     def test_no_deck_state(self, voice_context):
-        resp = actions.handle_read_key(_intent("READ_KEY"), voice_context)
+        resp = actions.handle_read_key(make_intent("READ_KEY"), voice_context)
         assert resp.published is False
 
     def test_reads_camelot(self, voice_context):
         voice_context.event_bus.publish({"kind": "deck_state", "camelot": "8A"})
         voice_context.tts_engine.spoken.clear()
-        resp = actions.handle_read_key(_intent("READ_KEY"), voice_context)
+        resp = actions.handle_read_key(make_intent("READ_KEY"), voice_context)
         assert resp.published is True
         assert "8A" in voice_context.tts_engine.spoken[-1]
 
 
 class TestHandleAdvanceQueue:
     def test_publishes_and_speaks(self, voice_context):
-        resp = actions.handle_advance_queue(_intent("ADVANCE_QUEUE"), voice_context)
+        resp = actions.handle_advance_queue(make_intent("ADVANCE_QUEUE"), voice_context)
         assert resp.published is True
-        assert _published(voice_context.event_bus, "ADVANCE_QUEUE")
+        assert events_of_kind(voice_context.event_bus, "ADVANCE_QUEUE")
         assert voice_context.tts_engine.spoken[-1] == "advancing queue"
 
 
 class TestHandleMuteUnmute:
     def test_mute_sets_mute_until(self, voice_context):
-        actions.handle_mute_voice(_intent("MUTE_VOICE"), voice_context)
+        actions.handle_mute_voice(make_intent("MUTE_VOICE"), voice_context)
         assert voice_context.mute_until is not None
         assert voice_context.is_muted()
 
     def test_unmute_clears(self, voice_context):
         voice_context.mute_until = time.time() + 600
-        actions.handle_unmute_voice(_intent("UNMUTE_VOICE"), voice_context)
+        actions.handle_unmute_voice(make_intent("UNMUTE_VOICE"), voice_context)
         assert voice_context.mute_until is None
 
 
@@ -96,7 +90,7 @@ class TestHandleMuteUnmute:
 
 class TestHandleSaveCueDestructiveOff:
     def test_no_recent_transition(self, voice_context):
-        resp = actions.handle_save_cue(_intent("SAVE_CUE"), voice_context)
+        resp = actions.handle_save_cue(make_intent("SAVE_CUE"), voice_context)
         assert resp.published is False
         assert "no recent transition" in voice_context.tts_engine.spoken[0]
 
@@ -109,10 +103,10 @@ class TestHandleSaveCueDestructiveOff:
             }
         )
         voice_context.tts_engine.spoken.clear()
-        resp = actions.handle_save_cue(_intent("SAVE_CUE"), voice_context)
+        resp = actions.handle_save_cue(make_intent("SAVE_CUE"), voice_context)
         assert resp.published is True
         assert resp.dry_run is True
-        evts = _published(voice_context.event_bus, "SAVE_CUE")
+        evts = events_of_kind(voice_context.event_bus, "SAVE_CUE")
         assert evts[-1]["dry_run"] is True
         assert "destructive mode off" in voice_context.tts_engine.spoken[-1]
 
@@ -120,21 +114,21 @@ class TestHandleSaveCueDestructiveOff:
 class TestHandleRateTrackDestructiveOff:
     def test_out_of_range(self, voice_context):
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": 7}), voice_context
+            make_intent("RATE_TRACK", {"stars": 7}), voice_context
         )
         assert resp.published is False
         assert "1 to 5" in voice_context.tts_engine.spoken[-1]
 
     def test_invalid_stars(self, voice_context):
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": "many"}), voice_context
+            make_intent("RATE_TRACK", {"stars": "many"}), voice_context
         )
         assert resp.published is False
         assert "didn't catch" in voice_context.tts_engine.spoken[-1]
 
     def test_no_deck_state(self, voice_context):
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": 5}), voice_context
+            make_intent("RATE_TRACK", {"stars": 5}), voice_context
         )
         assert resp.published is False
 
@@ -144,11 +138,11 @@ class TestHandleRateTrackDestructiveOff:
         )
         voice_context.tts_engine.spoken.clear()
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": 5}), voice_context
+            make_intent("RATE_TRACK", {"stars": 5}), voice_context
         )
         assert resp.published is True
         assert resp.dry_run is True
-        evts = _published(voice_context.event_bus, "RATE_TRACK")
+        evts = events_of_kind(voice_context.event_bus, "RATE_TRACK")
         assert evts[-1]["dry_run"] is True
         assert evts[-1]["slots"]["stable_id"] == "stable_xyz"
         assert evts[-1]["slots"]["stars"] == 5
@@ -162,34 +156,34 @@ class TestRegistry:
         registry = actions.default_registry()
         voice_context.event_bus.publish({"kind": "deck_state", "bpm": 128})
         voice_context.tts_engine.spoken.clear()
-        resp = registry.dispatch(_intent("READ_BPM"), voice_context)
+        resp = registry.dispatch(make_intent("READ_BPM"), voice_context)
         assert resp.published is True
 
     def test_muted_blocks_non_unmute(self, voice_context):
         voice_context.mute_until = time.time() + 600
         registry = actions.default_registry()
-        resp = registry.dispatch(_intent("SEARCH", {"query": "x"}), voice_context)
+        resp = registry.dispatch(make_intent("SEARCH", {"query": "x"}), voice_context)
         assert resp.published is False
         assert resp.meta and resp.meta.get("muted") is True
 
     def test_muted_allows_unmute(self, voice_context):
         voice_context.mute_until = time.time() + 600
         registry = actions.default_registry()
-        resp = registry.dispatch(_intent("UNMUTE_VOICE"), voice_context)
+        resp = registry.dispatch(make_intent("UNMUTE_VOICE"), voice_context)
         assert resp.published is True
 
     def test_debounce_blocks_second_call(self, voice_context):
         voice_context.debounce_s = 5.0
         registry = actions.default_registry()
-        r1 = registry.dispatch(_intent("SEARCH", {"query": "a"}), voice_context)
+        r1 = registry.dispatch(make_intent("SEARCH", {"query": "a"}), voice_context)
         assert r1.published is True
-        r2 = registry.dispatch(_intent("SEARCH", {"query": "b"}), voice_context)
+        r2 = registry.dispatch(make_intent("SEARCH", {"query": "b"}), voice_context)
         assert r2.published is False
         assert r2.meta and r2.meta.get("debounced") is True
 
-    def test_unknown_intent_returns_no_handler(self, voice_context):
+    def test_unknownmake_intent_returns_no_handler(self, voice_context):
         registry = actions.Registry(handlers={})
-        resp = registry.dispatch(_intent("MYSTERY"), voice_context)
+        resp = registry.dispatch(make_intent("MYSTERY"), voice_context)
         assert resp.published is False
         assert "no_handler" in resp.reply
 

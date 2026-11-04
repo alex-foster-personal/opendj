@@ -61,9 +61,7 @@ from apps.shared.ffmpeg import resolve_ffmpeg
 # ----- CFG -------------------------------------------------------------------
 SCAN_ALGORITHM = "audio-scan-2"
 AF_SERVICE_ID = "com.opendj.audio-quality-scan"
-LOSSLESS_CONTAINERS: frozenset[str] = frozenset(
-    {".flac", ".wav", ".aiff", ".aif", ".alac", ".ape", ".wv"}
-)
+LOSSLESS_CONTAINERS: frozenset[str] = frozenset({".flac", ".wav", ".aiff", ".aif", ".alac", ".ape", ".wv"})
 DECODE_TIMEOUT_S = 900
 DECODE_NICENESS = 10
 CANCEL_POLL_S = 0.25
@@ -119,9 +117,7 @@ THRESHOLDS = ScanThresholds()
 
 def rule_version(thresholds: ScanThresholds = THRESHOLDS) -> str:
     """Changes with any threshold or the algorithm, so stored facts go stale."""
-    digest = hashlib.sha256(
-        json.dumps(asdict(thresholds), sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256(json.dumps(asdict(thresholds), sort_keys=True).encode("utf-8")).hexdigest()
     return f"{SCAN_ALGORITHM}:{digest[:12]}"
 
 
@@ -172,15 +168,27 @@ class ScanFacts:
 def _ffmpeg_argv(path: Path, integer_pcm: bool) -> list[str]:
     fmt = "s32le" if integer_pcm else "f32le"
     return [
-        resolve_ffmpeg(), "-nostdin", "-hide_banner", "-v", "error",
-        "-i", str(path), "-map", "0:a:0", "-f", fmt, "-",
+        resolve_ffmpeg(),
+        "-nostdin",
+        "-hide_banner",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-map",
+        "0:a:0",
+        "-f",
+        fmt,
+        "-",
     ]
 
 
 def _spawn(argv: list[str], stderr: IO[bytes]) -> subprocess.Popen[bytes]:
     """ffmpeg at background priority through the platform seam."""
     return subprocess.Popen(
-        process_priority.background_argv(argv), stdout=subprocess.PIPE, stderr=stderr,
+        process_priority.background_argv(argv),
+        stdout=subprocess.PIPE,
+        stderr=stderr,
         env={**os.environ, "AF_SERVICE_ID": AF_SERVICE_ID},
         **process_priority.lowered_priority(DECODE_NICENESS),
     )
@@ -348,8 +356,12 @@ class ClipRuns:
 
 
 def _edge_index(
-    freqs: np.ndarray, db: np.ndarray, smoothed: np.ndarray,
-    band: tuple[float, float], top: float, t: ScanThresholds,
+    freqs: np.ndarray,
+    db: np.ndarray,
+    smoothed: np.ndarray,
+    band: tuple[float, float],
+    top: float,
+    t: ScanThresholds,
 ) -> int | None:
     """Highest bin above `band` whose smoothed level is within `edge_drop_db`
     of the band's median level, or None."""
@@ -359,9 +371,7 @@ def _edge_index(
     return int(above[-1]) if above.size else None
 
 
-def find_cutoff(
-    psd: np.ndarray, rate: int, t: ScanThresholds = THRESHOLDS
-) -> tuple[float | None, float | None]:
+def find_cutoff(psd: np.ndarray, rate: int, t: ScanThresholds = THRESHOLDS) -> tuple[float | None, float | None]:
     """`(edge_hz, steepness_db)` of an averaged power spectrum.
 
     The edge is the highest frequency still within `edge_drop_db` of the
@@ -495,9 +505,7 @@ def _error_count(err_lines: list[str], returncode: int) -> int:
     return len(err_lines) + (1 if returncode != 0 and not err_lines else 0)
 
 
-def scan_file(
-    path: Path, thresholds: ScanThresholds = THRESHOLDS, cancel: threading.Event | None = None
-) -> ScanFacts:
+def scan_file(path: Path, thresholds: ScanThresholds = THRESHOLDS, cancel: threading.Event | None = None) -> ScanFacts:
     """Decode `path` once and measure it. Raises ScanError if nothing decodes,
     ScanCancelled if `cancel` is set mid-decode (the decoder is killed)."""
     t = thresholds
@@ -525,19 +533,31 @@ def scan_file(
     analysis += time.perf_counter() - a0
     total = time.perf_counter() - started
     facts = ScanFacts(
-        container=container, lossless=lossless, sample_rate=rate, channels=channels,
-        bit_depth=depth, claimed_kbps=claimed_kbps, header_duration_s=header_s,
+        container=container,
+        lossless=lossless,
+        sample_rate=rate,
+        channels=channels,
+        bit_depth=depth,
+        claimed_kbps=claimed_kbps,
+        header_duration_s=header_s,
         decoded_duration_s=round(decoded_s, 3),
         decode_errors=_error_count(err_lines, returncode),
         first_decode_error=err_lines[0][:200] if err_lines else None,
         truncated_s=round(max(0.0, header_s - decoded_s), 3),
         cutoff_hz=round(cutoff) if cutoff is not None else None,
-        cutoff_steep_db=steep, brick_wall=brick, peak=round(fold.peak, 5),
-        clip_runs=runs, clip_longest_ms=longest_ms,
+        cutoff_steep_db=steep,
+        brick_wall=brick,
+        peak=round(fold.peak, 5),
+        clip_runs=runs,
+        clip_longest_ms=longest_ms,
         dc_offset=round(float(np.max(np.abs(fold.sum / fold.frames))), 6),
-        mono_in_stereo=mono, lead_silence_s=round(lead, 2), trail_silence_s=round(trail, 2),
-        padded_24bit=padded, upsampled=upsampled,
-        decode_seconds=round(total - analysis, 3), analysis_seconds=round(analysis, 3),
+        mono_in_stereo=mono,
+        lead_silence_s=round(lead, 2),
+        trail_silence_s=round(trail, 2),
+        padded_24bit=padded,
+        upsampled=upsampled,
+        decode_seconds=round(total - analysis, 3),
+        analysis_seconds=round(analysis, 3),
     )
     return ScanFacts(**{**asdict(facts), "issues": issues_of(facts, t)})
 

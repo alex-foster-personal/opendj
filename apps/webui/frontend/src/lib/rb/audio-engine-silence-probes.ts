@@ -6,7 +6,11 @@
 import { DECK_IDS } from '$lib/player/constants';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import { noteMasterSilence } from '$lib/rb/engine-clock-reports';
-import { cueOnlyMonitoringActive, type DjOutputProfile } from '$lib/rb/deck-channel-graph';
+import {
+	masterBusSilenceIsCommanded,
+	masterSilenceIsCommanded,
+	type DjOutputProfile
+} from '$lib/rb/deck-channel-graph';
 import type { PeakEnvelope } from '$lib/rb/silence-source-pcm';
 import {
 	AlignedStemDeckProcessor,
@@ -26,6 +30,8 @@ type GraphSlice = {
 	masterAnalyser: AnalyserNode | null;
 	externalRouteAnalyser: AnalyserNode | null;
 	profile: DjOutputProfile | null;
+	externallyRouted: ReadonlyMap<DeckId, number> | null;
+	masterCeilingGain: number;
 };
 
 let _deckRuntime: ((deck: DeckId) => DeckRuntimeSlice) | null = null;
@@ -49,16 +55,30 @@ export function disconnectDeckProcessorForTest(deck: DeckId): void {
 }
 
 export function sampleMasterSilenceForSilenceE2e(): void {
-	const { ctx, masterAnalyser, externalRouteAnalyser, profile } = _graph?.() ?? {
-		ctx: null,
-		masterAnalyser: null,
-		externalRouteAnalyser: null,
-		profile: null
-	};
+	const { ctx, masterAnalyser, externalRouteAnalyser, profile, externallyRouted, masterCeilingGain } =
+		_graph?.() ?? {
+			ctx: null,
+			masterAnalyser: null,
+			externalRouteAnalyser: null,
+			profile: null,
+			externallyRouted: null,
+			masterCeilingGain: 1
+		};
 	if (ctx === null || masterAnalyser === null) return;
 	const anyTransport = DECK_IDS.some((d) => deckStates[d].playing || deckStates[d].audible);
+	const stemsSilent = playingStemsIntentionallySilent(Object.values(deckStates));
 	const intentionalSilence =
-		cueOnlyMonitoringActive(profile, mixerState, deckStates) ||
-		playingStemsIntentionallySilent(Object.values(deckStates));
-	noteMasterSilence(masterAnalyser, externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
+		masterSilenceIsCommanded(profile, mixerState, deckStates, externallyRouted, masterCeilingGain) ||
+		stemsSilent;
+	const busSilence =
+		masterBusSilenceIsCommanded(profile, mixerState, deckStates, externallyRouted, masterCeilingGain) ||
+		stemsSilent;
+	noteMasterSilence(
+		masterAnalyser,
+		externalRouteAnalyser,
+		anyTransport,
+		Date.now(),
+		intentionalSilence,
+		busSilence
+	);
 }

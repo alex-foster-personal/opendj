@@ -14,27 +14,70 @@ test('a real column resize handle is hittable at its own center point', async ({
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('[data-testid="track-table"]')).toBeVisible({ timeout: 60_000 });
 
+	// The table enters the DOM before the app has painted a frame: the
+	// 2026-10-16 production run (source 69e55fe7a) measured 12 handles whose
+	// rects all passed the on-screen filter while `document.elementFromPoint`
+	// returned null at every centre, and its failure screenshot still showed
+	// the boot screen. Two animation frames after the visible check make the
+	// samples read a painted frame rather than a laid-out one; they cannot
+	// manufacture a hit, because the assertion below still requires a handle
+	// to resolve to itself.
+	//
+	// The header row can also sit past the bottom edge at this project's
+	// 1280x800 viewport: the 2026-10-19 run measured every handle rect at
+	// y=792 with height 19.5 (centres at y=801.75, innerHeight 800), so the
+	// sampled point was 1.75 px off-screen and `elementFromPoint` returned
+	// null for a reason that has nothing to do with the stacking context.
+	// Scroll the handle a user would actually grab into view first - a real
+	// scroll, no injected event - and only then sample.
+	await page.locator('.col-resize').first().scrollIntoViewIfNeeded();
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) => {
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+			})
+	);
+
 	const result = await page.locator('.col-resize').evaluateAll((handles) => {
-		const samples: Array<{ hit: boolean; resolvedTag: string | null }> = [];
+		const samples: Array<{
+			hit: boolean;
+			resolvedTag: string | null;
+			rect: { x: number; y: number; width: number; height: number };
+			center: { x: number; y: number };
+			centerInsideViewport: boolean;
+		}> = [];
+		const viewport = { width: window.innerWidth, height: window.innerHeight };
 		for (const handle of handles) {
 			const rect = handle.getBoundingClientRect();
-			// Only consider handles actually on screen - a column scrolled
-			// past the viewport's right edge has no paint at its point at
-			// all (elementFromPoint returns null off-viewport), which is a
-			// scroll-clipping fact, not the stacking-context bug this test
-			// targets.
-			const onScreen =
-				rect.width > 0 &&
-				rect.height > 0 &&
-				rect.x >= 0 &&
-				rect.y >= 0 &&
-				rect.x < window.innerWidth &&
-				rect.y < window.innerHeight;
-			if (!onScreen) continue;
+			// Only consider handles whose CENTRE is on screen. `elementFromPoint`
+			// resolves a painted point, so a centre outside the viewport returns
+			// null for a scroll-clipping reason, not the stacking-context bug this
+			// test targets - and the earlier filter tested the rect ORIGIN while
+			// sampling the centre, which is how 12 off-viewport centres read as
+			// 12 nulls.
 			const x = rect.x + rect.width / 2;
 			const y = rect.y + rect.height / 2;
+			const centerInsideViewport =
+				rect.width > 0 &&
+				rect.height > 0 &&
+				x >= 0 &&
+				y >= 0 &&
+				x < viewport.width &&
+				y < viewport.height;
+			if (!centerInsideViewport) continue;
 			const resolved = document.elementFromPoint(x, y);
-			samples.push({ hit: handle.contains(resolved), resolvedTag: resolved?.tagName ?? null });
+			// Record the geometry, not just the verdict: with only `hit` and
+			// `resolvedTag` a null result cannot be told apart from an
+			// off-viewport centre (rect origin inside the viewport, centre
+			// outside it) or from a real paint obstruction.
+			samples.push({
+				hit: handle.contains(resolved),
+				resolvedTag: resolved?.tagName ?? null,
+				rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+				center: { x, y },
+				centerInsideViewport:
+					x >= 0 && y >= 0 && x < viewport.width && y < viewport.height
+			});
 		}
 		return samples;
 	});

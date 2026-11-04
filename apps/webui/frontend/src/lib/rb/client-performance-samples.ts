@@ -18,7 +18,7 @@ import {
 import { audioHealthHz, audioHealthLevel } from '$lib/rb/audio-health.svelte';
 import { DECK_IDS, deckPcmEstimatedBytes, deckStates } from '$lib/rb/audio-engine.svelte';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
-import { readJsHeapMB } from '$lib/rb/memory-meter-model';
+import { readJsHeapMB } from '$lib/rb/js-heap-reading';
 import { readPerfEvents } from '$lib/rb/perf-event-log';
 import { frameProbeRequested } from '$lib/rb/frame-probe-flag';
 import type { FrameProbe, FrameProbeWindow } from '$lib/rb/frame-probe';

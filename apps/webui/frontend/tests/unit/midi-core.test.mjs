@@ -161,6 +161,29 @@ test('initMidi without WebMIDI support marks unsupported and throws', async () =
 	assert.equal(webmidi.midiState.permission, 'unsupported');
 });
 
+test('initMidi denial marks denied and throws without swallowing the cause', async () => {
+	webmidi._resetMidiForTests();
+	const previous = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		writable: true,
+		value: {
+			requestMIDIAccess: async () => {
+				const err = new Error('Permission to use Web MIDI API was not granted.');
+				err.name = 'NotAllowedError';
+				throw err;
+			}
+		}
+	});
+	try {
+		await assert.rejects(() => webmidi.initMidi(), /WebMIDI permission denied/);
+		assert.equal(webmidi.midiState.permission, 'denied');
+	} finally {
+		if (previous) Object.defineProperty(globalThis, 'navigator', previous);
+		else delete globalThis.navigator;
+	}
+});
+
 // ------------------------------------------------------------ action glue
 
 function lastToast() {

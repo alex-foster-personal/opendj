@@ -49,6 +49,12 @@ def test_session_dir_rejects_existing_symlink_that_resolves_outside_root(
 
 
 @pytest.mark.requirement("SET-03")
+def test_resolve_sets_root_uses_default_or_injected_root(sets_root: Path) -> None:
+    assert sets_paths.resolve_sets_root(None) is sets_paths.SETS_DIR
+    assert sets_paths.resolve_sets_root(sets_root) == sets_root
+
+
+@pytest.mark.requirement("SET-03")
 def test_session_dir_returns_resolved_direct_child(sets_root: Path) -> None:
     assert sets_paths.session_dir("session-1", root=sets_root) == (
         sets_root / "session-1"

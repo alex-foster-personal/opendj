@@ -3,6 +3,7 @@
 One markdown note per scope string; migrated independently via
 ``set_notes_schema_meta``.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -41,9 +42,7 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
 
 
 def _current_version(conn: sqlite3.Connection) -> int:
-    row = conn.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM set_notes_schema_meta"
-    ).fetchone()
+    row = conn.execute("SELECT COALESCE(MAX(version), 0) FROM set_notes_schema_meta").fetchone()
     return int(row[0]) if row is not None else 0
 
 
@@ -64,8 +63,7 @@ def apply_set_notes_migrations(conn: sqlite3.Connection) -> int:
             for stmt in statements:
                 conn.execute(stmt)
             conn.execute(
-                "INSERT INTO set_notes_schema_meta(version, applied_at) "
-                "VALUES (?, ?)",
+                "INSERT INTO set_notes_schema_meta(version, applied_at) VALUES (?, ?)",
                 (target_version, datetime.now(UTC).isoformat()),
             )
             if not in_txn:

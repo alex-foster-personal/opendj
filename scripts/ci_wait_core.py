@@ -249,19 +249,37 @@ def _previous_shas(commits: list[dict], head_sha: str) -> list[str]:
     return list(reversed(oids[:idx]))
 
 
+#: `.../actions/runs/<id>/job/<job>` in a job check-run's html_url, or the bare
+#: `.../actions/runs/<id>` a published check-run names in details_url.
+_RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
+
+
 def _run_id(check_run: dict) -> str:
     """The Actions run id a check-run belongs to, parsed from its `html_url`
-    (e.g. `.../actions/runs/34446942870/job/102773687609`). The check-run
-    object carries no `event` field of its own -- only `check_suite.id`,
-    which does not resolve to a trigger event without a further lookup
-    either -- so the run id embedded in the URL is what lets `_run_event`
-    ask the run itself what triggered it.
+    (e.g. `.../actions/runs/34446942870/job/102773687609`) or, failing that, its
+    `details_url`. The check-run object carries no `event` field of its own --
+    only `check_suite.id`, which does not resolve to a trigger event without a
+    further lookup either -- so the run id embedded in the URL is what lets
+    `_run_event` ask the run itself what triggered it.
+
+    A check-run PUBLISHED through the Checks API (`e2e verdict` on a pull request
+    head, scripts/ci_e2e_admission.py, ADR-NEW-e2e-after-ci-gate) gets an html_url
+    of `.../runs/<check id>` from GitHub, which names no Actions run; the publisher
+    puts its run's URL in details_url, read second here.
     """
-    url = check_run.get("html_url") or ""
-    match = re.search(r"/actions/runs/(\d+)/", url)
-    if not match:
-        raise TriageError(f"check-run {check_run.get('id')} has no parseable run id in html_url {url!r}")
-    return match.group(1)
+    urls = [check_run.get("html_url") or "", check_run.get("details_url") or ""]
+    for url in urls:
+        match = _RUN_URL.search(url)
+        if match:
+            return match.group(1)
+    raise TriageError(f"check-run {check_run.get('id')} has no parseable run id in html_url or details_url {urls!r}")
+
+
+#: The events a normal PR push retriggers: the `pull_request` run itself and, since Wed 4
+#: Nov 2026 (ADR-NEW-e2e-after-ci-gate), the `workflow_run` that e2e.yml starts when that
+#: CI run completes. A workflow_run is deterministic from the push, unlike a manual
+#: `workflow_dispatch` re-run, so keeping it hides nothing.
+PULL_REQUEST_EVENTS = frozenset({"pull_request", "workflow_run"})
 
 
 def _pull_request_triggered_runs(check_runs: Iterable[dict], run_event: Callable[[str], str]) -> list[dict]:
@@ -310,7 +328,7 @@ def _pull_request_triggered_runs(check_runs: Iterable[dict], run_event: Callable
         if event is None:
             event = run_event(run_id)
             seen[run_id] = event
-        if event == "pull_request":
+        if event in PULL_REQUEST_EVENTS:
             kept.append(run)
     return kept
 

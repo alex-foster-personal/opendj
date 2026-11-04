@@ -123,16 +123,13 @@ class SettingsStore:
 
     def get(self, key: str, default: str | None = None) -> str | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT value FROM settings WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row[0] if row else default
 
     def set(self, key: str, value: Any) -> None:
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO settings (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, str(value)),
             )
 

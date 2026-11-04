@@ -46,16 +46,20 @@
 		invalidateAllAnlzCacheEntries
 	} from '$lib/components/rb/wave/anlz-cache.svelte';
 	import { deckPcmEstimatedBytes } from '$lib/rb/audio-engine.svelte';
-	import { hasJsHeapApi, memoryReadout, readJsHeapMB } from '$lib/rb/memory-meter-model';
+	import { memoryReadout } from '$lib/rb/memory-meter-model';
+	import { hasJsHeapApi, readJsHeapMB } from '$lib/rb/js-heap-reading';
 	import { readMachinePressure } from '$lib/rb/machine-pressure';
 	import {
 		fetchProcessFamilySnapshot,
-		readProcessFamilySnapshot
+		processFamilyRefreshDue,
+		readFreshProcessFamilySnapshot,
+		readUnavailableProbeStale
 	} from '$lib/rb/process-family-snapshot';
 	import {
 		breakdownLines,
 		type ChartSample,
 		perfMeterSampleIntervalMs,
+		type ProcessFamilySnapshot,
 		pushSample
 	} from '$lib/rb/perf-meter-model';
 	import { readPerfEvents, recordPerfEvent, resetPerfEventLog } from '$lib/rb/perf-event-log';
@@ -95,6 +99,8 @@
 	let memoryText = $state('0M');
 	let memoryLevel: 'ok' | 'warn' | 'crit' = $state('ok');
 	let memoryHover = $state('');
+	// the figure the meter last showed, so the chart plots the same number
+	let memoryTotalMB = 0;
 	let chartHistory = $state<ChartSample[]>([]);
 	let hzDriftLogged = $state(false);
 
@@ -103,6 +109,11 @@
 	const hzDisplayLevel = $derived(
 		!hzQuality.ok ? 'crit' : hzLevel === 'warn' ? 'warn' : hzLevel === 'crit' ? 'crit' : 'ok'
 	);
+
+	// The processes the pinned breakdown lists: re-read through the expiry rule
+	// on every tick and every fetch, so once the snapshot ages out the card
+	// stops listing it, as the compact figure does.
+	let breakdownProcesses = $state<ProcessFamilySnapshot | null>(null);
 
 	const breakdown = $derived(
 		breakdownLines({
@@ -117,10 +128,10 @@
 			jsHeapMB: HEAP_API_PRESENT ? readJsHeapMB(performance) : null,
 			ringCount: readPerfEvents().length,
 			swapMB: readMachinePressure()?.swapUsedMb ?? null,
-			kernelLevel: readProcessFamilySnapshot()?.kernelLevel ?? null,
-			churnScore: readProcessFamilySnapshot()?.churnScore ?? null,
-			compressorRate: readProcessFamilySnapshot()?.compressorRate ?? null,
-			processes: readProcessFamilySnapshot()
+			kernelLevel: breakdownProcesses?.kernelLevel ?? null,
+			churnScore: breakdownProcesses?.churnScore ?? null,
+			compressorRate: breakdownProcesses?.compressorRate ?? null,
+			processes: breakdownProcesses
 		})
 	);
 
@@ -153,7 +164,30 @@
 		memory: memoryLevel
 	});
 
+	// The engine's process walk (engine, odj-audio and other sidecars, desktop
+	// shell). A snapshot older than PROCESS_SNAPSHOT_MAX_AGE_MS is not shown
+	// as current: the figure then says the processes are unavailable.
+	const PROCESS_SNAPSHOT_MAX_AGE_MS = 30_000;
+	// The closed bar refreshes the walk this often (it walks every process on
+	// the machine, so not on every 2 s tick).
+	const PROCESS_REFRESH_MS = 10_000;
+
+	// Every reader that shows the processes as current goes through this one
+	// expiry rule: the figure, the pinned breakdown, the chart and the cadence.
+	function _freshProcessSnapshot(): ProcessFamilySnapshot | null {
+		return readFreshProcessFamilySnapshot(PROCESS_SNAPSHOT_MAX_AGE_MS);
+	}
+
+	function _refreshProcesses(force: boolean): void {
+		if (!force && !processFamilyRefreshDue(PROCESS_REFRESH_MS)) return;
+		void fetchProcessFamilySnapshot().then(() => {
+			breakdownProcesses = _freshProcessSnapshot();
+			untrack(_updateMemory);
+		});
+	}
+
 	function _updateMemory(): void {
+		const processSnapshot = _freshProcessSnapshot();
 		const readout = memoryReadout({
 			jsHeapMB: HEAP_API_PRESENT ? readJsHeapMB(performance) : null,
 			pcmMB: Math.round(deckPcmEstimatedBytes() / (1024 * 1024)),
@@ -162,8 +196,15 @@
 			prefetchMB: Math.round(cacheBytes / (1024 * 1024)),
 			prefetchCount: cacheN,
 			anlzCap: anlzEntryCap(),
-			tierLabel: tierLabelForHover()
+			tierLabel: tierLabelForHover(),
+			processes: processSnapshot?.members ?? null,
+			probeStale: processSnapshot
+				? processSnapshot.probeStale
+					? { ageSeconds: processSnapshot.probeAgeSeconds ?? null }
+					: null
+				: readUnavailableProbeStale(PROCESS_SNAPSHOT_MAX_AGE_MS)
 		});
+		memoryTotalMB = readout.totalMB;
 		if (
 			readout.text === memoryText &&
 			readout.level === memoryLevel &&
@@ -178,16 +219,13 @@
 
 	function _pushChartSample(): void {
 		const pressure = readMachinePressure();
-		const processes = readProcessFamilySnapshot();
-		const jsHeap = HEAP_API_PRESENT ? readJsHeapMB(performance) : null;
-		const pcmMB = Math.round(deckPcmEstimatedBytes() / (1024 * 1024));
-		const totalMB = (jsHeap ?? 0) + pcmMB;
+		const processes = _freshProcessSnapshot();
 		const point: ChartSample = {
 			tMs: Date.now(),
 			hz: audioHealthHz(),
 			cacheN: audioPrefetchReadyCount(),
 			cacheMB: Math.round(audioPrefetchReadyBytes() / (1024 * 1024)),
-			memoryMB: totalMB,
+			memoryMB: memoryTotalMB,
 			anlzMB: Math.round(anlzCacheEstimatedBytes() / (1024 * 1024)),
 			prefetchMB: Math.round(audioPrefetchReadyBytes() / (1024 * 1024)),
 			swapMB: pressure?.swapUsedMb ?? null,
@@ -198,12 +236,13 @@
 	}
 
 	function _sampleTick(): void {
+		breakdownProcesses = _freshProcessSnapshot();
 		untrack(_updateMemory);
 		untrack(_pushChartSample);
 	}
 
 	function _kernelAndChurn(): { kernelLevel: number | null; churnScore: number | null } {
-		const processes = readProcessFamilySnapshot();
+		const processes = _freshProcessSnapshot();
 		return {
 			kernelLevel: processes?.kernelLevel ?? null,
 			churnScore: processes?.churnScore ?? null
@@ -256,10 +295,10 @@
 		const start = (): void => {
 			if (timer !== null) return;
 			_sampleTick();
-			void fetchProcessFamilySnapshot();
+			_refreshProcesses(true);
 			timer = setInterval(() => {
 				untrack(_sampleTick);
-				void fetchProcessFamilySnapshot();
+				_refreshProcesses(true);
 			}, intervalMs);
 		};
 
@@ -302,13 +341,19 @@
 		let intervalMs = perfMeterSampleIntervalMs(_kernelAndChurn());
 		let timer: ReturnType<typeof setInterval> | null = null;
 
-		// The closed-card tick also records one history point (no process
-		// fetch), so hovering the card shows a chart straight away. Measured
-		// cost: see PERF-UI-12 in REQUIREMENTS.md.
+		// The closed-card tick also records one history point, so hovering the
+		// card shows a chart straight away. Measured cost: see PERF-UI-12 in
+		// REQUIREMENTS.md. The memory figure counts the engine's processes too,
+		// so the closed bar refreshes the process walk, at most every
+		// PROCESS_REFRESH_MS (PERF-UI-6785).
+		const tick = (): void => {
+			untrack(_sampleTick);
+			_refreshProcesses(false);
+		};
 		const start = (): void => {
 			if (timer !== null) return;
-			untrack(_sampleTick);
-			timer = setInterval(() => untrack(_sampleTick), intervalMs);
+			tick();
+			timer = setInterval(tick, intervalMs);
 		};
 
 		const stop = (): void => {
@@ -553,9 +598,11 @@
 		color: var(--rb-text-dim);
 		line-height: 1.35;
 	}
+	/* The memory detail is one line per process; keep its line breaks. */
 	.perf-readout-detail {
 		font-size: 10px;
 		opacity: 0.8;
+		white-space: pre-line;
 	}
 	.perf-readout-pin-hint {
 		margin: 4px 0 8px;

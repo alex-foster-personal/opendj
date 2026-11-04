@@ -1,0 +1,10 @@
+{
+  "file": "web-api-playlist-schemas.json",
+  "sha256": "2c7791d97111cfd430a6d92b7c212047e8b79fe90a67338ce50af2b1e340cf35",
+  "source": "https://developer.spotify.com/reference/web-api/open-api-schema.yaml",
+  "source_version": "openapi 3.0.3, info.version 1.0.0",
+  "source_sha256": "2d888d731358ae8a97126ffd4117d257305943f06721734abe9af24962bf38c3",
+  "fetched": "Tue 13 Oct 2026",
+  "contents": "Structural facts only (types, required fields, nullability, enums, references) for the schemas the playlist listing touches, written out as JSON. Spotify's prose descriptions and examples are not copied (third-party-content R1); read them at the source link.",
+  "refresh": "Re-derive from the source URL with the same field filter and update sha256 here; never hand-edit the schemas file."
+}

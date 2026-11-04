@@ -22,7 +22,11 @@ test('armPinPlacement shows pins for the placement only and does not save visibi
 	assert.match(pagePinsBody, /pinsVisible/);
 	assert.match(pagePinsBody, /pinsPeek/);
 	assert.match(pagePinsBody, /placementArmed/);
-	assert.match(pagePinsBody, /pinDraft/);
+	assert.doesNotMatch(
+		pagePinsBody,
+		/pinDraft|pendingDraft/,
+		'markers stay up only while placing, not while the comment is being written'
+	);
 });
 
 test('FeedbackPinLayer keeps pagePins gated on pinsVisible for marker rendering', async () => {

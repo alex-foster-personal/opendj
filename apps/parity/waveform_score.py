@@ -16,9 +16,7 @@ _T = TypeVar("_T")
 _EXACT_TOLERANCE = POSITIVE_CONTROL_TOLERANCE
 
 
-def _primary_with_secondary_fallback(
-    primary: _T | None, secondary: _T | None
-) -> tuple[_T | None, _T | None]:
+def _primary_with_secondary_fallback(primary: _T | None, secondary: _T | None) -> tuple[_T | None, _T | None]:
     """Use secondary rekordbox tag only when the primary tag is absent."""
     if primary is None and secondary is not None:
         return secondary, None
@@ -32,9 +30,7 @@ def is_non_empty_list(value: Any) -> bool:
 def has_full_triband(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    return all(
-        isinstance(value.get(name), list) and len(value[name]) >= 2 for name in BAND_NAMES
-    )
+    return all(isinstance(value.get(name), list) and len(value[name]) >= 2 for name in BAND_NAMES)
 
 
 def align_1d(ours: np.ndarray, truth: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

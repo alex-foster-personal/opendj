@@ -1,4 +1,5 @@
 """Read engine FastAPI app.state fields shared across routers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,8 +11,7 @@ def data_dir_from_engine_request(request: Request) -> Path:
     cfg = getattr(request.app.state, "engine_cfg", None)
     if cfg is None:
         raise RuntimeError(
-            "engine config is not mounted on app.state.engine_cfg; "
-            "data dir cannot be resolved without it"
+            "engine config is not mounted on app.state.engine_cfg; data dir cannot be resolved without it"
         )
     return Path(cfg.data_dir)
 

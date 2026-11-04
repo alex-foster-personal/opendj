@@ -10,6 +10,7 @@ PUTs via the same :class:`S3Client` protocol used by :mod:`apps.cloud.lock`.
 Intentionally synchronous + simple. Phase 12+ may swap in a parallel
 worker pool once real volumes matter.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -49,9 +50,7 @@ def audio_object_key(stable_id: str, extension: str) -> str:
     """
     if not extension.startswith("."):
         extension = "." + extension
-    return (
-        f"{AUDIO_PREFIX}/{stable_id[:HASH_SHARD_LEN]}/{stable_id}{extension}"
-    )
+    return f"{AUDIO_PREFIX}/{stable_id[:HASH_SHARD_LEN]}/{stable_id}{extension}"
 
 
 def upload_audio(
@@ -74,13 +73,9 @@ def upload_audio(
     ok, _etag = s3.put_object_if_match(cfg.audio_bucket, key, body, etag="*")
     if not ok:
         # Fall back to unconditional create.
-        created, _etag = s3.put_object_if_none_match(
-            cfg.audio_bucket, key, body
-        )
+        created, _etag = s3.put_object_if_none_match(cfg.audio_bucket, key, body)
         if not created:
-            raise AudioUploadError(
-                f"audio upload failed for {key} (exists + no etag)"
-            )
+            raise AudioUploadError(f"audio upload failed for {key} (exists + no etag)")
     return key
 
 

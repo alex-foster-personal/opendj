@@ -30,6 +30,8 @@ export interface CmdkFilterRow {
 	stable_id: string;
 	key: string | null;
 	bpm: number | null;
+	/** COMPATBPM-03: 0 marks a placeholder BPM, which the compatible filter treats as unknown. */
+	bpm_confidence?: number | null;
 	file_exists: boolean | null;
 	file_availability?: string | null;
 	is_streaming?: boolean | null;

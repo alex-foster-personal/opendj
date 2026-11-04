@@ -11,6 +11,7 @@ We do direct SQL (no pyrekordbox ORM) because HISTORY playlists are
 simple and reading via sqlite3 over a per-test working copy avoids
 the ORM's unlock requirement.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,10 +36,7 @@ _LATEST_HISTORY_SQL = (
     "ORDER BY updated_at DESC, ID DESC LIMIT 1"
 )
 
-_HISTORY_ITEMS_SQL = (
-    "SELECT ID, ContentID FROM djmdSongPlaylist "
-    "WHERE PlaylistID = ? ORDER BY TrackNo ASC, ID ASC"
-)
+_HISTORY_ITEMS_SQL = "SELECT ID, ContentID FROM djmdSongPlaylist WHERE PlaylistID = ? ORDER BY TrackNo ASC, ID ASC"
 
 
 class RekordboxHistorySource:
@@ -85,9 +83,7 @@ class RekordboxHistorySource:
             Event(
                 session_id=self.session_id,
                 timestamp_s=self._rel_ts(),
-                wall_clock=datetime.now(UTC).isoformat(
-                    timespec="milliseconds"
-                ),
+                wall_clock=datetime.now(UTC).isoformat(timespec="milliseconds"),
                 action="source_error",
                 source=SOURCE_NAME,
                 value={"kind": type(exc).__name__, "detail": str(exc)},
@@ -97,9 +93,7 @@ class RekordboxHistorySource:
     def _open_ro(self) -> sqlite3.Connection:
         """Open a read-only handle on the working copy."""
         if not self.db_path.exists():
-            raise FileNotFoundError(
-                f"Rekordbox master.db working copy not found: {self.db_path}"
-            )
+            raise FileNotFoundError(f"Rekordbox master.db working copy not found: {self.db_path}")
         uri = f"file:{self.db_path}?mode=ro"
         return sqlite3.connect(uri, uri=True)
 
@@ -147,9 +141,7 @@ class RekordboxHistorySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(UTC).isoformat(
-                        timespec="milliseconds"
-                    ),
+                    wall_clock=datetime.now(UTC).isoformat(timespec="milliseconds"),
                     deck=None,  # rb history does not carry a deck label
                     track_stable_id=content_id,
                     action="track_loaded",

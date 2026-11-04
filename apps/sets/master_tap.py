@@ -11,6 +11,7 @@ rides the AGENT-03 order bus (``apps.webui.server.sets_master_tap``) on
 ``app.state.sets_master_tap_channel``. This module only names the contract,
 so ``apps.sets`` does not import the web server.
 """
+
 from __future__ import annotations
 
 from typing import Protocol

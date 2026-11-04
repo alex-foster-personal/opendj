@@ -11,10 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from apps.adapters.rekordbox.cue_kind import HOT_CUE_SLOTS, slot_to_kind
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index
 
-# D3 (.planning/t3b-decomposition-map.md section 3): this module and
+# D3 ((private path) section 3): this module and
 # rb_vendor's hot-cue writer carried byte-identical copies of the 44.1 kHz
 # frame heuristic, and rb_vendor's docstring named this file as its twin
 # without either ever being consolidated. apps.shared.rb_frames is now the one
@@ -46,13 +47,22 @@ def _kind_to_rb(kind: str, index: int | None, _active_loop: bool) -> tuple[int, 
       * 1..8 = hot cue slots (slot n uses Kind=n)
       * loop: Kind=4 + ActiveLoop=True is one common form; we surface the
         ``ActiveLoop`` flag explicitly and let callers decide to use it.
+
+    Hot cues accept only 0-based index 0..7 (slots A-H, Kind 1-8). Kind 9-11
+    slot mapping is unverified; indices outside 0..7 raise ``ValueError``.
     """
     if kind == "memory":
         return 0, False
     if kind == "hot":
         if index is None:
             return 1, False
-        return int(index) + 1, False
+        idx = int(index)
+        if idx not in range(8):
+            raise ValueError(
+                f"unsupported hot-cue index {idx!r}; only 0..7 (slots A-H, "
+                "Kind 1-8) are write-supported (Kind 9-11 slot mapping unverified)"
+            )
+        return slot_to_kind(HOT_CUE_SLOTS[idx]), False
     if kind == "loop":
         return 4, True
     if kind == "load":

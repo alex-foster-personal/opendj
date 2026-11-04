@@ -133,10 +133,15 @@ jobs:
         # (private path)/ for whether an id exists, and the PR body plus
         # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
         # Exit 2 = the gate could not measure, which is never a pass.
+        # --base is the PR's own base branch, not a hardcoded origin/main, so a
+        # PR into an integration branch is checked for freshness against that
+        # branch rather than failing "merge ref is stale" whenever main moves.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          python -m scripts.adr_check --pr "${{ github.event.pull_request.number }}"
+          python -m scripts.adr_check --pr "$PR_NUMBER" --base "origin/$BASE_REF"
 
       - name: "New requirement ids carry the PR number (REQHYG-7077)"
         # Hand-picked "next free" requirement ids collided (31 renumbers in 30

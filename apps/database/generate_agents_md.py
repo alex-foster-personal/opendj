@@ -56,7 +56,7 @@ from apps.database.sqlite_introspection import (
 # import that reintroduces the dependency fails there, by name, instead of
 # reappearing as a red CI job that names PyYAML rather than drift.
 
-GENERATOR_VERSION: int = 1
+GENERATOR_VERSION: int = 2
 """Bump this whenever :func:`render`, :func:`introspect`, ``_HEADER``, or a
 curated docs module (``column_docs.py`` and the modules it merges in) changes
 in a way that changes the bytes ``write_agents_md`` produces. The bump is

@@ -5,6 +5,7 @@ from environment variables with strict validation. Published read-only on
 GET /api/v1/settings; the frontend hydrates from that surface for display
 policy (not ui-prefs toggles).
 """
+
 from __future__ import annotations
 
 import math
@@ -91,8 +92,7 @@ ANLZ_POINTS_DEFAULT: int = _env_int(
 )
 if ANLZ_POINTS_DEFAULT > ANLZ_POINTS_MAX:
     raise ValueError(
-        "MDT_ANLZ_POINTS_DEFAULT must be <= MDT_ANLZ_POINTS_MAX "
-        f"({ANLZ_POINTS_DEFAULT} > {ANLZ_POINTS_MAX})"
+        f"MDT_ANLZ_POINTS_DEFAULT must be <= MDT_ANLZ_POINTS_MAX ({ANLZ_POINTS_DEFAULT} > {ANLZ_POINTS_MAX})"
     )
 
 HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_TRACKS: int = _env_int(

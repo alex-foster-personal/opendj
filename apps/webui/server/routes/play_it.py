@@ -28,6 +28,7 @@ to undo) without a round trip to fetch a fresh etag first. Applying/undoing
 is a plain call to that existing membership-replace endpoint; this router
 does not duplicate it.
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -154,8 +155,7 @@ def solve_play_it(
                 message=(
                     f"playlist {playlist_id!r} failed PLAY IT pre-flight: "
                     + "; ".join(
-                        f"{field}: {', '.join(sids[:5])}"
-                        f"{'...' if len(sids) > 5 else ''}"
+                        f"{field}: {', '.join(sids[:5])}{'...' if len(sids) > 5 else ''}"
                         for field, sids in missing.items()
                         if sids
                     )
@@ -221,8 +221,7 @@ def solve_play_it(
         unchanged=result.order == list(playlist.items),
         steps=steps,
         constraints_unmet=[
-            PlayItUnmetOut(kind=u.kind, position=u.position, detail=dict(u.detail))
-            for u in result.constraints_unmet
+            PlayItUnmetOut(kind=u.kind, position=u.position, detail=dict(u.detail)) for u in result.constraints_unmet
         ],
         solve_ms=result.solve_ms,
     )

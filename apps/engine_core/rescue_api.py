@@ -44,9 +44,7 @@ def _present_stable_ids(data_dir: Path) -> set[str] | None:
         try:
             # A soft-deleted track is gone from the user's library, so a restore
             # must report it missing rather than reload it.
-            rows = conn.execute(
-                "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
-            ).fetchall()
+            rows = conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL").fetchall()
             return {str(row[0]) for row in rows}
         finally:
             conn.close()
@@ -64,10 +62,7 @@ def add_rescue_routes(app: FastAPI) -> None:
     def list_rescue_snapshots(request: Request) -> RescueSnapshotsOut:
         store = _store_for_request(request)
         now_ms = int(time.time() * 1000)
-        snapshots = [
-            RescueSnapshotMeta.model_validate(row)
-            for row in store.list_metadata(now_ms=now_ms)
-        ]
+        snapshots = [RescueSnapshotMeta.model_validate(row) for row in store.list_metadata(now_ms=now_ms)]
         return RescueSnapshotsOut(snapshots=snapshots)
 
     @app.post(
@@ -81,9 +76,7 @@ def add_rescue_routes(app: FastAPI) -> None:
             }
         },
     )
-    def restore_rescue_snapshot(
-        body: RescueRestoreIn, request: Request
-    ) -> RescueRestoreOut:
+    def restore_rescue_snapshot(body: RescueRestoreIn, request: Request) -> RescueRestoreOut:
         store = _store_for_request(request)
         now_ms = int(time.time() * 1000)
         entry = store.get_entry(body.snapshot_id, now_ms=now_ms)
@@ -113,10 +106,7 @@ def add_rescue_routes(app: FastAPI) -> None:
             captured_at_ms=entry.captured_at_ms,
             mode=mode,
             payload=entry.payload,
-            decks={
-                deck_id: RescueDeckOutcomeOut(**outcome)
-                for deck_id, outcome in raw_outcomes.items()
-            },
+            decks={deck_id: RescueDeckOutcomeOut(**outcome) for deck_id, outcome in raw_outcomes.items()},
         )
 
 

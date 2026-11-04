@@ -2,7 +2,7 @@
 
 THE GAP THIS CLOSES: ``apps.stems.r2_migration`` content-addresses every
 pushed stem file and journals the (legacy_key, key) mapping to
-``data/state/stem-r2-migration.jsonl`` -- but that journal lives only on the
+``(private path)`` -- but that journal lives only on the
 machine that ran the push. A machine with no local bundle (silver, or any
 future machine) has no way to learn which R2 object holds which part of
 which track's stems. This module builds that mapping from the journal and
@@ -45,10 +45,18 @@ retry) instead of the asset tier's conditional create or a blind overwrite.
   returns an empty index; [if] the file exists but is corrupt or the wrong
   shape [then] it raises :class:`StemIndexError` rather than silently
   reading as empty.
+* [if] a host rewrites on-disk parts (FLAC to MP3) [then]
+  :func:`sync_bundle_into_cached_index` / :func:`rebuild_cached_index_from_local_manifests`
+  rehash the bundle through :func:`save_cached_index` so eviction and
+  republish see the new names and manifest digest (STEM-61).
+* [if] ``rebuild --publish`` runs [then] every referenced object is HEAD-confirmed
+  (and uploaded from disk when missing) before the shared pointer is replaced.
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import threading
 import time
@@ -323,6 +331,117 @@ def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:
     return path
 
 
+# --- building from on-disk manifests -----------------------------------------
+
+_HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
+LOCAL_STEM_ROOT_NAMES: tuple[str, ...] = ("stems", "stems-roformer-spike")
+_SKIP_DIR_MARKERS: tuple[str, ...] = (".tmp-hydrate-", ".evicting-")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(_HASH_CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def local_stem_roots(data_dir: Path) -> tuple[Path, ...]:
+    """Directory-form stem stores of one data dir, in reader precedence."""
+    state = Path(data_dir) / "state"
+    return tuple(state / name for name in LOCAL_STEM_ROOT_NAMES)
+
+
+def entry_from_bundle_dir(bundle_dir: Path) -> StemFileHashes:
+    """Hash ``manifest.json`` plus every part the manifest's ``files`` map names.
+
+    Filenames must be allowed index basenames (ADR-0024). A leftover ``.flac``
+    part that the manifest no longer names is ignored, so a FLAC-to-MP3
+    rewrite that updated ``files`` does not keep the old names in the index.
+    """
+    bundle_dir = Path(bundle_dir)
+    manifest_path = bundle_dir / MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        raise StemIndexError(f"{bundle_dir} has no {MANIFEST_FILENAME}")
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise StemIndexError(f"{manifest_path} is not valid JSON") from exc
+    names = [MANIFEST_FILENAME]
+    files = raw.get("files") if isinstance(raw, dict) else None
+    if isinstance(files, dict):
+        for declared in files.values():
+            if not isinstance(declared, str) or Path(declared).name != declared:
+                raise StemIndexError(
+                    f"{manifest_path} files entry {declared!r} is not a bundle basename"
+                )
+            names.append(declared)
+    entry: StemFileHashes = {}
+    for name in names:
+        if not is_allowed_stem_filename(name):
+            raise StemIndexError(
+                f"{bundle_dir} names disallowed index file {name!r}"
+            )
+        path = bundle_dir / name
+        if not path.is_file() or path.is_symlink():
+            raise StemIndexError(f"{bundle_dir} is missing regular file {name!r}")
+        entry[name] = _sha256_file(path)
+    return entry
+
+
+def build_index_from_local_manifests(stems_dirs: list[Path] | tuple[Path, ...]) -> StemAssetIndex:
+    """Fold every on-disk bundle that has a manifest into an index.
+
+    Later roots win for the same directory name. A root that is not a
+    directory is skipped (that store is not on this machine). A child
+    without ``manifest.json`` is skipped; a present but unreadable
+    manifest or a missing declared part raises.
+    """
+    index: StemAssetIndex = {}
+    for root in stems_dirs:
+        path = Path(root)
+        if not path.is_dir():
+            continue
+        for child in sorted(path.iterdir()):
+            if (
+                not child.is_dir()
+                or child.is_symlink()
+                or any(marker in child.name for marker in _SKIP_DIR_MARKERS)
+            ):
+                continue
+            if not (child / MANIFEST_FILENAME).is_file():
+                continue
+            index[child.name] = entry_from_bundle_dir(child)
+    return index
+
+
+def upsert_cached_index_entries(data_dir: Path, entries: StemAssetIndex) -> Path:
+    """Merge ``entries`` into the local cache through :func:`save_cached_index`.
+
+    Existing ids that ``entries`` does not name stay put, so a host that
+    only holds some of the fleet's bundles does not drop the rest.
+    """
+    merged = dict(load_cached_index(data_dir))
+    merged.update(entries)
+    return save_cached_index(data_dir, merged)
+
+
+def sync_bundle_into_cached_index(data_dir: Path, bundle_dir: Path) -> StemFileHashes:
+    """Rehash one on-disk bundle and upsert it. Conversion last-step."""
+    entry = entry_from_bundle_dir(bundle_dir)
+    upsert_cached_index_entries(data_dir, {Path(bundle_dir).name: entry})
+    return entry
+
+
+def rebuild_cached_index_from_local_manifests(data_dir: Path) -> tuple[StemAssetIndex, Path]:
+    """Regenerate this host's cache entries from on-disk manifests.
+
+    The single command behind ``python -m apps.cloud.stem_index rebuild``.
+    """
+    entries = build_index_from_local_manifests(local_stem_roots(data_dir))
+    return entries, upsert_cached_index_entries(data_dir, entries)
+
+
 def refresh_local_cache_from_r2(cfg: CloudConfig, s3: S3Client, data_dir: Path) -> StemAssetIndex:
     """Fetch the R2 index and persist it as the local cache. Explicit,
     network-touching; not called directly from request-serving code paths --
@@ -402,21 +521,113 @@ __all__ = [
     "INDEX_OBJECT_KEY",
     "INDEX_REFRESH_RETRY_INTERVAL_S",
     "INDEX_SCHEMA_VERSION",
+    "LOCAL_STEM_ROOT_NAMES",
     "MANIFEST_FILENAME",
     "STEM_MEDIA_EXTENSIONS",
     "StemAssetIndex",
     "StemFileHashes",
     "StemIndexError",
     "build_index_from_journal",
+    "build_index_from_local_manifests",
+    "build_parser",
+    "entry_from_bundle_dir",
     "fetch_index",
     "is_allowed_stem_filename",
     "load_cached_index",
     "load_cached_index_memo",
     "local_index_cache_path",
+    "local_stem_roots",
+    "main",
     "publish_index",
+    "rebuild_cached_index_from_local_manifests",
     "refresh_error",
     "refresh_local_cache_from_r2",
     "refresh_local_cache_from_r2_throttled",
     "refresh_local_cache_throttled",
     "save_cached_index",
+    "sync_bundle_into_cached_index",
+    "upsert_cached_index_entries",
 ]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """CLI for the official from-disk writer (STEM-61)."""
+    from apps.shared.paths import DATA_DIR
+
+    parser = argparse.ArgumentParser(
+        prog="python -m apps.cloud.stem_index",
+        description=(
+            "Official stem download index writer (ADR-0024). "
+            "rebuild rehashes on-disk manifests; record is the conversion last step."
+        ),
+    )
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    rebuild = sub.add_parser(
+        "rebuild",
+        parents=[common],
+        help="rehash on-disk stem manifests into the local cache (STEM-61)",
+    )
+    rebuild.add_argument(
+        "--publish",
+        action="store_true",
+        help="merge this host's on-disk entries into the R2 pointer (CAS)",
+    )
+    rebuild.set_defaults(func=_cmd_rebuild)
+    record = sub.add_parser(
+        "record",
+        parents=[common],
+        help="refresh one converted bundle and upsert its index entry",
+    )
+    record.add_argument("--bundle-dir", type=Path, required=True)
+    record.set_defaults(func=_cmd_record)
+    return parser
+
+
+def _cmd_rebuild(args: argparse.Namespace) -> int:
+    from apps.cloud.stem_index_sync import rebuild_host_index
+
+    data_dir = Path(args.data_dir)
+    entries, cache_path, refreshed = rebuild_host_index(data_dir)
+    n_files = sum(len(files) for files in entries.values())
+    print(
+        f"rebuilt index from on-disk manifests: {len(entries)} bundles, "
+        f"{n_files} files, {refreshed} stale size_policy rewrite(s) "
+        f"-> cached at {cache_path}"
+    )
+    if not args.publish:
+        return 0
+    from apps.cloud.asset_store import boto3_asset_client
+    from apps.cloud.config import CloudConfig
+    from apps.cloud.replicate import boto3_s3_client
+    from apps.cloud.stem_index_sync import publish_verified_on_disk_index
+
+    cfg = CloudConfig.from_env()
+    etag = publish_verified_on_disk_index(
+        cfg,
+        boto3_asset_client(cfg),
+        boto3_s3_client(cfg),
+        data_dir,
+        entries,
+    )
+    print(f"published to r2://{cfg.audio_bucket}/{INDEX_OBJECT_KEY} (etag {etag})")
+    return 0
+
+
+def _cmd_record(args: argparse.Namespace) -> int:
+    from apps.cloud.stem_index_sync import record_converted_bundle
+
+    bundle_dir = Path(args.bundle_dir)
+    entry = record_converted_bundle(Path(args.data_dir), bundle_dir)
+    print(json.dumps({bundle_dir.name: entry}, indent=2))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

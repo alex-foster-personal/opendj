@@ -3,6 +3,7 @@
 Submodules are imported lazily so a partially-shipped sibling (e.g. Phase 2's
 matcher that is still being written) cannot break everybody else's imports.
 """
+
 from __future__ import annotations
 
 __all__: list[str] = []

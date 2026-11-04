@@ -25,6 +25,7 @@ Design notes
 
 Requirement: CAT-06.
 """
+
 from __future__ import annotations
 
 import logging
@@ -140,9 +141,7 @@ def _dsql_str(field: Any) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _read_lookup(
-    pdb: RekordboxPdb, page_type: Any, name_attr: str = "name"
-) -> dict[int, str]:
+def _read_lookup(pdb: RekordboxPdb, page_type: Any, name_attr: str = "name") -> dict[int, str]:
     """Extract a simple ``{id: name}`` lookup from a table.
 
     Used for artists, albums, genres, keys, colors, labels.
@@ -238,8 +237,7 @@ def _read_history(pdb: RekordboxPdb) -> list[dict[str, Any]]:
         for row in _table_rows(pdb, _PT.history_playlists)
     ]
     entries = [
-        (int(row.playlist_id), int(row.entry_index), int(row.track_id))
-        for row in _table_rows(pdb, _PT.history_entries)
+        (int(row.playlist_id), int(row.entry_index), int(row.track_id)) for row in _table_rows(pdb, _PT.history_entries)
     ]
     _attach_ordered_track_ids(history, entries)
     return sorted(history, key=lambda h: h["id"])
@@ -250,9 +248,7 @@ def _read_artwork(pdb: RekordboxPdb) -> dict[int, str]:
     return _read_lookup(pdb, _PT.artwork, name_attr="path")
 
 
-def _attach_ordered_track_ids(
-    lists: list[dict[str, Any]], entries: list[tuple[int, int, int]]
-) -> None:
+def _attach_ordered_track_ids(lists: list[dict[str, Any]], entries: list[tuple[int, int, int]]) -> None:
     """Fill each list's ``track_ids`` from ``(list_id, entry_index, track_id)``
     rows, ordered by ``entry_index`` (row order is not play order)."""
     by_list: dict[int, list[tuple[int, int]]] = {}
@@ -291,10 +287,7 @@ def _anlz_summary(anlz_root: Path) -> dict[str, Any]:
     for root, paths in walk_anlz_paths(anlz_root):
         total += 1
         key = Path(root).name  # e.g. "000252A0"
-        dirs_by_track[key] = {
-            ext: str(p.relative_to(anlz_root.parent))
-            for ext, p in paths.items()
-        }
+        dirs_by_track[key] = {ext: str(p.relative_to(anlz_root.parent)) for ext, p in paths.items()}
         # Peek at .DAT tag types (cheap, parses header + tag headers).
         dat = paths.get("DAT")
         if dat is not None:
@@ -365,11 +358,7 @@ def read_anlz_dir(anlz_dir: Path) -> dict[str, Any]:
                     "entry_type": str(entry.type),
                     "hot_cue": int(entry.hot_cue),
                     "time_ms": int(entry.time),
-                    "loop_time_ms": (
-                        int(entry.loop_time)
-                        if entry.loop_time != 0xFFFFFFFF
-                        else None
-                    ),
+                    "loop_time_ms": (int(entry.loop_time) if entry.loop_time != 0xFFFFFFFF else None),
                     "label": None,  # stored in .EXT PCO2, out of scope
                     "color_id": None,
                 }
@@ -505,10 +494,7 @@ def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
         "tracks": tracks,
         "playlists": playlists,
         "playlist_entries": entries,
-        **{
-            name: {str(k): v for k, v in pdb_data[name].items()}
-            for name in lookup_names
-        },
+        **{name: {str(k): v for k, v in pdb_data[name].items()} for name in lookup_names},
         "metadata": {
             "pioneer_path": str(pioneer),
             "total_tracks": len(tracks),
@@ -556,22 +542,17 @@ def validate_invariants(data: dict[str, Any]) -> list[str]:
     track_ids = {t["id"] for t in data["tracks"]}
 
     # 1. + 2.
-    missing_entries = [
-        e for e in data["playlist_entries"] if e["track_id"] not in track_ids
-    ]
+    missing_entries = [e for e in data["playlist_entries"] if e["track_id"] not in track_ids]
     if missing_entries:
         errors.append(
-            f"{len(missing_entries)} playlist entries reference unknown track IDs "
-            f"(first: {missing_entries[0]})"
+            f"{len(missing_entries)} playlist entries reference unknown track IDs (first: {missing_entries[0]})"
         )
     for pl in data["playlists"]:
         if pl.get("is_folder"):
             continue
         unknown = [tid for tid in pl["track_ids"] if tid not in track_ids]
         if unknown:
-            errors.append(
-                f"playlist {pl['id']} ({pl['name']!r}) has {len(unknown)} unknown track IDs"
-            )
+            errors.append(f"playlist {pl['id']} ({pl['name']!r}) has {len(unknown)} unknown track IDs")
 
     # 3. + 4.
     for t in data["tracks"]:
@@ -586,8 +567,7 @@ def validate_invariants(data: dict[str, Any]) -> list[str]:
         total_anlz = data["metadata"]["anlz_total_dirs"]
         if total_anlz < len(data["tracks"]):
             errors.append(
-                f"ANLZ directory count {total_anlz} < track count "
-                f"{len(data['tracks'])}; some tracks missing analysis"
+                f"ANLZ directory count {total_anlz} < track count {len(data['tracks'])}; some tracks missing analysis"
             )
 
     # 6.

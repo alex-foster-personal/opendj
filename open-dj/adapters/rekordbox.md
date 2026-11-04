@@ -74,8 +74,9 @@ sync writers, which in turn enforce:
 
 ## Known gaps
 
-- **Adapter-driven writes** are still routed through `apps.sync.*`; a
-  direct `RekordboxAdapter.write()` surface is Phase 16 scope.
+- **Adapter-driven writes** remain routed through `apps.sync.*`. A direct
+  `RekordboxAdapter.write()` surface was not shipped in Phase 16 and is
+  future work.
 - **Cue + beatgrid** round-trips rely on Phase 4's cue/beatgrid writer
   under `apps.sync`. The adapter emits them on read but does not own the
   write path.

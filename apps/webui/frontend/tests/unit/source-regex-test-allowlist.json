@@ -414,6 +414,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "enrich-needs-you-local-stems.test.mjs",
+			"reason": "#7693: pins the needs-you orange as a literal in the scoped <style> rules of EnrichCardView; an SSR render emits markup but not the component CSS, so the color is only checkable in source"
+		},
+		{
 			"file": "fader-shift-select.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
@@ -450,12 +454,20 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "feedback-pin-draft-kept.test.mjs",
+			"reason": "#7693: asserts the pin layer appends open ids and drafts and that the card's outside-press handler keeps a card holding reply text; both run only on pointer events, which an SSR render never dispatches"
+		},
+		{
 			"file": "feedback-pin-global-layer.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
 			"file": "feedback-pin-lifecycle.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "feedback-pin-markers-placing.test.mjs",
+			"reason": "#7693: asserts which reactive inputs gate the pagePins derived (saved choice, hover peek, armed placement); hover and placement are client-only states an SSR render cannot reach"
 		},
 		{
 			"file": "feedback-pin-reveal.test.mjs",
@@ -1062,16 +1074,16 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "process-family-snapshot.test.mjs",
+			"reason": "PERF-UI-6785 source pin (PR #6785): asserts the snapshot module reads only performance.now() and never Date, a rule a unit test cannot exercise without faking the system clock; the behavior tests on the same functions are in process-family-snapshot-fetch.test.mjs. The PerfMeters.svelte read checks that no caller passes Date.now() into the snapshot functions, which a render cannot observe."
+		},
+		{
 			"file": "public-launch-copy-nits.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
 			"file": "quantize-grid-options.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
-		},
-		{
-			"file": "quick-draw-transition-in.test.mjs",
-			"reason": "#8385: asserts the transition-in runner PUTs, toasts, then calls engine.refreshHotCues, in that order inside a click handler; an SSR render never runs the handler, so call order is only visible in source"
 		},
 		{
 			"file": "quick-draw-vocal-fix.test.mjs",
@@ -1146,8 +1158,16 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "settings-number-readout-decimals.test.mjs",
+			"reason": "#7693: extracts the formatNumber helper from SettingsOverlay's script and runs it on whole and fractional steps; the overlay mounts on client-side prefs and settings data, so an SSR render shows no number row to read"
+		},
+		{
 			"file": "settings-overlay-open-untracked-sensitivity.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "settings-overlay-open-untracked.test.mjs",
+			"reason": "#7693: asserts the overlay's opening $effect seeds number rows through untrack() while the pin-days effect still re-seeds; effects do not run during SSR, so tracking is only visible in source"
 		},
 		{
 			"file": "settings-panel-offset.test.mjs",
@@ -1176,6 +1196,10 @@
 		{
 			"file": "skin-cycle-light.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "skin-look-preview-gap.test.mjs",
+			"reason": "#7693: pins skin CSS rules (TopBar's .free-badge display and Gothic theme.css colors); an SSR render emits no component or theme CSS, so these rules are only checkable in source"
 		},
 		{
 			"file": "smartlist-tree-crud.test.mjs",
@@ -1516,6 +1540,30 @@
 		{
 			"file": "wave-quick-settings.test.mjs",
 			"reason": "WAVEQS-8348b..8348d wiring pin (PR #8348): asserts the popover and SettingsOverlay both reach previews only through SettingPreview, the popover writes via applySettingChange and never uiPrefs, and the glyph's verbatim title and open-focus selector. The popover's module graph pulls the rune settings singleton, so the source is the instrument; the rendered behavior is covered by wave-quick-settings.spec.ts against the real app."
+		},
+		{
+			"file": "backstage-nav.test.mjs",
+			"reason": "Asserts the +layout.svelte wiring (flag-gated BackstageNav and the flat sidebar branch) and the flag-file declaration. Rendering the whole root layout needs the daemon and the flag store, so the layout source is the instrument for these checks; the nav model itself is covered by rendered-free unit assertions."
+		},
+		{
+			"file": "set-routes-view.test.mjs",
+			"reason": "SET-6586 Routes-mode swap: one markup branch inside BrowserPanel.svelte (a 600-plus line panel whose render needs the full browser stores); rendering it is tracked for the Routes view follow-up"
+		},
+		{
+			"file": "audfid-05-restore-outputs.test.mjs",
+			"reason": "#8428: pins Mixer's onMount call to listIoDevicesAndRestoreOutputsOnMount; the restore runs only on mount, which an SSR render never runs, and the behavior itself is tested on the extracted function"
+		},
+		{
+			"file": "dial-clock.test.mjs",
+			"reason": "Asserts Knob.svelte's drawn sweep equals DIAL_SWEEP_DEG by reading the component source; the clock map itself is tested by rendering-free math. Convert to a render (setup-overlay-render.test.mjs) to remove this entry."
+		},
+		{
+			"file": "health-liveness-dots.test.mjs",
+			"reason": "#8304: pins the production-build branch of BrowserPanel (pageServedByEngine from import.meta.env.DEV picks the App UI dot and skips the dev-server ping); DEV is fixed when the module is compiled, so an SSR render in the unit runner only ever takes the dev branch"
+		},
+		{
+			"file": "native-grid-contrast.test.mjs",
+			"reason": "checks the contrast colours declared in the StripWaveform style block against theme.css tokens (F08/GB-6838); the values live in CSS, which a rendered body does not expose"
 		}
 	]
 }

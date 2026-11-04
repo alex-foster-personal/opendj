@@ -28,7 +28,6 @@ import pytest
 import scripts.stem_bundle_worker as worker
 from apps.shared.odj_audio_decode import NoDecoderError
 from apps.stems import stem_size_policy as pol
-from apps.stems.stem_encode import StemPartOverSourceError
 
 pytestmark = pytest.mark.requirement("STEM-50")
 
@@ -83,8 +82,9 @@ def test_mp3_source_keeps_the_mp3_policy_codec_without_ffmpeg(no_ffmpeg: None) -
     assert worker._ffmpeg_reachable() is False
     assert worker._output_codec(MP3) == "mp3"
     assert worker._output_codec(Path("/music/track.m4a")) == "mp3"
-    # Control: a lossless source stays FLAC.
-    assert worker._output_codec(Path("/music/track.flac")) == "flac"
+    # STEM-8231: a lossless source gets MP3 parts too (four FLAC parts cannot
+    # fit inside one source).
+    assert worker._output_codec(Path("/music/track.flac")) == "mp3"
 
 
 @pytest.mark.requirement("STEM-57")
@@ -95,13 +95,13 @@ def test_mp3_encoder_capability_comes_from_the_real_libsndfile(no_ffmpeg: None) 
     refuses before any model loads. Only the branch this host's libsndfile
     takes is measured here; the other is not simulated."""
     import soundfile as sf
-    if "MP3" in sf.available_formats():
-        assert worker._output_codec(MP3) == "mp3"
-    else:
-        with pytest.raises(RuntimeError, match="cannot write MP3"):
-            worker._output_codec(MP3)
-    # Control: a lossless source needs no MP3 encoder either way.
-    assert worker._output_codec(Path("/music/track.wav")) == "flac"
+    # STEM-8231: a lossless source is MP3 too, so it takes the same branch.
+    for source in (MP3, Path("/music/track.wav")):
+        if "MP3" in sf.available_formats():
+            assert worker._output_codec(source) == "mp3"
+        else:
+            with pytest.raises(RuntimeError, match="cannot write MP3"):
+                worker._output_codec(source)
 
 
 @pytest.mark.requirement("STEM-57")
@@ -152,13 +152,14 @@ def _noise(np: Any, seconds: float, rate: int = 44100) -> Any:
 @pytest.mark.requirement("STEM-57")
 @pytest.mark.requires_audio_stack
 @pytest.mark.parametrize(
-    ("source_kbps", "settings"), [(320.0, "lame_320kbps_cbr"), (256.0, "lame_v0_vbr"), (192.0, "lame_v0_vbr")]
+    ("source_kbps", "settings"), [(320.0, "lame_80kbps_cbr"), (256.0, "lame_64kbps_cbr"), (192.0, "lame_64kbps_cbr")]
 )
 def test_mp3_parts_encode_with_no_ffmpeg_and_never_exceed_the_source(
     no_ffmpeg: None, tmp_path: Path, source_kbps: float, settings: str
 ) -> None:
     """The real encode chain, with no ffmpeg anywhere, writes an MP3 part no
-    larger than a real CBR MP3 source of the same length, and it decodes to at
+    larger than a QUARTER of a real CBR MP3 source of the same length (STEM-8231:
+    the four parts together fit the source), and it decodes to at
     least the frames it was given (LAME adds at most two frames of padding)."""
     import numpy as np
     import soundfile as sf
@@ -172,6 +173,7 @@ def test_mp3_parts_encode_with_no_ffmpeg_and_never_exceed_the_source(
         noise,
         rate,
         codec=worker._output_codec(MP3),
+        part="vocals",
         mp3_settings=settings,
         source_bytes=source_bytes,
         source_kbps=source_bytes * 8 / seconds / 1000,
@@ -179,10 +181,17 @@ def test_mp3_parts_encode_with_no_ffmpeg_and_never_exceed_the_source(
     )
 
     assert out.read_bytes() == encoded
-    assert len(encoded) <= source_bytes, f"{len(encoded)}B part over a {source_bytes}B source"
+    if source_kbps >= 256:
+        assert 4 * len(encoded) <= source_bytes, f"{len(encoded)}B part over a quarter of a {source_bytes}B source"
+    else:  # the 64 kbps floor wins over the size rule
+        assert len(encoded) <= source_bytes, f"{len(encoded)}B floor part over a {source_bytes}B source"
     info = sf.info(str(out))
     assert (info.format, info.samplerate, info.channels) == ("MP3", rate, 2)
-    assert int(seconds * rate) <= info.frames <= int(seconds * rate) + 2 * 1152
+    # Count DECODED frames: a low-rate CBR part carries no Info header, so
+    # sf.info's frame count is a byte-size estimate (measured +3001 frames at
+    # 48 kbps on 4 s) while the real decode is within LAME's two-frame pad.
+    decoded_frames = len(sf.read(str(out), dtype="float32")[0])
+    assert int(seconds * rate) <= decoded_frames <= int(seconds * rate) + 2 * 1152
 
 
 @pytest.mark.requirement("STEM-57")
@@ -228,13 +237,14 @@ def test_the_ladder_test_covers_the_whole_mpeg1_layer3_table() -> None:
 
 
 def _encode_against(
-    tmp_path: Path, np: Any, *, source_bytes: int, source_kbps: float, seconds: float = 3.0
+    tmp_path: Path, np: Any, *, source_bytes: int, source_kbps: float, seconds: float = 3.0, part: str = "vocals"
 ) -> tuple[Path, bytes, str | None]:
     out = tmp_path / "drums.mp3"
     encoded, settings = worker._encode_stem_part(
         _noise(np, seconds),
         44100,
         codec="mp3",
+        part=part,
         mp3_settings=pol.mp3_lame_settings_for_source_kbps(source_kbps),
         source_bytes=source_bytes,
         source_kbps=source_kbps,
@@ -246,37 +256,78 @@ def _encode_against(
 @pytest.mark.requirement("STEM-57")
 @pytest.mark.requires_audio_stack
 def test_a_part_still_over_the_source_at_rung_2_steps_down_until_it_fits(no_ffmpeg: None, tmp_path: Path) -> None:
-    """A source a hair above 128 kbps whose bytes sit between a 128 and a 112
-    kbps part: rung 2 (128) is over, so the part is written at 112."""
+    """A source a hair above 512 kbps (rung 1: 128 per part) whose QUARTER
+    sits between a 128 and a 112 kbps part: 128 is over the part's budget, so
+    the part is written at 112 (the STEM-8231 safety rung)."""
     import numpy as np
     seconds = 3.0
     at_128 = len(worker._encode_mp3(_noise(np, seconds).T, 44100, tmp_path / "at128.mp3", cbr_kbps=128))
     at_112 = len(worker._encode_mp3(_noise(np, seconds).T, 44100, tmp_path / "at112.mp3", cbr_kbps=112))
-    source_bytes = (at_128 + at_112) // 2
-    assert at_112 < source_bytes < at_128, "control: the source really sits between the two rungs"
+    source_bytes = 2 * (at_128 + at_112)
+    budget = pol.whole_set_part_budget_bytes(source_bytes)
+    assert at_112 < budget < at_128, "control: the part budget really sits between the two rungs"
 
-    out, encoded, settings = _encode_against(tmp_path, np, source_bytes=source_bytes, source_kbps=128.01)
+    out, encoded, settings = _encode_against(tmp_path, np, source_bytes=source_bytes, source_kbps=512.04)
 
     assert settings == "lame_112kbps_cbr"
-    assert len(encoded) == at_112 <= source_bytes
+    assert len(encoded) == at_112 <= budget
     assert out.read_bytes() == encoded
 
 
 @pytest.mark.requirement("STEM-57")
 @pytest.mark.requires_audio_stack
-def test_a_part_over_the_source_at_the_lowest_rung_is_refused_not_written(no_ffmpeg: None, tmp_path: Path) -> None:
+def test_a_part_over_its_quarter_at_the_floor_is_kept_at_64_kbps(no_ffmpeg: None, tmp_path: Path) -> None:
+    """[if] the safety rung steps under 64 kbps or drops the part [then] broken:
+    the maintainer chose the 64 kbps floor over the size rule, so a part still over its
+    quarter at 64 is written at 64."""
     import numpy as np
     seconds = 3.0
-    at_floor = len(worker._encode_mp3(_noise(np, seconds).T, 44100, tmp_path / "floor.mp3", cbr_kbps=32))
-    source_bytes = at_floor - 1
+    at_floor = len(worker._encode_mp3(_noise(np, seconds).T, 44100, tmp_path / "floor.mp3", cbr_kbps=64))
+    source_bytes = 4 * at_floor - 4  # each part's budget is one byte short of the floor part
 
-    with pytest.raises(StemPartOverSourceError) as raised:
-        _encode_against(tmp_path, np, source_bytes=source_bytes, source_kbps=40.0)
+    out, encoded, settings = _encode_against(tmp_path, np, source_bytes=source_bytes, source_kbps=320.0)
 
-    message = str(raised.value)
-    for named in ("drums.mp3", f"{at_floor} bytes", f"{source_bytes}-byte source", "32 kbps"):
-        assert named in message, (named, message)
-    assert not (tmp_path / "drums.mp3").exists(), "the oversized part is not left on disk"
-    # Control: one byte more of source and the same part is accepted at the floor.
-    _out, encoded, settings = _encode_against(tmp_path, np, source_bytes=at_floor, source_kbps=40.0)
-    assert (len(encoded), settings) == (at_floor, "lame_32kbps_cbr")
+    assert (len(encoded), settings) == (at_floor, "lame_64kbps_cbr")
+    assert out.read_bytes() == encoded
+
+
+@pytest.mark.requirement("STEM-8231")
+@pytest.mark.requires_audio_stack
+@pytest.mark.parametrize(("part", "source_kbps", "want"), [
+    ("bass", 320.0, "lame_96kbps_cbr"),  # rung 1 is 80: lifted to the 96 kbps floor
+    ("drums", 192.0, "lame_96kbps_cbr"),  # rung 1 is the 64 floor: lifted to 96
+    ("drums", 896.0, None),  # 224 is above 96: rung 1 holds
+    ("vocals", 320.0, None),  # vocals keep 80
+    ("other", 192.0, None),  # other keeps the 64 floor
+])
+def test_bass_and_drums_never_go_under_96_kbps(
+    no_ffmpeg: None, tmp_path: Path, part: str, source_kbps: float, want: str | None
+) -> None:
+    """[if] a bass or drums part is encoded under 96 kbps [then] broken: the maintainer
+    picked 96 by ear ("96k is the one", Tue 3 Nov 2026)."""
+    import numpy as np
+    _out, encoded, settings = _encode_against(
+        tmp_path, np, source_bytes=10**9, source_kbps=source_kbps, part=part
+    )
+    assert settings == want
+    mpeg1_l3_kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+    assert mpeg1_l3_kbps[encoded[2] >> 4] >= pol.mp3_part_floor_kbps(part)
+
+
+@pytest.mark.requirement("STEM-8231")
+@pytest.mark.requires_audio_stack
+@pytest.mark.parametrize("cbr_kbps", [64, 80, 128, 320])
+def test_parts_at_the_floor_and_up_decode_with_zero_offset(no_ffmpeg: None, tmp_path: Path, cbr_kbps: int) -> None:
+    """[if] a part at 64 kbps or more decodes shifted against its input [then]
+    broken: the Info header that lets decoders trim LAME's delay is missing."""
+    import numpy as np
+    import soundfile as sf
+    rate = 44100
+    noise = _noise(np, 6.0, rate).T
+    out = tmp_path / f"part-{cbr_kbps}.mp3"
+    encoded = worker._encode_mp3(noise, rate, out, cbr_kbps=cbr_kbps)
+    assert b"Info" in encoded[:4096] or b"Xing" in encoded[:4096]
+    decoded = sf.read(str(out), dtype="float32")[0]
+    window = slice(2000, 40000)
+    scores = {k: float(np.dot(noise[window, 0], decoded[2000 + k : 40000 + k, 0])) for k in range(0, 1200)}
+    assert max(scores, key=scores.get) == 0

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared import engine_origin
 from apps.shared.engine_origin import (
     EngineIdentityMismatch,
     EngineNotRunning,
@@ -147,3 +148,55 @@ class _Html404Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         pass
+
+
+@pytest.mark.requirement("ENGLOCK-6443")
+def test_resolve_origin_retries_an_unparsable_lock_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    [if] resolve_origin sees spaces once [then] it retries and returns origin, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    valid = json.dumps(
+        {
+            "pid": 1,
+            "role": "opendj-engine",
+            "host": "127.0.0.1",
+            "port": 8585,
+            "boot_id": "boot-a",
+        }
+    )
+    reads = iter(["   ", valid])
+    read_count = 0
+
+    def _read_text(self: Path, encoding: str = "utf-8") -> str:
+        nonlocal read_count
+        if self == lock_path:
+            read_count += 1
+            return next(reads, valid)
+        return Path.read_text(self, encoding=encoding)
+
+    lock_path.write_text(valid, encoding="utf-8")
+    monkeypatch.setattr(Path, "read_text", _read_text)
+    monkeypatch.setattr(engine_origin.time, "sleep", lambda _s: None)
+    origin = resolve_origin(lock_path)
+    assert origin.port == 8585
+    assert read_count == 2
+
+
+@pytest.mark.requirement("ENGLOCK-6443")
+def test_resolve_origin_gives_up_after_the_retry_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    [if] every read is unparsable [then] EngineNotRunning names invalid JSON, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    lock_path.write_text("   ", encoding="utf-8")
+    monkeypatch.setattr(engine_origin.time, "sleep", lambda _s: None)
+    with pytest.raises(EngineNotRunning) as refusal:
+        resolve_origin(lock_path)
+    message = str(refusal.value)
+    assert "is not valid JSON" in message
+    assert str(lock_path) in message

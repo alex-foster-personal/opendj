@@ -40,6 +40,7 @@ destination                 for
 
 Dry-run is the default everywhere. ``--live`` writes.
 """
+
 from __future__ import annotations
 
 import json
@@ -220,9 +221,7 @@ def _write_fields(
             result.fields_unchanged += 1
 
 
-def _write_segments(
-    conn: sqlite3.Connection, plan: LoadPlan, held: set[tuple[str, str]], result: ApplyResult
-) -> None:
+def _write_segments(conn: sqlite3.Connection, plan: LoadPlan, held: set[tuple[str, str]], result: ApplyResult) -> None:
     """Every planned series whose energy write was not held, replaced whole."""
     for segment_write in plan.segment_writes:
         if (segment_write.stable_id, "energy") in held:
@@ -294,9 +293,7 @@ def apply_plan(
             conn.execute("ROLLBACK")
             result.stale_plan = True
             return result
-        result.verification_rows = record_verification(
-            conn, plan.verification, now=stamp
-        )
+        result.verification_rows = record_verification(conn, plan.verification, now=stamp)
         held = _now_outranked(conn, plan)
         # A series replaced after planning holds the row's scalar too: one
         # row never ends up with this analysis's value and another's series.
@@ -357,9 +354,7 @@ def apply_plan(
                     SOURCE,
                     staged.source_row_id,
                     staged.field_name,
-                    json.dumps(
-                        staged.value, sort_keys=True, separators=(",", ":")
-                    ),
+                    json.dumps(staged.value, sort_keys=True, separators=(",", ":")),
                     staged.unmatched_reason,
                     staged.confidence,
                     staged.title,
@@ -377,8 +372,7 @@ def apply_plan(
                 result.staged_unchanged += 1
 
         conn.execute(
-            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) "
-            "VALUES (?, ?, NULL, ?, ?)",
+            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) VALUES (?, ?, NULL, ?, ?)",
             (
                 stamp,
                 "mik.load",
@@ -392,10 +386,7 @@ def apply_plan(
                         "staged_written": result.staged_written,
                         "staged_unchanged": result.staged_unchanged,
                         "gate": plan.gate_summary,
-                        "verification_basis": {
-                            row["field_name"]: row["basis"]
-                            for row in plan.verification
-                        },
+                        "verification_basis": {row["field_name"]: row["basis"] for row in plan.verification},
                     },
                     sort_keys=True,
                     separators=(",", ":"),

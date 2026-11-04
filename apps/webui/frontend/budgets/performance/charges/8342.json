@@ -1,9 +1,0 @@
-{
-  "bytes": 4096,
-  "measured_main": 326835,
-  "measured_with_pr": 329610,
-  "sha": "44a1ba5ff9",
-  "date": "Tue 3 Nov 2026",
-  "reason": "PR #8342 tempo curve (issue #8339): the curve painter, its two inlined Lucide icons and the tempo prefs load with /performance (deck strip and main waveform). Its inline raise to 329,728 was lost when the gate moved to charge files, so main went red at de432533c6 (CI 329,593 vs 327,680). One clean nucbox vite build each: main 09d95a8b28 326,835, merge 44a1ba5ff9 329,610 (+2,775), ceiled to KiB plus 1 KiB => 4096.",
-  "payback": "none planned; the curve is the feature"
-}

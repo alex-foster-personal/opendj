@@ -5,6 +5,7 @@ File: ``(private path)``.
 Kept separate from the state DB so agents and humans can edit URLs without
 opening SQLite, and so the list survives a state restore from backup.
 """
+
 from __future__ import annotations
 
 import json
@@ -127,10 +128,7 @@ def save_watched(
     payload = {
         "version": 1,
         "description": description
-        or (
-            "Watched Spotify playlists for re-import when new tracks appear. "
-            "Keep URLs durable across agent runs."
-        ),
+        or ("Watched Spotify playlists for re-import when new tracks appear. Keep URLs durable across agent runs."),
         "playlists": [
             {
                 "id": e.id,

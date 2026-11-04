@@ -1,4 +1,5 @@
 """Repo session helpers for pairings CLI entry points (not public API)."""
+
 from __future__ import annotations
 
 import sys

@@ -183,8 +183,10 @@ def _ctx(request: Request, backend: StateBackend) -> svc.Ctx:
 
 def _config_out(config: TitleFixConfig, key: KeyStatus) -> TitleFixConfigOut:
     return TitleFixConfigOut(
-        enabled=config.enabled, auto_apply_policy=config.auto_apply_policy,  # type: ignore[arg-type]
-        spend_cap_usd=config.spend_cap_usd, tag_families=list(config.tag_families),  # type: ignore[arg-type]
+        enabled=config.enabled,
+        auto_apply_policy=config.auto_apply_policy,  # type: ignore[arg-type]
+        spend_cap_usd=config.spend_cap_usd,
+        tag_families=list(config.tag_families),  # type: ignore[arg-type]
         key=KeyStatusOut(configured=key.configured, source=key.source, hint=key.hint),
     )
 
@@ -199,8 +201,12 @@ def _proposal_out(row: ProposalRow) -> ProposalOut:
 
 
 def _outcome_out(outcome: svc.Outcome) -> OutcomeOut:
-    return OutcomeOut(batch_id=outcome.batch_id, applied=outcome.applied,
-                      skipped=[SkippedOut(**s) for s in outcome.skipped], warning=outcome.warning)
+    return OutcomeOut(
+        batch_id=outcome.batch_id,
+        applied=outcome.applied,
+        skipped=[SkippedOut(**s) for s in outcome.skipped],
+        warning=outcome.warning,
+    )
 
 
 def _batch_out(batch: BatchRow) -> BatchOut:
@@ -223,8 +229,11 @@ def _service_call(fn: Any, *args: Any, **kwargs: Any) -> Any:
     except NotFoundError as exc:
         raise _refuse("title_fix_track_not_found", f"{exc}; nothing in this batch was written", 404) from exc
     except BatchConflictError as exc:
-        raise _refuse("title_fix_track_conflict", "a track changed while the batch was written; nothing applied",
-                      conflicts=exc.conflicts) from exc
+        raise _refuse(
+            "title_fix_track_conflict",
+            "a track changed while the batch was written; nothing applied",
+            conflicts=exc.conflicts,
+        ) from exc
 
 
 # ----- config + key -----------------------------------------------------------
@@ -240,11 +249,19 @@ def get_title_fix_config(request: Request) -> TitleFixConfigOut:
 @router.put("/config", response_model=TitleFixConfigOut)
 def put_title_fix_config(body: TitleFixConfigIn, request: Request) -> TitleFixConfigOut:
     paths = StorePaths(resolve_state_db_path(request))
-    key_status = _service_call(resolve_key, paths)[1]  # before saving: a broken key file must not follow a committed save
-    config = _service_call(save_config, paths, TitleFixConfig(
-        enabled=body.enabled, auto_apply_policy=body.auto_apply_policy,
-        spend_cap_usd=body.spend_cap_usd, tag_families=tuple(body.tag_families),
-    ))
+    key_status = _service_call(resolve_key, paths)[
+        1
+    ]  # before saving: a broken key file must not follow a committed save
+    config = _service_call(
+        save_config,
+        paths,
+        TitleFixConfig(
+            enabled=body.enabled,
+            auto_apply_policy=body.auto_apply_policy,
+            spend_cap_usd=body.spend_cap_usd,
+            tag_families=tuple(body.tag_families),
+        ),
+    )
     return _config_out(config, key_status)
 
 
@@ -266,12 +283,17 @@ def delete_title_fix_key(request: Request) -> KeyStatusOut:
 
 
 @router.post(
-    "/scans", response_model=ScanOut, status_code=status.HTTP_202_ACCEPTED,
-    responses={409: {"description": "disabled, key missing, scan running, or no state.db"},
-               404: {"description": "a requested stable_id does not exist"}},
+    "/scans",
+    response_model=ScanOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        409: {"description": "disabled, key missing, scan running, or no state.db"},
+        404: {"description": "a requested stable_id does not exist"},
+    },
 )
 def start_title_fix_scan(
-    body: ScanIn, request: Request,
+    body: ScanIn,
+    request: Request,
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> ScanOut:
     """Start a scan over the whole library, the first ``limit`` tracks, or explicit ``stable_ids`` (not both: 422)."""
@@ -280,7 +302,8 @@ def start_title_fix_scan(
 
 @router.get("/scans", response_model=list[ScanOut])
 def list_title_fix_scans(
-    request: Request, backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    request: Request,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     limit: int = Query(default=20, ge=1, le=200),
 ) -> list[ScanOut]:
     ctx = _ctx(request, backend)
@@ -290,7 +313,9 @@ def list_title_fix_scans(
 
 @router.get("/scans/{scan_id}", response_model=ScanOut, responses={404: {"description": "unknown scan"}})
 def get_title_fix_scan(
-    scan_id: str, request: Request, backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    scan_id: str,
+    request: Request,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> ScanOut:
     ctx = _ctx(request, backend)
     svc.expire_stale_scans(ctx)  # a dead scan must not read as running forever
@@ -317,17 +342,31 @@ def list_title_fix_proposals(  # noqa: PLR0913, PLR0917  # FastAPI query params 
     offset: int = Query(default=0, ge=0),
 ) -> ProposalsPage:
     store = _ctx(request, backend).store
-    rows, total = store.list_proposals(ProposalFilter(
-        state=None if state == "any" else state, fixer_status=fixer_status, source=source, tag=tag,
-        scan_id=scan_id, batch_id=batch_id, limit=limit, offset=offset,
-    ))
-    return ProposalsPage(items=[_proposal_out(r) for r in rows], total=total, limit=limit, offset=offset,
-                         counts_by_state=store.counts_by_state())
+    rows, total = store.list_proposals(
+        ProposalFilter(
+            state=None if state == "any" else state,
+            fixer_status=fixer_status,
+            source=source,
+            tag=tag,
+            scan_id=scan_id,
+            batch_id=batch_id,
+            limit=limit,
+            offset=offset,
+        )
+    )
+    return ProposalsPage(
+        items=[_proposal_out(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+        counts_by_state=store.counts_by_state(),
+    )
 
 
 @router.post("/apply", response_model=OutcomeOut, responses={409: {"description": "a track changed mid-write"}})
 def apply_title_fix_proposals(
-    body: SelectionIn, request: Request,
+    body: SelectionIn,
+    request: Request,
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> OutcomeOut:
     return _outcome_out(_service_call(svc.apply_proposals, _ctx(request, backend), body.proposal_ids))
@@ -335,7 +374,8 @@ def apply_title_fix_proposals(
 
 @router.post("/reject", response_model=OutcomeOut)
 def reject_title_fix_proposals(
-    body: SelectionIn, request: Request,
+    body: SelectionIn,
+    request: Request,
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> OutcomeOut:
     return _outcome_out(_service_call(svc.reject_proposals, _ctx(request, backend), body.proposal_ids))
@@ -343,20 +383,27 @@ def reject_title_fix_proposals(
 
 @router.get("/batches", response_model=list[BatchOut])
 def list_title_fix_batches(
-    request: Request, backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    request: Request,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     limit: int = Query(default=20, ge=1, le=200),
 ) -> list[BatchOut]:
     return [_batch_out(b) for b in _ctx(request, backend).store.list_batches(limit)]
 
 
-@router.post("/batches/{batch_id}/undo", response_model=OutcomeOut,
-             responses={404: {"description": "unknown batch"}, 409: {"description": "conflict or already undone"}})
+@router.post(
+    "/batches/{batch_id}/undo",
+    response_model=OutcomeOut,
+    responses={404: {"description": "unknown batch"}, 409: {"description": "conflict or already undone"}},
+)
 def undo_title_fix_batch(
-    batch_id: str, body: UndoIn, request: Request,
+    batch_id: str,
+    body: UndoIn,
+    request: Request,
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> OutcomeOut:
-    return _outcome_out(_service_call(svc.undo_batch, _ctx(request, backend), batch_id,
-                                      skip_conflicts=body.skip_conflicts))
+    return _outcome_out(
+        _service_call(svc.undo_batch, _ctx(request, backend), batch_id, skip_conflicts=body.skip_conflicts)
+    )
 
 
 __all__ = ["router"]

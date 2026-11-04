@@ -48,10 +48,12 @@ from apps.shared.events import publish as publish_engine_event
 from . import queue_store
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends.base import AnalyzerBackend, TrackVanished
-from .jit_warmup import warm_backend_jit
+from .canonical import dependency_stale_row
+from .jit_warmup import raise_if_warmup_refused, warm_backend_jit
 from .lane_enums import LaneContractError
 from .lanes import parse_own_backend
 from .pool import analyze_one, spawn_pool
+from .source_bytes import StaleSourceBytesError, assert_source_bytes_unchanged
 from .queue import CascadeOutcome, QueueError, enqueue, runnable_sizing_inputs
 from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord, RecordContractError
@@ -108,17 +110,22 @@ def _already_current(
     precisely the thing that needs recomputing, so a skip check that only
     asked "does a row exist" would make every cascade re-queue a no-op and
     the dependent lane would never recover.
+
+    A third, for a row no marker names: a key whose ``depends_on`` no longer
+    matches the canonical beatgrid. Rows written before the cascade marked
+    them (NATIVE-36) carry no marker, and skipping them left 20 of 31 tracks
+    of one playlist with a blank key after their grids were re-analyzed.
     """
     row = conn.execute(
-        "SELECT 1 FROM analysis WHERE stable_id = ? AND backend = ? "
+        "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ? "
         "AND backend_version = ?",
         (item.stable_id, backend, version),
     ).fetchone()
     if row is None:
         return False
-    return (backend, version) not in queue_store.stale_rows(
-        conn, item.stable_id, item.lane
-    )
+    if (backend, version) in queue_store.stale_rows(conn, item.stable_id, item.lane):
+        return False
+    return not dependency_stale_row(conn, item.stable_id, item.lane, row[0])
 
 
 def _commit_record(
@@ -155,6 +162,9 @@ def _commit_record(
             lane=item.lane,
             backend=record.backend,
             backend_version=record.backend_version,
+        )
+        assert_source_bytes_unchanged(
+            conn, item.stable_id, item.claimed_audio_hash
         )
         # Cascade from what the row now holds: a refused untrusted grid was
         # replaced by the stored trusted one (UpsertResult.record).
@@ -341,7 +351,7 @@ def _settle_one(
             record=record,
             runner_id=ctx.runner_id,
         )
-    except (RecordContractError, LaneContractError) as exc:
+    except (RecordContractError, LaneContractError, StaleSourceBytesError) as exc:
         # The producer emitted a record the contract refuses for THIS track
         # (live: a fitted beat 0.011 s past a frame-derived duration). The
         # commit rolled back, so the item fails with the breach as its reason
@@ -598,11 +608,12 @@ def run_batch(
         version = _effective_version(backend_cls)
         backend_name = backend_cls.name
         owned_cache = ensure_owned_numba_cache_dir()
-        warm_backend_jit(
+        warmup = warm_backend_jit(
             backend_cls,
             backend_name=backend_name,
             purge_stale=owned_cache is not None,
         )
+        raise_if_warmup_refused(warmup)
         # Size AFTER warm-up: first-run JIT compilation can hold resident
         # memory, so capacity read before it would overstate what the pool
         # can use. Nothing that allocates sits between this read and the pool.

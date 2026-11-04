@@ -33,6 +33,7 @@ Two collision directions, both resolved WITHOUT inventing data:
 All three no-stable_id outcomes are retained in ``unmatched_source_analysis``
 with the reason recorded. Nothing MIK knows is thrown away.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,6 +62,7 @@ ARTIST_TITLE_SEP = "\x1f"
 
 def zero_tier_counts() -> dict[str, int]:
     return {tier: 0 for tier in TIER_ORDER}
+
 
 UnmatchedReason = Literal["no_candidate", "ambiguous_candidates", "lost_collision"]
 
@@ -194,8 +196,7 @@ class TrackIndex:
     def from_conn(cls, conn: sqlite3.Connection) -> TrackIndex:
         index = cls()
         tracks = conn.execute(
-            "SELECT stable_id, title, artists_json, file_path FROM tracks "
-            "WHERE deleted_at IS NULL"
+            "SELECT stable_id, title, artists_json, file_path FROM tracks WHERE deleted_at IS NULL"
         ).fetchall()
         alt_paths = list_location_paths(conn, [row[0] for row in tracks])
         for stable_id, title, artists_json, file_path in tracks:
@@ -280,14 +281,9 @@ def _best_tier_per_song(
             if chosen is not None or ambiguous_detail is not None:
                 continue
             if len(candidates) > 1:
-                ambiguous_detail = (
-                    f"tier {tier} matched {len(candidates)} tracks: "
-                    f"{','.join(candidates[:4])}"
-                )
+                ambiguous_detail = f"tier {tier} matched {len(candidates)} tracks: {','.join(candidates[:4])}"
                 continue
-            chosen = Match(
-                mik_row_id=song.row_id, stable_id=candidates[0], tier=tier
-            )
+            chosen = Match(mik_row_id=song.row_id, stable_id=candidates[0], tier=tier)
         if chosen is not None:
             provisional[song.row_id] = (chosen, song)
         elif ambiguous_detail is not None:
@@ -301,17 +297,13 @@ def _best_tier_per_song(
                 mik_row_id=song.row_id,
                 reason="no_candidate",
                 detail=(
-                    "no tier produced a candidate"
-                    if allow_fuzzy
-                    else "no exact-path candidate (--allow-fuzzy is off)"
+                    "no tier produced a candidate" if allow_fuzzy else "no exact-path candidate (--allow-fuzzy is off)"
                 ),
             )
     return provisional
 
 
-def _resolve_claim_collisions(
-    provisional: dict[int, tuple[Match, MikSong]], report: MatchReport
-) -> None:
+def _resolve_claim_collisions(provisional: dict[int, tuple[Match, MikSong]], report: MatchReport) -> None:
     """Pass 2 of ``match_songs``, split out to keep it under the complexity
     ceiling: several MIK songs claiming one track, deterministic winner."""
     claimants: dict[str, list[tuple[Match, MikSong]]] = {}
@@ -331,10 +323,7 @@ def _resolve_claim_collisions(
             report.unmatched[loser_match.mik_row_id] = Unmatched(
                 mik_row_id=loser_match.mik_row_id,
                 reason="lost_collision",
-                detail=(
-                    f"track {stable_id} already claimed via tier "
-                    f"{winner.tier} by MIK row {winner.mik_row_id}"
-                ),
+                detail=(f"track {stable_id} already claimed via tier {winner.tier} by MIK row {winner.mik_row_id}"),
                 claimed_stable_id=stable_id,
             )
 
@@ -356,9 +345,7 @@ def match_songs(
     tiers: tuple[Tier, ...] = TIER_ORDER if allow_fuzzy else ("exact_path",)
     tier_candidates = zero_tier_counts()
 
-    provisional = _best_tier_per_song(
-        songs, index, tiers, tier_candidates, report, allow_fuzzy
-    )
+    provisional = _best_tier_per_song(songs, index, tiers, tier_candidates, report, allow_fuzzy)
     _resolve_claim_collisions(provisional, report)
 
     report._tier_candidates = tier_candidates

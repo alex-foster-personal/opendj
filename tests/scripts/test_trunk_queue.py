@@ -330,16 +330,6 @@ def test_the_nucbox_shim_label_submits_to_the_queue() -> None:
 
 
 # -----------------------------------------------------------------------------
-CONFIG_WORKFLOW = WORKFLOWS / "trunk-queue-config.yml"
-
-
-def test_the_config_workflow_never_runs_branch_code_with_the_token() -> None:
-    workflow = yaml.safe_load(CONFIG_WORKFLOW.read_text())
-    triggers = set(workflow.get(True) or workflow["on"])
-    assert triggers == {"push", "schedule", "workflow_dispatch"}, triggers
-    assert (workflow.get(True) or workflow["on"])["push"]["branches"] == ["main"]
-
-
 def _workflow_files() -> list[Path]:
     """Every workflow GitHub runs: both extensions, so a `.yaml` file cannot hide from a scan."""
     return sorted([*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")])
@@ -374,22 +364,15 @@ def _runs_branch_code(job: dict[str, Any]) -> bool:
     return False
 
 
-def test_the_config_sync_job_holds_the_trunk_token() -> None:
-    assert f"{CONFIG_WORKFLOW.name}:sync" in _trunk_token_holders()
-
-
 def test_no_other_trunk_token_holder_runs_branch_code() -> None:
     """With or without a checkout: branch-controlled commands must never see the token.
 
-    The sync job is the one holder allowed a checkout, because it runs only on main and the
-    schedule (pinned below). Every other holder (the quarantine-list fetch and the test-results
-    upload) must neither check out the tree nor run a repo file.
+    Every holder (the e2e quarantine-list fetch and the test-results uploads) must neither
+    check out the tree nor run a repo file. The config sync job that was the one allowed
+    checkout went with trunk-queue-config.yml on Wed 4 Nov 2026.
     """
-    sync = f"{CONFIG_WORKFLOW.name}:sync"
     offenders = []
     for holder in _trunk_token_holders():
-        if holder == sync:
-            continue
         name, job_id = holder.split(":", 1)
         workflow = yaml.safe_load((WORKFLOWS / name).read_text())
         if job_id == "<workflow>" or _runs_branch_code(workflow["jobs"][job_id]):
@@ -404,13 +387,3 @@ def test_the_branch_code_detector_fires() -> None:
     assert not _runs_branch_code({"steps": [{"run": "curl -sS https://api.trunk.io/v1/x"}]})
 
 
-def test_only_mains_reviewed_code_can_hold_the_token() -> None:
-    """`gh workflow run --ref <branch>` would otherwise run branch code with the org token."""
-    job = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]
-    assert job["if"] == "github.ref == 'refs/heads/main'"
-
-
-def test_the_scheduled_run_only_diffs() -> None:
-    step = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]["steps"][-1]
-    assert step["env"]["MODE"] == "${{ github.event_name == 'schedule' && 'diff' || 'apply' }}"
-    assert step["run"] == 'python3 -m scripts.trunk_queue "$MODE"'

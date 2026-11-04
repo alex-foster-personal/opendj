@@ -85,9 +85,7 @@ def verify_bundle_id_matches_its_own_contents(bundle: Path, manifest: dict[str, 
         if actual != track["truth_sha256"]
     ]
     if mismatches:
-        raise SystemExit(
-            f"{bundle} manifest disagrees with its own truth files:\n  " + "\n  ".join(mismatches)
-        )
+        raise SystemExit(f"{bundle} manifest disagrees with its own truth files:\n  " + "\n  ".join(mismatches))
     recomputed = compute_bundle_id(
         seed=manifest["sample_seed"],
         sample_size=manifest["sample_size"],

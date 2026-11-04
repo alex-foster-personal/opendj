@@ -11,4 +11,5 @@ Modules:
   models     -- pydantic request/response schemas.
   routes/    -- per-surface routers.
 """
+
 from __future__ import annotations

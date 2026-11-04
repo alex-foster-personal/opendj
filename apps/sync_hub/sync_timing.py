@@ -4,6 +4,7 @@ Split out of :mod:`apps.sync_hub.client` so the client module stays under the
 600-line ratchet. All math lives here; ``run_sync`` only wraps call sites in
 ``PhaseTimer.span``.
 """
+
 from __future__ import annotations
 
 import time

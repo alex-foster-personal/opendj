@@ -5,6 +5,7 @@ CloudSync is configured it hydrates through short-lived presigned GET URLs
 minted by the sync hub, which alone holds :class:`apps.cloud.config.CloudConfig`.
 A credentialed workstation keeps the direct-R2 path unchanged.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,9 +63,7 @@ class StemHydrationSource(Protocol):
 
     def refresh_error(self, data_dir: Path) -> str | None: ...
 
-    def bundle_remote_size(
-        self, file_hashes: dict[str, str], *, stable_id: str
-    ) -> int | None: ...
+    def bundle_remote_size(self, file_hashes: dict[str, str], *, stable_id: str) -> int | None: ...
 
     def fetch_bundle_files(
         self,
@@ -238,9 +237,7 @@ class HubPresignedSource:
                 raise self._map_transport_error(exc, label="stem index refresh") from exc
 
         try:
-            return stem_index.refresh_local_cache_throttled(
-                data_dir, _fetch, force=force
-            )
+            return stem_index.refresh_local_cache_throttled(data_dir, _fetch, force=force)
         except StemSourceError:
             raise
         except Exception as exc:
@@ -249,9 +246,7 @@ class HubPresignedSource:
     def refresh_error(self, data_dir: Path) -> str | None:
         return stem_index.refresh_error(data_dir)
 
-    def bundle_remote_size(
-        self, _file_hashes: dict[str, str], *, stable_id: str | None = None
-    ) -> int | None:
+    def bundle_remote_size(self, _file_hashes: dict[str, str], *, stable_id: str | None = None) -> int | None:
         from apps.cloud.hub_stem_client import fetch_hub_bundle_size
 
         if stable_id is None:
@@ -291,10 +286,7 @@ class HubPresignedSource:
             if expected is not None and expected != digest:
                 raise StemSourceError(
                     STEM_BUNDLE_PRESIGN_FAILED,
-                    (
-                        f"hub presign digest for {filename} ({digest}) "
-                        f"does not match local index ({expected})"
-                    ),
+                    (f"hub presign digest for {filename} ({digest}) does not match local index ({expected})"),
                 )
             dest = tmp_dir / filename
             hydration.fetch_asset_for_hydration(

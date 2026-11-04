@@ -13,16 +13,19 @@ to the real ``apps.stems.stem_encode``. The farm's own manifest and bundle
 writer are lifted out of its source (no modal import, the same approach as
 ``test_bundle_publish_mirror.py``).
 
-  - [if] the source is MP3/M4A and the caller asked ``by-source`` [then] every
-    part is MP3 [⛔️ if any part is FLAC]
+  - [if] the caller asked ``by-source`` [then] every part is MP3, lossless
+    source or not (STEM-8231) [⛔️ if any part is FLAC]
   - [if] a caller names ``flac`` [then] every part is FLAC, MP3 source or not
   - [if] the farm encodes a part [then] its bytes and rung equal
     ``apps.stems.stem_encode.encode_part``'s for the same input [⛔️ on drift]
-  - [if] the source is under 192 kbps (a 128 kbps rip) [then] rung 2 is the
-    nearest MPEG-1 rate at or under it [⛔️ if it raises after the GPU work]
-  - [if] a rung-2 part is still over the source [then] the farm steps down
+  - [if] the source is any known format [then] every part is CBR at the
+    nearest MPEG-1 rate at or under a quarter of the source rate, so the four
+    parts together fit the source (STEM-8231, whole set <= track)
+  - [if] a part is over its quarter of the source [then] the farm steps down
     the CBR ladder like ``encode_part`` until it fits [⛔️ if it publishes the
-    oversized rung-2 part while a lower rate fits]
+    oversized part while a lower rate fits]
+  - [if] the source is under 256 kbps [then] the 64 kbps floor (the maintainer's
+    choice), never a lower rate
   - [if] even the lowest rate is over the source [then] it is kept and recorded
     in ``size_policy.violations`` [⛔️ if it raises and discards the separation]
   - [if] the bundle is written [then] the real stem reader loads it as v3 MP3
@@ -149,8 +152,8 @@ def test_negative_control_a_drifted_mirror_stops_the_run(name: str, value: Any) 
     [
         ("by-source", "a.mp3", "mp3"),
         ("by-source", "a.M4A", "mp3"),
-        ("by-source", "a.flac", "flac"),
-        ("by-source", "a.aiff", "flac"),
+        ("by-source", "a.flac", "mp3"),  # STEM-8231: four FLAC parts cannot fit the source
+        ("by-source", "a.aiff", "mp3"),
         ("flac", "a.mp3", "flac"),
         ("mp3", "a.wav", "mp3"),
     ],
@@ -188,7 +191,7 @@ def test_no_policy_or_unknown_codec_is_refused(asked: str, source: str) -> None:
         _farm()["resolve_stem_codec"](asked, source)
 
 
-@pytest.mark.parametrize("source_kbps", [192, 256, 320])
+@pytest.mark.parametrize("source_kbps", [256, 320])
 def test_farm_mp3_parts_equal_the_shared_encoder_and_fit_the_source(
     tmp_path: Path, source_kbps: int
 ) -> None:
@@ -210,6 +213,7 @@ def test_farm_mp3_parts_equal_the_shared_encoder_and_fit_the_source(
             arrays[part],
             RATE,
             codec="mp3",
+            part=part,
             mp3_settings=rung1,
             source_bytes=source_bytes,
             source_kbps=effective_kbps,
@@ -218,62 +222,68 @@ def test_farm_mp3_parts_equal_the_shared_encoder_and_fit_the_source(
         assert stems[part] == expected, f"{part}: farm bytes differ from stem_encode"
         assert settings[part] == (rung2 or rung1), part
         assert stems[part][:3] == b"ID3" or stems[part][:2] in (b"\xff\xfb", b"\xff\xfa")
-        assert len(stems[part]) <= source_bytes, f"{part} outgrew its source"
+        if part not in pol.MP3_RHYTHM_PARTS:  # bass/drums sit at their 96 kbps floor
+            assert 4 * len(stems[part]) <= source_bytes, f"{part} outgrew its quarter of the source"
     assert size_policy["violations"] == []
     assert size_policy["part_bytes"] == {p: len(b) for p, b in stems.items()}
+    assert size_policy["set_bytes"] == sum(len(b) for b in stems.values())
     assert set(size_policy) == {
         "source_bytes",
         "source_kbps",
         "mp3_settings",
         "part_bytes",
+        "set_bytes",
+        "set_ratio",
         "violations",
     }
 
 
-def test_rung_two_actually_fires_on_a_loud_part(tmp_path: Path) -> None:
-    """Positive control for the ladder: against a 192 kbps source, full-scale
-    noise at V0 is larger than the source, so the farm must re-encode it at
-    192 CBR; the near-silent part must stay on rung 1."""
+def test_every_part_starts_at_a_quarter_of_the_source_rate(tmp_path: Path) -> None:
+    """STEM-8231 rung 1: against a 320 kbps source vocals and other are CBR at
+    80 kbps (320 / 4); bass and drums are lifted to their 96 kbps floor ("96k
+    is the one", the maintainer, Tue 3 Nov 2026)."""
     farm = _farm()
-    source_bytes, effective_kbps = _cbr_source(tmp_path, 192)
+    source_bytes, effective_kbps = _cbr_source(tmp_path, 320)
     stems, size_policy = farm["encode_stems"](
         _arrays(), RATE, "mp3", source_bytes=source_bytes, source_kbps=effective_kbps
     )
-    assert size_policy["mp3_settings"]["vocals"] == "lame_192kbps_cbr"
-    assert size_policy["mp3_settings"]["other"] == "lame_v0_vbr"
     mpeg1_l3_kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
-    assert mpeg1_l3_kbps[stems["vocals"][2] >> 4] == 192
+    want = {"vocals": 80, "other": 80, "bass": 96, "drums": 96}
+    for part in PARTS:
+        assert size_policy["mp3_settings"][part] == f"lame_{want[part]}kbps_cbr", part
+        assert mpeg1_l3_kbps[stems[part][2] >> 4] == want[part], part
 
 
-def test_a_rung_two_part_over_by_a_hair_steps_down_like_the_shared_encoder(tmp_path: Path) -> None:
-    """Codex P2 on #6821: when the rung-2 CBR lands just over the source, the
-    farm keeps stepping down ``MP3_CBR_LADDER`` exactly as
+def test_a_part_over_its_quarter_by_a_hair_steps_down_like_the_shared_encoder(tmp_path: Path) -> None:
+    """The safety rung: when rung 1 lands one byte over the part's quarter of
+    the source, the farm steps down ``MP3_CBR_LADDER`` exactly as
     ``stem_encode.encode_part`` does, so the published part fits and its bytes
     and rate equal the shared encoder's."""
     from apps.stems.stem_encode import encode_part
 
     farm = _farm()
     noise = _noise()
-    at_192 = farm["encode_mp3"](noise, RATE, tmp_path / "probe.mp3", cbr_kbps=192)
-    source_bytes = len(at_192) - 1  # rung 2 (192) is over by one byte
+    at_80 = farm["encode_mp3"](noise, RATE, tmp_path / "probe.mp3", cbr_kbps=80)
+    source_bytes = 4 * len(at_80) - 1  # rung 1 (80) is over its quarter by one byte
 
     stems, size_policy = farm["encode_stems"](
-        {"vocals": noise}, RATE, "mp3", source_bytes=source_bytes, source_kbps=192.0
+        {"vocals": noise}, RATE, "mp3", source_bytes=source_bytes, source_kbps=320.0
     )
 
     expected, settings = encode_part(
         noise,
         RATE,
         codec="mp3",
-        mp3_settings=farm["mp3_lame_settings_for_source_kbps"](192.0),
+        part="vocals",
+        mp3_settings=farm["mp3_lame_settings_for_source_kbps"](320.0),
         source_bytes=source_bytes,
-        source_kbps=192.0,
+        source_kbps=320.0,
         out_path=tmp_path / "shared.mp3",
     )
-    assert settings == "lame_160kbps_cbr"
+    assert settings == "lame_64kbps_cbr"
     assert size_policy["mp3_settings"]["vocals"] == settings
     assert stems["vocals"] == expected
-    assert len(stems["vocals"]) <= source_bytes
+    assert 4 * len(stems["vocals"]) <= source_bytes
     assert size_policy["violations"] == []
 
 
@@ -286,9 +296,10 @@ def test_a_part_still_over_the_source_is_kept_and_recorded(tmp_path: Path) -> No
         {"vocals": _noise()}, RATE, "mp3", source_bytes=1000, source_kbps=200.0
     )
     assert len(stems["vocals"]) > 1000
-    assert size_policy["mp3_settings"]["vocals"] == "lame_32kbps_cbr"
+    assert size_policy["mp3_settings"]["vocals"] == "lame_64kbps_cbr"  # the floor, never under
     assert [v["name"] for v in size_policy["violations"]] == ["vocals"]
     assert size_policy["violations"][0]["ratio"] > 1.0
+    assert size_policy["set_ratio"] > 1.0
 
 
 def test_an_explicit_flac_request_stays_lossless(tmp_path: Path) -> None:
@@ -341,28 +352,34 @@ def test_a_farm_mp3_bundle_loads_through_the_real_reader(tmp_path: Path) -> None
     assert manifest["schema_version"] == 3
     assert manifest["codec"] == "mp3"
     for part, path in bundle.files.items():
-        info = sf.info(str(path))
-        assert info.format == "MP3", part
-        assert frames <= info.frames <= frames + 2 * 1152, part
+        assert sf.info(str(path)).format == "MP3", part
+        # Decoded frames, not sf.info's: a low-rate CBR part has no Info
+        # header, so sf.info estimates its length from the byte count.
+        decoded = len(sf.read(str(path), dtype="float32")[0])
+        assert frames <= decoded <= frames + 2 * 1152, part
 
 
-@pytest.mark.parametrize(("source_kbps", "rung2"), [(128, 128), (160, 160), (96, 96)])
-def test_a_sub_192_source_reencodes_at_its_own_rate_instead_of_raising(
-    tmp_path: Path, source_kbps: int, rung2: int
+@pytest.mark.parametrize(("source_kbps", "rung1"), [(128, 64), (160, 64), (256, 64), (320, 80)])
+def test_the_part_rate_is_a_quarter_of_the_source_on_the_mpeg1_table(
+    tmp_path: Path, source_kbps: int, rung1: int
 ) -> None:
-    """Sentry on #6203 (HIGH): the old ladder floored at 192, so a 128 kbps
-    source raised at rung 2 after the GPU time was spent. Full-scale noise at
-    V0 is larger than such a source, so rung 2 must fire, at the source's own
-    MPEG-1 rate, and the part must fit."""
+    """STEM-8231: the maintainer's "whole set <= track" in rates: a 320 kbps source gets
+    80 kbps parts; under 256 kbps his "64 kbps floor" wins over the size."""
     farm = _farm()
     source_bytes, effective_kbps = _cbr_source(tmp_path, source_kbps)
     stems, size_policy = farm["encode_stems"](
         {"vocals": _noise()}, RATE, "mp3", source_bytes=source_bytes, source_kbps=effective_kbps
     )
-    assert size_policy["mp3_settings"]["vocals"] == f"lame_{rung2}kbps_cbr"
+    assert size_policy["mp3_settings"]["vocals"] == f"lame_{rung1}kbps_cbr"
     mpeg1_l3_kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
-    assert mpeg1_l3_kbps[stems["vocals"][2] >> 4] == rung2
-    assert len(stems["vocals"]) <= source_bytes
+    assert mpeg1_l3_kbps[stems["vocals"][2] >> 4] == rung1
+    if source_kbps >= 256:
+        assert 4 * len(stems["vocals"]) <= source_bytes
+
+
+def test_a_low_source_gets_the_64_kbps_floor_not_a_lower_rate() -> None:
+    """[if] a 96 kbps source gets parts under 64 kbps [then] broken: they play late."""
+    assert _farm()["mp3_lame_settings_for_source_kbps"](96.0) == "lame_64kbps_cbr"
 
 
 def test_below_the_mpeg1_floor_there_is_no_rung() -> None:

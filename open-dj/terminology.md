@@ -31,7 +31,7 @@ guard is `tests/open_dj/test_glossary.py`.
 | play_count | plays | history | play_count | play_count | play_count | Aggregated play count from DJ history. |
 | color_rgb | Color | track color | color_index | COLOR | INFO @COLOR | Track color as 24-bit RGB. |
 | cue_points | Cue Points | djmdCue | TSAF cues | Serato Markers2 | CUE_V2 | Family of hot cues, memory cues, loops, and related markers. |
-| cue_points.hot | Hot Cue | djmdCue Kind 1..8 | hot cues | Markers2 CUE | CUE_V2 @TYPE="0" | Hot-cue pad / slot marker. |
+| cue_points.hot | Hot Cue | djmdCue Kind 1..8 (Open DJ `cue_kind.py`; D-H unproven #4069) | hot cues | Markers2 CUE | CUE_V2 @TYPE="0" | Hot-cue pad / slot marker. |
 | cue_points.memory | Memory Cue | memory cues | memory cues | unsupported | no native memory cue | Memory cue (not a hot-cue pad). |
 | cue_points.loop | Loop | loops | loops | Markers2 LOOP | CUE_V2 @TYPE="5" | Saved loop with a start and length. |
 | cue_points.color | Cue Color | cue color | cue color | CUE RGB | per-type palette | Color of an individual cue or loop marker. |

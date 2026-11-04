@@ -71,8 +71,8 @@ STEM_CODECS: dict[str, dict[str, Any]] = {
         "args": ["-c:a", "libopus", "-b:a", "80k"],
         "mb_per_track": 12,  # ~80k x4 on a ~4 min track; was 27 at fixed 192k
     },
-    # MP3 through the two-rung LAME ladder (STEM-57's, mirrored below from
-    # apps.stems.stem_encode): each part at or under the source's own bitrate.
+    # MP3 through the LAME CBR ladder (mirrored below from apps.stems.
+    # stem_encode): STEM-8231, the four parts together at or under the source.
     # Not ffmpeg: libsndfile's LAME, the same encoder the local worker uses.
     "mp3": {"ext": "mp3", "args": None, "mb_per_track": None},  # unmeasured here
 }
@@ -81,9 +81,10 @@ STEM_CODECS: dict[str, dict[str, Any]] = {
 # home as four lossless parts each 2.5x to 4.2x the source file -- the
 # regression STEM-57 fixed for the local worker. "by-source" resolves per
 # track exactly as apps.stems.stem_size_policy.stem_output_codec_for_source_ext
-# does: lossless source -> FLAC, MP3/M4A source -> MP3 via the ladder, any
-# other extension -> a per-track error before GPU time is spent. A caller that
-# wants FLAC regardless (tier L, anything that will be scored) names "flac".
+# does (STEM-8231): MP3 for every known source so the whole set fits under the
+# track, any other extension -> a per-track error before GPU time is spent. A
+# caller that wants FLAC regardless (tier L, anything that will be scored) names
+# "flac".
 STEM_CODEC_BY_SOURCE: str = "by-source"
 
 # MIRRORED from apps/stems/stem_size_policy.py -- the GPU container has no
@@ -103,6 +104,9 @@ MP3_CBR_KBPS: int = 320
 # source under 192 kbps (a 128 kbps rip) gets a rung-2 CBR instead of a
 # raise after the GPU time is spent (Sentry on #6203).
 MP3_CBR_LADDER: tuple[int, ...] = (320, 256, 224, 192, 160, 128, 112, 96, 80, 64, 56, 48, 40, 32)
+MP3_WHOLE_SET_MIN_KBPS: int = 64
+MP3_RHYTHM_PARTS: frozenset[str] = frozenset({"bass", "drums"})
+MP3_RHYTHM_MIN_KBPS: int = 96
 MP3_MPEG1_MAX_KBPS: int = 320
 MP3_MPEG1_MIN_KBPS: int = 32
 # Mirror of stem_encode.SNDFILE_MP3_MAX_COMPRESSION: libsndfile 1.2.2 refuses
@@ -168,7 +172,7 @@ def assert_lossy_stems_not_larger_than_source(
 
 
 def stem_output_codec_for_source_ext(source_ext: str) -> str:
-    """"flac" for a lossless source, "mp3" for a lossy one.
+    """Thin adapter for stem_size_policy.stem_output_codec_for_source_ext (STEM-8231).
 
     Lookup is inlined in ``resolve_stem_codec`` so this body no longer matches
     ``apps.stems.stem_size_policy.stem_output_codec_for_source_ext``. Keep
@@ -180,10 +184,11 @@ def stem_output_codec_for_source_ext(source_ext: str) -> str:
 def resolve_stem_codec(stem_codec: str, source_name: str) -> str:
     """The codec every part of THIS track is written in.
 
-    ``by-source`` (the default, STEM-75) follows the source-format policy; any
-    key of STEM_CODECS is taken as asked, so a caller that names ``flac`` gets
-    FLAC whatever the source. Runs before the model loads, so an unknown codec
-    or an extension with no policy costs no GPU time.
+    ``by-source`` (the default) follows stem_size_policy's output codec (STEM-8231:
+    MP3 for every known source); any key of STEM_CODECS is taken as asked, so a
+    caller that names ``flac`` gets FLAC whatever the source. Runs before the
+    model loads, so an unknown codec or an extension with no policy costs no GPU
+    time.
 
     Lossless/lossy lookup lives here so ``stem_output_codec_for_source_ext``
     no longer shares a function body with stem_size_policy (Modal image has
@@ -192,9 +197,7 @@ def resolve_stem_codec(stem_codec: str, source_name: str) -> str:
     if stem_codec == STEM_CODEC_BY_SOURCE:
         source_ext = Path(source_name).suffix
         ext = source_ext.lower()
-        if ext in LOSSLESS_SOURCE_EXTS:
-            return "flac"
-        if ext in LOSSY_SOURCE_EXTS:
+        if ext in LOSSLESS_SOURCE_EXTS or ext in LOSSY_SOURCE_EXTS:
             return "mp3"
         raise ValueError(
             f"no output-format policy for source extension {source_ext!r}; known "
@@ -208,11 +211,57 @@ def resolve_stem_codec(stem_codec: str, source_name: str) -> str:
     return stem_codec
 
 
-def mp3_lame_settings_for_source_kbps(source_kbps: float) -> str:
-    """Mirror of stem_size_policy.mp3_lame_settings_for_source_kbps (rung 1)."""
+def mp3_whole_set_cbr_kbps(source_kbps: float) -> int:
+    """Mirror of stem_size_policy.mp3_whole_set_cbr_kbps (STEM-8231): the ladder
+    rate at or under floor(source_kbps / 4), never below 64 kbps."""
+    import math
+
     if source_kbps <= 0:
         raise ValueError(f"source_kbps must be positive, got {source_kbps}")
-    return "lame_320kbps_cbr" if source_kbps >= MP3_CBR_KBPS else "lame_v0_vbr"
+    ceiling = math.floor(source_kbps / STEM_PART_COUNT)
+    fitting = next((cbr for cbr in MP3_CBR_LADDER if cbr <= ceiling), MP3_WHOLE_SET_MIN_KBPS)
+    return max(fitting, MP3_WHOLE_SET_MIN_KBPS)
+
+
+def mp3_part_floor_kbps(part: str) -> int:
+    """Mirror of stem_size_policy.mp3_part_floor_kbps. The lowest CBR one part may use: 96 kbps for bass and drums (the maintainer,
+    Tue 3 Nov 2026, "96k is the one"), 64 kbps for vocals and other."""
+    return MP3_RHYTHM_MIN_KBPS if part in MP3_RHYTHM_PARTS else MP3_WHOLE_SET_MIN_KBPS
+
+
+def mp3_whole_set_step_down_kbps(rung1_cbr: int, floor_kbps: int = MP3_WHOLE_SET_MIN_KBPS) -> tuple[int, ...]:
+    """Mirror of stem_size_policy.mp3_whole_set_step_down_kbps. The rates a part may be encoded at, rung 1 first, down to ``floor_kbps``
+    (mp3_part_floor_kbps): the safety rung never goes under the part's floor.
+    A rung 1 under the floor is lifted to it."""
+    for cbr in (rung1_cbr, floor_kbps):
+        if cbr not in MP3_CBR_LADDER:
+            raise ValueError(f"{cbr} kbps is not an MP3_CBR_LADDER rate {MP3_CBR_LADDER}")
+    top = max(rung1_cbr, floor_kbps)
+    return tuple(cbr for cbr in MP3_CBR_LADDER if floor_kbps <= cbr <= top)
+
+
+def mp3_lame_settings_for_source_kbps(source_kbps: float) -> str:
+    """Mirror of stem_size_policy.mp3_lame_settings_for_source_kbps (rung 1)."""
+    return f"lame_{mp3_whole_set_cbr_kbps(source_kbps)}kbps_cbr"
+
+
+def mp3_cbr_kbps_from_settings(mp3_settings: str) -> int:
+    """Mirror of stem_size_policy.mp3_cbr_kbps_from_settings."""
+    prefix, suffix = "lame_", "kbps_cbr"
+    digits = mp3_settings[len(prefix) : -len(suffix)]
+    if not (mp3_settings.startswith(prefix) and mp3_settings.endswith(suffix) and digits.isdigit()):
+        raise ValueError(f"mp3_settings must be lame_<N>kbps_cbr, got {mp3_settings!r}")
+    cbr = int(digits)
+    if cbr not in MP3_CBR_LADDER:
+        raise ValueError(f"{cbr} kbps is not an MP3_CBR_LADDER rate {MP3_CBR_LADDER}")
+    return cbr
+
+
+def whole_set_part_budget_bytes(source_bytes: int) -> int:
+    """Mirror of stem_size_policy.whole_set_part_budget_bytes."""
+    if source_bytes <= 0:
+        raise ValueError(f"source_bytes must be positive, got {source_bytes}")
+    return source_bytes // STEM_PART_COUNT
 
 
 def mp3_rung2_cbr_kbps(source_kbps: float) -> int:
@@ -317,32 +366,28 @@ def encode_mp3_part(
     arr: Any,
     sample_rate: int,
     *,
+    part: str,
     mp3_settings: str,
     source_bytes: int,
     source_kbps: float,
     out_path: Path,
 ) -> tuple[bytes, str]:
-    """Mirror of stem_encode.encode_part's MP3 branch, the ladder.
+    """Mirror of stem_encode.encode_part's MP3 branch, the whole-set ladder.
 
     Returns (bytes, the settings that produced them). Rung 1 is
-    ``mp3_settings``; a part larger than the source file is re-encoded at the
-    rung-2 CBR and, like the shared encoder, steps down ``MP3_CBR_LADDER`` one
-    rate at a time until it fits (LAME padding can leave rung 2 a few hundred
-    bytes over). Where some rate fits, the bytes and rate equal
-    ``stem_encode.encode_part``'s. Only where even the lowest rate is over does
-    the farm differ: it KEEPS that part and records it, where the local encoder
-    raises, because the GPU separation is already paid for (size is a KPI, not
-    a gate, for routes that encode elsewhere -- stem_encode.encode_part's
-    docstring and stem_size_policy.py's module docstring).
+    ``mp3_settings`` (STEM-8231: a quarter of the source rate); a part over its
+    quarter of the source bytes steps down ``MP3_CBR_LADDER`` one rate at a
+    time until it fits, never under the part's floor (96 kbps bass/drums, 64
+    vocals/other); a part still over at that floor
+    is kept and recorded, as ``stem_encode.encode_part`` keeps it. The bytes
+    and rate always equal the shared encoder's.
     """
-    cbr_kbps = MP3_CBR_KBPS if mp3_settings == "lame_320kbps_cbr" else None
-    encoded = encode_mp3(arr, sample_rate, out_path, cbr_kbps=cbr_kbps)
-    if len(encoded) <= source_bytes:
-        return encoded, mp3_settings
-    rung2_cbr = mp3_rung2_cbr_kbps(source_kbps)
-    for cbr in MP3_CBR_LADDER[MP3_CBR_LADDER.index(rung2_cbr) :]:
+    budget = whole_set_part_budget_bytes(source_bytes)
+    floor = mp3_part_floor_kbps(part)
+    rung1_cbr = mp3_cbr_kbps_from_settings(mp3_settings)
+    for cbr in mp3_whole_set_step_down_kbps(rung1_cbr, floor):
         encoded = encode_mp3(arr, sample_rate, out_path, cbr_kbps=cbr)
-        if len(encoded) <= source_bytes:
+        if len(encoded) <= budget:
             break
     return encoded, f"lame_{cbr}kbps_cbr"
 
@@ -395,6 +440,7 @@ def encode_stems(
                 stems[part], mp3_settings_by_part[part] = encode_mp3_part(
                     arr,
                     sample_rate,
+                    part=part,
                     mp3_settings=rung1,
                     source_bytes=source_bytes,
                     source_kbps=source_kbps,
@@ -415,6 +461,8 @@ def encode_stems(
         "source_kbps": round(source_kbps, 2),
         "mp3_settings": mp3_settings_by_part or None,
         "part_bytes": part_sizes,
+        "set_bytes": sum(part_sizes.values()),
+        "set_ratio": round(sum(part_sizes.values()) / source_bytes, 4),
         "violations": stem_size_violations(
             source_bytes=source_bytes, part_sizes=part_sizes, codec=codec
         ),
@@ -616,10 +664,24 @@ def _assert_mp3_ladder_functions_match(pol: Any, enc: Any) -> None:
             ):
                 raise SystemExit(f"error: source codec policy drifted for {spelled!r}")
     for kbps in (32.0, 47.9, 64.0, 127.9, 128.0, 159.9, 191.9, 192.0, 245.0, 256.0, 320.0, 321.5):
-        if pol.mp3_lame_settings_for_source_kbps(kbps) != (
-            mp3_lame_settings_for_source_kbps(kbps)
-        ) or pol.mp3_rung2_cbr_kbps(kbps) != mp3_rung2_cbr_kbps(kbps):
+        if pol.mp3_rung2_cbr_kbps(kbps) != mp3_rung2_cbr_kbps(kbps):
             raise SystemExit(f"error: MP3 ladder rung drifted at {kbps} kbps")
+    if (pol.MP3_WHOLE_SET_MIN_KBPS, pol.MP3_RHYTHM_PARTS, pol.MP3_RHYTHM_MIN_KBPS) != (
+        MP3_WHOLE_SET_MIN_KBPS, MP3_RHYTHM_PARTS, MP3_RHYTHM_MIN_KBPS
+    ):
+        raise SystemExit("error: whole-set part floors drifted from the Modal mirror")
+    for part in ("vocals", "drums", "bass", "other"):
+        for cbr in (64, 80, 128, 224):
+            if pol.mp3_whole_set_step_down_kbps(cbr, pol.mp3_part_floor_kbps(part)) != (
+                mp3_whole_set_step_down_kbps(cbr, mp3_part_floor_kbps(part))
+            ):
+                raise SystemExit(f"error: whole-set step-down drifted for {part} at {cbr} kbps")
+    for kbps in (32.0, 96.0, 128.0, 191.9, 255.9, 256.0, 319.9, 320.0, 321.5, 896.0, 1411.2):
+        if pol.mp3_lame_settings_for_source_kbps(kbps) != mp3_lame_settings_for_source_kbps(kbps):
+            raise SystemExit(f"error: whole-set MP3 rung drifted at {kbps} kbps")
+    for source_bytes in (1, 3, 4, 1_000_003):
+        if pol.whole_set_part_budget_bytes(source_bytes) != whole_set_part_budget_bytes(source_bytes):
+            raise SystemExit(f"error: whole-set part budget drifted at {source_bytes} bytes")
     for cbr in MP3_CBR_LADDER:
         if enc.sndfile_mp3_compression(cbr) != sndfile_mp3_compression(cbr):
             raise SystemExit(f"error: libsndfile CBR mapping drifted at {cbr} kbps")

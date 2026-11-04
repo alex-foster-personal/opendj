@@ -26,6 +26,7 @@ See also ``scripts/capture_djay_playlist_fixture.py`` which emits a live
 blob into ``(private path)`` + a sidecar for the
 matching ``view_mediaItemPlaylistView_page.data`` row.
 """
+
 from __future__ import annotations
 
 import logging
@@ -91,11 +92,7 @@ def _emit_tsaf_header(field_count: int) -> bytes:
     skips past the magic/version/flags block (index 16) before scanning
     for ``0x08``-prefixed string pairs.
     """
-    return (
-        _TSAF_MAGIC
-        + bytes([0x03, 0x03, field_count & 0xFF, 0x00])
-        + b"\x00" * 8
-    )
+    return _TSAF_MAGIC + bytes([0x03, 0x03, field_count & 0xFF, 0x00]) + b"\x00" * 8
 
 
 def build_playlist_blob(
@@ -115,9 +112,12 @@ def build_playlist_blob(
 
     class_marker = b"\x2b" + _emit_string(_PLAYLIST_CLASS.decode("utf-8"))
     pairs = (
-        _emit_string(uuid_hex) + _emit_string("uuid")
-        + _emit_string(name) + _emit_string("name")
-        + _emit_enum_byte(type_byte) + _emit_string("type")
+        _emit_string(uuid_hex)
+        + _emit_string("uuid")
+        + _emit_string(name)
+        + _emit_string("name")
+        + _emit_enum_byte(type_byte)
+        + _emit_string("type")
     )
     body = class_marker + pairs + b"\x00"
     return _emit_tsaf_header(field_count=3) + body
@@ -163,10 +163,7 @@ def _discover_leaf_type_from_db(db_path: Path) -> int | None:
     try:
         uri = f"file:{db_path}?mode=ro"
         with sqlite3.connect(uri, uri=True) as conn:
-            cur = conn.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name LIKE '%laylist%'"
-            )
+            cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%laylist%'")
             tables = [r[0] for r in cur.fetchall()]
             if not tables:
                 return None
@@ -174,9 +171,7 @@ def _discover_leaf_type_from_db(db_path: Path) -> int | None:
             counts: dict[int, int] = {}
             for tbl in tables:
                 try:
-                    rows = conn.execute(
-                        f'SELECT data FROM "{tbl}" WHERE data IS NOT NULL LIMIT 500'
-                    ).fetchall()
+                    rows = conn.execute(f'SELECT data FROM "{tbl}" WHERE data IS NOT NULL LIMIT 500').fetchall()
                 except sqlite3.DatabaseError:
                     continue
                 for (blob,) in rows:
@@ -239,8 +234,7 @@ def validate_leaf_type_byte(
     observed = _discover_leaf_type_from_db(Path(db_path))
     if observed is None:
         _log.warning(
-            "TSAF validation: no non-root playlist blobs found in %s; "
-            "PLAYLIST_TYPE_LEAF=0x%02x unverified",
+            "TSAF validation: no non-root playlist blobs found in %s; PLAYLIST_TYPE_LEAF=0x%02x unverified",
             db_path,
             PLAYLIST_TYPE_LEAF,
         )

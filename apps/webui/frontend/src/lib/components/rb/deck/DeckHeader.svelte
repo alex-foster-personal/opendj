@@ -16,6 +16,8 @@
 	// KEY SYNC with the key readout and nudge arrows stacked under it,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import { offloadOps } from '$lib/offload/offload-ops.svelte';
+	import { operationPercent } from '$lib/offload/api-offload';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { formatTempoPct } from '$lib/rb/tempo-format';
 	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
@@ -429,9 +431,26 @@
 		return parts.join(' — ');
 	});
 	const deckNumTitle: string = $derived(`Deck ${deckId}`);
+	// OFFLOAD: the track this deck is waiting on, while it downloads from the cloud.
+	const cloudDownload = $derived(offloadOps.deckDownloads[deckId] ?? null);
+	const cloudPercent = $derived(cloudDownload === null ? null : operationPercent(cloudDownload.op));
 </script>
 
 <div class="deck-header">
+	{#if cloudDownload !== null}
+		<div
+			class="deck-cloud-download"
+			data-testid="deck-cloud-download"
+			role="progressbar"
+			aria-label={`Downloading from the cloud for deck ${deckId}`}
+			aria-valuemin="0"
+			aria-valuemax="100"
+			aria-valuenow={cloudPercent ?? undefined}
+			title={`Downloading from the cloud: ${cloudPercent === null ? 'starting' : `${Math.round(cloudPercent)}%`}`}
+		>
+			<span class="deck-cloud-fill" style={`width:${cloudPercent ?? 0}%`}></span>
+		</div>
+	{/if}
 	<div class="art-slot">
 		{#if deck.stable_id !== null}
 			<button
@@ -695,12 +714,25 @@
 
 <style>
 	.deck-header {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		width: 100%;
 		min-width: 0;
 		flex: 0 0 auto;
+	}
+	.deck-cloud-download {
+		position: absolute;
+		inset: 0 0 auto 0;
+		height: 3px;
+		background: var(--rb-surface-2, #2a2a2a);
+		pointer-events: none;
+	}
+	.deck-cloud-fill {
+		display: block;
+		height: 100%;
+		background: var(--rb-accent, #4cc9f0);
 	}
 	/* Fixed square slot with equal inset so the thumb is padded on all sides. */
 	.art-slot {
@@ -813,19 +845,34 @@
 	 * star icons and be 20% smaller." 9px -> 7.2px is the 20%.
 	 *
 	 * The centring is NOT what `align-items: center` above already does. That
-	 * aligns LAYOUT BOXES, and those were already flush (both centred on
-	 * 249.5 in a 1280x800 deck). What the maintainer can see is the INK: `.rb-star`
-	 * carries `line-height: 1`, and the ☆ glyph paints low inside that line
-	 * box, so the stars' ink centre sat 0.67px below the dot's. `top` here is
-	 * that optical correction, in em of the STAR's font size rather than the
-	 * row's, written as the SAME expression theme.css gives `.rb-star` so the
-	 * two cannot drift apart. In this subtree it always resolves to the
-	 * `--rb-fs-browser` fallback: `--rb-star-size` is a local custom property
-	 * on TrackTable's `.c-rating` cell, and a deck header is never a
-	 * descendant of one, so the narrowed-rating-column case cannot reach here.
-	 * 0.045em is the measured 0.5px at that 11px default; residual 0.17px.
-	 * Measured, not assumed -- performance-deck-color-dot.spec.ts reads the
-	 * composited pixels back and fails if this is reverted. */
+	 * aligns LAYOUT BOXES, and those are already flush (both centred on
+	 * 249.5 in a 1280x800 deck). What the maintainer can see is the INK.
+	 *
+	 * This correction started as a text-glyph nudge: `.rb-star` used a `☆`
+	 * character on a `line-height: 1` line box, whose ink painted LOW inside
+	 * that box, and 0.045em (dot down) cancelled it. `RatingStars` now draws
+	 * the star as an inline `<svg width="1em" height="1em">` (67e948592,
+	 * "em-sized stars"), and an inline SVG sits on the text BASELINE instead:
+	 * with `--rb-font`'s descent the 10.5px glyph lands with its ink centre
+	 * 0.43px ABOVE the row centre, while the dot's bordered circle paints on
+	 * its own box centre. The same nudge therefore doubled the error instead
+	 * of cancelling it -- measured dot-minus-stars delta went from -0.67px on
+	 * the glyph to +0.93px at the RC head, over the spec's 0.35px ceiling.
+	 *
+	 * `top` is the measured optical correction, in em of the STAR's font size
+	 * rather than the row's, written as the SAME expression theme.css gives
+	 * `.rb-star` so the two cannot drift apart: the baseline offset scales
+	 * with the glyph's em, so the correction must too. In this subtree it
+	 * always resolves to the `--rb-fs-browser` fallback: `--rb-star-size` is a
+	 * local custom property on TrackTable's `.c-rating` cell, and a deck
+	 * header is never a descendant of one, so the narrowed-rating-column case
+	 * cannot reach here.
+	 *
+	 * -0.0435em is the measured 0.93px swing minus the old +0.4725px at the
+	 * 10.5px star em (mono-dev / light skins); residual 0.00px on the outline
+	 * glyph and within 0.35px at every filled rating. Measured, not assumed --
+	 * performance-deck-color-dot.spec.ts reads the composited pixels back and
+	 * fails if this is reverted. */
 	.color-dot {
 		display: inline-block;
 		width: 7.2px;
@@ -835,7 +882,7 @@
 		background: transparent;
 		font-size: var(--rb-star-size, var(--rb-fs-browser));
 		position: relative;
-		top: 0.045em;
+		top: -0.0435em;
 	}
 	.readout {
 		display: flex;

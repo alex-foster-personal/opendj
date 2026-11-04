@@ -16,6 +16,7 @@ cap is :data:`PRESSURE_HYDRATION_MAX_CONCURRENT` (1) until they clear.
 ``ui_mirror=None`` means session xruns are not elevated (no process-wide
 mirror provider until part 5 wires one).
 """
+
 from __future__ import annotations
 
 import os
@@ -40,9 +41,7 @@ def _configured_max_concurrent() -> int:
     try:
         return int(raw)
     except ValueError as exc:
-        raise ValueError(
-            f"{ENV_HYDRATION_MAX_CONCURRENT} must be an integer; got {raw!r}"
-        ) from exc
+        raise ValueError(f"{ENV_HYDRATION_MAX_CONCURRENT} must be an integer; got {raw!r}") from exc
 
 
 def effective_limit(

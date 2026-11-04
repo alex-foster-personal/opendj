@@ -7,6 +7,7 @@ does not modify the file.
 
 Containers this reader refuses (historical writer scope): ``.aiff`` / ``.wav``.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -148,14 +149,10 @@ def read_tags(path: Path) -> TagRead:
     )
 
 
-def write_tags(
-    path: Path, unified: UnifiedTags, *, dry_run: bool = True
-) -> WriteResult:
+def write_tags(path: Path, unified: UnifiedTags, *, dry_run: bool = True) -> WriteResult:
     """Refuse to write tags. Does not open or modify ``path``.
 
     ``dry_run`` does not preview a write: writing is not a product feature.
     """
     del unified, dry_run
-    raise TagWriteRemoved(
-        f"{TAG_WRITE_REMOVED} (refusing {path.name})"
-    )
+    raise TagWriteRemoved(f"{TAG_WRITE_REMOVED} (refusing {path.name})")

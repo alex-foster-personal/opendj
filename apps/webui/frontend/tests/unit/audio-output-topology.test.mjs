@@ -223,7 +223,7 @@ test('the silence source gate sees the master bus the watchdog measures: routing
 	// Wiring: the watchdog's source reader takes this gain from the engine,
 	// with the live routing map and ceiling, not from onAirGain.
 	const appInit = readFileSync(new URL('../../src/lib/rb/app-init.ts', import.meta.url), 'utf8');
-	assert.match(appInit, /return deckMasterBusGain\(id\);/);
+	assert.match(appInit, /master_path_gain: deckMasterBusGain\(id\)/);
 	assert.doesNotMatch(appInit, /onAirGain\(/);
 	const engine = readFileSync(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url), 'utf8');
 	assert.match(

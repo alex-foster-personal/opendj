@@ -7,10 +7,10 @@ import * as path from 'node:path';
 import { after, test } from 'node:test';
 
 import { healthOk } from '../src/engine';
-import { flockProbe, inspectLock, makeLockProbe, parseLockJson, performancePageUrl, pidCanAct, readLockFields } from '../src/launch';
-import { scratchDir, statusServer } from './helpers';
+import { type LockProbe, flockProbe, inspectLock, makeLockProbe, parseLockJson, performancePageUrl, pidCanAct, readLockFields, readLockJsonWithAttempts, signalHolder, tryParseLockJson } from '../src/launch';
+import { TaskkillUnavailableError } from '../src/engine';
+import { HOLD_LOCK_SCRIPT, PYTHON, scratchDir, statusServer } from './helpers';
 
-const PYTHON = 'python3';
 const probe = makeLockProbe(PYTHON);
 const always = async (): Promise<boolean> => true;
 const never = async (): Promise<boolean> => false;
@@ -25,7 +25,7 @@ async function holdLock(lock: string, blob: string): Promise<ChildProcess> {
 	fs.writeFileSync(lock, blob);
 	const holder = spawn(
 		PYTHON,
-		['-c', 'import fcntl,os,sys,time\nfd=os.open(sys.argv[1],os.O_RDWR)\nfcntl.flock(fd,fcntl.LOCK_EX)\nprint("held",flush=True)\ntime.sleep(60)', lock],
+		['-c', HOLD_LOCK_SCRIPT, lock],
 		{ stdio: ['ignore', 'pipe', 'inherit'] }
 	);
 	holders.push(holder);
@@ -128,9 +128,75 @@ test('readLockFields needs both a pid and a port', () => {
 	assert.deepEqual(readLockFields(lock), { pid: 12, port: 8683 });
 });
 
+test('readLockJsonWithAttempts retries unparsable bodies then succeeds', () => {
+	const queue = ['   ', '{"pid":12,"port":8683}'];
+	const holder = readLockJsonWithAttempts(() => queue.shift() ?? null);
+	assert.deepEqual(holder, { pid: 12, host: null, port: 8683 });
+});
+
+test('readLockJsonWithAttempts returns null when the bound is exhausted', () => {
+	assert.equal(readLockJsonWithAttempts(() => 'not-json'), null);
+});
+
+test('tryParseLockJson treats empty object as parsed, not unparsable', () => {
+	assert.deepEqual(tryParseLockJson('{}'), { pid: null, host: null, port: null });
+	assert.equal(tryParseLockJson('   '), null);
+});
+
+test('inspectLock on a held empty object does not wait the full retry bound', async () => {
+	const dir = scratchDir('launch-nopid-fast');
+	const lock = path.join(dir, '.engine.lock');
+	fs.writeFileSync(lock, '{}');
+	// A stub probe: the real one spawns python3, and that spawn was what the old
+	// wall-clock check measured. This test is about the reader, not the spawn.
+	const heldProbe = (): LockProbe => ({ held: true, contents: '{}', method: 'flock' });
+	const started = Date.now();
+	const plan = await inspectLock(lock, always, heldProbe);
+	// Loaded-runner bound: local median is 14 ms (5 runs: 13, 14, 14, 13, 14); the old 40 ms bound took 430 ms
+	// on PR #3807's loaded self-hosted runner (issue #8542). max(10 x median, 500 ms) = 500 ms.
+	assert.equal(Date.now() - started < 500, true);
+	assert.deepEqual(plan, { kind: 'stop-or-quit', pid: 0, detail: `engine lock ${lock} is held but does not name a pid` });
+	// The retry bound is LOCK_READ_ATTEMPTS reads; a parsable first read must return
+	// on attempt one. Counting reads asserts that without reading the clock.
+	let reads = 0;
+	const parsed = readLockJsonWithAttempts(() => {
+		reads += 1;
+		return '{}';
+	});
+	assert.notEqual(parsed, null);
+	assert.equal(reads, 1, 'a parsable read was retried');
+});
+
 test('the performance page adds the frame probe only when OPENDJ_PERF_PROBE is 1', () => {
 	const origin = 'http://engine.invalid';
 	assert.equal(performancePageUrl(origin, { OPENDJ_PERF_PROBE: '1' }), `${origin}/performance?perfprobe=1`);
 	assert.equal(performancePageUrl(origin, {}), `${origin}/performance`);
 	assert.equal(performancePageUrl(origin, { OPENDJ_PERF_PROBE: '0' }), `${origin}/performance`);
+});
+
+test('an adopted Windows engine is stopped through the tree seam, for both signals', () => {
+	const sent: Array<[number, NodeJS.Signals]> = [];
+	const record = (pid: number, signal: NodeJS.Signals): boolean => (sent.push([pid, signal]), true);
+	signalHolder(4242, 'SIGTERM', 'win32', record);
+	signalHolder(4242, 'SIGKILL', 'win32', record);
+	assert.deepEqual(sent, [[4242, 'SIGTERM'], [4242, 'SIGKILL']]);
+});
+
+test('an adopted Windows engine with no taskkill.exe does not throw out of quit', () => {
+	const gone = 2 ** 22 - 1; // above any pid a test run reaches, so process.kill finds nothing
+	assert.doesNotThrow(() =>
+		signalHolder(gone, 'SIGTERM', 'win32', () => {
+			throw new TaskkillUnavailableError('no taskkill.exe');
+		})
+	);
+});
+
+test('a failure that is not a missing taskkill.exe still surfaces', () => {
+	assert.throws(
+		() =>
+			signalHolder(4242, 'SIGTERM', 'win32', () => {
+				throw new RangeError('boom');
+			}),
+		/boom/
+	);
 });

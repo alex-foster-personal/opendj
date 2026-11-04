@@ -93,13 +93,14 @@ from apps.shared.state.analysis_stale import STALE_TABLES_SQL
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 from apps.shared.state.migrations_v25 import _V25 as _LEGACY_V25
 from apps.shared.state.migrations_v26 import _V26 as _LEGACY_V26
+from apps.shared.state.migrations_v27 import _V27 as _LEGACY_V27
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 15
+SCHEMA_VERSION: int = 16
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1374,9 +1375,12 @@ _V15: list[str] = [
 seed tokens stay out for the reason the _SYNC_WRITE_TOKENS domain gives, and
 the legacy step's pair_transitions repair is _V14's table already."""
 
+_V16: list[str] = list(_LEGACY_V27)
+"""15 -> 16: path_availability.mtime_ns (legacy ladder v27, issue #7584)."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14, _V15,
+    _V14, _V15, _V16,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
@@ -1778,6 +1782,15 @@ def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
         for stmt in ALL_DDL
         if stmt.startswith("ALTER TABLE playlists ADD COLUMN ")
         and stmt.split()[5] in playlist_columns
+    }
+    path_avail_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(path_availability)")
+    }
+    present |= {
+        stmt
+        for stmt in ALL_DDL
+        if stmt.startswith("ALTER TABLE path_availability ADD COLUMN ")
+        and stmt.split()[5] in path_avail_columns
     }
     return [stmt for stmt in ALL_DDL if stmt not in present]
 

@@ -4,7 +4,7 @@ ADR-0068 / CLOUDSYNC-19 acceptance: hash_pending deferred hash sync.
 
 Acceptance, one test each (fixtures use 100/80 rows in CI; REQUIREMENTS.md cites 9000/8000):
 - inferred/no-hash/no-ISRC spoke -> verified agreement, hash_pending=N, quarantined=0
-- second machine --for-hub hashes most pending rows -> hub reports remainder
+- second machine runs hash_pending_backfill and hashes most pending rows -> hub reports remainder
 - two machines push different hashes -> LWW, both logged, one row
 - old hub without hash-pending/v1 -> 422 and versioned status upgrade message
 - row with content_hash is never hash_pending
@@ -24,9 +24,9 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
-from apps.shared.state.backfill_content_hash import run_for_hub_backfill
 from apps.sync_hub import capabilities, client, engine, maintenance, protocol, sync_set
 from apps.sync_hub.hash_pending import count_hash_pending
+from apps.sync_hub.hash_pending_backfill import build_parser, run_for_hub_backfill
 from apps.sync_hub.transport import refused
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _T1, _T2
@@ -376,3 +376,19 @@ def test_content_hash_row_never_hash_pending(tmp_path: Path) -> None:
     finally:
         conn.close()
 
+
+def test_hash_pending_backfill_cli_parses_dry_run(tmp_path: Path) -> None:
+    args = build_parser().parse_args(["--data-dir", str(tmp_path), "--dry-run"])
+    assert args.dry_run is True
+    assert args.live is False
+    assert args.data_dir == tmp_path
+
+
+def test_hash_pending_backfill_cli_rejects_for_hub() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--for-hub", "--dry-run"])
+
+
+def test_hash_pending_backfill_cli_rejects_dry_run_plus_live() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--dry-run", "--live"])

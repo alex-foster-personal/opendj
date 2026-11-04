@@ -356,11 +356,13 @@ def _responsible_pid(pid: int) -> int | None:
     if owner > 0:
         return owner
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+        still_there = _pid_alive(pid)
+    except Unmeasurable as exc:
+        raise Unmeasurable(
+            f"process ownership lookup failed for running pid {pid} (returned {owner})"
+        ) from exc
+    if not still_there:
         return None
-    except PermissionError:
-        pass
     raise Unmeasurable(f"process ownership lookup failed for running pid {pid} (returned {owner})")
 
 
@@ -2572,7 +2574,14 @@ def _cleanup(run: Run) -> str | None:
     if not run.launched_at:
         return None
     ownership_note: str | None = None
-    if run.shell_pid is not None and _pid_alive(run.shell_pid):
+    shell_alive = False
+    if run.shell_pid is not None:
+        try:
+            shell_alive = _pid_alive(run.shell_pid)
+        except Unmeasurable as exc:
+            ownership_note = f"shell liveness unmeasurable: {exc}"
+            _log(f"cleanup: {ownership_note}")
+    if run.shell_pid is not None and shell_alive:
         # The app is still up (a run that stopped before clean_quit): record its
         # renderers now, while ownership can still be read. When it cannot,
         # harness_cleanup FAILs and the shell is still signalled by its markers.
@@ -2581,7 +2590,10 @@ def _cleanup(run: Run) -> str | None:
         except Unmeasurable as exc:
             # WebKit renderers are launchd children on a system path: without
             # ownership the sweep below cannot see them, so the run must say so.
-            ownership_note = f"renderer ownership unmeasurable while the shell was alive, renderers not swept: {exc}"
+            ownership_note = (
+                "renderer ownership unmeasurable while the shell was alive, "
+                f"renderers not swept: {exc}"
+            )
             _log(f"cleanup: {ownership_note}")
     elif run.ownership_unmeasured and not run.owned_renderers:
         # The shell is gone and no capture ever read ownership: its renderers may survive unseen.
@@ -2617,12 +2629,24 @@ def _sweep(run: Run) -> str | None:
 
 
 def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    else:
-        return True
+    """True when pid still exists. Never signals it.
+
+    os.kill(pid, 0) is CTRL_C_EVENT on Windows. This file is stdlib-only and
+    staged as a copied file, so it cannot import apps.shared.process_liveness.
+    """
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        error = ctypes.get_last_error()
+        if error == 5:  # ERROR_ACCESS_DENIED: alive
+            return True
+        if error == 87:  # ERROR_INVALID_PARAMETER: no such pid
+            return False
+        raise ctypes.WinError(error)
+    return any(p.pid == pid for p in _ps())
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -7,8 +7,11 @@ answer truthfully today, each a thin call into :class:`DjService` so the
 
 * read: ``get_mix_state``, ``get_track_profile``, ``get_mix_windows``,
   ``score_pair``, ``suggest_next``, ``list_verbs``
-* plan: ``list_transition_styles``, ``propose_transition``, ``validate_plan``
+* plan: ``list_transition_styles``, ``propose_transition``, ``validate_plan``,
+  ``show_plan`` (AGENT-5858: any plan argument may be a mix score)
 * execute: ``schedule_plan``, ``amend_plan``
+* sets (AGENT-27): ``plan_set``, ``show_set``, ``schedule_set_next``: a whole
+  set as one document, performed one due transition at a time
 * try-er: ``try_transitions``, ``pick_transition``, ``undo_transition_pick``
   (:mod:`mcp_dj_try_tools`, TRYER-12)
 
@@ -30,7 +33,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from pydantic import StrictInt
+
 from apps.autodj.http import build_service
+from apps.autodj.notation import ScoreError, looks_like_score, print_score, render_grid, score_document
+from apps.autodj.plan import PlanError, parse_plan
+from apps.autodj.setscore import SetPlan, parse_set, print_set_score, read_set
 from apps.opendj_cli.dj_service import DjError, DjService
 from apps.opendj_cli.mcp_dj_try_tools import register_try_tools
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
@@ -48,16 +56,31 @@ _DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 
 
 def _plan_argument(plan: dict[str, Any] | str) -> dict[str, Any]:
-    """A plan arrives as an object, or as the JSON text of one."""
+    """A plan arrives as an object, the JSON text of one, or a mix score (AGENT-5858)."""
+    if isinstance(plan, str) and looks_like_score(plan):
+        try:
+            return score_document(plan)
+        except ScoreError as error:
+            raise DjError("plan_invalid", f"plan is not a mix score: {error}") from error
     if isinstance(plan, str):
         try:
             parsed = json.loads(plan)
+        except RecursionError as error:  # deep nesting exhausts the parser's stack
+            raise DjError("plan_invalid", "plan is not JSON: nested too deeply to parse") from error
         except ValueError as error:
             raise DjError("plan_invalid", f"plan is not JSON: {error}") from error
         if not isinstance(parsed, dict):
             raise DjError("plan_invalid", "plan must be a JSON object")
         return parsed
     return plan
+
+
+def _set_argument(document: dict[str, Any] | str) -> SetPlan:
+    """A set arrives as an object, the JSON text of one, or a set score (AGENT-27)."""
+    try:
+        return read_set(document) if isinstance(document, str) else parse_set(document)
+    except PlanError as error:
+        raise DjError("plan_invalid", f"not a valid set: {error}") from error
 
 
 def register_dj_tools(
@@ -191,6 +214,27 @@ def register_dj_tools(
         bass overlap bars, tempo gap, key distance, silent bars)."""
         return _call(lambda service: service.validate(_plan_argument(plan)))
 
+    @server.tool(annotations=_READ_ONLY)
+    def show_plan(plan: dict[str, Any] | str, view: str = "score") -> dict[str, Any]:
+        """A plan (JSON or mix score) as a mix score ("score"), the bar grid
+        ("grid", lanes per deck and control, one column per beat) or canonical
+        JSON ("json"). Offline: no engine needed. Every plan tool accepts a
+        mix score wherever it takes a plan."""
+        try:
+            parsed = parse_plan(_plan_argument(plan))
+        except DjError as error:
+            raise tool_error(error.document()) from error
+        except PlanError as error:
+            raise tool_error(DjError("plan_invalid", str(error)).document()) from error
+        if view in ("score", "grid"):
+            try:
+                return {"score": print_score(parsed)} if view == "score" else {"grid": render_grid(parsed)}
+            except ScoreError as error:
+                raise tool_error(DjError("plan_invalid", str(error)).document()) from error
+        if view == "json":
+            return {"plan": parsed.to_document()}  # parse_plan bounds extension depth, so the SDK can encode it
+        raise tool_error(DjError("usage", f"view must be score, grid or json, got {view!r}").document())
+
     @server.tool(annotations=_DESTRUCTIVE)
     def schedule_plan(plan: dict[str, Any] | str) -> dict[str, Any]:
         """Perform a TransitionPlan: loads the incoming track on an idle deck if
@@ -214,3 +258,63 @@ def register_dj_tools(
         "finish_now" (apply every remaining step at once), or "extend" with bars
         (push every step that has not fired yet later)."""
         return _call(lambda service: service.amend(plan_id, action, bars))
+
+    _register_set_tools(server, _call, tool_error)
+
+
+def _register_set_tools(
+    server: MCPServer,
+    call: Callable[[Callable[[DjService], dict[str, Any]]], dict[str, Any]],
+    tool_error: Callable[[dict[str, Any]], ToolError],
+) -> None:
+    """AGENT-27: a whole set as one document (split out to keep the registrar small)."""
+
+    @server.tool(annotations=_READ_ONLY)
+    def plan_set(
+        stable_ids: list[str],
+        intent: str | None = None,
+        first_deck: StrictInt | None = None,  # strict: true and 2.0 are not decks
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """Plan a whole set in one call: the running order of stable_ids, and for
+        each neighbor pair the best validated transition (intent as for
+        propose_transition). Decks alternate. Returns the set as JSON and as a
+        set score (one transition block per handover) that people can read and
+        edit. When the first track is playing, the set starts from where it is;
+        otherwise notes say why it planned from bar 1. A running order that
+        names a track twice is refused: a set plays each track once."""
+        return call(
+            lambda service: service.plan_set(stable_ids, intent=intent, first_deck=first_deck, name=name)
+        )
+
+    @server.tool(annotations=_READ_ONLY)
+    def show_set(set_plan: dict[str, Any] | str, view: str = "score") -> dict[str, Any]:
+        """A set (JSON or set score) as a set score ("score"), one bar grid per
+        transition ("grid"), or canonical JSON ("json"). Offline. The set must
+        chain: each transition mixes out of the deck and track the one before it
+        brought in, after that one finishes."""
+        try:
+            parsed = _set_argument(set_plan)
+        except DjError as error:
+            raise tool_error(error.document()) from error
+        if view in ("score", "grid"):
+            try:
+                if view == "score":
+                    return {"score": print_set_score(parsed)}
+                return {"grids": [render_grid(plan) for plan in parsed.transitions]}
+            except ScoreError as error:
+                raise tool_error(DjError("plan_invalid", str(error)).document()) from error
+        if view == "json":
+            return {"set": parsed.to_json()}
+        raise tool_error(DjError("usage", f"view must be score, grid or json, got {view!r}").document())
+
+    @server.tool(annotations=_DESTRUCTIVE)
+    def schedule_set_next(set_plan: dict[str, Any] | str) -> dict[str, Any]:
+        """Perform the set's next transition: the first one whose outgoing track
+        is playing on its deck while its incoming track plays on no deck. A
+        malformed live mirror is refused as mirror_invalid. Call it again
+        after each transition ends (get_mix_state shows agent_plan). Returns
+        scheduled false with the reason when nothing is due (a plan is running,
+        the set is finished, or no outgoing track is playing). Muted agent
+        sessions mute the master first, as schedule_plan does."""
+        return call(lambda service: service.schedule_set_next(_set_argument(set_plan)))

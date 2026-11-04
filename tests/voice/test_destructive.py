@@ -5,14 +5,12 @@ import time
 
 import pytest
 
-from apps.voice import actions, confirm, grammar
+from apps.voice import actions, confirm
 from apps.voice import tts as tts_mod
 
+from tests.voice.helpers import make_intent
+
 pytestmark = pytest.mark.requirement("VOICE-01")
-
-
-def _intent(kind: str, slots: dict | None = None, raw: str = "") -> grammar.Intent:
-    return grammar.Intent(kind=kind, slots=slots or {}, raw_transcript=raw)
 
 
 def _make_confirm_fn(answers: list[str], tmp_path):
@@ -47,7 +45,7 @@ class TestSaveCueDestructiveOn:
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
         resp = actions.handle_save_cue(
-            _intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
+            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
         )
         assert resp.published is True
         assert resp.dry_run is False
@@ -68,7 +66,7 @@ class TestSaveCueDestructiveOn:
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["no"], tmp_path)
         resp = actions.handle_save_cue(
-            _intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
+            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
         )
         assert resp.reply == "save_cue_cancelled"
         cancelled = [
@@ -95,7 +93,7 @@ class TestSaveCueDestructiveOn:
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
         resp = actions.handle_save_cue(
-            _intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
+            make_intent("SAVE_CUE"), voice_context, confirm_fn=confirm_fn
         )
         assert resp.published is False
         assert "no recent transition" in voice_context.tts_engine.spoken[-1]
@@ -113,7 +111,7 @@ class TestRateTrackDestructiveOn:
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["yes"], tmp_path)
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": 5}),
+            make_intent("RATE_TRACK", {"stars": 5}),
             voice_context,
             confirm_fn=confirm_fn,
         )
@@ -133,7 +131,7 @@ class TestRateTrackDestructiveOn:
         voice_context.tts_engine.spoken.clear()
         confirm_fn = _make_confirm_fn(["nope"], tmp_path)
         resp = actions.handle_rate_track(
-            _intent("RATE_TRACK", {"stars": 4}),
+            make_intent("RATE_TRACK", {"stars": 4}),
             voice_context,
             confirm_fn=confirm_fn,
         )

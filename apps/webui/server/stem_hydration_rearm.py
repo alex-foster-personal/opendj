@@ -1,4 +1,5 @@
 """Throttled single-flight re-arm for transient boot-time hydration failures."""
+
 from __future__ import annotations
 
 import threading

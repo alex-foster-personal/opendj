@@ -110,8 +110,16 @@ test('every cloud state that is not the dim column color is styled inside CloudS
 	const iconStyle = iconSource.slice(iconSource.indexOf('<style>'));
 	const tableStyle = source.slice(source.lastIndexOf('<style'));
 	const states = [...iconSource.matchAll(/class:([a-z-]+)=\{view\.kind === '\1'\}/g)].map((m) => m[1]);
-	// Control: the parse found the four states, so the loop below is not vacuous.
-	assert.deepEqual(states.sort(), ['not-on-cloud', 'on-cloud-and-local', 'on-cloud-not-local', 'streaming']);
+	// Control: the parse found the six states (OFFLOAD added offloaded and temporary),
+	// so the loop below is not vacuous.
+	assert.deepEqual(states.sort(), [
+		'not-on-cloud',
+		'offloaded',
+		'on-cloud-and-local',
+		'on-cloud-not-local',
+		'streaming',
+		'temporary'
+	]);
 	const colored = states.filter((state) => {
 		const rule = tableStyle.match(new RegExp(`\\n\\t\\.${state} \\{\\n\\t\\tcolor: ([^;]+);`));
 		return rule !== null && rule[1] !== 'var(--rb-text-dim)';

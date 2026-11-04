@@ -9,6 +9,7 @@ tests we provide an ``AmplitudeVad`` that treats any frame with RMS
 above a threshold as speech -- adequate for deterministic tests with
 fabricated PCM.
 """
+
 from __future__ import annotations
 
 import math
@@ -40,9 +41,7 @@ class WebRtcVad:
         try:
             import webrtcvad  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - env-specific
-            raise RuntimeError(
-                "webrtcvad not importable; `pip install webrtcvad`"
-            ) from exc
+            raise RuntimeError("webrtcvad not importable; `pip install webrtcvad`") from exc
         self._vad = webrtcvad.Vad(mode)
 
     def is_speech(self, frame: bytes, sample_rate_hz: int) -> bool:  # pragma: no cover

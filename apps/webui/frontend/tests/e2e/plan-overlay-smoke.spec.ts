@@ -43,23 +43,6 @@ async function _agentPlan(request: APIRequestContext): Promise<AgentPlan | null>
 	return ((await response.json()) as { agent_plan: AgentPlan | null }).agent_plan;
 }
 
-/** A page closed by the test before this one can still hold its long poll for 30 s, and the engine hands the next order
- *  to that dead page (issue #7950). Turning AutoPlay off is this test's first order anyway and is safe to repeat, so it
- *  is the one spent until this page answers. */
-async function _autoPlayOffOnThisPage(request: APIRequestContext): Promise<void> {
-	await expect
-		.poll(
-			async () => {
-				const response = await request
-					.post('/api/v1/commands', { data: { single: { type: 'autoplay', enabled: false, by_user: true } }, timeout: 3_000 })
-					.catch(() => null);
-				return response?.status() ?? null;
-			},
-			{ message: 'this page answers an order', timeout: 45_000, intervals: [250] }
-		)
-		.toBe(200);
-}
-
 /** What each deck was doing, for the failure text of an order the page never answered. */
 function _decksSnapshot(page: Page): Promise<string> {
 	return page.evaluate(() => {
@@ -120,10 +103,15 @@ test('a scheduled plan shows on both decks, follows the incoming deck, and goes 
 	const [outgoing, incoming] = await _tracks(request);
 	await _seedGrid(page);
 	await page.setViewportSize({ width: 1280, height: 800 });
+	const claiming = page.waitForRequest(
+		(req) => req.method() === 'GET' && /\/api\/v1\/commands\/next(?:\?|$)/.test(req.url()),
+		{ timeout: 20_000 }
+	);
 	await page.goto('/performance');
 	await expect(page.getByLabel('Open DJ launch animation')).toBeHidden({ timeout: 20_000 });
 	await page.waitForFunction(() => window.musicDjToolsPerformance !== undefined, null, { timeout: 60_000 });
-	await _autoPlayOffOnThisPage(request);
+	await claiming;
+	await _orderSucceeds(page, request, { single: { type: 'autoplay', enabled: false, by_user: true } });
 	await page.evaluate(
 		async ([a, b]) => {
 			await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id: a });

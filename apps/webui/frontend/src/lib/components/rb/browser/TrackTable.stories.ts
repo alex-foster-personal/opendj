@@ -35,14 +35,16 @@ const meta = {
 		selectedIds: [],
 		selectedOrders: [],
 		loadedIds: new Set<string>(),
-		pairPartners: new Map<string, ReadonlySet<string>>(),
-		pairError: null,
 		vocalsById: {},
 		markerAnlzById: {},
 		previewStripById: {},
 		stripLoadingById: {},
 		sortKey: null,
 		sortDir: 1,
+		/** Required by TrackTable (PAIR-09): an omitted map must not read as
+		 * "no pairings", so the contract stories state the empty graph. */
+		pairPartners: new Map<string, ReadonlySet<string>>(),
+		pairError: null,
 		emptyMessage: null,
 		restoreKey: 0,
 		scrollTop: 0,

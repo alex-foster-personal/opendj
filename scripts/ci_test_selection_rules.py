@@ -393,6 +393,11 @@ COUPLINGS: tuple[Coupling, ...] = (
         "Rust engine: 18 modules build, spawn or read the engine and its sources",
     ),
     Coupling(
+        "apps/live-core/",
+        ("live-core", "live_core", "odj-live"),
+        "Track Catcher live core: tests/live_core builds odj-live and checks it against librosa",
+    ),
+    Coupling(
         FRONTEND,
         FRONTEND_NEEDLES,
         "frontend tree: Python contract tests read or scan its sources, configs and scripts",
@@ -1907,10 +1912,114 @@ def _collected_always_run(universe: list[str], root: Path) -> list[str]:
     return modules
 
 
-def _select_always_run(universe: list[str], root: Path, selection: Selection) -> None:
+def _select_always_run(universe: list[str], root: Path, selection: Selection) -> list[str]:
     """Whole-tree guards scan the tree, not a changed module, so no link reaches them."""
-    for module in _collected_always_run(universe, root):
+    modules = _collected_always_run(universe, root)
+    for module in modules:
         selection.add(module, "always run (whole-tree guard)", ALWAYS_RUN_DISTANCE)
+    return modules
+
+
+#: Whole-tree BOOKKEEPING guards a Python or test-layout change most often breaks, ranked WITH the
+#: change (distance 0, the rank of a `CI-Tests:` line) instead of at the always-run list's 2. Main
+#: run 9a7f78f300 (Wed 4 Nov 2026 11:06Z) went red on three of their tests after #5858 (scoped
+#: tests/autodj in the justfile, left it in KNOWN_UNSCOPED) and #8325 (a marked test without an
+#: [if]/[then] line) merged green: both heads ranked this list at 2 and the hard cap
+#: (ci/test-budget.yml) cut #8325 from distance 2 and #5858 from distance 1. The same trio was
+#: red on #8322, #8304 and #7107 that morning. Whole modules: 0.4 s, 6.9 s and 20.8 s locally.
+TREE_BOOKKEEPING_GUARDS: tuple[str, ...] = (
+    "(private path)",
+    "(private path)",
+    "(private path)",
+)
+TREE_BOOKKEEPING_DISTANCE = 0
+#: What those guards read: Python under these trees, plus the gate's `pytest_scope` (justfile),
+#: the requirement ids markers must resolve to, and the pytest and scope config.
+TREE_BOOKKEEPING_PY_ROOTS: tuple[str, ...] = ("tests/", "scripts/", "apps/")
+TREE_BOOKKEEPING_FILES = frozenset(
+    {"justfile", "ci/test-scopes.yml", "pytest.ini", "pyproject.toml", "reqs.json", ".planning/REQUIREMENTS.md"}
+)
+TREE_BOOKKEEPING_REASON = "tree bookkeeping guard (Python change)"
+
+
+def touches_tree_bookkeeping(changed: list[str]) -> bool:
+    """True when a changed path is an input of the tree bookkeeping guards."""
+    return any(
+        path in TREE_BOOKKEEPING_FILES or (path.endswith(".py") and path.startswith(TREE_BOOKKEEPING_PY_ROOTS))
+        for path in changed
+    )
+
+
+def _select_tree_bookkeeping(changed: list[str], always_run: list[str], selection: Selection) -> None:
+    """Rank the bookkeeping guards at distance 0 for a change that feeds them.
+
+    Only guards the always-run list also names are pinned (it has already checked each against
+    the lane), so a tree whose list omits them, a synthetic test tree included, pins nothing;
+    (private path) holds the real list to all three.
+    """
+    if not touches_tree_bookkeeping(changed):
+        return
+    for module in TREE_BOOKKEEPING_GUARDS:
+        if module in always_run:
+            selection.add(module, TREE_BOOKKEEPING_REASON, TREE_BOOKKEEPING_DISTANCE)
+
+
+#: Guards that read ONE committed artifact rather than importing what they check, ranked at distance
+#: 0 when a change touches that artifact's inputs. No import link reaches them (one parses a markdown
+#: file, the other dumps the schema in a subprocess), so before this a change that broke them selected
+#: neither. Main run b011e2ca95 (Wed 4 Nov 2026) went red on both: #3807 wrote "Tue 23 Sep 2026" (a
+#: Wednesday) into .planning/REQUIREMENTS.md, and #8314 added a 409 to the cloudsync machine-rename
+#: route without regenerating apps/webui/openapi.json (that diff ran only in the push-only `contracts`
+#: job). Measured locally: 1.3 s and about 6 s per module.
+@dataclass(frozen=True)
+class InputPinnedGuard:
+    """A guard module pinned at distance 0 when a changed path is one of its inputs."""
+
+    module: str
+    reason: str
+    files: frozenset[str] = frozenset()
+    prefixes: tuple[str, ...] = ()
+
+    def fires_for(self, path: str) -> bool:
+        return path in self.files or path.startswith(self.prefixes)
+
+
+REQUIREMENTS_WEEKDAY_GUARD = "(private path)"
+OPENAPI_CURRENCY_GUARD = "tests/quality/test_openapi_is_current.py"
+INPUT_PINNED_DISTANCE = 0
+INPUT_PINNED_GUARDS: tuple[InputPinnedGuard, ...] = (
+    # The checksum scans only .planning/REQUIREMENTS.md (scripts/requirements_weekday_checksum.py).
+    InputPinnedGuard(
+        REQUIREMENTS_WEEKDAY_GUARD,
+        "weekday checksum guard (REQUIREMENTS.md change)",
+        files=frozenset({".planning/REQUIREMENTS.md", "scripts/requirements_weekday_checksum.py"}),
+    ),
+    # The engine app's routes and wiring live under these trees; the two generated artifacts are
+    # the committed contract and its TypeScript client, regenerated together.
+    InputPinnedGuard(
+        OPENAPI_CURRENCY_GUARD,
+        "openapi currency guard (route or contract change)",
+        files=frozenset({"apps/webui/openapi.json", "apps/webui/frontend/src/lib/api-types.ts"}),
+        prefixes=("apps/webui/server/", "apps/engine_core/"),
+    ),
+)
+
+
+def input_pinned_guards_for(changed: list[str]) -> list[InputPinnedGuard]:
+    """The input-pinned guards a change set feeds."""
+    return [guard for guard in INPUT_PINNED_GUARDS if any(guard.fires_for(path) for path in changed)]
+
+
+def _select_input_pinned(changed: list[str], universe: list[str], selection: Selection) -> None:
+    """Rank each guard a change feeds at distance 0.
+
+    Only a guard the lane collects is pinned, so a synthetic test tree without it pins nothing;
+    (private path) holds the real lane to both.
+    """
+    collected = set(universe)
+    for guard in input_pinned_guards_for(changed):
+        if guard.module in collected:
+            selection.add(guard.module, guard.reason, INPUT_PINNED_DISTANCE)
 
 
 def _demote_weak_links(selection: Selection, policy: Policy) -> None:
@@ -1956,7 +2065,9 @@ def select_tests(changed: list[str], ignores: list[str], root: Path = REPO, poli
     )  # fmt: skip
     if policy.ci_config_by_name:
         _select_through_named_helpers(changed, couplings, graph, universe, root, selection)
-    _select_always_run(universe, root, selection)
+    always_run = _select_always_run(universe, root, selection)
+    _select_tree_bookkeeping(changed, always_run, selection)
+    _select_input_pinned(changed, universe, selection)
     _demote_weak_links(selection, policy)
     selection.modules = sorted(selection.reasons)
     return selection
@@ -2011,7 +2122,10 @@ def capped_full_selection(changed: list[str], ignores: list[str], root: Path = R
         elif near:
             rule, distance = f"capped full suite: under changed `{near}`", CAPPED_NEIGHBOUR_DISTANCE
         selection.add(test, rule, distance)
-    for module in _collected_always_run(universe, root):
+    always_run = _collected_always_run(universe, root)
+    for module in always_run:
         selection.add(module, "capped full suite: whole-tree guard", CAPPED_GUARD_DISTANCE)
+    _select_tree_bookkeeping(changed, always_run, selection)
+    _select_input_pinned(changed, universe, selection)
     selection.modules = sorted(selection.reasons)
     return selection

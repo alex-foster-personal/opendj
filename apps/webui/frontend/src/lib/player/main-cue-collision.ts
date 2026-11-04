@@ -36,7 +36,7 @@ type OutputRow = FaultInputs['outputs'][number];
 /** Token for whether two ids are the same physical output (CUEOUT-26). */
 function _physicalOutputKey(outputs: readonly OutputRow[], deviceId: string): string {
 	const physical = outputs.find((output) => output.id === deviceId)?.physical_id;
-	if (physical !== undefined && physical !== '') return physical;
+	if (physical != null && physical !== '') return physical;
 	return deviceId;
 }
 

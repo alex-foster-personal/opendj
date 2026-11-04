@@ -23,22 +23,15 @@ def mark_comments_harvested(
     Bulk harvest no longer calls this (issue #3981). Kept for tests and any
     tooling that still needs the old mutation semantics.
     """
-    to_harvest = [
-        c for c in comments if c.get("status") not in {"harvested", "archived"}
-    ]
+    to_harvest = [c for c in comments if c.get("status") not in {"harvested", "archived"}]
     if not to_harvest:
         return comments, []
 
     now = _now()
     harvested_ids = {c["id"] for c in to_harvest}
-    snapshots = [
-        {**c, "status": "harvested", "harvested_at": now, "updated_at": now}
-        for c in to_harvest
-    ]
+    snapshots = [{**c, "status": "harvested", "harvested_at": now, "updated_at": now} for c in to_harvest]
     updated = [
-        {**c, "status": "harvested", "harvested_at": now, "updated_at": now}
-        if c.get("id") in harvested_ids
-        else c
+        {**c, "status": "harvested", "harvested_at": now, "updated_at": now} if c.get("id") in harvested_ids else c
         for c in comments
     ]
     return updated, snapshots
@@ -53,11 +46,7 @@ def snapshot_comments_for_archive(
     pins and pins already recorded in a prior bulk snapshot (``agent_snapshot_at``).
     Live ``status`` stays ``open`` (or whatever the operator set) until UI archive.
     """
-    to_snapshot = [
-        c
-        for c in comments
-        if c.get("status") != "archived" and not c.get("agent_snapshot_at")
-    ]
+    to_snapshot = [c for c in comments if c.get("status") != "archived" and not c.get("agent_snapshot_at")]
     if not to_snapshot:
         return comments, []
 
@@ -65,10 +54,7 @@ def snapshot_comments_for_archive(
     snapshot_ids = {c["id"] for c in to_snapshot}
     snapshots = [{**c, "agent_snapshot_at": now} for c in to_snapshot]
     updated = [
-        {**c, "agent_snapshot_at": now, "updated_at": now}
-        if c.get("id") in snapshot_ids
-        else c
-        for c in comments
+        {**c, "agent_snapshot_at": now, "updated_at": now} if c.get("id") in snapshot_ids else c for c in comments
     ]
     return updated, snapshots
 
@@ -121,12 +107,7 @@ def perform_bulk_archive(root: Path) -> Any:
 
         general_archived = bool(general["text"])
         live_comments, comment_snapshots = snapshot_comments_for_archive(comments)
-        nothing_to_do = (
-            not archived_todos
-            and not archived_feedback
-            and not comment_snapshots
-            and not general_archived
-        )
+        nothing_to_do = not archived_todos and not archived_feedback and not comment_snapshots and not general_archived
         if nothing_to_do:
             return ArchiveOut(
                 archived_to=None,

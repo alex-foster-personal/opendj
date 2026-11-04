@@ -17,14 +17,14 @@ import sys
 import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from apps.analysis import auto_cues, detect_bad_beatgrid, run
 from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
-from apps.analysis.backends import librosa as librosa_backend_module
-from apps.analysis.backends.librosa import LibrosaBackend, estimate_downbeats_from_beats
+from apps.analysis.backends.librosa import LibrosaBackend, _estimate_key, estimate_downbeats_from_beats
 from apps.analysis.record import AnalysisRecord
-from apps.analysis_key.canon import from_camelot, from_open_key
+from apps.analysis_key.canon import Key, from_camelot, from_open_key, to_camelot, to_open_key
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -201,17 +201,25 @@ def test_downstream_consumers_do_not_claim_absent_downbeat_capability(
 
 @pytest.mark.requirement("META-01")
 @pytest.mark.parametrize("pitch_class", range(12))
-def test_camelot_and_open_key_tables_agree_with_canon_for_every_pitch_class(
+@pytest.mark.parametrize("is_minor", [False, True])
+def test_estimate_key_labels_agree_with_canon_for_every_pitch_class(
     pitch_class: int,
+    is_minor: bool,
 ) -> None:
-    """Regression for a real bug: the two tables here are hand-maintained
-    separately from apps/analysis_key/canon.py's, so a fix to one (like the
-    Open Key table correction above) can silently leave the other stale for
-    every pitch class, not just whichever one a caller happens to notice."""
-    for camelot_table, openkey_table in (
-        (librosa_backend_module._CAMELOT_MAJOR, librosa_backend_module._OPENKEY_MAJOR),
-        (librosa_backend_module._CAMELOT_MINOR, librosa_backend_module._OPENKEY_MINOR),
-    ):
-        camelot = camelot_table[pitch_class]
-        open_key = openkey_table[pitch_class]
-        assert from_camelot(camelot) == from_open_key(open_key)
+    """Regression for a real bug: librosa used hand-maintained Camelot/Open Key
+    tables separate from apps/analysis_key/canon.py. Key estimation now
+    delegates to apps.analysis_key.profiles; this checks the published labels
+    still agree with canon for every pitch class and mode."""
+    key = Key(pitch_class=pitch_class, is_minor=is_minor)
+    chroma = np.zeros((12, 100), dtype=np.float64)
+    chroma[pitch_class, :] = 1.0
+    if is_minor:
+        chroma[(pitch_class + 3) % 12, :] = 0.8
+        chroma[(pitch_class + 7) % 12, :] = 0.5
+    else:
+        chroma[(pitch_class + 4) % 12, :] = 0.8
+        chroma[(pitch_class + 7) % 12, :] = 0.5
+    camelot, open_key, _confidence = _estimate_key(chroma)
+    assert camelot == to_camelot(key)
+    assert open_key == to_open_key(key)
+    assert from_camelot(camelot) == from_open_key(open_key) == key

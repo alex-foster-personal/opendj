@@ -427,7 +427,8 @@ describe('every stem decode entry point goes through the gated engine functions 
 		// is the `stale` its callers hand it, and every caller's must read the policy.
 		assert.match(landing.text, /clock: ctx, stale,\n/, '_landStems never hands its stale check to the landing');
 		const landingCalls = [...engineSource.matchAll(/_landStems\(deck, [^\n]*/g)].map((match) => match[0]);
-		assert.equal(landingCalls.length, 2, `expected the upgrade and the retry to call _landStems, found ${landingCalls.length}`);
+		// AUDFID-02: the first-touch engage of held neutral stems is the third.
+		assert.equal(landingCalls.length, 3, `expected the upgrade, the retry and the neutral engage to call _landStems, found ${landingCalls.length}`);
 		for (const call of landingCalls) {
 			assert.ok(
 				/ctx, stale\)/.test(call) || /stemsBlockedState\(\) !== null\)/.test(call),

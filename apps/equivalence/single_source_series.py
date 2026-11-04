@@ -4,6 +4,7 @@ mechanical: :mod:`apps.equivalence.single_source` re-exports every name here,
 so ``from apps.equivalence.single_source import audit_series`` (the existing
 import shape) is unaffected.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -13,7 +14,7 @@ from typing import Any
 from apps.equivalence.sources import MikEnergySegment
 
 # Our storage base for every time series is milliseconds
-# (docs/terminology-reference/time-series-vs-scalar.md).
+# ((private path)).
 #
 # NOTE ON A TEST THAT LOOKED GOOD AND WAS VACUOUS: an earlier version asserted
 # that the rounding residual |x*1000 - round(x*1000)| stayed under 0.5 ms. It
@@ -40,7 +41,6 @@ MS_CONVERSION_RULE = (
 )
 """The prescription a loader must follow. MEASURED consequence of ignoring it
 is reported per run, because on MIK's real data it is not a rare edge case."""
-
 
 
 @dataclass
@@ -91,9 +91,7 @@ class SeriesStructure:
                 "evidence; the gating checks are the two below, which can fail"
             ),
             "min_length_s": self.min_length_s,
-            "vanishing_segments_after_ms_rounding": (
-                self.vanishing_segments_after_ms_rounding
-            ),
+            "vanishing_segments_after_ms_rounding": (self.vanishing_segments_after_ms_rounding),
             "overlapping_tracks_naive_ms": self.overlapping_tracks_naive_ms,
             "overlapping_tracks_boundary_ms": self.overlapping_tracks_boundary_ms,
             "ms_conversion_rule": MS_CONVERSION_RULE,
@@ -161,10 +159,7 @@ def _check_ms_rounding_hazard(acc: _TrackAccumulator, segment: MikEnergySegment)
         acc.vanishing += 1
     if acc.previous_naive_end_ms is not None and start_ms < acc.previous_naive_end_ms:
         acc.overlaps_naive = True
-    if (
-        acc.previous_boundary_end_ms is not None
-        and start_ms < acc.previous_boundary_end_ms
-    ):
+    if acc.previous_boundary_end_ms is not None and start_ms < acc.previous_boundary_end_ms:
         acc.overlaps_boundary = True
     acc.previous_naive_end_ms = start_ms + naive_length_ms
     acc.previous_boundary_end_ms = boundary_end_ms
@@ -261,23 +256,17 @@ def _apply_violations_and_findings(
     negative_start = totals.negative_start
     gapped = totals.gapped
     if non_positive:
-        structure.violations.append(
-            f"{non_positive} segments have a length <= 0, which cannot be stored "
-            f"as a span"
-        )
+        structure.violations.append(f"{non_positive} segments have a length <= 0, which cannot be stored as a span")
     if overlapping:
         structure.violations.append(
             f"{overlapping} tracks have overlapping segments, so the series is "
             f"not a partition of the timeline and a reader would double-count"
         )
     if non_monotonic:
-        structure.violations.append(
-            f"{non_monotonic} tracks are not ordered by start time as read"
-        )
+        structure.violations.append(f"{non_monotonic} tracks are not ordered by start time as read")
     if out_of_scale:
         structure.violations.append(
-            f"values outside the declared {value_range[0]:g}..{value_range[1]:g} "
-            f"scale: {sorted(out_of_scale)[:5]}"
+            f"values outside the declared {value_range[0]:g}..{value_range[1]:g} scale: {sorted(out_of_scale)[:5]}"
         )
     if vanishing:
         structure.violations.append(

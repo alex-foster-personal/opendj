@@ -12,6 +12,7 @@ no-source-list | no-source-mark | no-source-clear``.
 The mark is keyed on the audio file's signature, so the track must be present
 on this machine: a track with no audio here answers 404.
 """
+
 from __future__ import annotations
 
 import time
@@ -59,9 +60,7 @@ def _stores(request: Request) -> tuple[outcomes_mod.OutcomeStore, stems_terminal
     data_dir = ingest_routes.COVERAGE_DATA_DIR
     drain = getattr(request.app.state, "coverage_drain", None)
     # The drain's own store when there is one: its lock serializes both writers.
-    outcomes = getattr(drain, "outcomes", None) or outcomes_mod.OutcomeStore(
-        outcomes_mod.store_path(data_dir)
-    )
+    outcomes = getattr(drain, "outcomes", None) or outcomes_mod.OutcomeStore(outcomes_mod.store_path(data_dir))
     return outcomes, stems_terminal.KeepPending(stems_terminal.keep_pending_path(data_dir))
 
 
@@ -82,9 +81,7 @@ def _out(outcome: outcomes_mod.Outcome, paths: dict[str, Path]) -> NoSourceMarkO
         stable_id=outcome.stable_id,
         reason=outcome.reason,
         recorded_at=outcome.recorded_at,
-        applies=None if path is None else outcomes_mod.is_no_source(
-            outcome, outcomes_mod.audio_token(path)
-        ),
+        applies=None if path is None else outcomes_mod.is_no_source(outcome, outcomes_mod.audio_token(path)),
     )
 
 
@@ -104,12 +101,8 @@ def mark_stems_no_source(request: Request, body: NoSourceMarkIn) -> NoSourceMark
     paths = _present_paths()
     path = paths.get(body.stable_id)
     if path is None:
-        raise HTTPException(
-            404, f"stable_id {body.stable_id!r} has no audio present on this machine"
-        )
-    outcome = stems_terminal.mark_no_source(
-        outcomes, keep, body.stable_id, path, body.reason, now=time.time()
-    )
+        raise HTTPException(404, f"stable_id {body.stable_id!r} has no audio present on this machine")
+    outcome = stems_terminal.mark_no_source(outcomes, keep, body.stable_id, path, body.reason, now=time.time())
     _refresh(request)
     return _out(outcome, paths)
 

@@ -21,6 +21,7 @@ Requirements (mini-PRD):
     [if] one key is updated [then] the others keep their stored value
     [if] two updates overlap [then] both keys land and neither raises
 """
+
 from __future__ import annotations
 
 import json
@@ -76,9 +77,7 @@ class DrainConfig:
         return {**dict.fromkeys(SWITCHABLE_STEPS, True), **_validated_steps(stored, self.path)}
 
     def transient_bundle_cap(self) -> int:
-        return _validated_cap(
-            self._load().get("transient_bundle_cap", DEFAULT_TRANSIENT_CAP), self.path
-        )
+        return _validated_cap(self._load().get("transient_bundle_cap", DEFAULT_TRANSIENT_CAP), self.path)
 
     def update(
         self,
@@ -97,9 +96,7 @@ class DrainConfig:
             if transient_bundle_cap is not None:
                 payload["transient_bundle_cap"] = _validated_cap(transient_bundle_cap, self.path)
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(
-                prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
-            )
+            fd, temporary = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     handle.write(json.dumps(payload) + "\n")
@@ -124,10 +121,7 @@ def _validated_steps(steps: dict[str, Any], where: Path) -> dict[str, bool]:
 
 def _validated_cap(value: Any, where: Path) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TRANSIENT_CAP:
-        raise ValueError(
-            f"{where}: transient_bundle_cap must be a whole number 0..{MAX_TRANSIENT_CAP}, "
-            f"got {value!r}"
-        )
+        raise ValueError(f"{where}: transient_bundle_cap must be a whole number 0..{MAX_TRANSIENT_CAP}, got {value!r}")
     return value
 
 

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { SHELL_LOCK_FILE, ShellHealthServer } from '../src/shell-health';
-import { scratchDir } from './helpers';
+import { POSIX_ONLY, scratchDir } from './helpers';
 
 async function call(port: number, method: string, route: string): Promise<{ status: number; body: Record<string, unknown> }> {
 	const response = await fetch(`http://127.0.0.1:${port}${route}`, { method });
@@ -28,7 +28,7 @@ test('the health endpoint reports a dead engine', async () => {
 	}
 });
 
-test('.engine.shell.json names the port and this pid, owner-only', async () => {
+test('.engine.shell.json names the port and this pid, owner-only', { skip: POSIX_ONLY('owner-only permission bits (0o600)') }, async () => {
 	const dir = scratchDir('shell-json');
 	const server = await ShellHealthServer.start(dir, () => '{}');
 	try {

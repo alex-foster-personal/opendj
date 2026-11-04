@@ -1,6 +1,6 @@
 """Non-lexical vocalization-run handling for lyric alignment (round 4b).
 
-Problem (spec: specs/karaoke-lyrics-alignment.md, Round 3a Pure_Mids autopsy):
+Problem (spec: (private path), Round 3a Pure_Mids autopsy):
 vocalization blocks ("oh ah ah", "pa papapa") match the audio badly, the CTC
 path overshoots them, and monotonicity makes the overshoot permanent. Fix:
 detect such runs in the REFERENCE word list, replace them with <star> wildcard
@@ -26,15 +26,41 @@ MIN_RUN_LEN = 4  # shorter vocalization bursts align acceptably; runs derail
 # via letter-run collapse; chants ("papapa", "lalala") via repetition of a
 # member; hyphenations ("oh-oh") via per-part checks. Deliberately excluded:
 # "yeah" (distinct phonemes, aligns fine), "ja"/"a"/"ay" (lexical collisions).
-VOCALIZATION_TOKENS: frozenset[str] = frozenset({
-    "oh", "ah", "aw", "eh", "uh", "huh",
-    "la", "na", "pa", "ba", "da", "sha", "ya",
-    "ohh", "ahh", "aww", "ooh", "ahha",
-    "mmh", "hmm", "mm", "hm", "mh", "m",
-    "whoa", "woah", "hey", "ho", "wo",
-})
+VOCALIZATION_TOKENS: frozenset[str] = frozenset(
+    {
+        "oh",
+        "ah",
+        "aw",
+        "eh",
+        "uh",
+        "huh",
+        "la",
+        "na",
+        "pa",
+        "ba",
+        "da",
+        "sha",
+        "ya",
+        "ohh",
+        "ahh",
+        "aww",
+        "ooh",
+        "ahha",
+        "mmh",
+        "hmm",
+        "mm",
+        "hm",
+        "mh",
+        "m",
+        "whoa",
+        "woah",
+        "hey",
+        "ho",
+        "wo",
+    }
+)
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _collapse_letter_runs(part: str) -> str:
@@ -45,8 +71,7 @@ def _collapse_letter_runs(part: str) -> str:
 def _is_repetition_of_vocalization(part: str) -> bool:
     """'papapa' == 'pa'*3, 'lalala' == 'la'*3, 'ohoh' == 'oh'*2."""
     return any(
-        len(part) > len(unit) and len(part) % len(unit) == 0
-        and part == unit * (len(part) // len(unit))
+        len(part) > len(unit) and len(part) % len(unit) == 0 and part == unit * (len(part) // len(unit))
         for unit in VOCALIZATION_TOKENS
     )
 
@@ -86,7 +111,7 @@ def detect_nonlexical_runs(words: list[str]) -> list[range]:
     return runs
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def replace_run_tokens_with_stars(
@@ -104,9 +129,7 @@ def replace_run_tokens_with_stars(
     stamps -- interpolate_run_words fills them back in.
     """
     expected_len, positions = _starred_layout(star_frequency, n_words, runs)
-    _validate_starred_lists(
-        tokens_starred, text_starred, expected_len, n_words, star_frequency, runs
-    )
+    _validate_starred_lists(tokens_starred, text_starred, expected_len, n_words, star_frequency, runs)
     tokens_out, text_out = list(tokens_starred), list(text_starred)
     for pos in positions:
         tokens_out[pos] = STAR_TOKEN
@@ -114,9 +137,7 @@ def replace_run_tokens_with_stars(
     return tokens_out, text_out
 
 
-def _starred_layout(
-    star_frequency: str, n_words: int, runs: list[range]
-) -> tuple[int, list[int]]:
+def _starred_layout(star_frequency: str, n_words: int, runs: list[range]) -> tuple[int, list[int]]:
     """(expected starred-list length, starred-list positions the runs occupy)."""
     if star_frequency == "segment":  # ['<star>', w0, '<star>', w1, ...]
         return 2 * n_words, [2 * i + 1 for run in runs for i in run]
@@ -171,9 +192,7 @@ def interpolate_run_words(
 
     notes: list[str] = []
     for run in runs:
-        t0, t1 = _run_bounds(
-            run, words, words_out, kept_stamps, replaced, audio_duration_s, notes
-        )
+        t0, t1 = _run_bounds(run, words, words_out, kept_stamps, replaced, audio_duration_s, notes)
         slot = (t1 - t0) / len(run)
         for k, i in enumerate(run):
             words_out[i] = {
@@ -187,12 +206,10 @@ def interpolate_run_words(
     return words_out, notes  # type: ignore[return-value]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
-def _anchored_word_slots(
-    words: list[str], kept_stamps: list[dict], replaced: set[int]
-) -> list[dict | None]:
+def _anchored_word_slots(words: list[str], kept_stamps: list[dict], replaced: set[int]) -> list[dict | None]:
     """Full-length output list with the non-run words filled from the aligner.
 
     Run positions stay None until interpolation writes them; the stamps are
@@ -200,8 +217,7 @@ def _anchored_word_slots(
     """
     if len(kept_stamps) != len(words) - len(replaced):
         raise ValueError(
-            f"{len(kept_stamps)} kept stamps for {len(words)} words "
-            f"with {len(replaced)} replaced -- counts must add up"
+            f"{len(kept_stamps)} kept stamps for {len(words)} words with {len(replaced)} replaced -- counts must add up"
         )
     words_out: list[dict | None] = [None] * len(words)
     stamps_iter = iter(kept_stamps)
@@ -209,8 +225,10 @@ def _anchored_word_slots(
         if i not in replaced:
             stamp = next(stamps_iter)
             words_out[i] = {
-                "word": word, "start_s": stamp["start"],
-                "end_s": stamp["end"], "score": stamp["score"],
+                "word": word,
+                "start_s": stamp["start"],
+                "end_s": stamp["end"],
+                "score": stamp["score"],
             }
     return words_out
 
@@ -235,9 +253,7 @@ def _run_bounds(
     has_left = run.start > 0
     has_right = run.stop < len(words)
     if not has_left and not has_right:
-        raise RuntimeError(
-            f"{span}: the whole song is one non-lexical run -- no anchor on either side"
-        )
+        raise RuntimeError(f"{span}: the whole song is one non-lexical run -- no anchor on either side")
     elif has_left and has_right:  # noqa: RET506 - explicit elif is the house style
         t0 = words_out[run.start - 1]["end_s"]  # type: ignore[index]
         t1 = words_out[run.stop]["start_s"]  # type: ignore[index]
@@ -245,9 +261,7 @@ def _run_bounds(
             raise RuntimeError(f"{span}: anchors reversed ({t0:.3f}s > {t1:.3f}s)")
         return t0, t1
     else:  # song-edge run: pack against the single anchor, explicitly
-        return _edge_packed_bounds(
-            span, run, words_out, kept_stamps, has_left, audio_duration_s, notes
-        )
+        return _edge_packed_bounds(span, run, words_out, kept_stamps, has_left, audio_duration_s, notes)
 
 
 def _edge_packed_bounds(

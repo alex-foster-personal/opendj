@@ -1,4 +1,5 @@
 """Stage 1 ranker: pure track_compatibility (AI-01)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -47,11 +48,7 @@ def rank_stage1(
             candidate_bpm=cand.bpm or 0.0,
             candidate_rating=cand.energy or 0,
         )
-        key_sub = (
-            camelot_compatibility(cur_key, cand.key_camelot)
-            if cur_key and cand.key_camelot
-            else 0.5
-        )
+        key_sub = camelot_compatibility(cur_key, cand.key_camelot) if cur_key and cand.key_camelot else 0.5
         bpm_sub = bpm_compatibility(cur_bpm, cand.bpm)
         eng_sub = energy_compatibility(cur_energy, cand.energy or 0)
         rationale = {"camelot": key_sub, "bpm": bpm_sub, "energy": eng_sub}

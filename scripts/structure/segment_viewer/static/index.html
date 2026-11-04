@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Segment Viewer</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--fg:#1b1b1b;--mut:#6b6b6b;--line:#e2e2de;--sel:#e8f0fe;--acc:#2d6cdf;--wbg:#10131a;--low:#2f7bff;--mid:#ff9f2e;--high:#f4f4f4;--tick:#ffffff22;--tick4:#ffffff55;--ph:#ff3b5c;--warn:#b26b00}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--panel:#1a1a1a;--fg:#ececec;--mut:#9a9a9a;--line:#2b2b2b;--sel:#1f2b45;--acc:#7aa7ff;--warn:#ffb54d}}
+:root[data-theme="dark"]{--bg:#121212;--panel:#1a1a1a;--fg:#ececec;--mut:#9a9a9a;--line:#2b2b2b;--sel:#1f2b45;--acc:#7aa7ff;--warn:#ffb54d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 -apple-system,system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;gap:14px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:15px;margin:0}
+.mut{color:var(--mut);font-size:12px}
+.num{font-variant-numeric:tabular-nums}
+.stat{display:inline-flex;gap:4px;align-items:baseline;cursor:help}.stat b{font-weight:600}
+main{flex:1;display:flex;min-height:0}
+#side{width:300px;min-width:220px;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+#q{margin:8px;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+#list{flex:1;overflow:auto}
+.row{display:grid;grid-template-columns:26px 1fr auto;gap:6px;padding:4px 10px;border-bottom:1px solid var(--line);cursor:pointer;align-items:center}
+.row:hover{background:var(--sel)}.row.sel{background:var(--sel);box-shadow:inset 3px 0 var(--acc)}
+.row .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .f{font-size:11px;color:var(--mut)}
+.row.pending .t{color:var(--mut)}
+.grp{padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px;color:var(--mut);background:var(--panel);user-select:none}
+.grp:hover{color:var(--fg)}
+.sect{padding:4px 10px;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line)}
+#detail{flex:1;display:flex;flex-direction:column;min-width:0;padding:10px 14px;overflow:auto}
+.title{font-size:18px;font-weight:650;margin:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:1px 8px;font-size:12px;cursor:help}
+.chip.bad{border-color:var(--warn);color:var(--warn)}
+#view{position:relative;user-select:none}
+.lane{display:grid;grid-template-columns:150px 1fr;border-bottom:1px solid var(--line)}
+.lname{padding:3px 8px;font-size:12px;cursor:pointer;border-right:1px solid var(--line);background:var(--panel);overflow:hidden}
+.lname small{display:block;color:var(--mut);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lane.focus .lname{box-shadow:inset 3px 0 var(--acc);font-weight:600}
+.ltrack{position:relative;overflow:hidden;height:30px;background:var(--panel)}
+.lane.wave .ltrack{height:150px;background:var(--wbg);cursor:crosshair}
+.lane.mom .ltrack{height:22px}
+.lane.bars .ltrack{height:18px;cursor:crosshair}
+canvas{display:block;width:100%;height:100%}
+.span{position:absolute;top:2px;bottom:2px;border-radius:3px;border:1px solid #0003;color:#111;font-size:11px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.span.cont{border-left:2px dashed #0006}
+.span.cur{outline:2px solid var(--fg);outline-offset:-1px;filter:saturate(1.4) brightness(1.08)}
+.span:hover{filter:brightness(1.12)}
+.mk{position:absolute;top:2px;transform:translateX(-1px);border-left:2px solid currentColor;padding-left:3px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.mk.drop{color:#e0245e}.mk.break{color:#2b9bd6}.mk.build{color:#c48a00}
+.off{position:absolute;inset:0;display:flex;align-items:center;padding-left:8px;color:var(--mut);font-size:12px;font-style:italic}
+#ph{position:absolute;top:0;bottom:0;width:2px;background:var(--ph);pointer-events:none;left:150px;will-change:transform;z-index:5}
+#hov{position:absolute;top:0;bottom:0;width:1px;background:#fff8;pointer-events:none;left:150px;display:none;z-index:4}
+.bar-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:8px 0}
+#now{font-size:13px}
+.keys{color:var(--mut);font-size:12px;margin-top:10px;line-height:1.9}
+kbd{border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px;background:var(--panel)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:-1px;border:1px solid #0003}
+#err{color:#d33;white-space:pre-wrap}
+@media (max-width:760px){main{flex-direction:column}#side{width:100%;height:30vh;border-right:0;border-bottom:1px solid var(--line)}.lane{grid-template-columns:90px 1fr}#ph,#hov{left:90px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Segment Viewer</h1>
+  <span class="mut" id="sum">summary loading</span>
+  <span style="flex:1"></span>
+  <span class="stat num" id="lat" title="Click to audible start, estimated: time from the pointerdown event to AudioBufferSourceNode.start(), plus the AudioContext's baseLatency and outputLatency. Last click, then the median over this session's clicks.">click to audio: --</span>
+  <span class="stat num" id="sw" title="Track switch: from the key or click that selected the track to the waveform and all lanes drawn. 'audio' is until the whole file is decoded and click playback is ready.">switch: --</span>
+</header>
+<main>
+  <div id="side">
+    <input id="q" placeholder="Search the library (artist, title, genre)..." autocomplete="off">
+    <div id="list"></div>
+  </div>
+  <div id="detail">
+    <div>
+      <p class="title" id="ttl">Select a track</p>
+      <div class="chips" id="agree"></div>
+    </div>
+    <div id="view"></div>
+    <div class="bar-row">
+      <span id="now" class="num" title="Playhead time, bar number on this track's grid (library: rekordbox beatgrid; open test set: All-In-One downbeats), and the section under the playhead in each lane">--</span>
+      <span class="mut num" id="zoom" title="Visible window of the track; + and - zoom, wheel scrolls">--</span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="keys">
+      <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> or <kbd>j</kbd>/<kbd>k</kbd> track &nbsp; <kbd>space</kbd> play/pause &nbsp; click waveform: play from there &nbsp; click section: play from its start &nbsp;
+      <kbd>[</kbd>/<kbd>]</kbd> previous/next boundary of the focused lane (click a lane name, or <kbd>1</kbd> own-fast, <kbd>2</kbd> All-In-One, <kbd>3</kbd> rekordbox phrases) &nbsp; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> one bar &nbsp; <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>0</kbd> whole track &nbsp; <kbd>Home</kbd> start
+    </div>
+    <div id="err"></div>
+  </div>
+</main>
+<script>
+"use strict";
+// ---------------------------------------------------------------- state
+const LANES = [
+  {key: "own_fast", name: "own-fast", desc: "Foote novelty on band peaks, cut on the grid"},
+  {key: "allin1", name: "All-In-One", desc: "harmonix-all model, quantized to the grid"},
+  {key: "pssi", name: "rekordbox phrases", desc: "rekordbox phrase analysis (ANLZ PSSI tag), the reference in library mode"},
+];
+const COLORS = {
+  intro: "#9ad0f5", buildup: "#ffd166", drop: "#ff6b6b", breakdown: "#80e0b0", cooldown: "#c3b1e1", outro: "#a0b4c8", ambient: "#d9e4ec",
+  start: "#d0d0d0", end: "#d0d0d0", verse: "#b5d99c", chorus: "#ff9e80", inst: "#f2c57c", solo: "#e6a0d8", bridge: "#90caf9", break: "#80e0b0", section: "#c8ccd4",
+  Intro: "#9ad0f5", Up: "#ffd166", Down: "#80e0b0", Chorus: "#ff6b6b", Outro: "#a0b4c8", Bridge: "#90caf9", "Verse 1": "#b5d99c", "Verse 2": "#a5cf8a", "Verse 3": "#95c578", "Verse 4": "#85bb66", "Verse 5": "#75b154", "Verse 6": "#65a742",
+};
+const S = {
+  config: {}, bench: [], results: null, corpusOpen: false, corpusAll: null, cur: null, filtered: [], idx: -1, id: null, doc: null, peaks: null, buf: null,
+  view: [0, 1], focus: "own_fast", playing: false, offset: 0, t0: 0, src: null,
+  cache: new Map(), // "src:id" -> {doc, peaks, audio: Promise<AudioBuffer>}
+  lru: [], ctx: null, metrics: {clicks: [], switches: []}, loadToken: 0,
+};
+window.segviewMetrics = S.metrics; // agents read measured latencies here
+const $ = (id) => document.getElementById(id);
+const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, "0")}`;
+const median = (xs) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+const AUDIO_LRU = 4;
+
+function ctx() {
+  if (!S.ctx) S.ctx = new AudioContext({latencyHint: "interactive"});
+  if (S.ctx.state === "suspended") S.ctx.resume();
+  return S.ctx;
+}
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status} ${await r.text()}`);
+  return r.json();
+}
+function fail(e) { console.error(e); $("err").textContent = String(e && e.stack || e); }
+
+// ---------------------------------------------------------------- data
+const API = {library: "/api/library/tracks", corpus: "/api/tracks"};
+function entry(item) {
+  const key = `${item.src}:${item.stable_id}`;
+  let e = S.cache.get(key);
+  if (e) return e;
+  e = {key};
+  const base = `${API[item.src]}/${encodeURIComponent(item.stable_id)}`;
+  e.meta = getJSON(`${base}/segments`)
+    .then((doc) => Promise.all([doc, fetch(`${base}/peaks`).then((r) => { if (!r.ok) throw new Error(`peaks HTTP ${r.status}`); return r.arrayBuffer(); })]))
+    .then(([doc, pk]) => { e.doc = doc; e.peaks = new Uint8Array(pk); return e; });
+  e.audioUrl = `${base}/audio`;
+  e.audio = null;
+  S.cache.set(key, e);
+  return e;
+}
+function audioOf(item) {
+  const e = entry(item);
+  if (!e.audio) {
+    // An evicted decode (e.audio reset) must not write its buffer back past the LRU cap.
+    const p = fetch(e.audioUrl).then((r) => { if (!r.ok) throw new Error(`audio HTTP ${r.status}`); return r.arrayBuffer(); })
+      .then((ab) => ctx().decodeAudioData(ab)).then((b) => { if (e.audio === p) e.buffer = b; return b; });
+    e.audio = p;
+    S.lru = [e.key, ...S.lru.filter((x) => x !== e.key)];
+    for (const old of S.lru.splice(AUDIO_LRU)) { const o = S.cache.get(old); if (o) { o.audio = null; o.buffer = null; } }
+  }
+  return e.audio;
+}
+
+// ---------------------------------------------------------------- track list
+// Library mode is the default: the bench set, or search results when the box has words.
+// The Jamendo corpus (open regression set) is one collapsed group row, out of the list and
+// out of the pooled numbers until it is expanded.
+const fx = (x) => x == null ? "n/a" : x.toFixed(2);
+async function loadList() {
+  S.config = await getJSON("/api/config");
+  if (S.config.library) S.bench = (await getJSON("/api/library/bench")).tracks;
+  renderList();
+}
+async function corpusTracks() {
+  if (!S.corpusAll) S.corpusAll = (await getJSON("/api/tracks")).tracks;
+  return S.corpusAll;
+}
+let searchSeq = 0;
+async function runSearch() {
+  const q = $("q").value.trim(), seq = ++searchSeq;
+  S.results = q && S.config.library ? (await getJSON(`/api/library/tracks?q=${encodeURIComponent(q)}&limit=60`)).tracks : null;
+  if (seq === searchSeq) renderList();
+}
+function libRow(t) {
+  const sc = t.scores && t.scores.own_fast;
+  const ok = sc && sc.status === "ok";
+  return {src: "library", stable_id: t.stable_id, title: t.title, pending: !t.has_anlz,
+    f: ok ? fx(sc["f@2bar"]) : "", tip: ok ? `own-fast boundary F at 2 bars against rekordbox phrases (${sc.est_sections} vs ${sc.ref_sections} sections); 16-bar control ${fx(sc["base_f@2bar"])}` : "not scored yet (opens on select)"};
+}
+function corpusRow(t) {
+  const a = t.agreement;
+  return {src: "corpus", stable_id: t.stable_id, title: t.title, pending: t.allin1 !== "ok",
+    f: a && a.status === "ok" ? fx(a["f@2.0"]) : t.allin1 === "ok" ? "" : "pending",
+    tip: a && a.status === "ok" ? `Boundary F at 2.0 s, own-fast vs All-In-One (${a.est_sections} vs ${a.ref_sections} sections)` : "All-In-One output not available for this track"};
+}
+function renderList() {
+  const q = $("q").value.trim().toLowerCase();
+  const list = $("list");
+  list.innerHTML = "";
+  const items = [];
+  const section = (txt) => { const h = document.createElement("div"); h.className = "sect"; h.textContent = txt; list.appendChild(h); };
+  const addRow = (it) => {
+    const i = items.push(it) - 1;
+    const row = document.createElement("div");
+    row.className = "row" + (it.pending ? " pending" : "") + (S.cur && S.cur.src === it.src && S.cur.stable_id === it.stable_id ? " sel" : "");
+    row.innerHTML = `<span class="mut num">${i + 1}</span><span class="t"></span><span class="f num"></span>`;
+    row.querySelector(".t").textContent = it.title;
+    const fe = row.querySelector(".f"); fe.textContent = it.f; fe.title = it.tip;
+    row.dataset.i = i;
+    row.onclick = (ev) => select(i, ev.timeStamp);
+    list.appendChild(row);
+  };
+  if (S.config.library) {
+    if (S.results) { section(`library search: ${S.results.length} match${S.results.length === 1 ? "" : "es"}${S.results.length >= 60 ? " (first 60)" : ""}`); S.results.forEach((t) => addRow(libRow(t))); }
+    else { section(`library bench: ${S.bench.length} tracks`); S.bench.forEach((t) => addRow(libRow(t))); }
+  }
+  if (S.config.corpus) {
+    const g = document.createElement("div");
+    g.className = "grp";
+    g.textContent = `${S.corpusOpen ? "\u25be" : "\u25b8"} Open test set (Jamendo, ${S.config.corpus_tracks} tracks)`;
+    g.title = "Public regression set. Collapsed: its tracks stay out of this list and out of the header numbers. Click to expand.";
+    g.onclick = async () => { S.corpusOpen = !S.corpusOpen; if (S.corpusOpen) await corpusTracks(); renderList(); refreshSummary(); };
+    list.appendChild(g);
+    if (S.corpusOpen && S.corpusAll) S.corpusAll.filter((t) => !q || t.title.toLowerCase().includes(q)).forEach((t) => addRow(corpusRow(t)));
+  }
+  S.filtered = items;
+  S.idx = items.findIndex((it) => S.cur && it.src === S.cur.src && it.stable_id === S.cur.stable_id);
+}
+function stat(v, label, tip) { return v == null ? "" : `<span class="stat" title="${tip}">${label} <b class="num">${v.toFixed(2)}</b></span>`; }
+async function refreshSummary() {
+  try {
+    const parts = [];
+    if (S.config.library) {
+      const s = await getJSON("/api/library/summary");
+      const o = s.lanes.own_fast, a = s.lanes.allin1;
+      parts.push(`<span class="stat" title="Library bench: tracks with rekordbox phrases and audio here, stratified by genre and BPM. Reference: rekordbox phrases (PSSI).">bench <b class="num">${s.bench}</b>, vs rekordbox phrases:</span>`);
+      parts.push(stat(o["f@2bar"], `own-fast F@2bar (n=${o.scored})`, `Mean boundary F at 2 bars, own-fast vs rekordbox phrases, over ${o.scored} of ${s.bench} bench tracks`));
+      parts.push(stat(a["f@2bar"], `All-In-One F@2bar (n=${a.scored})`, `Mean boundary F at 2 bars, All-In-One (quantized to the rekordbox grid) vs rekordbox phrases, over ${a.scored} of ${s.bench} bench tracks with All-In-One output`));
+      parts.push(stat(o["base_f@2bar"], "16-bar control", `Mean boundary F at 2 bars of a section every 16 bars, over the ${o.scored} own-fast-scored tracks; a segmenter must beat it`));
+      if (s.both_scored) parts.push(`<span class="stat" title="Head to head over the ${s.both_scored} bench tracks BOTH lanes scored (same tracks): mean boundary F at 2 bars against rekordbox phrases, own-fast / All-In-One; 16-bar control ${fx(s.paired.own_fast["base_f@2bar"])}">paired n=${s.both_scored}: <b class="num">${fx(s.paired.own_fast["f@2bar"])} / ${fx(s.paired.allin1["f@2bar"])}</b></span>`);
+      parts.push(stat(o.label_acc_pooled, "own-fast labels", `Pooled share of 0.5 s frames where own-fast's DJ label equals rekordbox's mapped phrase, over ${o.label_frames} frames both sides label`));
+    }
+    if (S.config.corpus && S.corpusOpen) {
+      const s = await getJSON("/api/summary");
+      parts.push(`<span class="stat" title="Open test set (Jamendo): tracks whose All-In-One output exists, of the set total">| test set <b class="num">${s.allin1_ready}</b> of ${s.tracks} ready</span>`);
+      parts.push(stat(s["f@2.0"], "F@2s", `Mean boundary F at 2.0 s, own-fast vs All-In-One, over ${s.scored} scored test-set tracks`));
+    }
+    $("sum").innerHTML = parts.join(" ");
+  } catch (e) { fail(e); }
+}
+async function refreshList() {
+  try {
+    if (S.config.library) S.bench = (await getJSON("/api/library/bench")).tracks;
+    if (S.corpusOpen) { S.corpusAll = null; await corpusTracks(); }
+    renderList();
+    await refreshSummary();
+  } catch (e) { fail(e); }
+}
+
+// ---------------------------------------------------------------- selection
+async function select(i, tEvent) {
+  if (i < 0 || i >= S.filtered.length) return;
+  const t0 = tEvent ?? performance.now();
+  const item = S.filtered[i], id = item.stable_id;
+  const token = ++S.loadToken;
+  stop();
+  S.idx = i; S.id = id; S.cur = item;
+  // Drop the previous track at once: its waveform and audio must never sit under the new title.
+  S.doc = null; S.peaks = null; S.buf = null; S.offset = 0; $("view").innerHTML = "";
+  document.querySelectorAll(".row").forEach((r) => r.classList.toggle("sel", +r.dataset.i === i));
+  document.querySelector(`.row[data-i="${i}"]`)?.scrollIntoView({block: "nearest"});
+  $("ttl").textContent = item.title;
+  $("err").textContent = "";
+  try {
+    const e = await entry(item).meta;
+    if (token !== S.loadToken) return;
+    S.doc = e.doc; S.peaks = e.peaks; S.buf = e.buffer || null; S.offset = 0;
+    S.view = [0, S.doc.duration_s];
+    buildView();
+    const drawn = performance.now() - t0;
+    const rec = {id, drawn_ms: +drawn.toFixed(1), audio_ms: null};
+    S.metrics.switches.push(rec);
+    showSwitch(rec);
+    const b = await audioOf(item);
+    if (token !== S.loadToken) return;
+    S.buf = b;
+    rec.audio_ms = +(performance.now() - t0).toFixed(1);
+    showSwitch(rec);
+    for (const k of [i + 1, i - 1]) if (S.filtered[k]) { const n = S.filtered[k]; entry(n).meta.then(() => audioOf(n)).catch(fail); }
+    if (item.src === "library") refreshBenchRow(item);
+  } catch (err) { fail(err); }
+}
+function showSwitch(rec) {
+  $("sw").textContent = `switch ${rec.drawn_ms.toFixed(0)} ms, audio ${rec.audio_ms == null ? "decoding" : rec.audio_ms.toFixed(0) + " ms"}`;
+}
+
+// ---------------------------------------------------------------- view
+function laneEl(cls, name, sub, focusKey) {
+  const lane = document.createElement("div");
+  lane.className = `lane ${cls}`;
+  const n = document.createElement("div");
+  n.className = "lname";
+  n.innerHTML = `${name}<small></small>`;
+  n.querySelector("small").textContent = sub || "";
+  if (focusKey) { lane.dataset.focus = focusKey; n.title = "Click to make [ and ] step through this lane's boundaries"; n.onclick = () => setFocus(focusKey); }
+  const tr = document.createElement("div");
+  tr.className = "ltrack";
+  lane.append(n, tr);
+  $("view").appendChild(lane);
+  return tr;
+}
+function buildView() {
+  const v = $("view");
+  v.innerHTML = "";
+  const d = S.doc;
+  const wave = laneEl("wave", "waveform", `3-band peaks, ${d.peaks.columns_per_s}/s`);
+  wave.innerHTML = "<canvas id='wc'></canvas>";
+  wave.onpointerdown = (ev) => playAt(xToT(ev, wave), ev.timeStamp);
+  wave.onpointermove = (ev) => hover(ev, wave);
+  wave.onpointerleave = () => { $("hov").style.display = "none"; };
+  const bars = laneEl("bars", "bars", d.grid.source ? `${d.grid.downbeats.length} downbeats` : "no grid");
+  bars.innerHTML = "<canvas id='bc'></canvas>";
+  bars.onpointerdown = (ev) => playAt(snapBar(xToT(ev, bars)), ev.timeStamp);
+  bars.title = `Bar ticks (downbeats of ${d.grid.source || "no grid"}). Click: play from the nearest bar line`;
+  for (const L of LANES) {
+    const lane = d.lanes[L.key];
+    const sub = lane.status === "ok" ? `${lane.sections.length} sections, labels ${lane.labels}${lane.segment_ms != null ? `, ${lane.segment_ms} ms` : ""}` : lane.status;
+    const tr = laneEl("sec", L.name, sub, lane.status === "ok" ? L.key : null);
+    tr.dataset.lane = L.key;
+    tr.parentElement.querySelector(".lname").title = `${L.name}: ${L.desc}. ${lane.status === "ok" ? (lane.labels_reason ? "DJ labels: " + lane.labels + " (" + lane.labels_reason + ")" : "") : lane.reason}`;
+    if (lane.status === "ok" && lane.moments.length) {
+      const m = laneEl("mom", `${L.name} moments`, lane.moments.map((x) => x.tag).join(" "), null);
+      m.dataset.mom = L.key;
+    }
+  }
+  const ph = document.createElement("div"); ph.id = "ph"; v.appendChild(ph);
+  const hv = document.createElement("div"); hv.id = "hov"; v.appendChild(hv);
+  renderLegend();
+  renderAgreement();
+  setFocus(d.lanes[S.focus]?.status === "ok" ? S.focus : (LANES.find((L) => d.lanes[L.key].status === "ok") || {}).key);
+  render();
+}
+function setFocus(key) {
+  if (!key) return;
+  S.focus = key;
+  document.querySelectorAll(".lane").forEach((l) => l.classList.toggle("focus", l.dataset.focus === key));
+}
+function renderLegend() {
+  const seen = new Set();
+  for (const L of LANES) for (const s of S.doc.lanes[L.key].sections) seen.add(s.label);
+  $("legend").innerHTML = [...seen].map((l) => `<span><i style="background:${COLORS[l] || "#ccc"}"></i>${l}</span>`).join("");
+}
+function refreshBenchRow(item) {
+  const scores = S.doc && S.doc.scores;
+  for (const list of [S.bench || [], S.results || []]) for (const t of list) if (t.stable_id === item.stable_id) t.scores = scores;
+  const row = document.querySelector(`.row[data-i="${S.idx}"] .f`);
+  if (row) { const r = libRow({stable_id: item.stable_id, title: item.title, has_anlz: true, scores}); row.textContent = r.f; row.title = r.tip; }
+}
+function renderAgreement() {
+  const el = $("agree");
+  const chip = (txt, tip, bad) => `<span class="chip num${bad ? " bad" : ""}" title="${tip}">${txt}</span>`;
+  if (S.doc.mode === "library") {
+    const out = [];
+    for (const L of LANES.filter((x) => x.key !== "pssi")) {
+      const a = S.doc.scores[L.key];
+      if (a.status !== "ok") { out.push(chip(`${L.name}: n/a`, `${L.name} vs rekordbox phrases: ${a.reason}`, true)); continue; }
+      out.push(chip(`${L.name} F@1bar ${fx(a["f@1bar"])}`, `Boundary F at 1 bar (${a.bar_s.toFixed(2)} s), ${L.name} vs rekordbox phrases, one-to-one matching, first and last second ignored. 16-bar control: ${fx(a["base_f@1bar"])}`, a["f@1bar"] <= a["base_f@1bar"]));
+      out.push(chip(`F@2bar ${fx(a["f@2bar"])}`, `Boundary F at 2 bars (${(2 * a.bar_s).toFixed(2)} s). 16-bar control: ${fx(a["base_f@2bar"])}`, a["f@2bar"] <= a["base_f@2bar"]));
+      out.push(chip(`F@0.5s ${fx(a["f@0.5s"])} / F@3s ${fx(a["f@3.0s"])}`, `Boundary F at 0.5 s and 3.0 s (the parity phrase scorer's bands). Controls: ${fx(a["base_f@0.5s"])} / ${fx(a["base_f@3.0s"])}`));
+      out.push(chip(`sections ${a.est_sections} / ${a.ref_sections}`, `Section count: ${L.name} / rekordbox phrases`));
+      out.push(chip(`labels ${fx(a.label_acc)}`, `Share of 0.5 s frames where ${L.name}'s DJ label equals rekordbox's mapped phrase (Up=buildup, Down=breakdown, Chorus=drop, Intro, Outro), over ${a.frames.frames} frames both sides label; rekordbox maps ${a.ref_mapped_frames} of ${a.ref_frames} frames`));
+      out.push(chip(`drop F1 ${fx(a.drop_f1)}`, `Per 0.5 s frame F1 of the drop label (rekordbox Chorus = drop), ${L.name} vs rekordbox`));
+    }
+    el.innerHTML = out.join("");
+    return;
+  }
+  const a = S.doc.agreement;
+  if (a.status !== "ok") { el.innerHTML = `<span class="chip bad" title="Agreement needs both lanes">agreement: ${a.reason}</span>`; return; }
+  const pct = fx;
+  el.innerHTML = [
+    chip(`F@0.5s ${pct(a["f@0.5"])}`, "Boundary F-measure at 0.5 s (same bar): own-fast boundaries matched one-to-one to All-In-One's, ignoring the first and last second. 16-bar control: " + pct(a["base_f@0.5"])),
+    chip(`F@2s ${pct(a["f@2.0"])}`, "Boundary F-measure at 2.0 s tolerance. 16-bar control: " + pct(a["base_f@2.0"]), a["f@2.0"] <= a["base_f@2.0"]),
+    chip(`F@3s ${pct(a["f@3.0"])}`, "Boundary F-measure at 3.0 s tolerance. 16-bar control: " + pct(a["base_f@3.0"])),
+    chip(`control F@2s ${pct(a["base_f@2.0"])}`, "The must-lose control: a section start every 16 bars from the first downbeat, scored against All-In-One at 2.0 s"),
+    chip(`sections ${a.est_sections} / ${a.ref_sections}`, "Section count: own-fast / All-In-One"),
+    chip(`labels ${pct(a.label_acc)}`, "Per 0.5 s frame DJ label agreement where both sides labeled the frame (n/a when either side is unlabeled)"),
+    chip(`drop F1 ${pct(a.drop_f1)}`, "Per 0.5 s frame F1 of the drop label, own-fast vs All-In-One (n/a when no frame is a drop on either side)"),
+  ].join("");
+}
+const tToX = (t, w) => (t - S.view[0]) / (S.view[1] - S.view[0]) * w;
+function xToT(ev, el) { const r = el.getBoundingClientRect(); return S.view[0] + (ev.clientX - r.left) / r.width * (S.view[1] - S.view[0]); }
+function snapBar(t) {
+  const db = S.doc.grid.downbeats; if (!db.length) return t;
+  let best = db[0]; for (const d of db) if (Math.abs(d - t) < Math.abs(best - t)) best = d; return best;
+}
+function barAt(t) { const db = S.doc.grid.downbeats; let lo = 0, hi = db.length; while (lo < hi) { const m = (lo + hi) >> 1; if (db[m] <= t + 1e-3) lo = m + 1; else hi = m; } return lo || null; }
+
+function sizeCanvas(c) {
+  const dpr = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr));
+  return [c.getContext("2d"), c.width, c.height, dpr];
+}
+function drawWave() {
+  const c = $("wc"); if (!c) return;
+  const [g, W, H] = sizeCanvas(c);
+  const pk = S.peaks, cps = S.doc.peaks.columns_per_s, n = pk.length / 3;
+  const css = getComputedStyle(document.documentElement);
+  const col = [css.getPropertyValue("--low"), css.getPropertyValue("--mid"), css.getPropertyValue("--high")];
+  const mid = H / 2;
+  // Per pixel column max of each band; low drawn widest, high narrowest on top.
+  const mx = [new Float32Array(W), new Float32Array(W), new Float32Array(W)];
+  const c0 = S.view[0] * cps, cpp = (S.view[1] - S.view[0]) * cps / W;
+  for (let x = 0; x < W; x++) {
+    const a = Math.max(0, Math.floor(c0 + x * cpp)), b = Math.min(n, Math.max(a + 1, Math.floor(c0 + (x + 1) * cpp)));
+    for (let k = a; k < b; k++) for (let band = 0; band < 3; band++) { const v = pk[k * 3 + band]; if (v > mx[band][x]) mx[band][x] = v; }
+  }
+  const scale = [1.0, 0.8, 0.55];
+  for (let band = 0; band < 3; band++) {
+    g.fillStyle = col[band]; g.globalAlpha = band === 2 ? 0.85 : 0.9;
+    g.beginPath();
+    for (let x = 0; x < W; x++) { const h = mx[band][x] / 255 * mid * scale[band]; if (h > 0.5) g.rect(x, mid - h, 1, 2 * h); }
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  // bar lines on the waveform: every 4th bar stronger, every 16th strongest
+  const db = S.doc.grid.downbeats, span = S.view[1] - S.view[0];
+  const pxPerBar = db.length > 1 ? (db[1] - db[0]) / span * W : 0;
+  db.forEach((t, i) => {
+    if (t < S.view[0] || t > S.view[1]) return;
+    const strong = i % 16 === 0 ? 0.45 : i % 4 === 0 ? 0.25 : 0.1;
+    if (strong === 0.1 && pxPerBar < 6) return;
+    g.fillStyle = `rgba(255,255,255,${strong})`; g.fillRect(Math.round(tToX(t, W)), 0, 1, H);
+  });
+}
+function drawBars() {
+  const c = $("bc"); if (!c) return;
+  const [g, W, H, dpr] = sizeCanvas(c);
+  const db = S.doc.grid.downbeats, span = S.view[1] - S.view[0];
+  const css = getComputedStyle(document.documentElement);
+  g.fillStyle = css.getPropertyValue("--mut"); g.font = `${10 * dpr}px -apple-system,system-ui,sans-serif`;
+  const pxPerBar = db.length > 1 ? (db[1] - db[0]) / span * W : 0;
+  const every = [1, 2, 4, 8, 16, 32, 64].find((k) => k * pxPerBar > 34 * dpr) || 64;
+  db.forEach((t, i) => {
+    if (t < S.view[0] || t > S.view[1]) return;
+    const x = Math.round(tToX(t, W));
+    g.fillRect(x, i % 4 === 0 ? 0 : H * 0.55, 1, H);
+    if (i % every === 0) g.fillText(String(i + 1), x + 3 * dpr, H * 0.75);
+  });
+}
+function spanTitle(L, s) {
+  const bars = s.start_bar && s.end_bar ? `bars ${s.start_bar}-${s.end_bar} (${s.end_bar - s.start_bar + 1} bars)` : s.start_bar ? `from bar ${s.start_bar}` : "before the first downbeat";
+  const lbl = L.key === "pssi" ? `${s.label} (rekordbox phrase; DJ label: ${s.dj_label || "unmapped"})` : s.dj_label ? `${s.dj_label} (model: ${s.model_label})` : s.label;
+  return `${lbl}\n${fmt(s.start_s)} - ${fmt(s.end_s)}  (${(s.end_s - s.start_s).toFixed(1)} s)\n${bars}${s.continuation ? "\ncontinues the drop before it" : ""}${s.energy_db != null ? `\nenergy score ${s.energy_db.toFixed(1)} dB` : ""}\nsource: ${L.name}\nclick: play from start`;
+}
+function drawLanes() {
+  for (const L of LANES) {
+    const tr = document.querySelector(`.ltrack[data-lane="${L.key}"]`); if (!tr) continue;
+    const lane = S.doc.lanes[L.key];
+    tr.innerHTML = "";
+    if (lane.status !== "ok") { const o = document.createElement("div"); o.className = "off"; o.textContent = `not available: ${lane.reason}`; o.title = `${L.name} is ${lane.status}: ${lane.reason}`; tr.appendChild(o); continue; }
+    const W = tr.clientWidth;
+    lane.sections.forEach((s, i) => {
+      if (s.end_s < S.view[0] || s.start_s > S.view[1]) return;
+      const x0 = tToX(s.start_s, W), x1 = tToX(s.end_s, W);
+      const el = document.createElement("div");
+      el.className = "span" + (s.continuation ? " cont" : "");
+      el.style.left = `${x0}px`; el.style.width = `${Math.max(1, x1 - x0 - 1)}px`;
+      el.style.background = COLORS[s.label] || "#ccc";
+      el.textContent = s.label;
+      el.title = spanTitle(L, s);
+      el.dataset.i = i;
+      el.onpointerdown = (ev) => { ev.stopPropagation(); playAt(s.start_s, ev.timeStamp); };
+      tr.appendChild(el);
+    });
+    const mt = document.querySelector(`.lane .ltrack[data-mom="${L.key}"]`);
+    if (mt) {
+      mt.innerHTML = "";
+      for (const m of lane.moments) {
+        if (m.time_s < S.view[0] || m.time_s > S.view[1]) continue;
+        const el = document.createElement("div");
+        el.className = `mk ${m.kind}`; el.style.left = `${tToX(m.time_s, mt.clientWidth)}px`; el.textContent = m.tag;
+        el.title = `${m.kind}${m.number ? " " + m.number : ""}${m.fake ? " (fake drop: short, then withdrawn)" : ""}\n${fmt(m.time_s)}, bar ${barAt(m.time_s) ?? "pickup"}\nsource: ${L.name}\nclick: play from here`;
+        el.onpointerdown = (ev) => { ev.stopPropagation(); playAt(m.time_s, ev.timeStamp); };
+        mt.appendChild(el);
+      }
+    }
+  }
+}
+function render() {
+  if (!S.doc) return;
+  drawWave(); drawBars(); drawLanes(); markCurrent(true);
+  const span = S.view[1] - S.view[0];
+  $("zoom").textContent = `view ${fmt(S.view[0])} - ${fmt(S.view[1])} (${(S.doc.duration_s / span).toFixed(1)}x)`;
+}
+function hover(ev, el) {
+  const r = el.getBoundingClientRect(), vr = $("view").getBoundingClientRect(), h = $("hov");
+  h.style.display = "block"; h.style.left = `${ev.clientX - vr.left}px`;
+  const t = xToT(ev, el);
+  el.title = `${fmt(t)}  bar ${barAt(t) ?? "pickup"}\nclick: play from here`;
+}
+
+// ---------------------------------------------------------------- playback
+function now() { return S.playing ? S.offset + (S.ctx.currentTime - S.t0) : S.offset; }
+function stop() {
+  if (S.src) { S.src.onended = null; try { S.src.stop(); } catch (_) { /* already stopped */ } S.src.disconnect(); S.src = null; }
+  if (S.playing) S.offset = now();
+  S.playing = false;
+}
+function playAt(t, tEvent) {
+  if (!S.doc) return;
+  t = Math.max(0, Math.min(t, S.doc.duration_s - 0.01));
+  const c = ctx();
+  if (!S.buf) { // decode still running: start as soon as it lands, and say so
+    S.offset = t; markCurrent(true);
+    $("lat").textContent = "click to audio: waiting for decode";
+    const item = S.cur;
+    audioOf(item).then((b) => { if (S.cur === item) { S.buf = b; playAt(S.offset, tEvent); } }); // keep the click time: the wait is latency
+    return;
+  }
+  if (S.src) { S.src.onended = null; try { S.src.stop(); } catch (_) { /* already stopped */ } S.src.disconnect(); }
+  const src = c.createBufferSource();
+  src.buffer = S.buf; src.connect(c.destination);
+  src.start(0, t);
+  const jsMs = performance.now() - (tEvent ?? performance.now());
+  S.src = src; S.offset = t; S.t0 = c.currentTime; S.playing = true;
+  src.onended = () => { if (S.src === src) { S.playing = false; S.offset = S.doc.duration_s; S.src = null; } };
+  const outMs = ((c.baseLatency || 0) + (c.outputLatency || 0)) * 1000;
+  const rec = {t, js_ms: +jsMs.toFixed(2), output_ms: +outMs.toFixed(2), total_ms: +(jsMs + outMs).toFixed(2), context_state: c.state, sample_rate: c.sampleRate};
+  S.metrics.clicks.push(rec);
+  const med = median(S.metrics.clicks.map((r) => r.total_ms));
+  $("lat").textContent = `click to audio ${rec.total_ms.toFixed(1)} ms (median ${med.toFixed(1)}, n=${S.metrics.clicks.length})`;
+  $("lat").title = `${$("lat").dataset.tip || ($("lat").dataset.tip = $("lat").title)}\nLast: js ${rec.js_ms.toFixed(2)} ms + output ${rec.output_ms.toFixed(2)} ms (baseLatency + outputLatency, ${rec.sample_rate} Hz).`;
+  follow(true);
+}
+function toggle() { if (S.playing) { stop(); markCurrent(true); } else playAt(S.offset >= S.doc.duration_s - 0.05 ? 0 : S.offset, performance.now()); }
+function boundaries() {
+  const lane = S.doc.lanes[S.focus];
+  return lane && lane.status === "ok" ? lane.sections.map((s) => s.start_s) : [];
+}
+function jumpBoundary(dir) {
+  const t = now(), bs = boundaries(); if (!bs.length) return;
+  const next = dir > 0 ? bs.find((b) => b > t + 0.05) : [...bs].reverse().find((b) => b < t - 0.4);
+  if (next != null) seek(next); else if (dir < 0) seek(0);
+}
+function seek(t) { if (S.playing) playAt(t, performance.now()); else { S.offset = t; follow(true); markCurrent(true); } }
+function stepBar(dir) {
+  const db = S.doc.grid.downbeats, t = now(); if (!db.length) return;
+  const next = dir > 0 ? db.find((b) => b > t + 0.05) : [...db].reverse().find((b) => b < t - 0.3);
+  if (next != null) seek(next);
+}
+function follow(force) {
+  const t = now(), span = S.view[1] - S.view[0];
+  if (span >= S.doc.duration_s - 1e-6) return;
+  if (t < S.view[0] || t > S.view[1] - span * 0.05 || force && (t < S.view[0] || t > S.view[1])) {
+    S.view = [Math.max(0, Math.min(t - span * 0.1, S.doc.duration_s - span)), 0]; S.view[1] = S.view[0] + span; render();
+  }
+}
+function zoom(f, center) {
+  if (!S.doc) return;
+  const d = S.doc.duration_s, span = Math.min(d, Math.max(4, (S.view[1] - S.view[0]) / f));
+  const c = center ?? now();
+  const a = Math.max(0, Math.min(c - span / 2, d - span));
+  S.view = [a, a + span]; render();
+}
+let lastCur = "";
+function markCurrent(force) {
+  if (!S.doc) return;
+  const t = now(), parts = [`${fmt(t)}  bar ${barAt(t) ?? "pickup"}`];
+  let key = "";
+  for (const L of LANES) {
+    const lane = S.doc.lanes[L.key]; if (lane.status !== "ok") continue;
+    const i = lane.sections.findIndex((s) => s.start_s <= t && t < s.end_s);
+    key += `${L.key}:${i};`;
+    if (i >= 0) parts.push(`${L.name}: ${lane.sections[i].label}`);
+  }
+  $("now").textContent = parts.join("   |   ");
+  if (!force && key === lastCur) return;
+  lastCur = key;
+  for (const L of LANES) {
+    const tr = document.querySelector(`.ltrack[data-lane="${L.key}"]`); if (!tr) continue;
+    const lane = S.doc.lanes[L.key]; if (lane.status !== "ok") continue;
+    const i = lane.sections.findIndex((s) => s.start_s <= t && t < s.end_s);
+    tr.querySelectorAll(".span").forEach((el) => el.classList.toggle("cur", +el.dataset.i === i));
+  }
+}
+function frame() {
+  if (S.doc) {
+    const wave = document.querySelector(".lane.wave .ltrack"), ph = $("ph");
+    if (wave && ph) {
+      const t = now(), W = wave.clientWidth, x = tToX(t, W);
+      ph.style.display = x < 0 || x > W ? "none" : "block";
+      ph.style.transform = `translateX(${x}px)`;
+      if (S.playing) { follow(false); markCurrent(false); }
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- input
+document.addEventListener("keydown", (ev) => {
+  if (ev.target === $("q")) { if (ev.key === "Enter" || ev.key === "Escape") $("q").blur(); return; }
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const k = ev.key;
+  if (k === "ArrowDown" || k === "j") { ev.preventDefault(); select(Math.min(S.filtered.length - 1, S.idx + 1), ev.timeStamp); }
+  else if (k === "ArrowUp" || k === "k") { ev.preventDefault(); select(Math.max(0, S.idx - 1), ev.timeStamp); }
+  else if (!S.doc) { return; }
+  else if (k === " ") { ev.preventDefault(); ctx(); toggle(); }
+  else if (k === "[") { jumpBoundary(-1); }
+  else if (k === "]") { jumpBoundary(1); }
+  else if (k === "ArrowRight") { ev.preventDefault(); stepBar(1); }
+  else if (k === "ArrowLeft") { ev.preventDefault(); stepBar(-1); }
+  else if (k === "Home") { seek(0); }
+  else if (k === "1") { if (S.doc.lanes.own_fast.status === "ok") setFocus("own_fast"); }
+  else if (k === "2") { if (S.doc.lanes.allin1.status === "ok") setFocus("allin1"); }
+  else if (k === "3") { if (S.doc.lanes.pssi.status === "ok") setFocus("pssi"); }
+  else if (k === "+" || k === "=") { zoom(2); }
+  else if (k === "-") { zoom(0.5); }
+  else if (k === "0") { S.view = [0, S.doc.duration_s]; render(); }
+  else if (k === "/") { ev.preventDefault(); $("q").focus(); }
+});
+document.addEventListener("pointerdown", () => ctx(), {capture: true, once: true});
+$("view").addEventListener("wheel", (ev) => {
+  if (!S.doc) return;
+  ev.preventDefault();
+  const span = S.view[1] - S.view[0];
+  if (ev.ctrlKey || ev.metaKey) { const wave = document.querySelector(".lane.wave .ltrack"); zoom(ev.deltaY < 0 ? 1.25 : 0.8, xToT(ev, wave)); return; }
+  const dt = (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY) / 800 * span;
+  const a = Math.max(0, Math.min(S.view[0] + dt, S.doc.duration_s - span));
+  S.view = [a, a + span]; render();
+}, {passive: false});
+let qTimer = 0;
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch().catch(fail), 180); });
+window.addEventListener("resize", () => render());
+
+(async () => {
+  try {
+    await loadList();
+    requestAnimationFrame(frame);
+    const p = new URLSearchParams(location.search), want = p.get("track"), src = p.get("src") || "library";
+    if (src === "corpus" && S.config.corpus) { S.corpusOpen = true; await corpusTracks(); renderList(); }
+    if (want && src === "library" && S.config.library && !S.filtered.some((t) => t.stable_id === want)) {
+      const d = await getJSON(`/api/library/tracks/${encodeURIComponent(want)}/segments`);
+      S.results = [{stable_id: want, title: d.title, has_anlz: true, scores: d.scores}]; renderList();
+    }
+    const i = want ? S.filtered.findIndex((t) => t.stable_id === want && t.src === src) : 0;
+    if (S.filtered.length) await select(Math.max(0, i));
+    refreshSummary();
+    setInterval(refreshList, 60000);
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>

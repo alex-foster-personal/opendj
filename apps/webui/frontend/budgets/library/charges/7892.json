@@ -1,9 +1,0 @@
-{
-  "bytes": 2048,
-  "measured_main": 299240,
-  "measured_with_pr": 301779,
-  "sha": "782be5e0de",
-  "date": "Tue 3 Nov 2026",
-  "reason": "PR #7892 AI sidebar door on first paint: root layout imports the deferred-load helper and mounts the sidebar door behind a boot task; the lazy sidebar stays in the ai-sidebar bucket",
-  "payback": "none planned"
-}

@@ -25,6 +25,12 @@ from scripts.subscription_review import read_run_result, sb_argv
 HEAD = "abae480279b5541dc23c5e861a358782fcd4ecc9"
 
 
+@pytest.fixture(autouse=True)
+def _sol_remote_seat_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(sol_review.REMOTE_SEAT_ENV, "nucbox-wsl")
+    monkeypatch.setenv(sol_review.REMOTE_SEAT_HOSTNAMES_ENV, "NucBoxEVO-X2")
+
+
 def _prompt(body: str) -> str:
     cfg = ReviewPromptConfig("run1", 10_000, 12, SOL_FENCE, [])
     return build_prompt("5968", HEAD, "finish invented-name scrub", "+diff", cfg, body=body)[0]

@@ -1,7 +1,7 @@
 """One rule for "Beat Sync may wander on this beatgrid" (GRIDFLAG-01).
 
 The deck header badge and the library flag read the SAME rule, decided in
-`docs/decisions/ADR-NEW-deck-beatgrid-source.md` (branch
+`(private path)` (branch
 `af--adr-beatgrid-source`):
 
   1. FLAG a grid when any beat interval is more than
@@ -93,9 +93,7 @@ THRESHOLDS = GridQualityThresholds()
 
 def rule_version(thresholds: GridQualityThresholds = THRESHOLDS) -> str:
     """Changes whenever a threshold does, so a stored verdict goes stale."""
-    digest = hashlib.sha256(
-        json.dumps(asdict(thresholds), sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    digest = hashlib.sha256(json.dumps(asdict(thresholds), sort_keys=True).encode("utf-8")).hexdigest()
     return f"grid-quality-1:{digest[:12]}"
 
 
@@ -145,9 +143,7 @@ def _median(values: Sequence[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
-def _steady_line(
-    times: Sequence[float], thresholds: GridQualityThresholds
-) -> tuple[float, float, float] | None:
+def _steady_line(times: Sequence[float], thresholds: GridQualityThresholds) -> tuple[float, float, float] | None:
     """`(coverage, on_line, line_bpm)` of the one steady line, or None when no
     region of `min_region_beats` exists."""
     tolerance_s = thresholds.region_tolerance_s
@@ -155,12 +151,8 @@ def _steady_line(
     reference = const_regions._longest(regions, thresholds.min_region_beats)
     if reference is None:
         return None
-    span = const_regions._extend(
-        regions, reference, tolerance_s, (float("-inf"), float("inf"))
-    )
-    line = const_regions._line_for_span(
-        times, span, True, tolerance_s, (times[0], times[-1])
-    )
+    span = const_regions._extend(regions, reference, tolerance_s, (float("-inf"), float("inf")))
+    line = const_regions._line_for_span(times, span, True, tolerance_s, (times[0], times[-1]))
     period_s = 60.0 / line.bpm
     on_line_count = 0
     for beat_time in times:
@@ -199,9 +191,7 @@ def classify_grid(
     if len(times) < 2:
         return unknown_quality(REASON_NO_GRID_DATA)
     if beat_bpms is not None and len(beat_bpms) != len(times):
-        raise ValueError(
-            f"beat_bpms has {len(beat_bpms)} entries for {len(times)} beats"
-        )
+        raise ValueError(f"beat_bpms has {len(beat_bpms)} entries for {len(times)} beats")
     interval_count = len(times) - 1
     intervals = [times[index + 1] - times[index] for index in range(interval_count)]
     median_s = _median(intervals)
@@ -219,16 +209,23 @@ def classify_grid(
     tempo_marker_count: int | None = None
     if beat_bpms is not None:
         tempo_marker_count = sum(
-            1
-            for index in range(1, len(beat_bpms))
-            if float(beat_bpms[index]) != float(beat_bpms[index - 1])
+            1 for index in range(1, len(beat_bpms)) if float(beat_bpms[index]) != float(beat_bpms[index - 1])
         )
     median_bpm = 60.0 / median_s if median_s > 0 else None
 
     if uneven_interval_count == 0:
         return GridQuality(
-            "ok", None, interval_count, 0, 0.0, times[0], median_bpm,
-            tempo_marker_count, None, None, None,
+            "ok",
+            None,
+            interval_count,
+            0,
+            0.0,
+            times[0],
+            median_bpm,
+            tempo_marker_count,
+            None,
+            None,
+            None,
         )
 
     steady = _steady_line(times, thresholds)
@@ -296,16 +293,11 @@ def grid_flag_clause(quality: GridQuality) -> str:
         marker_text = ""
         if markers is not None:
             marker_text = f", {markers} tempo marker{'' if markers == 1 else 's'}"
-        return (
-            "tempo changes through this track: "
-            f"{uneven_intervals_phrase(quality)}{marker_text}"
-        )
+        return f"tempo changes through this track: {uneven_intervals_phrase(quality)}{marker_text}"
     raise ValueError(f"not a flagged grid class: {quality.grid_class!r}")
 
 
-def grid_quality_message(
-    quality: GridQuality, *, thresholds: GridQualityThresholds = THRESHOLDS
-) -> str:
+def grid_quality_message(quality: GridQuality, *, thresholds: GridQualityThresholds = THRESHOLDS) -> str:
     """One line for the hover title: what was measured, with the numbers."""
     if quality.grid_class == "unknown":
         if quality.reason is None:

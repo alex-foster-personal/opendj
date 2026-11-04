@@ -80,14 +80,14 @@ from apps.analysis_bench.scorers.continuity import (  # noqa: F401
 #     replacing the median inter-beat interval. v1.0.0's estimator inherited
 #     the analyzer's frame quantization and understated EVERY candidate;
 #     measured on identical committed beat times, beat_this moved from 47.0%
-#     to 82.5% within 1.0 BPM on fixed grids. See specs/beat-mapping-bench.md
+#     to 82.5% within 1.0 BPM on fixed grids. See (private path)
 #     round 0, "The BPM columns above are an ESTIMATOR ARTIFACT".
 #   - CMLt and AMLt join F-measure. F at a fixed +/-70 ms says how many beats
 #     landed; the continuity metrics say whether they landed CONSECUTIVELY at
 #     a tempo that tracks the reference, which is the thing a DJ grid has to
 #     do and the thing round 0 could not measure.
 #   - F is now reported shift-corrected as well as raw, closing the known gap
-#     recorded in specs/beat-mapping-bench.md section 4.2: a correct grid at
+#     recorded in (private path) section 4.2: a correct grid at
 #     the wrong phase scored badly on raw F alone.
 SCORER_VERSION = "1.1.0"
 
@@ -275,9 +275,7 @@ def least_squares_bpm(times: Sequence[float]) -> float | None:
 # ----- BPM scoring --------------------------------------------------------
 
 
-def classify_tempo_relation(
-    reference_bpm: float, candidate_bpm: float, rel_tol: float = TEMPO_RELATION_REL_TOL
-) -> str:
+def classify_tempo_relation(reference_bpm: float, candidate_bpm: float, rel_tol: float = TEMPO_RELATION_REL_TOL) -> str:
     """Name the metrical relation between two tempi, or 'none'."""
     if reference_bpm <= 0 or candidate_bpm <= 0:
         return "none"
@@ -351,9 +349,7 @@ class PositionScore:
     shifted_p95_ms: float | None
 
 
-def _nearest_signed_errors_ms(
-    reference: Sequence[float], candidate: Sequence[float]
-) -> list[float]:
+def _nearest_signed_errors_ms(reference: Sequence[float], candidate: Sequence[float]) -> list[float]:
     """For each reference beat, the signed distance to the nearest candidate.
 
     Nearest-neighbour rather than index pairing, because a candidate that drops
@@ -373,9 +369,7 @@ def _nearest_signed_errors_ms(
     return errors
 
 
-def _one_to_one_matches(
-    reference: Sequence[float], candidate: Sequence[float], tolerance_s: float
-) -> int:
+def _one_to_one_matches(reference: Sequence[float], candidate: Sequence[float], tolerance_s: float) -> int:
     """Greedy monotonic matching, each beat usable once.
 
     One-to-one matters: without it an analyzer emitting two beats per true beat
@@ -448,9 +442,7 @@ def score_positions(
     shifted = [e - shift for e in signed]
 
     matched, precision, recall, f_measure = _f_measure(ref, cand, tolerance_s)
-    _, _, _, f_measure_shifted = _f_measure(
-        ref, [t - shift / 1000.0 for t in cand], tolerance_s
-    )
+    _, _, _, f_measure_shifted = _f_measure(ref, [t - shift / 1000.0 for t in cand], tolerance_s)
 
     return PositionScore(
         n_reference=len(ref),

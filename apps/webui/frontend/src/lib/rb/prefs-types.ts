@@ -41,4 +41,6 @@ export interface LevelCalibrationPrefs {
 export interface SpotifyLibraryPref {
 	pinned_ids: string[];
 	recent_ids: string[];
+	/** SPOT-6555b: Open DJ shrinks to make room for the docked Spotify player. */
+	shrink_main_for_player: boolean;
 }

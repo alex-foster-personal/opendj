@@ -18,9 +18,7 @@ from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 router = APIRouter(prefix="/client-events", tags=["client-events"])
 log = logging.getLogger(__name__)
 
-_PERF_SPAN_NAMES: frozenset[str] = frozenset(
-    {"login-submit-to-library-usable", "open-to-library-rows"}
-)
+_PERF_SPAN_NAMES: frozenset[str] = frozenset({"login-submit-to-library-usable", "open-to-library-rows"})
 
 
 class PageViewIn(BaseModel):
@@ -84,9 +82,7 @@ class ClientEventOut(BaseModel):
 @router.post("", response_model=ClientEventOut, status_code=202)
 def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEventOut:
     event_id = uuid.uuid4().hex[:16]
-    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00", "Z"
-    )
+    received_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     record = {
         "event_id": event_id,
         "received_at": received_at,
@@ -94,15 +90,11 @@ def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEven
         "forwarded_for": request.headers.get("x-forwarded-for"),
         "tailscale_user_login": request.headers.get("tailscale-user-login"),
         "tailscale_user_name": request.headers.get("tailscale-user-name"),
-        "cloudflare_access_email": request.headers.get(
-            "cf-access-authenticated-user-email"
-        ),
+        "cloudflare_access_email": request.headers.get("cf-access-authenticated-user-email"),
         "request_host": request.headers.get("host"),
         **payload.model_dump(),
     }
-    log_dir = Path(
-        getattr(request.app.state, "client_event_log_dir", DEFAULT_LOG_DIR)
-    )
+    log_dir = Path(getattr(request.app.state, "client_event_log_dir", DEFAULT_LOG_DIR))
     path = daily_log_path(log_dir, "webui-visitors", time.gmtime())
     stored = append_json_record(path, record)
     if stored:

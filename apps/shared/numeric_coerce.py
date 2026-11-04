@@ -1,4 +1,5 @@
 """Optional numeric coercion with empty/invalid → None."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

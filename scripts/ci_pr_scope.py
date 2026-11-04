@@ -126,6 +126,12 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   whether it runs), because `scripts/ci_frontend_build_acquire_from_ci.sh` refuses a
 #:   sha whose `frontend-build` job did not succeed.
 #:
+#: - `import-contracts` (the ratchet's one hard gate, import-linter over .importlinter;
+#:   33 s of lint-imports) runs when any Python file, the contract file or the pinned
+#:   tool manifest changes (Wed 4 Nov 2026, ADR-NEW-import-contracts-gate-on-pull-
+#:   requests): #6474 broke the `public_surface` contract on main after a green pull
+#:   request run because the ratchet, which carries that gate, runs on main only.
+#:
 #: `test` keeps its own selector (scripts/ci_test_selection.py) and is never listed here.
 #: Pushes and dispatches run every job: the decision is pull_request only. ADR:
 #: (private path).
@@ -133,6 +139,7 @@ CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
     "contracts": (),
     "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
     "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
+    "import-contracts": ("**.py", ".importlinter", "ops/quality/requirements.txt"),
     "quality": (),
 }
 

@@ -1,6 +1,6 @@
 # Open DJ test build: diagnostics terms
 
-Version: 2026-09-21 (`TERMS_VERSION` in `apps/shared/telemetry/consent.py`;
+Version: 2026-11-04 (`TERMS_VERSION` in `apps/shared/telemetry/consent.py`;
 bump both together, and the app asks every tester again).
 
 This is what the first-launch dialog shows. It is written for the tester,
@@ -29,7 +29,7 @@ same and sends nothing.
 
 ## What is never sent
 
-- Audio. Nothing ever hears or uploads your music.
+- Audio in error reports or session replays. Diagnostics never include your music files.
 - Track titles, artists, album or playlist names inside error reports. The
   reports carry an allowlist of fields; anything not on it is redacted.
 - File paths. A path is reduced to its extension, so `.../Artist - Title.flac`
@@ -37,6 +37,14 @@ same and sends nothing.
 - Your account identity or IP address. Reports carry no user block.
 - Anything at all while a deck is playing or audible. Error reports are held
   in the local log, and replay recording stops, until the set is over.
+
+## What this consent does not cover
+
+Separating a track into stems, when you ask for it, can upload that track's
+audio file to the project's stems relay so a GPU worker can return FLAC stems.
+That send is not a diagnostic and is not gated by agreeing or declining this
+dialog. A checkout with no stems relay URL configured uses the local worker
+and keeps the file on your machine.
 
 ## Where it goes and how long it stays
 

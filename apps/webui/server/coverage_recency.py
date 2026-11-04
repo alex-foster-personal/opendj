@@ -11,6 +11,7 @@ Requirements (mini-PRD):
     [if] a track was loaded twice [then] it is listed once, at its newest load
     [if] no set was ever recorded [then] the history is empty, not an error
 """
+
 from __future__ import annotations
 
 import sqlite3

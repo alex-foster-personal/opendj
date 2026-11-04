@@ -1,4 +1,5 @@
 """Protocol + dataclasses shared by every open-dj vendor adapter."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

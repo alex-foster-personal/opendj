@@ -81,4 +81,8 @@ export interface StemDeckState {
 	error: string | null;
 	/** The named phase of a load in flight; null unless `status` is `loading`. */
 	load: StemLoadDetail | null;
+	/** AUDFID-02: which processor a deck with a ready bundle plays: the
+	 * original file until the first stem-control touch, then the stems.
+	 * Absent unless `status` is `ready`. Read by agents via the deck state. */
+	playback?: 'original' | 'stems';
 }

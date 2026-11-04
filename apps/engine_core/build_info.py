@@ -87,15 +87,6 @@ REQUIRED_IDENTITY_KEYS: tuple[str, ...] = (
     "lane_label",
 )
 
-# git log's ISO-8601 strict format. It carries the COMMITTER's offset, not
-# UTC ("2026-08-19T14:17:23+01:00"), so it is converted before it goes out
-# under a field called built_at_utc. Serving a local-offset timestamp there
-# would be exactly the kind of nearly-right readout this endpoint exists to
-# replace: it looks like an answer and quietly disagrees with the payload
-# path, which stamps real UTC.
-HEAD_TIME_FORMAT: str = "%cI"
-
-
 class BuildInfoUnavailable(RuntimeError):
     """The engine cannot state its identity. Always names why."""
 
@@ -364,5 +355,6 @@ __all__ = [
     "BuildInfoOut",
     "BuildInfoUnavailable",
     "add_build_info_route",
+    "head_time_as_utc",
     "resolve_build_info",
 ]

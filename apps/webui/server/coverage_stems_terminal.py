@@ -48,6 +48,7 @@ Requirements (mini-PRD):
     [if] a user clears an automatic mark [then] the check skips that track
     [if] a user marks it again [then] the skip is removed
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -81,9 +82,7 @@ FFPROBE_INVALID_DATA: str = "Invalid data found when processing input"
 # newer builds say FFPROBE_INVALID_DATA for the same file.
 FFPROBE_INVALID_ARGUMENT: str = "Invalid argument"
 #: ``Duration: HH:MM:SS.ss`` in ffmpeg's input report; ``N/A`` does not match.
-FFMPEG_DURATION_LINE: re.Pattern[str] = re.compile(
-    r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE
-)
+FFMPEG_DURATION_LINE: re.Pattern[str] = re.compile(r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE)
 AUTO_PREFIX: str = "auto"
 MANUAL_PREFIX: str = "manual"
 STEP: str = "stems"
@@ -99,9 +98,9 @@ class Probe:
     detail: str | None = None
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the rules
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def stem_file_reason(audio_path: Path, title: str | None) -> str | None:
     """Why this file is itself a stem, or None. Names only, no file access."""
     if audio_path.parent.name.lower() in STEM_DIRECTORY_NAMES:
@@ -120,10 +119,7 @@ def ffprobe_refusal() -> str | None:
     try:
         ffmpeg.resolve_ffmpeg()
     except ffmpeg.FfmpegUnavailable:
-        return (
-            "neither ffprobe nor ffmpeg is available, so unreadable and too-short "
-            "sources are not detected"
-        )
+        return "neither ffprobe nor ffmpeg is available, so unreadable and too-short sources are not detected"
     return None
 
 
@@ -139,9 +135,11 @@ def probe(audio_path: Path) -> Probe:
         return _ffmpeg_probe(audio_path)
     try:
         completed = subprocess.run(
-            [executable, "-v", "error", "-show_entries", "format=duration", "-of", "json",
-             str(audio_path)],
-            capture_output=True, text=True, timeout=FFPROBE_TIMEOUT_S, check=False,
+            [executable, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(audio_path)],
+            capture_output=True,
+            text=True,
+            timeout=FFPROBE_TIMEOUT_S,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return Probe("unknown", detail=f"ffprobe timed out after {FFPROBE_TIMEOUT_S:.0f} s")
@@ -150,8 +148,7 @@ def probe(audio_path: Path) -> Probe:
         # The file opened above, so the exact "<path>: Invalid argument" line is
         # the demuxer rejecting its content, not a path that cannot be reached.
         rejected_by_demuxer = (
-            FFPROBE_INVALID_DATA in completed.stderr
-            or tail[0] == f"{audio_path}: {FFPROBE_INVALID_ARGUMENT}"
+            FFPROBE_INVALID_DATA in completed.stderr or tail[0] == f"{audio_path}: {FFPROBE_INVALID_ARGUMENT}"
         )
         if rejected_by_demuxer:
             return Probe("no_duration", detail="ffprobe: invalid data")
@@ -177,7 +174,10 @@ def _ffmpeg_probe(audio_path: Path) -> Probe:
     try:
         report = subprocess.run(
             [executable, "-hide_banner", "-nostdin", "-i", str(audio_path)],
-            capture_output=True, text=True, errors="replace", check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
             timeout=FFPROBE_TIMEOUT_S,
         ).stderr
     except subprocess.TimeoutExpired:
@@ -202,9 +202,7 @@ def _ffmpeg_probe(audio_path: Path) -> Probe:
     return Probe("unknown", detail=f"ffmpeg reported no duration: {(lines or ['no message'])[-1]}")
 
 
-def classify(
-    audio_path: Path, title: str | None, *, probe_fn: Callable[[Path], Probe] = probe
-) -> str | None:
+def classify(audio_path: Path, title: str | None, *, probe_fn: Callable[[Path], Probe] = probe) -> str | None:
     """The reason this track can never have stems, or None (pending or unknown)."""
     reason = stem_file_reason(audio_path, title)
     if reason is not None:
@@ -212,22 +210,15 @@ def classify(
     result = probe_fn(audio_path)
     if result.kind == "no_duration":
         return f"the source is unreadable ({result.detail})"
-    too_short = (
-        result.kind == "duration"
-        and result.duration_s is not None
-        and result.duration_s < MIN_SEPARABLE_S
-    )
+    too_short = result.kind == "duration" and result.duration_s is not None and result.duration_s < MIN_SEPARABLE_S
     if too_short:
-        return (
-            f"the source is {result.duration_s:.1f} s, under the "
-            f"{MIN_SEPARABLE_S:.0f} s minimum worth separating"
-        )
+        return f"the source is {result.duration_s:.1f} s, under the {MIN_SEPARABLE_S:.0f} s minimum worth separating"
     return None
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # user overrides
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 #: One read-modify-write of the keep-pending file at a time, so concurrent
 #: mark and clear requests cannot drop each other's ids.
 _KEEP_PENDING_LOCK = threading.Lock()
@@ -250,15 +241,10 @@ class KeepPending:
     def _write(self, stable_ids: set[str]) -> None:
         """Atomic replace through a temp file unique to this writer."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(
-            dir=self.path.parent, prefix=self.path.name + ".", suffix=".tmp"
-        )
+        fd, temporary = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name + ".", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(
-                    json.dumps({"schema": KEEP_PENDING_SCHEMA, "stable_ids": sorted(stable_ids)})
-                    + "\n"
-                )
+                handle.write(json.dumps({"schema": KEEP_PENDING_SCHEMA, "stable_ids": sorted(stable_ids)}) + "\n")
             os.replace(temporary, self.path)
         except BaseException:
             with contextlib.suppress(FileNotFoundError):
@@ -280,9 +266,9 @@ def keep_pending_path(data_dir: Path) -> Path:
     return data_dir / "state" / KEEP_PENDING_FILENAME
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # marks
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def mark_no_source(
     outcomes: outcomes_mod.OutcomeStore,
     keep: KeepPending,
@@ -297,14 +283,15 @@ def mark_no_source(
         raise ValueError("a no_source mark needs a reason")
     keep.discard(stable_id)
     return outcomes.record_no_source(
-        STEP, stable_id, outcomes_mod.audio_token(audio_path),
-        f"{MANUAL_PREFIX}: {reason.strip()}", now=now,
+        STEP,
+        stable_id,
+        outcomes_mod.audio_token(audio_path),
+        f"{MANUAL_PREFIX}: {reason.strip()}",
+        now=now,
     )
 
 
-def clear_no_source(
-    outcomes: outcomes_mod.OutcomeStore, keep: KeepPending, stable_id: str
-) -> bool:
+def clear_no_source(outcomes: outcomes_mod.OutcomeStore, keep: KeepPending, stable_id: str) -> bool:
     """Remove a mark and keep the automatic check off the track. Returns
     whether a mark existed. A ``failed`` entry is not a mark and is left."""
     keep.add(stable_id)
@@ -322,9 +309,9 @@ def list_no_source(outcomes: outcomes_mod.OutcomeStore) -> list[outcomes_mod.Out
     ]
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the drain-driven check
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class CheckReport:
     checked: int
@@ -399,9 +386,7 @@ class StemsCheck:
             else:
                 self._retry.pop(key, None)
             if reason is not None:
-                self._outcomes.record_no_source(
-                    STEP, stable_id, key[1], f"{AUTO_PREFIX}: {reason}", now=self._clock()
-                )
+                self._outcomes.record_no_source(STEP, stable_id, key[1], f"{AUTO_PREFIX}: {reason}", now=self._clock())
                 marked.append(stable_id)
         self.marked_total += len(marked)
         return CheckReport(checked=checked, marked=tuple(marked))

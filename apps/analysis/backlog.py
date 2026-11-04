@@ -25,8 +25,12 @@ falls in exactly one bucket, tested in this order:
   1. ``analyzed``    - already has an ``analysis`` row. Nothing to do.
   2. ``unreachable`` - no materialized local bytes (broken link, iCloud
      placeholder). Cannot be analyzed; queueing it would retry forever.
-  3. ``pending_total`` - the work queue. ``analyzed + unreachable +
-     pending_total`` always equals ``unmapped``.
+  3. ``too_long``    - the library's own duration is over the analyzer's
+     ``max_track_minutes`` cap, so the drain would answer ``TrackTooLong``
+     for it every time and end every run in ``error`` (NATIVE-38). Counted
+     by name, never queued.
+  4. ``pending_total`` - the work queue. ``analyzed + unreachable +
+     too_long + pending_total`` always equals ``unmapped``.
 
 Streaming rows (``spotify:`` / ``tidal:`` / ``soundcloud:`` URIs) are outside
 the population entirely: there are no local bytes to decode, so they are not
@@ -52,6 +56,8 @@ Requirements (mini-PRD):
       digests the bytes instead, so the repair is still visible
     [if] the only analysis row is from another backend [then] the track is
       still pending, because the drain would analyze it
+    [if] a track's stored duration is over the analyzer cap [then] it counts
+      too_long and is never pending; an unknown duration stays pending
 """
 from __future__ import annotations
 
@@ -65,7 +71,9 @@ from pathlib import Path
 from apps.shared import fs_residency, platform_paths
 from apps.shared.state import analysis_stale
 from apps.shared.state import locations as track_locations
+from apps.shared.state import sync_stamp as _sync_stamp
 
+from . import config as analysis_config
 from .backends import DEFAULT_BACKEND
 
 #: The backend the drain actually runs. ``_run_analysis_chunk`` shells out to
@@ -96,7 +104,7 @@ STREAMING_REASON: str = "streaming"
 ANLZ_VENDOR: str = "rekordbox"
 
 _UNMAPPED_SQL = """
-SELECT t.stable_id, t.file_path, t.title
+SELECT t.stable_id, t.file_path, t.title, t.duration_ms
 FROM tracks AS t
 LEFT JOIN track_vendor_ids AS v
        ON v.stable_id = t.stable_id
@@ -141,6 +149,7 @@ class Backlog:
     analyzed: int
     unreachable: int
     signature: str
+    too_long: int = 0
 
 
 def analyzed_ids(conn: sqlite3.Connection, *, backend: str = DRAIN_BACKEND) -> set[str]:
@@ -187,14 +196,20 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
     if limit is not None and limit < 0:
         raise ValueError(f"limit must be >= 0, got {limit}")
     done = analyzed_ids(conn)
+    cap_ms = analyzer_cap_ms()
     path_map = platform_paths.load_path_map()
+    # NATIVE-8340: one machine-id resolution per scan, not one per track (a
+    # PRAGMA, a realpath and an id-file read each; 2954 times per GET
+    # /analysis-queue on the maintainer's library took the scan from 0.05 s to 0.30 s).
+    machine_id = _sync_stamp.local_machine_id(conn)
     pending: list[BacklogItem] = []
     unmapped = 0
     analyzed = 0
     unreachable = 0
+    too_long = 0
     rows = conn.execute(_UNMAPPED_SQL, {"anlz_vendor": ANLZ_VENDOR}).fetchall()
-    locations = _local_location_paths(conn, [sid for sid, _, _ in rows])
-    for stable_id, file_path, title in rows:
+    locations = _local_location_paths(conn, [sid for sid, _, _, _ in rows])
+    for stable_id, file_path, title, duration_ms in rows:
         if not _has_local_non_streaming_candidate(
             file_path, locations.get(stable_id, ()), path_map=path_map
         ):
@@ -203,8 +218,11 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
         if stable_id in done:
             analyzed += 1
             continue
+        if cap_ms is not None and duration_ms is not None and duration_ms > cap_ms:
+            too_long += 1
+            continue
         item = _pending_item(
-            conn, stable_id, title, path_map=path_map,
+            conn, stable_id, title, path_map=path_map, machine_id=machine_id,
         )
         if item is None:
             unreachable += 1
@@ -217,7 +235,14 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
         analyzed=analyzed,
         unreachable=unreachable,
         signature=_signature(pending),
+        too_long=too_long,
     )
+
+
+def analyzer_cap_ms() -> int | None:
+    """The drain backend's ``max_track_minutes`` in ms, or None when uncapped (0)."""
+    minutes = float(analysis_config.load_config()["analyzer"]["max_track_minutes"])
+    return int(minutes * 60_000) if minutes > 0 else None
 
 
 def _local_location_paths(
@@ -258,6 +283,7 @@ def _pending_item(
     title: str | None,
     *,
     path_map: platform_paths.PathMap | None,
+    machine_id: str,
 ) -> BacklogItem | None:
     """Build a pending item from the playback-ordered materialized candidates."""
     picks = track_locations.ordered_playable_candidates(
@@ -265,6 +291,7 @@ def _pending_item(
         stable_id,
         path_map=path_map,
         for_analysis=True,
+        machine_id=machine_id,
     )
     if not picks:
         return None

@@ -347,6 +347,83 @@ test('maybeAutoEnableMidi re-runs the request when the choice was persisted', as
 	_uninstallLocalStorage();
 });
 
+test('isExpectedMidiAccessFailure keeps grant refusal out of Sentry, other faults in', () => {
+	assert.equal(
+		uiState.isExpectedMidiAccessFailure(
+			new Error('WebMIDI permission denied: NotAllowedError: Permission to use Web MIDI API was not granted.')
+		),
+		true
+	);
+	assert.equal(
+		uiState.isExpectedMidiAccessFailure(
+			new Error('WebMIDI is not supported in this browser (Safari has no WebMIDI - use Chrome/Edge)')
+		),
+		true
+	);
+	const denied = new Error('Permission to use Web MIDI API was not granted.');
+	denied.name = 'NotAllowedError';
+	assert.equal(uiState.isExpectedMidiAccessFailure(denied), true);
+	assert.equal(
+		uiState.isExpectedMidiAccessFailure(new Error('registerActionHandler: a handler is already registered')),
+		false
+	);
+});
+
+test('unsupported WebMIDI fills lastError without console.error', async () => {
+	const logged = [];
+	const origError = console.error;
+	console.error = (...args) => {
+		logged.push(args.map(String).join(' '));
+	};
+	try {
+		uiState.midiUi.lastError = null;
+		await uiState.requestMidiAccess();
+		assert.match(uiState.midiUi.lastError, /not supported/i);
+		assert.equal(
+			logged.some((line) => line.includes('[midi-panel] permission request failed')),
+			false,
+			logged.join('\n')
+		);
+	} finally {
+		console.error = origError;
+	}
+});
+
+test('WebMIDI NotAllowedError fills lastError without console.error', async () => {
+	const previous = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	const logged = [];
+	const origError = console.error;
+	console.error = (...args) => {
+		logged.push(args.map(String).join(' '));
+	};
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		writable: true,
+		value: {
+			requestMIDIAccess: async () => {
+				const err = new Error('Permission to use Web MIDI API was not granted.');
+				err.name = 'NotAllowedError';
+				throw err;
+			}
+		}
+	});
+	try {
+		uiState.midiUi.lastError = null;
+		await uiState.requestMidiAccess();
+		assert.match(uiState.midiUi.lastError, /permission denied/i);
+		assert.equal(webmidi.midiState.permission, 'denied');
+		assert.equal(
+			logged.some((line) => line.includes('[midi-panel] permission request failed')),
+			false,
+			logged.join('\n')
+		);
+	} finally {
+		console.error = origError;
+		if (previous) Object.defineProperty(globalThis, 'navigator', previous);
+		else delete globalThis.navigator;
+	}
+});
+
 // requirement: CHROME-08
 test('MidiPanel supports expanded 70vw and floating width modes', async () => {
 	const { readFileSync } = await import('node:fs');

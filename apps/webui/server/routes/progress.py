@@ -1,6 +1,6 @@
 """Progress-tree routes -- canonical feature ledger for parallel agent work.
 
-Serves and mutates ``data/progress-tree.yaml`` (Claude workflows + Codex
+Serves and mutates ``(private path)`` (Claude workflows + Codex
 agents share it). Git SHA provenance is the point: status changes must carry
 commit SHAs that resolve in this repo, verified via ``git cat-file -e``.
 
@@ -11,7 +11,7 @@ Status lifecycle (ordered): missing -> spiked -> building -> partial ->
 built -> verified -> merged -> user-finalized. 'working' is a DEPRECATED
 alias for 'built', coerced server-side with a logged deprecation note (grace
 period for in-flight agent fleets; sunset tracked in
-.planning/FANOUT-CONVENTIONS.md). 'user-finalized' additionally requires a
+(private path)). 'user-finalized' additionally requires a
 verified {by, method} block in the same PATCH -- it is the maintainer's personal QA
 blessing, the top of the lifecycle.
 
@@ -47,6 +47,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -60,7 +61,7 @@ else:
 
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.shared.source_tree import dev_only_refusal, is_repo_checkout
 
@@ -97,6 +98,38 @@ _WRITE_LOCK = threading.Lock()
 # ledger-wide write lock. Larger historical imports must be sent in batches.
 MAX_COMMITS_APPEND: int = 100
 
+# Ceiling for _progress_file_lock's wait-until-acquired retry loop, on BOTH
+# platforms. A crashed holder (os._exit while holding the lock) reclaims
+# fast -- measured min=0.702s max=0.714s mean=0.707s over 5 runs via
+# .tmp/progress_lock/measure_reclaim.py (scratch, gitignored; see commit
+# body for the full numbers) -- but a holder that is alive and wedged
+# (process up, thread/IO hung, lock never released) is unbounded by
+# construction under the old uncapped loop even though the common case is
+# fast. 60s comfortably covers a legitimate PATCH transaction (read +
+# validate + atomic write, normally well under 1s) while still failing
+# loud, matching this repo's fail-fast rule, instead of hanging the caller
+# indefinitely against a wedged holder.
+PROGRESS_LOCK_TIMEOUT_S: float = 60.0
+# msvcrt.LK_NBLCK / fcntl LOCK_NB both refuse immediately rather than
+# blocking, so the retry cadence is explicit here instead of borrowed from
+# LK_LOCK's internal ten-attempts-at-1s-each polling (the previous
+# mechanism, and the reason the old loop's true granularity was ~1s even
+# though it looked instantaneous in the source).
+_PROGRESS_LOCK_BACKOFF_INITIAL_S: float = 0.01
+_PROGRESS_LOCK_BACKOFF_CAP_S: float = 0.25
+# Refusal errnos for a non-blocking lock attempt that is merely contended
+# (as opposed to a real error, which must still propagate). Windows keeps
+# the same pair the prior blocking loop already treated as contention;
+# POSIX flock's LOCK_NB refusal is EWOULDBLOCK, which is EAGAIN on every
+# platform this repo targets, with EACCES kept for parity with the Windows
+# arm and other fcntl implementations that raise it instead.
+_PROGRESS_LOCK_CONTENDED_ERRNOS_NT: frozenset[int] = frozenset(
+    {errno.EACCES, errno.EDEADLK},
+)
+_PROGRESS_LOCK_CONTENDED_ERRNOS_POSIX: frozenset[int] = frozenset(
+    {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK},
+)
+
 BuildState = Literal["active", "idle", "blocked", "hanging"]
 
 # WHERE a node can be iteratively built: cloud (Claude Code cloud / any remote
@@ -104,7 +137,7 @@ BuildState = Literal["active", "idle", "blocked", "hanging"]
 # resources; hybrid = cloud-able against fixtures with a final local verify;
 # local = iteration itself needs hardware / the real library / a remote host.
 # Full rationale + per-node reasons in
-# .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+# (private path).
 BUILDABLE_TIERS: tuple[str, ...] = ("cloud", "hybrid", "local")
 TierLiteral = Literal["cloud", "hybrid", "local"]
 
@@ -124,7 +157,7 @@ NODE_SCHEMA: dict[str, str] = {
     "links": "optional {issues?: [str], specs?: [str], refs?: [str]}",
     "buildable": "optional {tier, reason}; tier one of cloud|hybrid|local -- "
     "where the node's iterative build loop can run (see "
-    ".planning/rekordbox-parity/CLOUD-BUILDABILITY.md)",
+    "(private path))",
 }
 PATCH_RULES: list[str] = [
     "PATCH requires If-Match with the current ETag returned by GET /progress",
@@ -193,6 +226,16 @@ class BuildPatchIn(BaseModel):
     stage: str | None = None
     state: BuildState | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_client_updated(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "updated" in data:
+            raise ValueError(
+                "'updated' is server-stamped on any build PATCH and must not "
+                "be supplied by the client",
+            )
+        return data
+
 
 class LinksPatchIn(BaseModel):
     """Partial 'links' object; each supplied key REPLACES that key's list."""
@@ -207,7 +250,7 @@ class BuildableIn(BaseModel):
 
     tier says WHERE the node's iterative build loop can run (cloud/hybrid/
     local); reason is a one-line justification grounded in what the node
-    touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+    touches. See (private path).
     """
     model_config = ConfigDict(extra="forbid")
     tier: TierLiteral
@@ -348,12 +391,64 @@ def _dump_tree_atomic(
     return _etag_for_payload(payload)
 
 
+def _try_lock_nonblocking(lock_handle: Any) -> None:
+    """One non-blocking attempt. Raises OSError (any errno) if refused."""
+    if os.name == "nt":
+        lock_handle.seek(0)
+        msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _acquire_progress_lock_bounded(lock_handle: Any, lock_path: Path) -> None:
+    """Wait-until-acquired, bounded by PROGRESS_LOCK_TIMEOUT_S.
+
+    One contract on both platforms: poll a non-blocking attempt, back off
+    from _PROGRESS_LOCK_BACKOFF_INITIAL_S to _PROGRESS_LOCK_BACKOFF_CAP_S
+    between attempts, and fail loud with TimeoutError once the deadline
+    passes rather than retry forever. A live-but-wedged holder (process up,
+    lock never released) is exactly the case this bounds -- it could not be
+    bounded before because both prior arms retried unconditionally: POSIX
+    via a blocking flock, Windows via an uncapped `while True` around the
+    already-blocking LK_LOCK.
+    """
+    contended_errnos = (
+        _PROGRESS_LOCK_CONTENDED_ERRNOS_NT if os.name == "nt"
+        else _PROGRESS_LOCK_CONTENDED_ERRNOS_POSIX
+    )
+    started = time.monotonic()
+    deadline = started + PROGRESS_LOCK_TIMEOUT_S
+    backoff = _PROGRESS_LOCK_BACKOFF_INITIAL_S
+    last_errno: int | None = None
+    while True:
+        try:
+            _try_lock_nonblocking(lock_handle)
+        except OSError as exc:
+            if exc.errno not in contended_errnos:
+                raise
+            last_errno = exc.errno
+            now = time.monotonic()
+            if now >= deadline:
+                elapsed = now - started
+                raise TimeoutError(
+                    f"could not acquire progress ledger lock {lock_path} "
+                    f"after {PROGRESS_LOCK_TIMEOUT_S:.0f}s (elapsed "
+                    f"{elapsed:.1f}s), last refusal errno {last_errno}"
+                ) from exc
+            time.sleep(min(backoff, max(deadline - now, 0.0)))
+            backoff = min(backoff * 2, _PROGRESS_LOCK_BACKOFF_CAP_S)
+        else:
+            return
+
+
 @contextmanager
 def _progress_file_lock(progress_file: Path) -> Iterator[None]:
     """Lock local threads, then processes, for one ledger transaction.
 
     The adjacent sidecar is persistent by design. OS descriptor cleanup
-    releases the advisory lock even when a process exits abnormally.
+    releases the advisory lock even when a process exits abnormally. Both
+    platform arms wait-until-acquired up to PROGRESS_LOCK_TIMEOUT_S, then
+    raise TimeoutError -- see _acquire_progress_lock_bounded.
     """
     with _WRITE_LOCK:
         lock_path = progress_file.with_name(f"{progress_file.name}.lock")
@@ -364,24 +459,7 @@ def _progress_file_lock(progress_file: Path) -> Iterator[None]:
                     lock_handle.write(b"\0")
                     lock_handle.flush()
                     os.fsync(lock_handle.fileno())
-                while True:
-                    lock_handle.seek(0)
-                    try:
-                        msvcrt.locking(
-                            lock_handle.fileno(),
-                            msvcrt.LK_LOCK,
-                            1,
-                        )
-                    except OSError as exc:
-                        # LK_LOCK raises after ten one-second attempts. Retry
-                        # only lock-contention failures so Windows matches the
-                        # POSIX wait-until-acquired transaction contract.
-                        if exc.errno not in {errno.EACCES, errno.EDEADLK}:
-                            raise
-                    else:
-                        break
-            else:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            _acquire_progress_lock_bounded(lock_handle, lock_path)
             try:
                 yield
             finally:
@@ -413,14 +491,17 @@ def _file_git_provenance(progress_file: Path) -> dict[str, str | None]:
         return {"last_sha": None, "last_author": None, "last_date": None}
     proc = _git("log", "-1", "--format=%H%x1f%an%x1f%aI", "--", rel)
     if proc.returncode != 0:
-        raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "git_error",
-            f"git log failed: {proc.stderr.strip()}",
-        )
+        # Uncommitted path, shallow history, or git unavailable: absent
+        # provenance, not a hard GET failure (INSTALL-30 checkout tests still
+        # PATCH through a disposable ledger copy).
+        return {"last_sha": None, "last_author": None, "last_date": None}
     out = proc.stdout.strip()
     if not out:
         return {"last_sha": None, "last_author": None, "last_date": None}
-    sha, author, date = out.split("\x1f")
+    try:
+        sha, author, date = out.split("\x1f", maxsplit=2)
+    except ValueError:
+        return {"last_sha": None, "last_author": None, "last_date": None}
     return {"last_sha": sha, "last_author": author, "last_date": date}
 
 
@@ -549,7 +630,7 @@ def _patch_progress_file(
             _append_note(
                 node,
                 "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
-                "(alias sunset tracked in .planning/FANOUT-CONVENTIONS.md)",
+                "(alias sunset tracked in (private path))",
             )
             logger.warning(
                 "progress PATCH %s: deprecated status alias 'working' "

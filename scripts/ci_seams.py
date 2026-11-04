@@ -85,6 +85,7 @@ _NEVER_NARROWED = (Kind.INFRA, Kind.UNCLASSIFIED)
 _PREFIXES: tuple[tuple[str, Kind], ...] = (
     ("apps/webui/frontend/", Kind.WEBUI),
     ("apps/audio-engine/", Kind.ENGINE),
+    ("apps/live-core/", Kind.ENGINE),
     ("apps/desktop/", Kind.DESKTOP),
     ("apps/launcher/", Kind.DESKTOP),
     (".github/", Kind.INFRA),

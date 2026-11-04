@@ -1,4 +1,4 @@
-"""Periodic dependency audit for row 8 of docs/ops/periodic-checks.md (#1507).
+"""Periodic dependency audit for row 8 of (private path) (#1507).
 
 Runs pip-audit, cargo audit, and pnpm audit across the closures named in the
 policy table. A tool that cannot run reports UNKNOWN and exits 3; a clean
@@ -63,7 +63,7 @@ def _unknown(name: str, detail: str) -> ScanResult:
 
 
 def _export_pyproject_closure(path: Path) -> Path | None:
-    code, stdout, stderr = _run(
+    code, _, _ = _run(
         [
             "uv",
             "export",
@@ -83,8 +83,6 @@ def _export_pyproject_closure(path: Path) -> Path | None:
         return None
     if not path.is_file() or path.stat().st_size == 0:
         return None
-    if stdout or stderr:
-        pass
     return path
 
 

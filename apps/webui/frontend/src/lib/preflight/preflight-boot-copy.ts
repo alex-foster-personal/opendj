@@ -33,6 +33,9 @@ export function bootCheckDetail(check: PreflightCheck, mode: 'boot' | 'admin'): 
 		}
 	}
 	if (check.id === LIBRARY_ATTACHED_CHECK_ID) {
+		if (check.detail.includes('waiting for CloudSync')) {
+			return 'Waiting for your library to sync from your hub';
+		}
 		if (check.detail.includes('no state.db')) return 'No music imported yet';
 		if (check.detail.includes('0 tracks')) return 'Your library has no tracks yet';
 		if (check.detail.includes('dismissed')) return 'Setup was skipped with an empty library';

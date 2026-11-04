@@ -85,14 +85,27 @@ describe('collapseCss', () => {
 describe('library components follow the rule', () => {
 	it('the Playlists folder collapses through the shared transition', () => {
 		// The tree is a container plus a presentational view; the markup lives in the view.
+		const view = readFileSync(
+			join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTreeView.svelte'),
+			'utf8'
+		);
 		const tree =
-			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'), 'utf8') +
-			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTreeView.svelte'), 'utf8');
+			readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/PlaylistTree.svelte'), 'utf8') + view;
 		assert.match(tree, /<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/);
 		// [if] the block used transition:collapse [then] Svelte would keep the open-time
 		// snap decision for the close [else stop] (sol review P1, PR #7600)
-		assert.doesNotMatch(tree, /transition:collapse/);
-		assert.match(tree, /from '\$lib\/motion\/collapse'/);
+		assert.doesNotMatch(view, /transition:collapse/);
+		assert.match(view, /from '\$lib\/motion\/collapse'/);
+	});
+
+	it('RecentlyDeletedFolderView collapses through the shared transition', () => {
+		const view = readFileSync(
+			join(FRONTEND, 'src/lib/components/rb/browser/RecentlyDeletedFolderView.svelte'),
+			'utf8'
+		);
+		assert.match(view, /<div class="collapse" in:collapse out:collapse>\s*<div class="collapse-inner">/);
+		assert.doesNotMatch(view, /transition:collapse/);
+		assert.match(view, /from '\$lib\/motion\/collapse'/);
 	});
 
 	it('no library browser component uses svelte slide, which animates height', () => {

@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { readBuildStamp, shellBuildIdentity } from '../src/policy';
-import { scratchDir } from './helpers';
+import { resolveProgram, scratchDir } from './helpers';
 
 const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'stamp-build.mjs');
 const VERIFY = path.join(__dirname, '..', '..', 'scripts', 'verify-pack.mjs');
@@ -70,7 +70,7 @@ test('stamp-build accepts an explicitly empty lane and channel as none', () => {
 });
 
 // ----- payload manifest as the identity source (EL-17-F12, EL-17-F4) -----------------
-const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: __dirname, encoding: 'utf8' }).trim();
+const HEAD = execFileSync(resolveProgram('git'), ['rev-parse', 'HEAD'], { cwd: __dirname, encoding: 'utf8' }).trim();
 
 /** A payload manifest shaped like build_engine_payload.py + stable_evidence stamp-payload write it. */
 function manifest(identity: Record<string, unknown>): string {

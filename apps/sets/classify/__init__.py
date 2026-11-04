@@ -159,7 +159,7 @@ def _resolve_output_path(
 ) -> Path:
     if output_path is not None:
         return Path(output_path)
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     return sets_paths.session_dir(session_id, root=root) / "transitions.jsonl"
 
 

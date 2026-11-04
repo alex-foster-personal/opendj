@@ -28,7 +28,8 @@ from typing import Any
 #: 0.7.1 = low_hole's switch ignores beats with no bass on either deck and falls back to the plan's bass hit.
 #: Versioning rule: ADR-NEW-transition-quality-measure.
 #: 0.8.0 = round 22: true peak is reported only (hygiene, the maintainer never heard an over), no veto and no weight.
-SCORER_VERSION = "0.8.0"
+#: 0.9.0 = round 23: bass_overlap is unknown when either solo's 20-150 Hz bar-median is below BASS_REF_PRESENT_DB.
+SCORER_VERSION = "0.9.0"
 #: The core factors ``measured`` counts (k of n); a composite needs at least
 #: :data:`MIN_CORE_MEASURED` of them (spec 10 section 3).
 CORE_FACTORS: tuple[str, ...] = (

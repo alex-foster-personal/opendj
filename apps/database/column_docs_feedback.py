@@ -3,6 +3,7 @@
 Own module for the same reason ``column_docs_lyrics`` is one: the combined
 column-doc table would otherwise cross the 600-line file-size gate.
 """
+
 from __future__ import annotations
 
 FEEDBACK_COLUMN_DOCS: dict[str, dict[str, str]] = {

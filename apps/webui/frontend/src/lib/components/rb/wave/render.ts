@@ -16,7 +16,13 @@ import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
-import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
+import {
+	beatLineStrideForWindow,
+	LOOP_MIN_BAND_PX,
+	loopBandPx,
+	visibleBeatLines,
+	type LoopBandSource
+} from './wave-math';
 import { blockSnapApiFor, type BlockSnapApi } from './block-layout-lazy.svelte';
 import {
 	drawLoopCueBands,
@@ -614,6 +620,10 @@ function _drawCachedBands(
 	// The snapper loads on first use (block-layout-lazy.svelte.ts); until then
 	// the row paints the fixed pitch and the key below rebuilds it once it lands.
 	const snapApi = blockSnapApiFor(design === 'blocks' && blocks.snap);
+	const snapStride =
+		snapApi !== null && blocks.beats !== null
+			? beatLineStrideForWindow(blocks.beats, tLeft, pxPerS, w)
+			: undefined;
 	// Node painter tests intentionally provide only Path2D. Browser production
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
@@ -621,14 +631,22 @@ function _drawCachedBands(
 		if (sectionsApi !== null && sections !== null) {
 			sectionsApi.drawSectionBands(ctx, sections, tLeft, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
 		}
-		const cols = design === 'blocks' ? _blockColumns(waveform, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks)) : null;
+		const cols =
+			design === 'blocks'
+				? _blockColumns(waveform, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks, snapStride))
+				: null;
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks, MARKER_BAND_PX, { x0: 0, x1: w, blockColumns: cols });
 		return;
 	}
 	const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
 	// Snapped edges follow the beat grid itself, not only its period, so a grid
-	// edit (a new beats array) rebuilds the image.
-	const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted);
+	// edit (a new beats array) rebuilds the image; live stride is keyed separately.
+	const snapKey =
+		snapApi === null
+			? 'u'
+			: snapStride === undefined
+				? snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)
+				: `${snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)}:st${snapStride}`;
 	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
 	let image = _bandImages.get(waveform);
 	if (
@@ -672,7 +690,7 @@ function _drawCachedBands(
 	for (let i = first; i <= last; i++) {
 		let canvas = image.tiles.get(i);
 		if (canvas === undefined) {
-			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks, snapApi);
+			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks, snapApi, snapStride);
 			image.tiles.set(i, canvas);
 		}
 		const x0 = i * tile;
@@ -728,7 +746,8 @@ function _buildBandTile(
 	palette: WavePalette,
 	design: WaveformDesign,
 	blocks: BlocksSpec,
-	snapApi: BlockSnapApi | null
+	snapApi: BlockSnapApi | null,
+	snapStride?: number
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -744,7 +763,14 @@ function _buildBandTile(
 		sectionsApi.drawSectionBands(ctx, sections, x0 / image.pxPerS, image.pxPerS, tileW, h, palette.sections, MARKER_BAND_PX);
 	}
 	if (design === 'blocks' && image.blocks === null) {
-		image.blocks = _blockColumns(waveform, image.pxPerS, image.fullW, design, blocks, _edgesFor(snapApi, waveform, image.pxPerS, durS, image.fullW, blocks));
+		image.blocks = _blockColumns(
+			waveform,
+			image.pxPerS,
+			image.fullW,
+			design,
+			blocks,
+			_edgesFor(snapApi, waveform, image.pxPerS, durS, image.fullW, blocks, snapStride)
+		);
 	}
 	_drawBands(ctx, waveform, image.pxPerS, durS, image.fullW, h, palette, design, blocks, MARKER_BAND_PX, {
 		x0,
@@ -992,13 +1018,14 @@ function _edgesFor(
 	pxPerS: number,
 	durS: number,
 	w: number,
-	blocks: BlocksSpec
+	blocks: BlocksSpec,
+	snapStride?: number
 ): Int32Array | undefined {
 	if (api === null) return undefined;
 	// Detect on the level the painter shows: its own divisors and clamp.
 	const d = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
 	const norm = { divisor: Math.max(d.low, d.mid, d.high), clampAtOne: blocks.curve === 'legacy-p99' };
-	return api.rowBlockEdges(waveform, durS, norm, w, blocks.beats, pxPerS, blocks.barPhaseUntrusted);
+	return api.rowBlockEdges(waveform, durS, norm, w, blocks.beats, pxPerS, blocks.barPhaseUntrusted, snapStride);
 }
 
 /** The fixed-pitch layout: edge b at b x pitch, so the last block may run

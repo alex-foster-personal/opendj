@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
@@ -26,9 +26,9 @@ from starlette.types import Scope
 
 from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.http import router as play_analytics_router
+from apps.set_notes.http import create_router as create_set_notes_router
 from apps.sets.api import router as sets_router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
-from apps.set_notes.http import create_router as create_set_notes_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.shutdown_bound import StopStep, run_stop_steps, stop_window_deadline
 from apps.shared.state.db import StateStoreBusyError
@@ -78,6 +78,7 @@ from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
+from .routes import artwork_suggestions as artwork_suggestions_routes
 from .routes import audio_output_health as audio_output_health_routes
 from .routes import audio_quality as audio_quality_routes
 from .routes import auth as auth_routes
@@ -88,6 +89,7 @@ from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
+from .routes import cloud_offload as cloud_offload_routes
 from .routes import cloudsync as cloudsync_routes
 from .routes import cloudsync_config as cloudsync_config_routes
 from .routes import cloudsync_fleet as cloudsync_fleet_routes
@@ -120,6 +122,7 @@ from .routes import tempo_stability as tempo_stability_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_cli_procs
+from .routes import ingest_enrichment as ingest_enrichment_routes
 from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
@@ -137,6 +140,7 @@ from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_remote_speaker as performance_remote_speaker_routes
 from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
+from .routes import playlist_components as playlist_components_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import library_org as library_org_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -313,6 +317,15 @@ def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
     app.state.ahead_analysis.start()
 
 
+def _start_ingest_enrichment_if_armed(app: FastAPI) -> None:
+    # ENRICH-06: the post-import coordinator runs where the analysis drain is armed.
+    if not getattr(app.state, "ahead_analysis_armed", False):
+        return
+    from . import ingest_enrichment
+
+    ingest_enrichment.coordinator_for(app).start()
+
+
 @asynccontextmanager
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     from .app import build_auto_analyze_watcher, build_lyric_index_watcher
@@ -355,9 +368,15 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         stem_cache_enforcer = _retained_stem_cache_enforcer_if_armed(app)
         if stem_cache_enforcer is not None:
             stem_cache_enforcer.start()
+            # OFFLOAD: the same daemon-only arming resumes interrupted offloads
+            # and runs the re-offload sweep (spec e8da14b8 section 7).
+            from .cloud_offload_service import service_for as _offload_service
+
+            _offload_service(app).arm()
         _retained_library_jobs_watcher(app).start()
         _start_coverage_drain_if_armed(app)
         _start_ahead_analysis_if_armed(app)
+        _start_ingest_enrichment_if_armed(app)
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(
@@ -387,6 +406,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         for name, attr in (
             ("coverage-drain", "coverage_drain"),
             ("ahead-analysis", "ahead_analysis"),
+            ("ingest-enrichment", "ingest_enrichment"),
             ("library-jobs-watcher", "library_jobs_watcher"),
         ):
             service = getattr(app.state, attr, None)
@@ -394,6 +414,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
                 steps.append((name, service.stop))
         if stem_cache_enforcer is not None:
             steps.append(("stem-cache-enforcer", stem_cache_enforcer.stop))
+        offload_service = getattr(app.state, "cloud_offload_service", None)
+        if offload_service is not None:
+            steps.append(("cloud-offload", offload_service.stop))
         quality_runner = getattr(app.state, "audio_quality_runner", None)
         if quality_runner is not None:
             steps.append(("audio-quality-scan", quality_runner.shutdown))
@@ -646,6 +669,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         playlist_tree_routes.router,
         library_org_routes.router,
         playlist_sets_routes.router,
+        playlist_components_routes.router,
         create_set_notes_router(get_write_state),
         playlist_history_routes.router,
         play_it_routes.router,
@@ -696,6 +720,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         cmdk_ai_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
+        ingest_enrichment_routes.router,
+        artwork_suggestions_routes.router,
         enrich_routes.router,
         coverage_terminal_routes.router,
         analysis_source_routes.router,
@@ -727,6 +753,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         cloudsync_status_routes.router,
         cloudsync_config_routes.router,
         cloudsync_fleet_routes.router,
+        cloud_offload_routes.router,
         spotify_routes.router,
         usb_export_routes.router,
         usb_eject_routes.router,

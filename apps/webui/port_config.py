@@ -170,6 +170,24 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
     }
 )
 
+#: Fixed ports the product itself listens on, outside any suite. 8888 is the
+#: Spotify sign-in redirect the user's developer app registers
+#: (apps/spotify/client.py DEFAULT_REDIRECT_URI): a worktree whose .env or
+#: request names it would own the port, and every real Connect would then
+#: fail with SPOTIFY_REDIRECT_PORT_BUSY. The lane windows
+#: never reach it, so this guards configured and requested pairs.
+PRODUCT_FIXED_PORTS: frozenset[int] = frozenset({8888})
+
+
+def _excluded_ports() -> frozenset[int]:
+    """Every port no worktree may claim, by allocation, request or configuration.
+
+    Read at call time rather than frozen at import, so both sets stay the one
+    source each check consults.
+    """
+    return RESERVED_FIXED_PORTS | PRODUCT_FIXED_PORTS
+
+
 # World-readable so a process running as a different unix user can read it
 # (issue #1613): a git-common-dir registry lives under a checkout's own home
 # directory, which a different uid's self-hosted CI runner typically cannot
@@ -232,6 +250,17 @@ def _parse_port(name: str, raw_value: str | int | None) -> int:
     return _validate_port(name, int(value_text))
 
 
+def default_dotenv_path(dotenv_path: Path | None = None) -> Path:
+    """``dotenv_path`` when given, else the module's ``WEBUI_ENV_FILE`` read NOW.
+
+    Resolvers take ``dotenv_path: Path | None = None`` and call this rather than
+    defaulting to ``WEBUI_ENV_FILE`` in their signature: a default binds at
+    definition time, so a test that monkeypatches ``WEBUI_ENV_FILE`` to isolate
+    itself from the worktree's ``.env`` silently kept reading the real one.
+    """
+    return WEBUI_ENV_FILE if dotenv_path is None else dotenv_path
+
+
 def _resolved_raw_value(
     name: str,
     environ: Mapping[str, str],
@@ -249,8 +278,7 @@ def resolve_ports(
 ) -> WebuiPorts:
     """Resolve both ports with process environment above root ``.env``."""
     effective_environ = os.environ if environ is None else environ
-    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
-    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
+    dotenv_values = _read_dotenv(default_dotenv_path(dotenv_path))
     return WebuiPorts(
         backend=_parse_port(
             BACKEND_ENV,
@@ -273,8 +301,7 @@ def resolve_backend_port(
     if explicit_port is not None:
         return _parse_port("--port", explicit_port)
     effective_environ = os.environ if environ is None else environ
-    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
-    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
+    dotenv_values = _read_dotenv(default_dotenv_path(dotenv_path))
     return _parse_port(
         BACKEND_ENV,
         _resolved_raw_value(BACKEND_ENV, effective_environ, dotenv_values),
@@ -288,8 +315,7 @@ def resolve_frontend_port(
 ) -> int:
     """Resolve the frontend port from process environment or root ``.env``."""
     effective_environ = os.environ if environ is None else environ
-    # Read the module value at call time (None default), so a patched WEBUI_ENV_FILE is honored.
-    dotenv_values = _read_dotenv(WEBUI_ENV_FILE if dotenv_path is None else dotenv_path)
+    dotenv_values = _read_dotenv(default_dotenv_path(dotenv_path))
     return _parse_port(
         FRONTEND_ENV,
         _resolved_raw_value(FRONTEND_ENV, effective_environ, dotenv_values),
@@ -683,7 +709,7 @@ def _reserved_port_from_process_environment(environ: Mapping[str, str]) -> int |
         if raw_value is None or str(raw_value).strip() == "":
             continue
         port = _parse_port(name, raw_value)
-        if port in RESERVED_FIXED_PORTS:
+        if port in _excluded_ports():
             return port
     return None
 
@@ -728,7 +754,7 @@ def _allocate_pair(reservations: Mapping[str, WebuiPorts], lane: int) -> WebuiPo
     # of which lane is asking (issue #1613).
     reserved_ports = {
         port for ports in reservations.values() for port in (ports.backend, ports.frontend)
-    } | RESERVED_FIXED_PORTS
+    } | _excluded_ports()
     backend_pool_start, frontend_pool_start = _lane_pool_starts(lane)
     for slot in range(POOL_SIZE):
         candidate = WebuiPorts(
@@ -758,23 +784,25 @@ def claim_ports(
     dotenv_path = resolved_root / ".env"
     if requested is not None:
         for reserved_candidate in (requested.backend, requested.frontend):
-            if reserved_candidate in RESERVED_FIXED_PORTS:
+            if reserved_candidate in _excluded_ports():
                 raise PortConfigError(
                     f"port {reserved_candidate} is reserved for a fixed-port CI/desktop "
-                    "suite (see RESERVED_FIXED_PORTS in apps/webui/port_config.py); "
+                    "suite or product listener (see RESERVED_FIXED_PORTS and "
+                    "PRODUCT_FIXED_PORTS in apps/webui/port_config.py); "
                     "choose a different pair"
                 )
     inherited_reserved = _reserved_port_from_process_environment(effective_environ)
     if inherited_reserved is not None:
         raise PortConfigError(
-            f"port {inherited_reserved} is reserved for a fixed-port CI/desktop suite and "
+            f"port {inherited_reserved} is reserved for a fixed-port CI/desktop suite or "
+            "product listener and "
             f"was inherited from the process environment; unset {BACKEND_ENV}/"
             f"{FRONTEND_ENV} before claiming, since an exported value outranks the .env "
             "this would rewrite"
         )
     configured = requested or _configured_candidate(dotenv_path, effective_environ)
     if configured is not None and (
-        configured.backend in RESERVED_FIXED_PORTS or configured.frontend in RESERVED_FIXED_PORTS
+        not _excluded_ports().isdisjoint((configured.backend, configured.frontend))
     ):
         # An existing checkout's own .env can predate RESERVED_FIXED_PORTS
         # (issue #1613): that is stale configuration, not an explicit
@@ -793,7 +821,7 @@ def claim_ports(
             # not ours to restore. Fall through to allocation inside the lane.
             current = None
         if current is not None and (
-            current.backend in RESERVED_FIXED_PORTS or current.frontend in RESERVED_FIXED_PORTS
+            not _excluded_ports().isdisjoint((current.backend, current.frontend))
         ):
             # Same staleness as configured above, but recorded in the shared
             # registry rather than this checkout's own .env (issue #1613).
@@ -1023,6 +1051,7 @@ if __name__ == "__main__":
 __all__ = [
     "PORT_LANE_ENV",
     "PORT_OWNER_REGISTRY_DIR",
+    "PRODUCT_FIXED_PORTS",
     "RESERVED_FIXED_PORTS",
     "PortConfigError",
     "WebuiPorts",

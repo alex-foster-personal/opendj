@@ -54,6 +54,19 @@ def test_mik_wins_bpm_when_present() -> None:
 
 
 @pytest.mark.requirement("META-03")
+def test_genre_precedence_orders_rb_before_mik_despite_confidence() -> None:
+    sources = TagSources(
+        rb=TagRead(genre="House"),
+        mik=TagRead(genre="Techno"),
+    )
+    plan = unify(sources)
+    assert plan.tags.genre == "House"
+    assert plan.provenance["genre"].source == "rb"
+    assert plan.provenance["genre"].confidence == SOURCE_CONFIDENCE["rb"]
+    assert SOURCE_CONFIDENCE["mik"] > SOURCE_CONFIDENCE["rb"]
+
+
+@pytest.mark.requirement("META-03")
 def test_sanity_rejects_bad_bpm_falls_through() -> None:
     sources = TagSources(
         mik=TagRead(bpm=0.0),  # invalid

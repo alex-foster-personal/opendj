@@ -9,6 +9,7 @@ import {
 	landedMasterSinkId,
 	liveCalibrationGraph,
 	mainReopenFailed,
+	nativeCueSinkAvailable,
 	onOutputMoveStarted,
 	outputSwitchesPending,
 	splitCableGains,
@@ -17,7 +18,7 @@ import {
 import { sameOutputDevice } from './main-cue-collision';
 import { mixerState } from './state.svelte';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
-import { NO_INPUT_PICKED, rmsOf, scheduleIoTestBeeps, type IoTestBus } from './io-device-test';
+import { micOpenRefusal, NO_INPUT_PICKED, rmsOf, scheduleIoTestBeeps, type IoTestBus } from './io-device-test';
 
 /** Close a short-lived test context. Bounded, so a close that never settles
  * (the device vanished, the audio service died) cannot keep the Test busy;
@@ -439,6 +440,20 @@ async function playBeepsOn(
 	}
 }
 
+/** CUEOUT-8393 / AUDFID-04: the one gate every microphone open in the Mac app
+ * passes before `getUserMedia` (the AUDIO IN Test, the agent `io_device_test`
+ * and the cue alignment calibration). In the Mac app a mic opened while MAIN
+ * plays can switch a Bluetooth MAIN to the SCO profile and silence it. Throws
+ * the refusal; returns when the open is allowed. */
+export function assertMicOpenAllowedNow(): void {
+	const roomSignal = mixerState.headphones.signals.master;
+	const refusal = micOpenRefusal({
+		macAppWebview: nativeCueSinkAvailable(),
+		masterRms: roomSignal.state === 'measured' ? roomSignal.rms : null
+	});
+	if (refusal !== null) throw new Error(refusal);
+}
+
 /** Live mic level for the input meter. Caller stops it by calling the return.
  * An abort of `signal` while the microphone is still opening (a permission
  * prompt left up) fails the open at once, and a grant that lands later is
@@ -453,6 +468,7 @@ export async function startInputLevelWatch(
 ): Promise<() => void> {
 	if (deviceId === null || deviceId === '') throw new Error(NO_INPUT_PICKED);
 	if (signal?.aborted) throw abortReason(signal);
+	assertMicOpenAllowedNow();
 	if (typeof navigator === 'undefined' || navigator.mediaDevices?.getUserMedia === undefined) {
 		throw new Error('This app cannot open microphones here, so AUDIO IN cannot be measured.');
 	}

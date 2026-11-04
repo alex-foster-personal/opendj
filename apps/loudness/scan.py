@@ -90,9 +90,7 @@ class LoudnessScan:
         ceiling_dbtp: float,
     ) -> dict[str, object]:
         """Serializable scan plus derived gain for CLI and JSON output."""
-        gain_db, clamped = self.gain_db(
-            target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp
-        )
+        gain_db, clamped = self.gain_db(target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp)
         return {
             "path": str(self.path),
             "integrated_lufs": self.integrated_lufs,
@@ -130,8 +128,7 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
         matches = pattern.findall(stderr)
         if not matches:
             raise LoudnessError(
-                f"ebur128 summary for {path} has no '{field}' line. "
-                f"ffmpeg stderr tail:\n{_stderr_tail(stderr)}"
+                f"ebur128 summary for {path} has no '{field}' line. ffmpeg stderr tail:\n{_stderr_tail(stderr)}"
             )
         # The filter prints running values during the pass and the summary last,
         # so the final match is the summary figure.
@@ -162,8 +159,7 @@ def require_ffmpeg() -> str:
         return resolve_ffmpeg()
     except FfmpegUnavailable as exc:
         raise LoudnessError(
-            f"{exc}. apps.loudness measures with the ffmpeg ebur128 filter and "
-            "has no fallback measurement path."
+            f"{exc}. apps.loudness measures with the ffmpeg ebur128 filter and has no fallback measurement path."
         ) from exc
 
 
@@ -202,10 +198,7 @@ def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:
         check=False,
     )
     if completed.returncode != 0:
-        raise LoudnessError(
-            f"ffmpeg exited {completed.returncode} scanning {path}:\n"
-            f"{_stderr_tail(completed.stderr)}"
-        )
+        raise LoudnessError(f"ffmpeg exited {completed.returncode} scanning {path}:\n{_stderr_tail(completed.stderr)}")
     fields = _parse_summary(completed.stderr, path)
     return LoudnessScan(
         path=path,

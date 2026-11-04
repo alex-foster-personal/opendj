@@ -102,7 +102,7 @@ def get_kpi_ledger() -> dict[str, Any]:
     return ledger
 
 
-#----- perf KPI ledger --------------------------------------------------------
+# ----- perf KPI ledger --------------------------------------------------------
 
 
 def _day_label(iso_date: str) -> str:
@@ -122,11 +122,7 @@ def _perf_reading(entry: dict[str, Any]) -> float | None:
 
 def _perf_note_line(entry: dict[str, Any]) -> str:
     reading = _perf_reading(entry)
-    shown = (
-        f"{reading} {entry['unit']}"
-        if reading is not None
-        else f"UNMEASURED ({entry.get('status') or 'no value'})"
-    )
+    shown = f"{reading} {entry['unit']}" if reading is not None else f"UNMEASURED ({entry.get('status') or 'no value'})"
     where = f"{entry.get('machine', '?')}; {entry.get('source', '?')}"
     note = entry.get("note") or ""
     return f"{entry['kpi']} = {shown} ({where}). {note}".strip()
@@ -166,12 +162,15 @@ def get_perf_kpi_ledger() -> dict[str, Any]:
     readings: dict[str, int] = {}
     for entry in _in_capture_order(entries):
         key = (entry["date"], str(entry.get("round", "")))
-        snapshot = snapshots.setdefault(key, {
-            "ts": entry["date"],
-            "label": f"{_day_label(entry['date'])} - {key[1]}".rstrip(" -"),
-            "values": {},
-            "provenance": {},
-        })
+        snapshot = snapshots.setdefault(
+            key,
+            {
+                "ts": entry["date"],
+                "label": f"{_day_label(entry['date'])} - {key[1]}".rstrip(" -"),
+                "values": {},
+                "provenance": {},
+            },
+        )
         kpi = entry["kpi"]
         units[kpi] = entry["unit"]
         reading = _perf_reading(entry)
@@ -203,14 +202,12 @@ def get_perf_kpi_ledger() -> dict[str, Any]:
         "since": first_date,
         "since_label": _day_label(first_date),
         "kpis": kpis,
-        "snapshots": [
-            {**snapshot, "notes": "\n\n".join(notes[key])} for key, snapshot in snapshots.items()
-        ],
+        "snapshots": [{**snapshot, "notes": "\n\n".join(notes[key])} for key, snapshot in snapshots.items()],
         "undeclared": [kpi for kpi in units if kpi not in declared],
     }
 
 
-#----- ratings artifacts ------------------------------------------------------
+# ----- ratings artifacts ------------------------------------------------------
 
 
 class RatingEntry(BaseModel):
@@ -301,8 +298,7 @@ def save_ratings(payload: RatingsIn) -> RatingsSaved:
             detail={
                 "code": "ratings_empty",
                 "message": (
-                    "every human_score and verdict is null: nothing to save. Rate at least "
-                    "one clip before saving."
+                    "every human_score and verdict is null: nothing to save. Rate at least one clip before saving."
                 ),
             },
         )
@@ -313,8 +309,7 @@ def save_ratings(payload: RatingsIn) -> RatingsSaved:
             detail={
                 "code": "ratings_track_unslugifiable",
                 "message": (
-                    f"track {payload.track!r} has no alphanumeric characters, "
-                    "so no filename can be derived from it"
+                    f"track {payload.track!r} has no alphanumeric characters, so no filename can be derived from it"
                 ),
             },
         )
@@ -383,17 +378,23 @@ def list_ratings() -> list[RatingsFile]:
         # Artifacts exported by hand before this endpoint existed carry no
         # saved_at; mtime is the only honest timestamp for them, and it is used
         # for ordering only -- saved_at stays null so nothing is invented.
-        order_key = saved_at if isinstance(saved_at, str) else datetime.fromtimestamp(
-            stat.st_mtime, tz=UTC).isoformat()
-        dated.append((order_key, RatingsFile(
-            filename=path.name,
-            path=f"{RATINGS_REL}/{path.name}",
-            track=str(body.get("track", "")),
-            saved_at=saved_at if isinstance(saved_at, str) else None,
-            rated_count=sum(1 for e in entries if e.get("human_score") is not None or e.get("verdict") is not None),
-            total_count=len(entries),
-            bytes=stat.st_size,
-        )))
+        order_key = saved_at if isinstance(saved_at, str) else datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
+        dated.append(
+            (
+                order_key,
+                RatingsFile(
+                    filename=path.name,
+                    path=f"{RATINGS_REL}/{path.name}",
+                    track=str(body.get("track", "")),
+                    saved_at=saved_at if isinstance(saved_at, str) else None,
+                    rated_count=sum(
+                        1 for e in entries if e.get("human_score") is not None or e.get("verdict") is not None
+                    ),
+                    total_count=len(entries),
+                    bytes=stat.st_size,
+                ),
+            )
+        )
     dated.sort(key=lambda pair: pair[0], reverse=True)
     return [model for _key, model in dated]
 

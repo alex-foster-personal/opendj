@@ -5,6 +5,7 @@ Shared by the in-house tag writers (:mod:`apps.shared.id3v2`,
 :mod:`apps.shared.ogg_comment`): each replaces a metadata region of a file
 whose audio bytes must come through untouched.
 """
+
 from __future__ import annotations
 
 import ctypes

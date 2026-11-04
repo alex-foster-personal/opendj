@@ -193,9 +193,9 @@ export function toggleFeedbackPanel(): void {
 
 export function armPinPlacement(): void {
   if (feedbackState.availability !== "ok") return;
-  // Markers draw while placement or the draft is open (FeedbackPinLayer),
-  // then hide again. Arming must not flip the saved "show comment pins"
-  // preference: that stays the checkbox in the comment hover and the top bar.
+  // Markers draw while placement is armed (FeedbackPinLayer), then hide
+  // again once the draft opens. Arming must not flip the saved "show
+  // comment pins" preference: that stays the checkbox in the comment hover.
   feedbackState.placementArmed = true;
 }
 

@@ -116,6 +116,15 @@ class HeadphoneStateOut(BaseModel):
     # CUEOUT-26: "same_device" while split cue runs because MAIN and CUE are one
     # physical output (master L / cue R); null when the operator chose the mode.
     split_reason: str | None = None
+    # AUDFID-05: what the launch restore of the saved MAIN and CUE did
+    # (status restored | practice | skipped | failed | undone, message, labels,
+    # missing devices); null until it ran this session. Undo is the
+    # `output_mode` practice command plus `headphone_master_select`.
+    launch_restore: dict[str, Any] | None = None
+    # AUDFID-03: the live fidelity guard's latest verdict (status idle | ok |
+    # degraded | skipped, reason, checked_at_ms): master bus vs the source
+    # decode while the deck is neutral; null until its first tick.
+    fidelity_guard: dict[str, Any] | None = None
     outputs: list[HeadphoneOutputDeviceOut]
     inputs: list[HeadphoneOutputDeviceOut]
     supported: bool

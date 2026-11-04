@@ -30,6 +30,7 @@ rejected rather than leaving a gap. rbox 0.1.7 appended at ``count``, which
 repeats the last sibling's number in a 1-based file (measured on the
 synthetic export in ``tests/sync/usb/onelibrary_synth.py``).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -64,10 +65,7 @@ BACKEND = "odj-onelibrary-sqlcipher"
 
 # pyrekordbox (MIT) ``devicelib_plus.database.BLOB``: the OneLibrary key,
 # obfuscated the same way pyrekordbox ships its master.db key.
-_KEY_BLOB = (
-    b"PN_1dH8$oLJY)16j_RvM6qphWw`476>;C1cWmI#se(PG`j}~xAjlufj?`#0i{;=glh"
-    b"(SkW)y0>n?YEiD`l%t("
-)
+_KEY_BLOB = b"PN_1dH8$oLJY)16j_RvM6qphWw`476>;C1cWmI#se(PG`j}~xAjlufj?`#0i{;=glh(SkW)y0>n?YEiD`l%t("
 
 _ARTIST_ROLE = re.compile(r"^artist_id_(\w+)$")
 _CAMEL = re.compile(r"(?<=[a-z0-9])([A-Z])")
@@ -138,9 +136,7 @@ class OneLibrary:
         for table in ("content", "playlist", "playlist_content"):
             if not self._table_columns(table):
                 self.close()
-                raise OneLibraryError(
-                    f"{db_path} is not a OneLibrary export: table {table!r} is missing"
-                )
+                raise OneLibraryError(f"{db_path} is not a OneLibrary export: table {table!r} is missing")
 
     # -- lifecycle -----------------------------------------------------
 
@@ -209,8 +205,7 @@ class OneLibrary:
         ids = [
             int(r[0])
             for r in self.conn.execute(
-                "SELECT content_id FROM playlist_content WHERE playlist_id = ? "
-                'ORDER BY "sequenceNo"',
+                'SELECT content_id FROM playlist_content WHERE playlist_id = ? ORDER BY "sequenceNo"',
                 (int(playlist_id),),
             )
         ]
@@ -288,8 +283,7 @@ class OneLibrary:
                 f"(valid: {base}..{end}, or None to append)"
             )
         self.conn.execute(
-            f'UPDATE "{table}" SET "sequenceNo" = "sequenceNo" + 1 '
-            f'WHERE "{scope_col}" = ? AND "sequenceNo" >= ?',
+            f'UPDATE "{table}" SET "sequenceNo" = "sequenceNo" + 1 WHERE "{scope_col}" = ? AND "sequenceNo" >= ?',
             (scope, seq),
         )
         return seq
@@ -309,8 +303,7 @@ class OneLibrary:
                 raise OneLibraryError(f"parent playlist id={parent} not present")
             slot = self._place("playlist", "playlist_id_parent", parent, seq)
             cur = self.conn.execute(
-                'INSERT INTO playlist ("sequenceNo", name, attribute, playlist_id_parent) '
-                "VALUES (?, ?, ?, ?)",
+                'INSERT INTO playlist ("sequenceNo", name, attribute, playlist_id_parent) VALUES (?, ?, ?, ?)',
                 (slot, str(name), 1 if folder else 0, parent),
             )
             new_id = cur.lastrowid
@@ -319,9 +312,7 @@ class OneLibrary:
             raise OneLibraryError(f"playlist {name!r} was not readable after insert")
         return row
 
-    def create_playlist_content(
-        self, playlist_id: int, content_id: int, seq: int | None = None
-    ) -> dict[str, Any]:
+    def create_playlist_content(self, playlist_id: int, content_id: int, seq: int | None = None) -> dict[str, Any]:
         """Add an existing content row to a playlist."""
         pid, cid = int(playlist_id), int(content_id)
         with self.conn:
@@ -331,8 +322,7 @@ class OneLibrary:
                 raise OneLibraryError(f"content id={cid} not present")
             slot = self._place("playlist_content", "playlist_id", pid, seq)
             self.conn.execute(
-                'INSERT INTO playlist_content (playlist_id, content_id, "sequenceNo") '
-                "VALUES (?, ?, ?)",
+                'INSERT INTO playlist_content (playlist_id, content_id, "sequenceNo") VALUES (?, ?, ?)',
                 (pid, cid, slot),
             )
         return {"playlist_id": pid, "content_id": cid, "seq": slot}

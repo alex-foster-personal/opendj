@@ -322,6 +322,18 @@ export function parseStemSummary(raw: unknown): StemSummary {
 	return raw as StemSummary;
 }
 
+/** OFFLOAD: this machine's cloud offload state for a row (spec e8da14b8). */
+export interface OffloadWire {
+	state: 'local' | 'uploading' | 'offloaded' | 'restoring' | 'temporary';
+	restore_mode: 'temporary' | 'permanent' | null;
+	offloaded_at: string | null;
+	restored_at: string | null;
+	expires_at: string | null;
+	last_played_at: string | null;
+	bytes_offloaded: number;
+	error: string | null;
+}
+
 export interface CloudTransferWire {
 	direction: 'upload' | 'download';
 	bytes_transferred: number;
@@ -374,6 +386,8 @@ export interface PlaylistTrackRowWire {
 	has_remote_copy: boolean;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
 	cloud_transfer: CloudTransferWire | null;
+	/** OFFLOAD: null when never offloaded here. Optional for older payloads. */
+	offload?: OffloadWire | null;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
 	/** CHROME-02: the streaming service for a streaming row, from the row's own
@@ -656,6 +670,8 @@ export type TrackListItemWire = Track & {
 	has_remote_copy: boolean;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
 	cloud_transfer: CloudTransferWire | null;
+	/** OFFLOAD: null when never offloaded here. Optional for older payloads. */
+	offload?: OffloadWire | null;
 	quality: TrackQuality;
 	play_count: number;
 	vocals: Vocals;

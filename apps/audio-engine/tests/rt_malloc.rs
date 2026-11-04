@@ -7,6 +7,10 @@
 //! binary to export `malloc` (see `build.rs`), and glibc's `__libc_*` entry
 //! points to forward to. One test per file, so no other test thread
 //! allocates inside the window.
+//!
+//! Elsewhere this file compiles to no tests at all, which is not a pass:
+//! Windows (MSVC) runs the same scenario in `rt_new_msvc.rs`, through the
+//! replaceable `operator new`; macOS has no such check yet.
 
 #![cfg(all(target_os = "linux", target_env = "gnu"))]
 // The interposed allocator functions are called only by libc's callers,

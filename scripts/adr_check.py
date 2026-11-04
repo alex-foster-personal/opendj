@@ -1,12 +1,12 @@
 """PR-body ADR gate (issue #1489, widened by issue #2678, merge gate #3076).
 
 A PR that touches an architecturally significant path must carry either
-``ADR: NNNN`` naming a file under ``docs/decisions/``, ``ADR: NEW`` when
+``ADR: NNNN`` naming a file under ``(private path)/``, ``ADR: NEW`` when
 the PR adds ``ADR-NEW-<slug>.md``, or ``ADR: none, because <reason>`` with
 a non-empty reason on the SAME line. Surrounding markdown backticks,
 asterisks, or underscores on the marker are stripped before the
 none/because matcher runs.
-Independently of any gated path, ``docs/decisions/`` itself must never
+Independently of any gated path, ``(private path)/`` itself must never
 carry two ``ADR-NNNN-*.md`` files sharing a number (issue #2678).
 
     python -m scripts.adr_check --pr 1234 --base origin/main
@@ -106,7 +106,6 @@ _NEW_RE = re.compile(
 )
 # Markdown emphasis/code markers stripped before the none/because matcher only.
 _MARKDOWN_MARKER_RE = re.compile(r"[`*_]")
-_ADR_CANDIDATE_RE = re.compile(r"ADR:", re.IGNORECASE)
 _ADR_NUMERIC_FILENAME_RE = re.compile(r"ADR-(\d{4})-")
 _ADR_NEW_FILENAME_RE = re.compile(r"ADR-NEW-(.+)\.md$")
 _RENUMBERED_TO_RE = re.compile(
@@ -156,7 +155,7 @@ def pending_new_adr_paths(changed: list[str]) -> list[str]:
     return sorted(
         posix_path(p)
         for p in changed
-        if posix_path(p).startswith("docs/decisions/ADR-NEW-") and p.endswith(".md")
+        if posix_path(p).startswith("(private path)") and p.endswith(".md")
     )
 
 
@@ -210,11 +209,6 @@ def stale_renumber_violations(entries: dict[str, bytes]) -> list[str]:
 def normalize_adr_markers(text: str) -> str:
     """Strip markdown code/emphasis markers before the none/because matcher."""
     return _MARKDOWN_MARKER_RE.sub("", text or "")
-
-
-def adr_candidate_lines(body: str) -> list[str]:
-    """Raw body lines that look like they carry an ADR declaration."""
-    return [line for line in (body or "").splitlines() if _ADR_CANDIDATE_RE.search(line)]
 
 
 def ids_in_body(body: str) -> list[str]:
@@ -333,7 +327,7 @@ def evaluate_tree_entries(entries: dict[str, bytes]) -> Verdict:
 
 
 def adr_paths_in_tree(repo_root: Path, tree_sha: str) -> dict[str, bytes]:
-    prefix = "docs/decisions/"
+    prefix = "(private path)/"
     proc = subprocess.run(
         ["git", "ls-tree", "-r", "--name-only", tree_sha, "--", prefix],
         cwd=repo_root,

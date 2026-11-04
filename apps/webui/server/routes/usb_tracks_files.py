@@ -73,9 +73,7 @@ def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
         resolved = _resolve_track(request, track_id)
         audio = stick_audio_file(resolved)
     probe = probe_readable_byte(audio.path, timeout_s=AUDIO_ACCESS_TIMEOUT_S)
-    if probe.outcome == "timeout" or (
-        probe.outcome == "error" and probe.errno in _BLOCKED_ACCESS_ERRNOS
-    ):
+    if probe.outcome == "timeout" or (probe.outcome == "error" and probe.errno in _BLOCKED_ACCESS_ERRNOS):
         raise HTTPException(
             status_code=503,
             detail={

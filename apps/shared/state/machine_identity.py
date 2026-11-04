@@ -44,6 +44,15 @@ class MachineIdentityError(RuntimeError):
     """Machine identity could not be established. Never swallowed."""
 
 
+class MachineNameConflictError(MachineIdentityError):
+    """Renaming this machine would take a name another machine id already holds.
+
+    ``machines.name`` is UNIQUE. Raised before anything is written, so the
+    caller can answer 409 with this message instead of a bare
+    ``sqlite3.IntegrityError`` escaping as an HTTP 500.
+    """
+
+
 @dataclass(frozen=True)
 class MachineIdentity:
     """One row of ``machines`` as this process sees itself."""
@@ -227,7 +236,14 @@ def register_machine(
     ``machines.name`` is UNIQUE. If a restored or re-registered data directory
     already has that name under another machine id, registration refreshes the
     existing row and adopts its stored identity instead of changing a primary
-    key that other synced rows may reference.
+    key that other synced rows may reference. That adoption is the INSERT path
+    only, for a machine id with no row yet. Renaming a machine id that already
+    has a row onto a name another id holds is refused with
+    :class:`MachineNameConflictError` and nothing is written: the upsert's
+    UPDATE would violate UNIQUE(name), which the second ``ON CONFLICT`` clause
+    does not cover, and the raw ``IntegrityError`` used to escape as an HTTP
+    500 (silver, Tue 3 Nov 2026: "silver" renamed onto a stale
+    "silver-preview" row).
 
     ``last_seen`` is stamped through :func:`apps.shared.state.sync_stamp.
     canonical_now`, not a local ``datetime.isoformat()`` call (round 3 finding
@@ -243,6 +259,7 @@ def register_machine(
         is_hub=is_hub_from_env() if is_hub is None else is_hub,
         data_root=str(Path(data_dir)),
     )
+    _refuse_rename_onto_taken_name(conn, identity)
     stamp = now or sync_stamp.canonical_now()
     row = conn.execute(
         """
@@ -282,6 +299,31 @@ def register_machine(
     )
 
 
+def _refuse_rename_onto_taken_name(conn: sqlite3.Connection, identity: MachineIdentity) -> None:
+    """Raise if registering ``identity`` would rename its row onto another id's name."""
+    own_row = conn.execute(
+        "SELECT name FROM machines WHERE machine_id = ?", (identity.machine_id,)
+    ).fetchone()
+    if own_row is None:
+        return  # INSERT path: a name conflict here adopts the existing row.
+    holder = conn.execute(
+        "SELECT machine_id, last_seen, data_root FROM machines "
+        "WHERE name = ? AND machine_id != ?",
+        (identity.name, identity.machine_id),
+    ).fetchone()
+    if holder is None:
+        return
+    raise MachineNameConflictError(
+        f"cannot rename this machine ({identity.machine_id}, currently "
+        f"{own_row[0]!r}) to {identity.name!r}: that name already belongs to "
+        f"machine {holder[0]} (last seen {holder[1]}, data root {holder[2]}). "
+        "machines.name is unique, so nothing was changed. Resolve it by "
+        "choosing a different name for this machine (Settings > CloudSync, "
+        "or machine_name in cloudsync-config.json), or by removing the stale "
+        f"machines row for {holder[0]} if that machine no longer exists."
+    )
+
+
 def load_machine(conn: sqlite3.Connection, machine_id: str) -> MachineIdentity | None:
     """Read one ``machines`` row back, or None if it was never registered."""
     row = conn.execute(
@@ -304,6 +346,7 @@ __all__ = [
     "MACHINE_ID_FILENAME",
     "MachineIdentity",
     "MachineIdentityError",
+    "MachineNameConflictError",
     "default_machine_name",
     "detect_platform",
     "get_or_create_machine_id",

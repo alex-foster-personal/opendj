@@ -164,6 +164,23 @@ class LyricsRowSummaryOut(BaseModel):
     override: str | None = None
 
 
+class OffloadOut(BaseModel):
+    """OFFLOAD: this machine's cloud offload state for one row (spec e8da14b8).
+
+    ``offloaded`` rows keep every field and stay listed; the browser draws them
+    muted with a cloud glyph, never as a broken link.
+    """
+
+    state: Literal["local", "uploading", "offloaded", "restoring", "temporary"]
+    restore_mode: Literal["temporary", "permanent"] | None = None
+    offloaded_at: str | None = None
+    restored_at: str | None = None
+    expires_at: str | None = None
+    last_played_at: str | None = None
+    bytes_offloaded: int = Field(default=0, ge=0)
+    error: str | None = None
+
+
 class CloudTransferOut(BaseModel):
     """A real in-process CloudSync asset operation for one library row."""
 
@@ -260,6 +277,7 @@ class TrackListItemOut(TrackOut):
     has_remote_copy: bool
     # LIBUX-13: only present while this server process is moving real bytes.
     cloud_transfer: CloudTransferOut | None = None
+    offload: OffloadOut | None = None
     quality: QualityOut
     vocals: dict[str, Any]
     stems: dict[str, Any]
@@ -508,6 +526,7 @@ class TrackRowOut(BaseModel):
     has_remote_copy: bool
     # LIBUX-13: ephemeral operation state, distinct from durable presence.
     cloud_transfer: CloudTransferOut | None = None
+    offload: OffloadOut | None = None
     # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
     # Distinct from generic streaming so the browser can light-green tint.
     spotify_pending: bool = False

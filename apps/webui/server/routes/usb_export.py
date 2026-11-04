@@ -146,9 +146,7 @@ def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONRes
                     )
                     for item in body.playlists
                 ),
-                track_updates=tuple(
-                    TrackUpdate(**item.model_dump()) for item in body.track_updates
-                ),
+                track_updates=tuple(TrackUpdate(**item.model_dump()) for item in body.track_updates),
             )
     except VolumeBusy:
         return _busy_response()
@@ -170,9 +168,7 @@ def _busy_response() -> JSONResponse:
 
 
 @router.post("/apply", response_model=ReceiptModel)
-def apply_export(
-    body: ApplyRequest, request: Request
-) -> dict[str, Any] | JSONResponse:
+def apply_export(body: ApplyRequest, request: Request) -> dict[str, Any] | JSONResponse:
     # usb.export is checked FIRST so a disabled store build reports the SAME
     # refusal on apply as on plan/readback; checking the writeback gate first
     # would report the one-way-import refusal instead, a different reason for
@@ -196,9 +192,7 @@ def apply_export(
 
 
 @router.post("/readback", response_model=ReadbackModel)
-def readback_export(
-    body: ReadbackRequest, request: Request
-) -> dict[str, Any] | JSONResponse:
+def readback_export(body: ReadbackRequest, request: Request) -> dict[str, Any] | JSONResponse:
     from apps.sync.usb.pioneer import export_workflow as workflow
 
     gate = usb_export_gate(request)

@@ -215,3 +215,41 @@ test('pushSample caps the ring', () => {
 	const ring = model.pushSample([1, 2, 3], 4, 3);
 	assert.deepEqual(ring, [2, 3, 4]);
 });
+
+// PERF-UI-6785 (Codex review on #6785): the pinned breakdown's heap row asks
+// the compact figure's question, so the two never disagree about the heap.
+test('the heap row says the heap is in the measured page process when one is listed', () => {
+	const base = {
+		hz: 60, hzQualityOk: true, hzTickHz: 60, prefetchCount: 0, prefetchMB: 0, anlzCount: 0,
+		anlzMB: 0, pcmMB: 100, ringCount: 0, swapMB: null, kernelLevel: null, churnScore: null,
+		compressorRate: null
+	};
+	const snapshot = (role) => ({
+		kernelLevel: null, churnScore: null, compressorRate: null,
+		members: [
+			{ label: 'opendj-engine', mb: 600, role: null },
+			{ label: 'opendj-webcontent', mb: 900, role }
+		]
+	});
+	const heap = (input) => model.breakdownLines({ ...base, ...input }).find((l) => l.key === 'heap');
+
+	// WKWebView: no performance.memory, page process measured
+	const wk = heap({ jsHeapMB: null, processes: snapshot('webkit-webcontent') });
+	assert.equal(wk.value, 'in page process');
+	assert.match(wk.title, /inside the measured page process \(opendj-webcontent\), which the compact meter counts/);
+	assert.doesNotMatch(wk.title, /decoded PCM only/);
+	// Electron: heap readable, page process measured
+	const el = heap({ jsHeapMB: 268, processes: snapshot('electron-renderer') });
+	assert.equal(el.value, '268 MB');
+	assert.match(el.title, /counts it once/);
+	// controls: no page process (browser, or no report) keeps the old copy
+	const noPage = heap({ jsHeapMB: null, processes: snapshot(null) });
+	assert.equal(noPage.value, 'unavailable');
+	assert.match(noPage.title, /the compact meter shows decoded PCM only/);
+	assert.equal(heap({ jsHeapMB: null, processes: null }).value, 'unavailable');
+	assert.doesNotMatch(heap({ jsHeapMB: 268, processes: snapshot(null) }).title, /page process/);
+	// and an unmeasured page process does not count as measured
+	const unmeasured = snapshot('webkit-webcontent');
+	unmeasured.members[1].mb = null;
+	assert.equal(heap({ jsHeapMB: null, processes: unmeasured }).value, 'unavailable');
+});

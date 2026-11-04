@@ -6,6 +6,7 @@ own matching against a locked state connection when a
 planning. The closure shape is fixed by :data:`apps.mik.duplicates.Rebind`; this
 module builds it once so the two call sites stay aligned.
 """
+
 from __future__ import annotations
 
 import sqlite3

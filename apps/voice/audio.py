@@ -17,6 +17,7 @@ Design notes
   fall back to ``sd.default.device[0]``.
 * Output: we do not route TTS here. ``tts.py`` owns that.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -55,8 +56,7 @@ def _sounddevice():
         import sounddevice as sd  # type: ignore[import-not-found]
     except Exception as exc:  # pragma: no cover - env-specific
         raise RuntimeError(
-            "sounddevice not importable; install PortAudio + the "
-            "`sounddevice` wheel or re-run without mic capture"
+            "sounddevice not importable; install PortAudio + the `sounddevice` wheel or re-run without mic capture"
         ) from exc
     return sd
 
@@ -92,17 +92,14 @@ def resolve_input_device(
         try:
             index: int | None = int(explicit)
         except ValueError as exc:
-            raise ValueError(
-                f"VOICE_INPUT_DEVICE must be an int device index, got {explicit!r}"
-            ) from exc
+            raise ValueError(f"VOICE_INPUT_DEVICE must be an int device index, got {explicit!r}") from exc
     else:
         default_in, _default_out = default_device_getter()
         index = default_in
 
     if index is None:
         raise RuntimeError(
-            "No input device resolvable: set VOICE_INPUT_DEVICE or configure a "
-            "system default input device"
+            "No input device resolvable: set VOICE_INPUT_DEVICE or configure a system default input device"
         )
 
     info: Any = query_devices(index, "input")  # type: ignore[misc]

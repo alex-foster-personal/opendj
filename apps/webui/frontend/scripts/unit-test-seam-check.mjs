@@ -978,6 +978,9 @@ async function _loadBundledModule(relativePath, cache) {
 	if (cache.has(relativePath)) return cache.get(relativePath);
 	const text = await bundleTypeScriptModule(relativePath);
 	globalThis.__musicDjToolsTestState = (value) => value;
+	// Same rune shim as tests/unit/load-typescript.mjs: a bundled module that calls
+	// $state.raw dies on `.raw is not a function` without it.
+	globalThis.__musicDjToolsTestState.raw = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 	// A temp-file import, not a data: URL: V8 names every stack frame after the

@@ -1,13 +1,12 @@
 """Refuse broken analysis-bench bundle joins before scoring."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
 
-def refuse_malformed_join(
-    bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]
-) -> None:
+def refuse_malformed_join(bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]) -> None:
     """Refuse a bundle whose manifest/truth join is broken."""
     duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
     if duplicates:

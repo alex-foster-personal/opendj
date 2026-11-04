@@ -47,6 +47,7 @@ const NEXT = orders.NEXT_ORDER_URL;
 let realFetch;
 let realConsoleInfo;
 let calls;
+let inits;
 let respond;
 let infos;
 
@@ -90,10 +91,12 @@ beforeEach(() => {
 	realFetch = globalThis.fetch;
 	realConsoleInfo = console.info;
 	calls = [];
+	inits = [];
 	infos = [];
 	respond = heldEmpty;
-	globalThis.fetch = async (url) => {
+	globalThis.fetch = async (url, init) => {
 		calls.push(String(url));
+		inits.push(init ?? {});
 		await networkHop();
 		return respond(String(url));
 	};
@@ -466,5 +469,17 @@ test('with every timer frozen, as in a hidden tab, registration still starts the
 	}
 	page.forget();
 	page.reregister();
+	await loop;
+});
+
+// AGENT-8408: performance poll names the mirror lease on each claim.
+test('a leased poll sends x-opendj-lease on each claim request', async () => {
+	const page = registration(true);
+	let running = true;
+	const loop = orders.pollAgentOrders(page, () => {}, () => running, 'client-1');
+	await settle();
+	assert.ok(inits.length >= 1, 'expected at least one claim fetch');
+	assert.equal(inits[0].headers?.['x-opendj-lease'], 'client-1');
+	running = false;
 	await loop;
 });

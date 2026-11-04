@@ -119,6 +119,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSentinelMirror(),
 		mixer: state.mixer,
+		// COLORFX-04: per deck, the color knob's effect, echo division and timing.
+		color_fx: state.color_fx,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
 				// stable_id rides with title because title alone cannot answer WHICH
@@ -260,7 +262,7 @@ export function installUiMirror(leadership: TabLeadership): () => Promise<void> 
 	const noteGesture = (): void => mirror.noteGesture();
 	window.addEventListener('pointerdown', noteGesture, { capture: true, passive: true });
 	window.addEventListener('keydown', noteGesture, { capture: true, passive: true });
-	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
+	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish, MIRROR_CLIENT_ID);
 	// A follower never published, so it has nothing to close; deleting would
 	// blank the leader's live mirror under it.
 	const closeMirrorIfLeader = (): void => {

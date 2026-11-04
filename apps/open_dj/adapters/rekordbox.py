@@ -6,13 +6,14 @@ Scope at v0.2 per phase 15 D3:
   CuePoint coverage. Ratings, BPM, key, vendor_ids.
 - **Import (open-dj -> RB)**: NOT shipped in this plan. The live write path
   goes through Phase 4's cautious writer (``apps.reconcile.apply``) with
-  the 6-rail safety pattern. Phase 16 wires adapter-driven imports.
+  the 6-rail safety pattern. Adapter-driven imports remain future work.
 
 The adapter is designed so its hot path (``build_library``) takes plain
 iterables of dataclasses, not a live DB handle. This makes the adapter
 testable with in-memory fixtures and keeps the live-DB opening outside the
 core logic (where the 6 safety rails live).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -156,7 +157,7 @@ def _rb_updated_at_to_utc(rb_id: str, raw_updated_at: datetime | None) -> dateti
     zone, so both instants of that repeated hour already arrive here as
     the identical naive value with ``fold=0`` -- the information is lost
     upstream, before this function runs, and no correctness here can
-    recover it. See ``tests/open_dj/test_rekordbox_clock.py``'s
+    recover it. See ``(private path)``'s
     ``TestAutumnDstFoldHourIsAnUpstreamPyrekordboxLimitation`` for the
     live-verified proof and the one-hour-per-year, per-install exposure
     this leaves.
@@ -214,8 +215,7 @@ def build_library(
 
     playlists_out: list[dict] = []
     for p in playlists:
-        track_ids = [rb_to_track_id[rid] for rid in p.track_rb_ids
-                     if rid in rb_to_track_id]
+        track_ids = [rb_to_track_id[rid] for rid in p.track_rb_ids if rid in rb_to_track_id]
         pl: dict = {
             "playlist_id": f"rb_pl_{p.rb_id}",
             "name": p.name,
@@ -247,14 +247,16 @@ def build_library(
 
 def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
     """Return the Track dict + cue count for a single input."""
-    track_id, tier = compute_track_id_with_tier({
-        "isrc": t.isrc,
-        "fingerprint": t.fingerprint,
-        "duration_ms": t.duration_ms,
-        "size_bytes": t.size_bytes,
-        "absolute_path": t.file_path,
-        "mtime": t.mtime,
-    })
+    track_id, tier = compute_track_id_with_tier(
+        {
+            "isrc": t.isrc,
+            "fingerprint": t.fingerprint,
+            "duration_ms": t.duration_ms,
+            "size_bytes": t.size_bytes,
+            "absolute_path": t.file_path,
+            "mtime": t.mtime,
+        }
+    )
     content_hash, is_synthetic = _content_hash(t)
 
     track: dict = {
@@ -271,6 +273,7 @@ def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
     if t.isrc:
         # Normalise ISRC to canonical form (uppercase, no punctuation).
         from apps.shared.state.ids import normalise_isrc
+
         normalised = normalise_isrc(t.isrc) or t.isrc
         track["isrc"] = normalised
     if t.size_bytes is not None:
@@ -328,15 +331,11 @@ def _apply_provenance_fields(track: dict, t: RBTrackInput) -> None:
             "a naive value through."
         )
     if t.bpm is not None:
-        track["bpm"] = wrap(
-            float(t.bpm), source="rekordbox", modified_at=source_modified_at
-        )
+        track["bpm"] = wrap(float(t.bpm), source="rekordbox", modified_at=source_modified_at)
     if t.key:
         track["key"] = wrap(t.key, source="rekordbox", modified_at=source_modified_at)
     if t.rating is not None:
-        track["rating"] = wrap(
-            int(t.rating), source="rekordbox", modified_at=source_modified_at
-        )
+        track["rating"] = wrap(int(t.rating), source="rekordbox", modified_at=source_modified_at)
 
 
 def _content_hash(t: RBTrackInput) -> tuple[str, bool]:
@@ -387,7 +386,9 @@ def export_library(
         track_inputs = [from_rbtrack(t) for t in rekordbox_db.iter_tracks(db)]
         playlist_inputs = [
             RBPlaylistInput(
-                rb_id=p.id, name=p.name, parent_rb_id=p.parent_id,
+                rb_id=p.id,
+                name=p.name,
+                parent_rb_id=p.parent_id,
                 track_rb_ids=list(p.track_ids),
             )
             for p in rekordbox_db.iter_playlists(db)
@@ -400,6 +401,7 @@ def export_library(
 
     if out_path is not None:
         from apps.open_dj.canon import to_canonical_bytes
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(to_canonical_bytes(result.document))
 

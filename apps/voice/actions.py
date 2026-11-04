@@ -80,9 +80,7 @@ def handle_search(intent: Intent, ctx: VoiceContext) -> Response:
         slots={"query": query},
         transcript=intent.raw_transcript,
         confidence=intent.confidence,
-        results=[
-            {"stable_id": r.get("stable_id"), "title": r.get("title")} for r in results
-        ],
+        results=[{"stable_id": r.get("stable_id"), "title": r.get("title")} for r in results],
     )
     _speak(ctx, f"searching for {query}")
     ctx.mark_dispatch()
@@ -187,9 +185,7 @@ def _latest_deck_state(ctx: VoiceContext) -> dict[str, Any] | None:
     return recent[-1] if recent else None
 
 
-def _latest_transition(
-    ctx: VoiceContext, window_s: int = TRANSITION_RECENT_WINDOW_S
-) -> dict[str, Any] | None:
+def _latest_transition(ctx: VoiceContext, window_s: int = TRANSITION_RECENT_WINDOW_S) -> dict[str, Any] | None:
     recent = ctx.event_bus.recent("transition", limit=1)
     if not recent:
         return None
@@ -232,9 +228,7 @@ def handle_save_cue(
             dry_run=True,
         )
 
-    if confirm_fn is not None and not confirm_fn(
-        ctx, "did you say save the last transition as cue points? yes or no"
-    ):
+    if confirm_fn is not None and not confirm_fn(ctx, "did you say save the last transition as cue points? yes or no"):
         eid = _publish(
             ctx,
             "SAVE_CUE_CANCELLED",
@@ -303,9 +297,7 @@ def handle_rate_track(
             dry_run=True,
         )
 
-    if confirm_fn is not None and not confirm_fn(
-        ctx, f"did you say rate {stars} stars? yes or no"
-    ):
+    if confirm_fn is not None and not confirm_fn(ctx, f"did you say rate {stars} stars? yes or no"):
         eid = _publish(
             ctx,
             "RATE_TRACK_CANCELLED",
@@ -347,9 +339,7 @@ class Registry:
         if ctx.is_muted() and intent.kind != "UNMUTE_VOICE":
             return Response(reply="muted", published=False, meta={"muted": True})
         if intent.kind not in DEBOUNCE_EXEMPT_INTENTS and ctx.debounced():
-            return Response(
-                reply="debounced", published=False, meta={"debounced": True}
-            )
+            return Response(reply="debounced", published=False, meta={"debounced": True})
         handler = self.handlers.get(intent.kind)
         if handler is None:
             return Response(reply=f"no_handler:{intent.kind}", published=False)

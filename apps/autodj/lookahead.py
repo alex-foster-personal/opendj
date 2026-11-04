@@ -106,7 +106,13 @@ def windows_ahead(profile: TrackProfile, *, earliest_bar: float, target_bar: flo
         if section.start_bar <= earliest_bar or section.start_bar >= profile.bars:
             continue
         window = window_at(profile, "out", section.start_bar)
-        ranked.append(replace(window, score=_ahead_score(profile, window, target_bar), reason=f"{section.label} phrase; {window.reason}"))
+        ranked.append(
+            replace(
+                window,
+                score=_ahead_score(profile, window, target_bar),
+                reason=f"{section.label} phrase; {window.reason}",
+            )
+        )
     return sorted(ranked, key=lambda window: (-window.score, window.start_bar))
 
 
@@ -170,7 +176,11 @@ def decide(
             pool.append(Candidate(cid, str(row["style"]), float(row["score"]), False))
     pick = choose_for_set(pool, intent, recent_styles)
     if pick is None:
-        return Decision(reason=f"no shortlisted track has a valid plan ({len(shortlist)} tried)", windows=shown, rejected=tuple(rejected))
+        return Decision(
+            reason=f"no shortlisted track has a valid plan ({len(shortlist)} tried)",
+            windows=shown,
+            rejected=tuple(rejected),
+        )
     in_profile, window, row = chosen[pick.cid]
     reason = f"{row['style']} over {row['bars']} bars at bar {window.start_bar} ({window.label}); M not measured until it renders"
     return Decision(

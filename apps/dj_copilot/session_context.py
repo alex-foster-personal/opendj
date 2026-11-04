@@ -11,6 +11,7 @@ Phase 12 + Rekordbox + djay are stub-policy wired. When the source is
 not yet available, ``load_session_context`` falls through gracefully
 and returns the next source's payload (or an empty context).
 """
+
 from __future__ import annotations
 
 import logging
@@ -58,9 +59,7 @@ def _parse_played_at(raw: object) -> datetime:
     return datetime.now(UTC)
 
 
-def _load_phase12(
-    conn: sqlite3.Connection, limit: int
-) -> list[PlayedTrack]:
+def _load_phase12(conn: sqlite3.Connection, limit: int) -> list[PlayedTrack]:
     try:
         rows = conn.execute(
             "SELECT stable_id, artist, bpm, key_camelot, energy, played_at "
@@ -110,15 +109,9 @@ def load_session_context(
     now = datetime.now(UTC)
 
     if source == "manual":
-        return SessionContext(
-            recent=list(manual or []), source="manual", captured_at=now
-        )
+        return SessionContext(recent=list(manual or []), source="manual", captured_at=now)
 
-    tried: list[Source] = (
-        ["phase12", "rekordbox_history", "djay_history"]
-        if source == "auto"
-        else [source]
-    )
+    tried: list[Source] = ["phase12", "rekordbox_history", "djay_history"] if source == "auto" else [source]
     for s in tried:
         if s == "phase12" and conn is not None:
             rows = _load_phase12(conn, limit)
@@ -127,9 +120,7 @@ def load_session_context(
         elif s == "rekordbox_history":
             # Stub: Phase 12 + RB history adapter tbd. Return empty so
             # the auto fallback proceeds.
-            _logger.info(
-                "rekordbox_history adapter not yet wired; returning empty"
-            )
+            _logger.info("rekordbox_history adapter not yet wired; returning empty")
         elif s == "djay_history":
             _logger.info("djay_history adapter not yet wired; returning empty")
 
@@ -140,7 +131,5 @@ def load_session_context(
     # so callers (and test harnesses) can see the request was honored but
     # yielded no rows.
     if source != "auto":
-        return SessionContext(
-            recent=_load_empty(), source=source, captured_at=now
-        )
+        return SessionContext(recent=_load_empty(), source=source, captured_at=now)
     return SessionContext(recent=_load_empty(), source="empty", captured_at=now)

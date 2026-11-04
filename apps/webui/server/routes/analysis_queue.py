@@ -34,6 +34,8 @@ Requirements (mini-PRD):
     [if] ``limit`` is passed [then] only ``items`` shrinks; ``pending`` still
     reports the real queue size
     [if] ``limit`` is < 1 or > MAX_ITEMS [then ⛔️] 422
+    [if] a track's duration is over the analyzer cap [then] it counts
+    ``too_long`` and is not listed (NATIVE-38)
   ✔︎ ✅ POST /analysis-queue/run: start the unmapped-scope drain.
     [if] any refresh job is already running [then ⛔️] 409
     [if] the analysis step is disabled in the ingest config [then ⛔️] 422
@@ -78,12 +80,15 @@ class AutoAnalyzeOut(BaseModel):
 
 
 class AnalysisQueueOut(BaseModel):
-    """``analyzed + unreachable + pending`` always equals ``unmapped``."""
+    """``analyzed + unreachable + too_long + pending`` always equals ``unmapped``."""
 
     unmapped: int
     pending: int
     analyzed: int
     unreachable: int
+    #: Over the analyzer's track-length cap by the library's own duration:
+    #: never queued, so they cannot end every drain in ``error`` (NATIVE-38).
+    too_long: int
     signature: str
     items: list[AnalysisQueueItemOut]
     job: ingest.RefreshStatusOut
@@ -120,6 +125,7 @@ def get_analysis_queue(
         pending=queue.pending_total,
         analyzed=queue.analyzed,
         unreachable=queue.unreachable,
+        too_long=queue.too_long,
         signature=queue.signature,
         items=[
             AnalysisQueueItemOut(

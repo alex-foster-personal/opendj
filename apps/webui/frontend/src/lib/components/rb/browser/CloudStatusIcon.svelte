@@ -18,6 +18,8 @@
 	class:not-on-cloud={view.kind === 'not-on-cloud'}
 	class:on-cloud-not-local={view.kind === 'on-cloud-not-local'}
 	class:on-cloud-and-local={view.kind === 'on-cloud-and-local'}
+	class:offloaded={view.kind === 'offloaded'}
+	class:temporary={view.kind === 'temporary'}
 	title={view.title}
 	aria-label={view.title}
 >
@@ -44,6 +46,18 @@
 				     under the middle. Filled by the `.tidal` rule. -->
 				<path class="tidal" d="M.5 5.5l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm-5 5l2.5-2.5 2.5 2.5-2.5 2.5z" />
 			{/if}
+		</svg>
+	{:else if view.kind === 'temporary'}
+		<!-- Spotify's "downloaded" mark: a filled disk with a down arrow. -->
+		<svg class="offload-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+			<circle cx="8" cy="8" r="7" fill="currentColor" />
+			<path d="M8 4.5v6M5.4 8.2 8 10.8l2.6-2.6" fill="none" stroke="var(--rb-bg, #111)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+		</svg>
+	{:else if view.kind === 'offloaded'}
+		<!-- Apple Music's "download" mark: a hollow cloud with a down arrow. -->
+		<svg class="offload-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+			<path d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z" fill="none" stroke="currentColor" stroke-width="1.25" />
+			<path d="M8 6.5v4M6.5 9.2 8 10.7l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
 		</svg>
 	{:else}
 		<svg class="cloud-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
@@ -89,6 +103,13 @@
 	}
 	.on-cloud-not-local {
 		color: #e5484d;
+	}
+	/* OFFLOAD: muted, never the broken-link red. */
+	.offloaded {
+		color: var(--rb-text-dim, #8a8a8a);
+	}
+	.temporary {
+		color: #35c04f;
 	}
 	/* Local and on cloud reads in plain text color, not the column's dim one:
 	   TrackTable's scoped rule of the same name cannot reach this component. */

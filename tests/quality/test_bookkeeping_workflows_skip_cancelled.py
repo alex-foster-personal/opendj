@@ -24,7 +24,6 @@ from scripts.stable_evidence_batch import RECORDED_WORKFLOWS
 
 REPO = Path(__file__).resolve().parents[2]
 STABLE_EVIDENCE = REPO / ".github" / "workflows" / "stable-evidence.yml"
-TRUNK_JOB_VERDICT = REPO / ".github" / "workflows" / "trunk-job-verdict.yml"
 CI_ERROR_SINK = REPO / ".github" / "workflows" / "ci-error-sink.yml"
 
 CANCELLED_SKIP = "github.event.workflow_run.conclusion != 'cancelled'"
@@ -132,17 +131,6 @@ def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
     assert workflow[True]["workflow_dispatch"]["inputs"]["reconcile"]["default"] is True, (
         "a bare dispatch is the release catch-up, and must see re-runs of older runs"
     )
-
-
-def test_trunk_job_verdict_skips_cancelled_triggering_run() -> None:
-    """if a trunk CI or E2E run is cancelled then the verdict job does not allocate a runner."""
-    workflow = _workflow(TRUNK_JOB_VERDICT)
-    trigger = workflow[True]["workflow_run"]
-    assert trigger["types"] == ["completed"]
-
-    condition = _job_if(workflow, "verdict")
-    assert "github.event.repository.default_branch" in condition
-    assert CANCELLED_SKIP in condition
 
 
 def test_error_sink_batch_lists_every_completion_from_its_own_workflow_mark() -> None:

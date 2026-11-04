@@ -1,4 +1,5 @@
 """CLI verbs for user-ordered stems/lyrics jobs (issue #1865)."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,11 +22,7 @@ def _paths(args: argparse.Namespace) -> tuple[Path, Path]:
         data_dir = conn_path.parent.parent
     else:
         data_dir = Path(args.data_dir) if getattr(args, "data_dir", None) else conn_path.parent
-    stems_root = (
-        Path(args.stems_root)
-        if getattr(args, "stems_root", None)
-        else data_dir / "state" / "stems"
-    )
+    stems_root = Path(args.stems_root) if getattr(args, "stems_root", None) else data_dir / "state" / "stems"
     return data_dir, stems_root
 
 
@@ -82,9 +79,7 @@ def cmd_user_list(args: argparse.Namespace) -> int:
 
     conn = _conn(args)
     try:
-        items = queue_user.list_lane(
-            conn, args.lane, include_settled=bool(args.include_settled)
-        )
+        items = queue_user.list_lane(conn, args.lane, include_settled=bool(args.include_settled))
         counts = queue_user.counts_for_lane(conn, args.lane)
     finally:
         conn.close()
@@ -121,9 +116,7 @@ def cmd_user_cancel(args: argparse.Namespace) -> int:
 
     conn = _conn(args)
     try:
-        item = queue_user.cancel_item(
-            conn, lane=args.lane, stable_id=args.stable_id
-        )
+        item = queue_user.cancel_item(conn, lane=args.lane, stable_id=args.stable_id)
     finally:
         conn.close()
     _emit(_item_dict(item), as_json=args.json)

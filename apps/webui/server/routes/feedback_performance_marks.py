@@ -79,9 +79,7 @@ class PerformanceFeedbackMarksOut(BaseModel):
 
 def _summary(items: list[dict]) -> PerformanceFeedbackMarksOut:
     marks = [PerformanceFeedbackMarkIn.model_validate(item) for item in items]
-    return PerformanceFeedbackMarksOut(
-        count=len(marks), last_mark=marks[-1] if marks else None
-    )
+    return PerformanceFeedbackMarksOut(count=len(marks), last_mark=marks[-1] if marks else None)
 
 
 @router.get("/performance-marks", response_model=PerformanceFeedbackMarksOut)
@@ -96,9 +94,7 @@ def get_performance_marks(request: Request) -> PerformanceFeedbackMarksOut:
     response_model=PerformanceFeedbackMarksOut,
     status_code=201,
 )
-def create_performance_mark(
-    body: PerformanceFeedbackMarkIn, request: Request
-) -> PerformanceFeedbackMarksOut:
+def create_performance_mark(body: PerformanceFeedbackMarkIn, request: Request) -> PerformanceFeedbackMarksOut:
     path = _dir(request) / _MARKS_FILE
     with _MARKS_LOCK:
         marks = _load(path, "marks")

@@ -54,8 +54,9 @@ port 80 and a privileged helper, so it is out of scope.
 | Command | Purpose |
 |---------|---------|
 | `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
+| `opendj client_errors [--since ISO] [--build-sha PREFIX] [--kind KIND] [--contains TEXT] [--limit N] [--untriaged]` | Browser errors the app recorded, filtered (AGENT-8304); `--json` is the MCP `client_errors` document: `{count, filters, errors: [{timestamp, build_sha, kind, message, event_id}]}` |
 | `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
-| `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend`; `try` renders and ranks candidate transitions (TRYER-11): `opendj dj try --out X --in Y -n 6 --json`, `opendj dj try pick JOB CAND --etag E`, `opendj dj try undo JOB --etag E` (the etag of the job document you reviewed) |
+| `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend`, plus `show` (a plan as a mix score, bar grid or JSON; offline); for whole sets `set-plan`, `set-show` (offline) and `set-next`; `try` renders and ranks candidate transitions (TRYER-11): `opendj dj try --out X --in Y -n 6 --json`, `opendj dj try pick JOB CAND --etag E`, `opendj dj try undo JOB --etag E` (the etag of the job document you reviewed) |
 
 ## MCP tools
 
@@ -67,6 +68,7 @@ port 80 and a privileged helper, so it is out of scope.
 | `library` | LIBM-11 library HTTP against the engine origin (`body` = JSON string) |
 | `ui_url` | Engine-served SPA URL for browser MCP (does not move the shell) |
 | `open_route` | Navigate the installed desktop shell to `/performance` |
+| `client_errors` | Browser errors, filtered by `since`, `build_sha` prefix, `kind`, `contains`, `limit`, `untriaged` (AGENT-8304); same document as `opendj --json client_errors` |
 
 ### AutoDJ tools (AGENT-29, AGENT-24)
 
@@ -85,13 +87,59 @@ deck's bars. The library is `apps/autodj`; the HTTP glue is `dj_service.py`.
 | `list_transition_styles` | Style catalog, with why a style is unavailable; `params` (a parametric style's settings, else null) and `spotify` (the Spotify transition it mirrors, else null) |
 | `propose_transition` | Top validated plans into a track, from free-text intent |
 | `validate_plan` | Errors, warnings and clash metrics for a plan against the live mix |
+| `show_plan` | A plan as a mix score, bar grid or canonical JSON (offline) |
 | `schedule_plan` | Perform a plan (destructive): loads the idle deck if needed, arms the page executor; `notes` says what the compiler decided (e.g. an uncapped outgoing fader) |
 | `amend_plan` | `abort`, `finish_now` or `extend` a scheduled plan |
+| `plan_set` | A whole set from a running order: the best validated transition per neighbor pair, as JSON and a set score |
+| `show_set` | A set as a set score, one bar grid per transition, or JSON (offline) |
+| `schedule_set_next` | Perform the set's transition that is due now (destructive); says why when none is |
 | `try_transitions` | Render and rank N candidate transitions for a pair (TRYER-12); returns a job id and per-candidate score, vetoes, `measured k of n`, render URL |
 | `pick_transition` | Record the chosen candidate for a try job (If-Match guarded; reversible) |
 | `undo_transition_pick` | Remove a try job's pick |
 
 A plan only continues a playing set: it is refused unless its outgoing deck is playing.
+
+Every tool that takes a plan accepts a **mix score** too (AGENT-5858): the same plan as text, one
+move per line, and each proposal carries one as `notation`. Grammar and examples:
+`apps/autodj/notation.py`; design notes: `(private path)`.
+
+```
+transition bass_swap_blend
+out D1 trk-out from 113 for 16
+in  D2 trk-in from 17 for 16
+tempo sync
+
+@0       D2 play
+@0       D2 eq_low kill
+@0..8    D2 fader -> 1
+@8       D1 eq_low kill
+@8       D2 eq_low flat
+@8..16   mix -> 1
+@12..16  D1 fader -> 0
+@16      D1 stop
+```
+
+A whole set is one document too (AGENT-27): a **set score** is a `set <name>` header and one
+`transition` block per handover, each block a mix score. Every transition must mix out of the deck
+and track the previous one brought in, after that one finishes. An agent plans the set once with
+`plan_set`, then calls `schedule_set_next` after each transition ends: it schedules the first
+transition whose outgoing track is playing while its incoming one is not, and nothing while a plan
+is running. Code: `apps/autodj/setscore.py`.
+
+```
+set warmup
+intent "wind down"
+
+transition long_blend
+out D1 trk-a from 65 for 32
+in  D2 trk-b from 1 for 32
+...
+
+transition long_blend
+out D2 trk-b from 65 for 32
+in  D1 trk-c from 1 for 32
+...
+```
 
 Agent audio is one switch per session, `OPENDJ_AGENT_AUDIO` (AGENT-25):
 

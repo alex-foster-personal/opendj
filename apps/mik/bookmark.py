@@ -32,6 +32,7 @@ Everything here is defensive by construction and raises
 mismatches a track, which is exactly the failure mode this parser exists to
 avoid.
 """
+
 from __future__ import annotations
 
 import struct
@@ -70,9 +71,7 @@ class BookmarkPath:
 
 def _u32(blob: bytes, offset: int) -> int:
     if offset < 0 or offset + 4 > len(blob):
-        raise BookmarkParseError(
-            f"u32 read at {offset} out of range (blob is {len(blob)} bytes)"
-        )
+        raise BookmarkParseError(f"u32 read at {offset} out of range (blob is {len(blob)} bytes)")
     return struct.unpack_from("<I", blob, offset)[0]
 
 
@@ -81,37 +80,23 @@ def _read_value(blob: bytes, header_size: int, offset: int, depth: int = 0):
         raise BookmarkParseError("bookmark value nesting deeper than 4")
     base = header_size + offset
     if base + 8 > len(blob):
-        raise BookmarkParseError(
-            f"value record at {base} runs past end of blob ({len(blob)} bytes)"
-        )
+        raise BookmarkParseError(f"value record at {base} runs past end of blob ({len(blob)} bytes)")
     length, type_code = struct.unpack_from("<II", blob, base)
     start = base + 8
     end = start + length
     if end > len(blob):
-        raise BookmarkParseError(
-            f"value record at {base} claims {length} bytes, only "
-            f"{len(blob) - start} remain"
-        )
+        raise BookmarkParseError(f"value record at {base} claims {length} bytes, only {len(blob) - start} remain")
     payload = blob[start:end]
     if type_code in (TYPE_STRING, TYPE_STRING_ALT):
         try:
             return payload.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise BookmarkParseError(
-                f"string record at {base} is not valid UTF-8: {exc}"
-            ) from exc
+            raise BookmarkParseError(f"string record at {base} is not valid UTF-8: {exc}") from exc
     if type_code == TYPE_ARRAY:
         if length % 4:
-            raise BookmarkParseError(
-                f"array record at {base} has length {length}, not a multiple of 4"
-            )
-        return [
-            _read_value(blob, header_size, _u32(payload, i * 4), depth + 1)
-            for i in range(length // 4)
-        ]
-    raise BookmarkParseError(
-        f"value record at {base} has unsupported type {type_code:#06x}"
-    )
+            raise BookmarkParseError(f"array record at {base} has length {length}, not a multiple of 4")
+        return [_read_value(blob, header_size, _u32(payload, i * 4), depth + 1) for i in range(length // 4)]
+    raise BookmarkParseError(f"value record at {base} has unsupported type {type_code:#06x}")
 
 
 def _toc_entries(blob: bytes, header_size: int) -> dict[int, int]:
@@ -124,15 +109,11 @@ def _toc_entries(blob: bytes, header_size: int) -> dict[int, int]:
         seen.add(toc_offset)
         base = header_size + toc_offset
         if base + _TOC_HEADER_LEN > len(blob):
-            raise BookmarkParseError(
-                f"TOC at {base} runs past end of blob ({len(blob)} bytes)"
-            )
+            raise BookmarkParseError(f"TOC at {base} runs past end of blob ({len(blob)} bytes)")
         _size, _magic, _ident, next_toc, count = struct.unpack_from("<5I", blob, base)
         span = base + _TOC_HEADER_LEN + count * _TOC_ENTRY_LEN
         if span > len(blob):
-            raise BookmarkParseError(
-                f"TOC at {base} declares {count} entries, which runs past the blob"
-            )
+            raise BookmarkParseError(f"TOC at {base} declares {count} entries, which runs past the blob")
         for index in range(count):
             entry = base + _TOC_HEADER_LEN + index * _TOC_ENTRY_LEN
             key, value_offset, _unused = struct.unpack_from("<3I", blob, entry)
@@ -153,15 +134,11 @@ def _validate_header(blob: bytes) -> int:
     if header_size < _HEADER_MIN or header_size > len(blob):
         raise BookmarkParseError(f"implausible header size {header_size}")
     if total_size != len(blob):
-        raise BookmarkParseError(
-            f"declared size {total_size} != actual {len(blob)} (truncated blob)"
-        )
+        raise BookmarkParseError(f"declared size {total_size} != actual {len(blob)} (truncated blob)")
     return header_size
 
 
-def _extract_components(
-    blob: bytes, header_size: int, entries: dict[int, int]
-) -> list[str]:
+def _extract_components(blob: bytes, header_size: int, entries: dict[int, int]) -> list[str]:
     if KEY_PATH_COMPONENTS not in entries:
         raise BookmarkParseError(
             f"no path-components record ({KEY_PATH_COMPONENTS:#06x}) in bookmark; "
@@ -173,23 +150,17 @@ def _extract_components(
     components: list[str] = []
     for item in raw_components:
         if not isinstance(item, str):
-            raise BookmarkParseError(
-                f"path component is {type(item).__name__}, expected str"
-            )
+            raise BookmarkParseError(f"path component is {type(item).__name__}, expected str")
         components.append(item)
     return components
 
 
-def _extract_volume(
-    blob: bytes, header_size: int, entries: dict[int, int]
-) -> tuple[str, str | None]:
+def _extract_volume(blob: bytes, header_size: int, entries: dict[int, int]) -> tuple[str, str | None]:
     volume_path = "/"
     if KEY_VOLUME_PATH in entries:
         value = _read_value(blob, header_size, entries[KEY_VOLUME_PATH])
         if not isinstance(value, str):
-            raise BookmarkParseError(
-                f"volume path is {type(value).__name__}, expected str"
-            )
+            raise BookmarkParseError(f"volume path is {type(value).__name__}, expected str")
         volume_path = value
 
     volume_name: str | None = None
@@ -209,9 +180,7 @@ def parse_bookmark_path(blob: bytes) -> BookmarkPath:
     see :mod:`apps.mik.match`.
     """
     if not isinstance(blob, (bytes, bytearray)):
-        raise BookmarkParseError(
-            f"expected bytes, got {type(blob).__name__}"
-        )
+        raise BookmarkParseError(f"expected bytes, got {type(blob).__name__}")
     blob = bytes(blob)
     header_size = _validate_header(blob)
 

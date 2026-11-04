@@ -86,6 +86,19 @@ function _minVisibleBeatSpacingPx(beats: readonly AnlzBeat[], start: number, tRi
 	return Number.isFinite(minS) ? minS * pxPerSec : 0;
 }
 
+/** Beat-line thinning stride for one visible window (WAVEZOOM-02). Shared by
+ * the grid painter and the Gothic snapper so they cannot drift. */
+export function beatLineStrideForWindow(
+	beats: readonly AnlzBeat[],
+	tLeftSec: number,
+	pxPerSec: number,
+	widthCss: number
+): number {
+	const tRightSec = tLeftSec + widthCss / pxPerSec;
+	const start = firstBeatAtOrAfter(beats, tLeftSec);
+	return beatLineStride(_minVisibleBeatSpacingPx(beats, start, tRightSec, pxPerSec));
+}
+
 /** Project ordered, real PQTZ beats into the visible canvas window.
  * Downbeats are wider and brighter; every returned line spans rowHeight.
  * When beats would sit closer than BEAT_LINE_MIN_GAP_PX the grid keeps
@@ -101,13 +114,17 @@ export function visibleBeatLines(
 	widthCss: number,
 	rowHeight: number,
 	barPhaseUntrusted = false,
-	originPx?: number
+	originPx?: number,
+	strideOverride?: number
 ): BeatLineGeometry[] {
 	if (beats.length === 0) return [];
 	const tRightSec = tLeftSec + widthCss / pxPerSec;
 	const lines: BeatLineGeometry[] = [];
 	const start = firstBeatAtOrAfter(beats, tLeftSec);
-	const stride = beatLineStride(_minVisibleBeatSpacingPx(beats, start, tRightSec, pxPerSec));
+	const stride =
+		strideOverride !== undefined && Number.isFinite(strideOverride)
+			? strideOverride
+			: beatLineStrideForWindow(beats, tLeftSec, pxPerSec, widthCss);
 	if (stride === 0) return [];
 	const bars = stride >= 4 ? _barIndexes(beats) : null;
 	for (let i = start; i < beats.length; i++) {

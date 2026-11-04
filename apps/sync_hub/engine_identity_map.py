@@ -10,6 +10,7 @@ children onto the LWW survivor BEFORE the offer: otherwise the local digest
 still hashes memberships that name the loser, the hub hashes the remapped
 bundle, and ADR 04 c6 fires on a library that is not corrupt.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -63,9 +64,7 @@ def ensure_identity_remap_table(conn: sqlite3.Connection) -> None:
 
 
 def _identity_remap_table_exists(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (REMAP_TABLE,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (REMAP_TABLE,)).fetchone()
     return row is not None
 
 
@@ -80,9 +79,7 @@ def load_identity_remap(conn: sqlite3.Connection) -> dict[str, str]:
         return {}
     return {
         str(loser): str(survivor)
-        for loser, survivor in conn.execute(
-            f"SELECT loser_pk, survivor_pk FROM {REMAP_TABLE}"
-        )
+        for loser, survivor in conn.execute(f"SELECT loser_pk, survivor_pk FROM {REMAP_TABLE}")
     }
 
 
@@ -130,10 +127,7 @@ class PersistedRemap:
     @classmethod
     def load(cls, conn: sqlite3.Connection) -> PersistedRemap:
         persisted = load_identity_remap(conn)
-        combined = {
-            loser: _follow_remap(persisted, survivor)
-            for loser, survivor in persisted.items()
-        }
+        combined = {loser: _follow_remap(persisted, survivor) for loser, survivor in persisted.items()}
         return cls(combined, frozenset(combined) | frozenset(combined.values()))
 
     def with_local(self, local: Mapping[str, str]) -> dict[str, str]:
@@ -142,17 +136,14 @@ class PersistedRemap:
         combined.update(self._local_outside_hub_domain(local))
         return combined
 
-    def effective_losers(
-        self, local: Mapping[str, str], candidates: Iterable[str]
-    ) -> frozenset[str]:
+    def effective_losers(self, local: Mapping[str, str], candidates: Iterable[str]) -> frozenset[str]:
         """The ``candidates`` in ``effective_identity_remap(conn)``, given ``local``
         holds every election their remap chains can reach."""
         combined = ChainMap(self._local_outside_hub_domain(local), self.combined)
         return frozenset(
             pk
             for pk in candidates
-            if (mapped := combined.get(pk)) is not None
-            and pk != _follow_remap(combined, mapped)
+            if (mapped := combined.get(pk)) is not None and pk != _follow_remap(combined, mapped)
         )
 
     def _local_outside_hub_domain(self, local: Mapping[str, str]) -> dict[str, str]:
@@ -163,9 +154,7 @@ class PersistedRemap:
         }
 
 
-def _remove_remap_loser(
-    conn: sqlite3.Connection, remap: dict[str, str], loser_pk: str
-) -> None:
+def _remove_remap_loser(conn: sqlite3.Connection, remap: dict[str, str], loser_pk: str) -> None:
     """Drop one persisted remap row and keep the in-memory map aligned."""
     if loser_pk in remap:
         del remap[loser_pk]
@@ -194,19 +183,13 @@ def apply_hub_identity_rejects(
     repairs: list[IdentityRepairRequest] = []
     for reject in rejects:
         if reject.table != "tracks":
-            raise protocol.SyncProtocolError(
-                f"identity reject for unsupported table {reject.table!r}"
-            )
+            raise protocol.SyncProtocolError(f"identity reject for unsupported table {reject.table!r}")
         offered = reject.offered_pk
         survivor = reject.survivor_pk
         if not offered or not survivor:
-            raise protocol.SyncProtocolError(
-                "identity reject must name non-empty offered_pk and survivor_pk"
-            )
+            raise protocol.SyncProtocolError("identity reject must name non-empty offered_pk and survivor_pk")
         if offered == survivor:
-            raise protocol.SyncProtocolError(
-                "identity reject offered_pk and survivor_pk must differ"
-            )
+            raise protocol.SyncProtocolError("identity reject offered_pk and survivor_pk must differ")
         _remove_remap_loser(conn, remap, survivor)
         for loser, mapped in list(remap.items()):
             if loser == offered:
@@ -216,9 +199,7 @@ def apply_hub_identity_rejects(
         record_identity_remap(conn, remap, offered, survivor)
         remap_track_children(conn, offered, survivor)
         applied += 1
-        repairs.append(
-            IdentityRepairRequest(hub_survivor_pk=survivor, offer_pk=offered)
-        )
+        repairs.append(IdentityRepairRequest(hub_survivor_pk=survivor, offer_pk=offered))
     return applied, tuple(repairs)
 
 

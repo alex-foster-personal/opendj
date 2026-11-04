@@ -68,16 +68,11 @@ class PolicyChangesIn(_Strict):
         """The validator's view of this change set, authored by ``author_machine_id``."""
         return ProposedPolicy(
             author_machine_id=author_machine_id,
-            policies=tuple(
-                PolicyCell(c.machine_id, c.asset_kind, c.mode, c.cache_budget_mb)
-                for c in self.policies
-            ),
+            policies=tuple(PolicyCell(c.machine_id, c.asset_kind, c.mode, c.cache_budget_mb) for c in self.policies),
             pins=tuple(PinCell(p.machine_id, p.playlist_id, p.mode) for p in self.pins),
             defaults=tuple(KindDefault(d.asset_kind, d.mode) for d in self.defaults),
             excluded_tables=tuple(self.excluded_tables),
-            removed_policies=tuple(
-                PolicyKey(k.machine_id, k.asset_kind) for k in self.removed_policies
-            ),
+            removed_policies=tuple(PolicyKey(k.machine_id, k.asset_kind) for k in self.removed_policies),
             removed_pins=tuple(PinKey(k.machine_id, k.playlist_id) for k in self.removed_pins),
         )
 

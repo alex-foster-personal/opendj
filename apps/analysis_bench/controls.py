@@ -54,7 +54,7 @@ def _load_loudness_truth(fixtures_path: Path) -> dict[str, Any]:
 
 
 def _beatgrid_positive(fixtures_path: Path) -> dict[str, Any]:
-    from scripts.beatbench import report as beatgrid_report
+    from apps.analysis_bench.scorers import beatgrid_report
 
     _, fixtures = beatgrid_report.load_fixtures(str(fixtures_path))
     results = {

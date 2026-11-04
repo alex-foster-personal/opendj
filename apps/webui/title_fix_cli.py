@@ -37,11 +37,20 @@ class CFG:
 
 
 def _request(
-    base_url: str, method: str, path: str, body: dict[str, Any] | None = None, *, timeout_s: float | None = None,
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    *,
+    timeout_s: float | None = None,
 ) -> Any:
     payload = None if body is None else json.dumps(body).encode("utf-8")
-    request = Request(f"{base_url.rstrip('/')}{path}", data=payload, method=method,
-                      headers={"Accept": "application/json", "Content-Type": "application/json"})
+    request = Request(
+        f"{base_url.rstrip('/')}{path}",
+        data=payload,
+        method=method,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+    )
     try:
         with urlopen(request, timeout=CFG.REQUEST_TIMEOUT_S if timeout_s is None else timeout_s) as response:
             return json.loads(response.read())
@@ -104,13 +113,17 @@ def _wait_for_scan(base_url: str, scan: dict[str, Any]) -> dict[str, Any]:
     while scan["state"] == "running":
         if time.monotonic() > deadline:
             raise RuntimeError(f"scan {scan['scan_id']} still running after {CFG.WAIT_MAX_S}s")
-        sys.stderr.write(f"scan {scan['scan_id'][:8]}: {scan['processed']}/{scan['requested']} "
-                         f"cost ${scan['cost_usd']:.4f} of ${scan['spend_cap_usd']:.2f}\n")
+        sys.stderr.write(
+            f"scan {scan['scan_id'][:8]}: {scan['processed']}/{scan['requested']} "
+            f"cost ${scan['cost_usd']:.4f} of ${scan['spend_cap_usd']:.2f}\n"
+        )
         time.sleep(CFG.POLL_S)
         remaining_s = deadline - time.monotonic()  # a stalled poll must not outlast the advertised wait
         if remaining_s <= 0:
             raise RuntimeError(f"scan {scan['scan_id']} still running after {CFG.WAIT_MAX_S}s")
-        scan = _request(base_url, "GET", f"/title-fix/scans/{scan['scan_id']}", timeout_s=min(CFG.REQUEST_TIMEOUT_S, remaining_s))
+        scan = _request(
+            base_url, "GET", f"/title-fix/scans/{scan['scan_id']}", timeout_s=min(CFG.REQUEST_TIMEOUT_S, remaining_s)
+        )
     if scan["state"] == "failed":  # a waited scan that did not finish is a failed command, never a clean exit
         raise RuntimeError(f"scan {scan['scan_id']} failed: {scan.get('error') or 'no reason recorded'}")
     return scan
@@ -121,9 +134,17 @@ Handler = Callable[[argparse.Namespace, str], Any]
 
 def _config_set(args: argparse.Namespace, base_url: str) -> Any:
     families = [f for f in args.families.split(",") if f]
-    return _request(base_url, "PUT", "/title-fix/config", {
-        "enabled": args.enabled, "auto_apply_policy": args.policy,
-        "spend_cap_usd": args.cap, "tag_families": families})
+    return _request(
+        base_url,
+        "PUT",
+        "/title-fix/config",
+        {
+            "enabled": args.enabled,
+            "auto_apply_policy": args.policy,
+            "spend_cap_usd": args.cap,
+            "tag_families": families,
+        },
+    )
 
 
 def _key_set(_args: argparse.Namespace, base_url: str) -> Any:
@@ -144,10 +165,20 @@ def _scan(args: argparse.Namespace, base_url: str) -> Any:
 
 
 def _proposals(args: argparse.Namespace, base_url: str) -> Any:
-    query = {k: v for k, v in {
-        "state": args.state, "fixer_status": args.fixer_status, "source": args.source, "tag": args.tag,
-        "scan_id": args.scan_id, "batch_id": args.batch_id, "limit": args.limit, "offset": args.offset,
-    }.items() if v is not None}
+    query = {
+        k: v
+        for k, v in {
+            "state": args.state,
+            "fixer_status": args.fixer_status,
+            "source": args.source,
+            "tag": args.tag,
+            "scan_id": args.scan_id,
+            "batch_id": args.batch_id,
+            "limit": args.limit,
+            "offset": args.offset,
+        }.items()
+        if v is not None
+    }
     return _request(base_url, "GET", f"/title-fix/proposals?{urlencode(query)}")
 
 
@@ -160,8 +191,9 @@ def _apply(args: argparse.Namespace, base_url: str) -> Any:
 def _undo(args: argparse.Namespace, base_url: str) -> Any:
     if not args.confirm:
         raise RuntimeError("undo rewrites track titles/artists/tags; rerun with --confirm")
-    return _request(base_url, "POST", f"/title-fix/batches/{args.batch_id}/undo",
-                    {"skip_conflicts": args.skip_conflicts})
+    return _request(
+        base_url, "POST", f"/title-fix/batches/{args.batch_id}/undo", {"skip_conflicts": args.skip_conflicts}
+    )
 
 
 HANDLERS: dict[str, Handler] = {

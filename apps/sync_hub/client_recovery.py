@@ -70,11 +70,26 @@ RowKey = tuple[str, tuple[str, ...]]
 #: that and either 414 or silently truncate the bundle, so recovery then
 #: keeps every remap. 32 ids stay around 2 KiB plus machine_id.
 BUNDLE_STABLE_IDS_PER_GET: int = 32
-#: Pair examples in the keep log: the full list is hundreds of hashes and
-#: hid the refusal in Sentry's title.
-_KEEP_EXAMPLES: int = 5
-
 log = logging.getLogger(__name__)
+
+#: Keep-path Sentry title (OPEN-DJ-BE-78) listed every pair. Three examples
+#: name the shape; the count and refusal are the operator-facing facts.
+_KEPT_STALE_REMAP_EXAMPLES = 3
+
+
+def kept_stale_remap_message(
+    stale: Sequence[tuple[str, str]], refusal: str
+) -> str:
+    """Count, refusal, and a bounded sample -- never the full remap list.
+
+    A keep is CLOUDSYNC-07's designed refusal, not a crash. The engine
+    warning log forwards ERROR to Sentry; this message is logged WARNING.
+    """
+    examples = list(stale[:_KEPT_STALE_REMAP_EXAMPLES])
+    return (
+        f"kept {len(stale)} stale identity remap(s): {refusal}. "
+        f"Examples: {examples}."
+    )
 
 
 class RecoveryProofMoved(RuntimeError):
@@ -489,20 +504,14 @@ def _log_kept_stale_remaps(stale: Sequence[tuple[str, str]], refusal: _Refusal) 
     The closing advice follows ``moved``, as the caller does: only a move
     is retried, and a settled refusal halts until someone looks.
     """
-    examples = list(stale[:_KEEP_EXAMPLES])
-    extra = len(stale) - len(examples)
-    more = f" (+{extra} more)" if extra else ""
     advice = (
         "a later quiet sync retries the proof"
         if refusal.moved
         else "nothing moved, so sync halts here until the divergence is investigated"
     )
     log.warning(
-        "kept %d stale identity remap(s): %s. Examples: %s%s. The original outcome stands; %s.",
-        len(stale),
-        refusal.reason,
-        examples,
-        more,
+        "%s The original outcome stands; %s.",
+        kept_stale_remap_message(stale, refusal.reason),
         advice,
     )
 

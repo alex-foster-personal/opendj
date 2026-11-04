@@ -1,4 +1,5 @@
 """M3 triage queues endpoint (CAT-05)."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,7 +25,6 @@ def get_queue(
         )
     items, note = backend.get_queue(kind)  # type: ignore[arg-type]
     return QueueOut(
-        items=[QueueItemOut(stable_id=i.stable_id, kind=i.kind, payload=i.payload)
-               for i in items],
+        items=[QueueItemOut(stable_id=i.stable_id, kind=i.kind, payload=i.payload) for i in items],
         note=note,
     )

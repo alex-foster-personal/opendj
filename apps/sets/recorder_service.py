@@ -5,7 +5,6 @@ that object can settle its poll threads and ffmpeg process safely.
 """
 from __future__ import annotations
 
-import ctypes
 import json
 import logging
 import os
@@ -13,6 +12,8 @@ import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal
+
+from apps.shared.process_liveness import pid_is_alive
 
 from . import capture as capture_mod
 from . import paths as sets_paths
@@ -442,23 +443,7 @@ class RecorderService:
 
 
 def _pid_is_running(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if os.name == "nt":
-        process_query_limited_information = 0x1000
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            return True
-        return ctypes.get_last_error() == 5
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return pid > 0 and pid_is_alive(pid)
 
 
 __all__ = [

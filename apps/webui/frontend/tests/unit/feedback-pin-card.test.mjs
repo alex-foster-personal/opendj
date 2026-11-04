@@ -96,7 +96,7 @@ test('the pin opens a real dialog, not just a native title', () => {
 
 test('a reopened pin card has a close X and only outside pointer presses dismiss it', () => {
 	assert.match(pinLayer, /import FeedbackPinCard from '.\/FeedbackPinCard\.svelte'/);
-	assert.match(pinLayer, /<FeedbackPinCard[\s\S]*onclose=\{closePin\}/);
+	assert.match(pinLayer, /<FeedbackPinCard[\s\S]*onclose=\{(\(\) => )?closePin/);
 	assert.match(card, /aria-label="Close comment pin"/);
 	assert.match(card, /onclick=\{onclose\}>×<\/button/);
 	assert.match(
@@ -111,8 +111,16 @@ test('a reopened pin card has a close X and only outside pointer presses dismiss
 	assert.match(handler, /pinBodyElement\?\.contains\(target\)/);
 	assert.match(handler, /onclose\(\)/);
 	const close = pinLayer.slice(pinLayer.indexOf('function closePin'), pinLayer.indexOf('function archiveOpenPin'));
-	assert.match(close, /openPinId = null/);
+	assert.match(close, /openPinIds = openPinIds.filter/);
 	assert.doesNotMatch(close, /pinDraft\s*=\s*null/, 'dismissing a reopened card must retain a new draft');
+});
+
+test('opening a second comment keeps the first composer and its draft', () => {
+	assert.match(pinLayer, /if \(openPinIds\.includes\(pin\.id\)\) return;/);
+	assert.match(pinLayer, /openPinIds = \[\.\.\.openPinIds, pin\.id\]/);
+	assert.match(pinLayer, /pinDrafts = \[\.\.\.pinDrafts,/);
+	assert.match(card, /replyText\.trim\(\) !== ''\) return;/);
+	assert.match(card, /\.fb-pin, \.fb-pin-body, \.fb-bubble, \.fb-place-overlay/);
 });
 
 // Issue #928: the body hangs down-right of its marker, so a pin dropped near

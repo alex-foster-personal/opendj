@@ -45,11 +45,7 @@ def add_perf_tier_route(app: FastAPI, *, data_dir: Path) -> None:
         response_model=PerfTierOut,
         tags=["health"],
         name="perf_tier",
-        responses={
-            status.HTTP_503_SERVICE_UNAVAILABLE: {
-                "description": "auto tier cannot resolve without host facts"
-            }
-        },
+        responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "auto tier cannot resolve without host facts"}},
     )
     def perf_tier() -> PerfTierOut | JSONResponse:
         identity: HostIdentity = getattr(app.state, HOST_INFO_STATE_ATTR)

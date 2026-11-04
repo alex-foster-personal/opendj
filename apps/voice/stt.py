@@ -9,6 +9,7 @@ All HTTP calls use ``urllib`` so this module has zero extra
 dependencies. We include the DJ-vocab ``initial_prompt`` from
 voice-feasibility.md 10.2 to bias the LM toward our domain words.
 """
+
 from __future__ import annotations
 
 import io
@@ -24,10 +25,7 @@ from typing import Any
 DEFAULT_WHISPER_URL: str = "http://127.0.0.1:2022/inference"
 DEFAULT_WHISPER_TIMEOUT_S: float = 15.0
 
-DJ_INITIAL_PROMPT: str = (
-    "DJ commands: cue points, BPM, key, transition, deck, queue, "
-    "Rekordbox, djay, Camelot"
-)
+DJ_INITIAL_PROMPT: str = "DJ commands: cue points, BPM, key, transition, deck, queue, Rekordbox, djay, Camelot"
 
 
 @dataclass(frozen=True)
@@ -83,9 +81,7 @@ def build_multipart(
     """
     parts: list[bytes] = []
     parts.append(f"--{boundary}\r\n".encode())
-    parts.append(
-        b'Content-Disposition: form-data; name="file"; filename="utt.wav"\r\n'
-    )
+    parts.append(b'Content-Disposition: form-data; name="file"; filename="utt.wav"\r\n')
     parts.append(b"Content-Type: audio/wav\r\n\r\n")
     parts.append(wav_bytes)
     parts.append(b"\r\n")
@@ -116,9 +112,7 @@ class WhisperCppClient:
         self.timeout_s = timeout_s
         self.prompt = prompt
         # Injectable for tests (default = urllib.request.urlopen).
-        self._opener = opener or (
-            lambda req, timeout: urllib.request.urlopen(req, timeout=timeout)
-        )
+        self._opener = opener or (lambda req, timeout: urllib.request.urlopen(req, timeout=timeout))
 
     def transcribe(self, pcm: bytes, sample_rate_hz: int = 16_000) -> Transcript:
         wav = pcm_to_wav_bytes(pcm, sample_rate_hz=sample_rate_hz)
@@ -180,8 +174,7 @@ class GroqClient:
 
     def transcribe(self, pcm: bytes, sample_rate_hz: int = 16_000) -> Transcript:  # pragma: no cover
         raise NotImplementedError(
-            "Groq STT hook exists but is not wired in Phase 14 (C4 "
-            "default is local). Use STT_BACKEND=whisper_cpp."
+            "Groq STT hook exists but is not wired in Phase 14 (C4 default is local). Use STT_BACKEND=whisper_cpp."
         )
 
 

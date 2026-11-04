@@ -7,17 +7,18 @@ one. :data:`apps.shared.state.schema.MIGRATIONS` assembles both halves in
 order and :func:`apps.shared.state.schema.apply_migrations` is the runner --
 both stay in ``schema.py`` along with the drift-tripwire table/view tuples.
 """
+
 from __future__ import annotations
 
 # --- migration 6 -> 7: sync-safe schema (CLOUDSYNC) ------------------------
-# Contract: specs/design_decision_05.md, rationale specs/design_decision_04.md.
+# Contract: (private path), rationale (private path).
 # Three facts blocked hub sync: track_locations had an INTEGER PRIMARY KEY
 # AUTOINCREMENT that collides across machines, no synced table carried
 # updated_at / origin_device_id / deleted_at, and there were no machines or
 # policy tables. Pure SQL, no Python, so it rides the existing MIGRATIONS
 # machinery.
 #
-# Amended IN PLACE for round 2 by specs/design_decision_08.md points 1 and 2
+# Amended IN PLACE for round 2 by (private path) points 1 and 2
 # (this migration had never touched a real database). ADR 05 reserved v6 for
 # CLOUDSYNC and v7 for auth, but the auth branch (Google sign-in) merged to
 # main first and took v6, so CLOUDSYNC yields and renumbers to v7: this list
@@ -137,8 +138,7 @@ _V7: list[str] = [
         received_at      TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
-    "ON local_changelog(table_name, row_pk)",
+    "CREATE INDEX IF NOT EXISTS idx_local_changelog_table ON local_changelog(table_name, row_pk)",
     # --- sync columns on the existing synced tables ----------------------
     "ALTER TABLE tracks ADD COLUMN origin_device_id TEXT",
     "ALTER TABLE tracks ADD COLUMN deleted_at TEXT",
@@ -201,8 +201,7 @@ _V7: list[str] = [
     """,
     "DROP TABLE track_locations",
     "ALTER TABLE track_locations_v6 RENAME TO track_locations",
-    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
-    "ON track_locations(stable_id)",
+    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable ON track_locations(stable_id)",
     # machine_id joins the logical identity: two machines holding the same
     # (stable_id, kind, path) now hold two rows, so the hub upsert merges by
     # LWW instead of wedging the push with a UNIQUE-violation 409.
@@ -254,10 +253,8 @@ _V6: list[str] = [
         expires_at           TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_sub "
-    "ON auth_sessions(google_sub)",
-    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires "
-    "ON auth_sessions(expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_sub ON auth_sessions(google_sub)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at)",
 ]
 
 
@@ -285,7 +282,7 @@ _V6: list[str] = [
 #     on, and inventing one would fabricate identity. It gets its own staging
 #     table, ``unmatched_source_analysis``, with a nullable
 #     ``promoted_stable_id`` recording the later match. See
-#     ``docs/analysis-retention.md`` for the promotion path.
+#     ``(private path)`` for the promotion path.
 #     ``unmatched_reason`` records WHY no stable_id was assigned: no candidate
 #     at all, several equally good candidates, or a candidate that a
 #     better-tier source row won. All three mean the same thing operationally
@@ -294,7 +291,7 @@ _V6: list[str] = [
 #
 # ``track_energy_segments`` is the time-series destination for MIK's
 # ZENERGYSEGMENT rows, in MILLISECONDS per the repo convention
-# (docs/terminology-reference/time-series-vs-scalar.md). ``track_fields`` is
+# ((private path)). ``track_fields`` is
 # one row per (stable_id, field_name) and cannot hold a series.
 _V8: list[str] = [
     # (a) availability as a dimension, not a duplicated analysis table.
@@ -307,10 +304,7 @@ _V8: list[str] = [
         checked_at    TEXT NOT NULL
     )
     """,
-    (
-        "CREATE INDEX IF NOT EXISTS idx_track_availability_state "
-        "ON track_availability(state)"
-    ),
+    ("CREATE INDEX IF NOT EXISTS idx_track_availability_state ON track_availability(state)"),
     # Safe-default views. An aggregate written against ``tracks`` silently
     # includes unplayable rows; one written against ``tracks_available``
     # cannot. Rows with NO availability row yet are UNKNOWN and are excluded
@@ -408,10 +402,7 @@ _V8: list[str] = [
         PRIMARY KEY (stable_id, source, seq)
     )
     """,
-    (
-        "CREATE INDEX IF NOT EXISTS idx_track_energy_segments_start "
-        "ON track_energy_segments(stable_id, start_ms)"
-    ),
+    ("CREATE INDEX IF NOT EXISTS idx_track_energy_segments_start ON track_energy_segments(stable_id, start_ms)"),
     # HOW each field was verified, stored next to the values it produced.
     # Cross-source agreement and a one-sided single-source probe are not the
     # same strength of evidence, and a bare "passed" in a log line does not

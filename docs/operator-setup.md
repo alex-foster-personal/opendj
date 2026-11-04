@@ -64,7 +64,7 @@ first decrypt; there is no separate key-download step.
 
 - `brew install ffmpeg` (also used by Phase 12 set recording).
 - The default backend is `librosa`: pure PyPI wheels (librosa ISC, scipy BSD-3-Clause) via the `analysis` extra, so analysis works on a clean machine with no git builds. It does beats/BPM, onsets, key, RMS, and energy -- no downbeat tracking.
-- `librosa+madmom` is the optional dev-only learned beat/downbeat backend (`--backend librosa+madmom`). madmom is a git-HEAD install from `requirements.txt`; its code is BSD-3-Clause but its bundled pre-trained models are CC-BY-NC-SA 4.0 (non-commercial only), so it must never be an automatic fallback or part of a distributed install.
+- `librosa+madmom` is the optional dev-only learned beat/downbeat backend (`--backend librosa+madmom`). madmom is a git-HEAD install from `requirements.txt`; its code is BSD-2-Clause but its bundled pre-trained models are CC-BY-NC-SA 4.0 (non-commercial only), so it must never be an automatic fallback or part of a distributed install.
 - `numpy<2` pin in `requirements.txt` is required for `madmom` compatibility. Do not upgrade numpy separately in this venv.
 
 ## Feature: Spotify import (Phase 9)

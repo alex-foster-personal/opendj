@@ -4,6 +4,7 @@ Local import shim so downstream code can say ``from apps.shared.state import
 paths`` without cross-package imports. Any change to the canonical location
 goes in ``apps/shared/paths.py`` (single source of truth).
 """
+
 from __future__ import annotations
 
 from apps.shared.paths import (

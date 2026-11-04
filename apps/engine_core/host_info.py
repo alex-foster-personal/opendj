@@ -181,5 +181,22 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+__all__ = [
+    "CANARY_FILENAME",
+    "CANARY_ITERATIONS",
+    "CANARY_SCHEMA",
+    "CANARY_SEED",
+    "CODE_HOST_INFO_UNAVAILABLE",
+    "HOST_INFO_PATH",
+    "HOST_INFO_STATE_ATTR",
+    "HostIdentity",
+    "HostInfoOut",
+    "add_host_info_route",
+    "main",
+    "resolve_host_info",
+    "run_canary",
+]
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

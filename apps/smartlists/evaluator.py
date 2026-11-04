@@ -17,6 +17,7 @@ All value bindings flow through ``?`` parameter placeholders;
 identifiers (field names, order-by columns) come from
 :mod:`apps.shared.smartlists` enums only.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -40,6 +41,7 @@ class EvaluatorError(ValueError):
 _TRACKS_NATIVE: dict[str, str] = {
     "added_date": "tracks.created_at",
 }
+
 
 def _sql_literal(s: str) -> str:
     if not s.replace("_", "").isalnum():
@@ -71,9 +73,7 @@ def _resolve_relative_date(expr: dict) -> str:
         "w": {"weeks": n},
     }.get(unit)
     if delta_kwargs is None:
-        raise SmartlistRuleError(
-            f"$relative unit {unit!r} must be one of d/h/m/w"
-        )
+        raise SmartlistRuleError(f"$relative unit {unit!r} must be one of d/h/m/w")
     return (datetime.now(UTC) + timedelta(**delta_kwargs)).isoformat()
 
 
@@ -115,13 +115,15 @@ def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
             f"tracks.stable_id IN ({_paired_with_subquery(f'IN ({placeholders})')})",
             [*value, *value],
         )
-    raise SmartlistRuleError(
-        f"paired_with: only = / != / in supported; got {op!r}"
-    )
+    raise SmartlistRuleError(f"paired_with: only = / != / in supported; got {op!r}")
 
 
 def _compile_scalar_op(
-    field: str, op: str, col: str, value: Any, ftype: str,
+    field: str,
+    op: str,
+    col: str,
+    value: Any,
+    ftype: str,
 ) -> tuple[str, list[Any]]:
     if op in ("=", "!=", "<", "<=", ">", ">="):
         return f"{col} {op} ?", [value]
@@ -182,9 +184,7 @@ def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
     if "op" in rule and rule["op"] in LOGICAL_OPS:
         op = rule["op"]
         if op == "not":
-            inner_sql, inner_params = compile_rule(
-                rule["children"][0], selection=selection
-            )
+            inner_sql, inner_params = compile_rule(rule["children"][0], selection=selection)
             return f"NOT ({inner_sql})", inner_params
         parts = [compile_rule(c, selection=selection) for c in rule["children"]]
         sql = "(" + f" {op.upper()} ".join(p[0] for p in parts) + ")"
@@ -196,17 +196,18 @@ def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
 def _order_by_sql(order_by: str) -> str:
     expr = ORDER_BY_SQL.get(order_by)
     if expr is None:
-        raise EvaluatorError(
-            f"order_by {order_by!r} not in allowlist {sorted(ORDER_BY_SQL)}"
-        )
+        raise EvaluatorError(f"order_by {order_by!r} not in allowlist {sorted(ORDER_BY_SQL)}")
     return expr
 
 
 def _order_by_needs_join(order_by: str) -> str | None:
     mapping: dict[str, str] = {
-        "bpm asc": "bpm", "bpm desc": "bpm",
-        "rating asc": "rating", "rating desc": "rating",
-        "energy asc": "energy", "energy desc": "energy",
+        "bpm asc": "bpm",
+        "bpm desc": "bpm",
+        "rating asc": "rating",
+        "rating desc": "rating",
+        "energy asc": "energy",
+        "energy desc": "energy",
     }
     return mapping.get(order_by)
 
@@ -248,10 +249,7 @@ def evaluate(
     # ADR 08 point 5 / round 2 finding 4b: a tombstoned track must not
     # surface in a smartlist. Filtered in-query rather than by the caller
     # so every consumer of evaluate() gets the honest set for free.
-    sql = (
-        select + "FROM tracks WHERE tracks.deleted_at IS NULL AND ("
-        + where_sql + ") ORDER BY " + order_sql
-    )
+    sql = select + "FROM tracks WHERE tracks.deleted_at IS NULL AND (" + where_sql + ") ORDER BY " + order_sql
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
 
@@ -261,8 +259,7 @@ def evaluate(
         # Phase 5 tables may not exist yet on an empty state DB; report
         # rather than crash so the CLI surface stays helpful.
         raise EvaluatorError(
-            f"evaluator could not query tracks: {exc}. "
-            "Run the Phase 5 ingest first to populate tracks + track_fields."
+            f"evaluator could not query tracks: {exc}. Run the Phase 5 ingest first to populate tracks + track_fields."
         ) from exc
     return [r[0] for r in rows]
 

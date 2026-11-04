@@ -18,6 +18,8 @@
  *   [if] the deferred upgrade reads one STEM_BUNDLE_HYDRATING answer as final
  *        instead of waiting through it with awaitStemArtifact [then ⛔️]
  *   [if] a held stem upgrade is not released on unload/dispose [then ⛔️]
+ *   [if] the presentation frame stops landing a held stem upgrade [then ⛔️]
+ *        (the behavior itself is deck-stems-held-release.test.mjs, STEM-4756)
  *   [if] a retired processor is only .disconnect()-ed, never .dispose()-ed
  *        [then ⛔️] (retired worklet + its transferred PCM leak until the whole
  *        AudioContext is torn down; disconnect() alone never releases it -
@@ -28,6 +30,9 @@ import { before, test } from 'node:test';
 import { readFileSync } from 'node:fs';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
 
 const ENGINE = 'src/lib/rb/audio-engine.svelte.ts';
 let source;
@@ -130,9 +135,17 @@ test('a held stem upgrade is released on every path that abandons it', () => {
 		calls.length >= 4,
 		`expected the release on unload, dispose and track swap; found ${calls.length} references`
 	);
+	// The call existing is not proof it works: it sat at the end of pause() and
+	// never once landed a bundle (STEM-4756), while this assertion stayed green.
+	// The behavior is pinned on the real engine by
+	// deck-stems-held-release.test.mjs; this only keeps the call on the one
+	// path that publishes `audible` / `transport_pending`, so can see a deck at rest.
+	const tickStart = source.indexOf('function _tick(): void {');
+	assert.ok(tickStart > 0, '_tick not found - this test is reading the wrong file');
+	const tick = source.slice(tickStart, source.indexOf('\n}\n', tickStart));
 	assert.ok(
-		source.includes('_drainPendingStemUpgrade(deck)'),
-		'nothing lands a bundle that finished while the deck was playing'
+		tick.includes('_drainPendingStemUpgrade(deck)'),
+		'the presentation frame no longer lands a bundle that finished while the deck was playing'
 	);
 });
 
@@ -200,7 +213,9 @@ function engineFunction(signature) {
 
 test('a finished stem bundle is landed, never parked by the upgrade itself', () => {
 	const upgrade = engineFunction('async function _upgradeDeckStems(');
-	assert.match(upgrade, /await time\('landStems', _landStems\(deck, \{ token, processor: created\.processor, state: readyState \}, ctx, stale\)\)/);
+	assert.match(upgrade, /await time\('landStems', _landStems\(deck, \{ token, processor: created\.processor, state: \{ \.\.\.readyState, playback: 'stems' \} \}, ctx, stale\)\)/);
+	// AUDFID-02: the only other exit for a ready bundle is the neutral hold, not a park.
+	assert.match(upgrade, /if \(deckPlaysOriginalFile\(readyState\.controls\)\) \{\n\t\t\t_holdNeutralStems\(/);
 	assert.ok(
 		!/rt\.pendingStemUpgrade\s*=/.test(upgrade),
 		'_upgradeDeckStems parks the bundle itself: that is the held-until-stop behavior the report is about'

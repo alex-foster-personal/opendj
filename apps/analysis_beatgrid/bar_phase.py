@@ -7,7 +7,7 @@ that must support arbitrary meters and cannot assume the bar length. This
 project can: rekordbox's PQTZ grid stores `n` as a position in a four-beat bar
 and the `/anlz` payload hands the deck exactly that, so an `n` of 7 is not a
 longer bar, it is a number no consumer can place. Measured on the committed
-round-1 artifact `ops/beatbench/round-1/raw-beatgrid_lane_t050.json`, 90 tracks:
+round-1 artifact `(private path)`, 90 tracks:
 24 carried a number above 4 and one reached 20 (Codex P1 on PR #1514).
 
 SO THE NUMBER IS A PHASE, AND A PHASE NEEDS AN ANCHOR. Every beat is numbered
@@ -68,7 +68,7 @@ REASON_NO_BEATS = "no_beats"
 DOUBLE_MIN_GAP_BEATS = 3
 
 # Fail a track whose thinned-downbeat agreement with the chosen phase is below
-# this. Locked from the round-3 90-track measure (ops/beatbench/round-3/).
+# this. Locked from the round-3 90-track measure ((private path)/).
 BAR_PHASE_AGREEMENT_FLOOR = 0.50
 
 REASON_BAR_PHASE_BELOW_FLOOR = "bar_phase_below_floor"
@@ -111,9 +111,7 @@ class BarPhase:
 # ----- Helpers ------------------------------------------------------------
 
 
-def _downbeat_indices(
-    beats: Sequence[float], downbeats: Sequence[float], tolerance_s: float
-) -> list[int]:
+def _downbeat_indices(beats: Sequence[float], downbeats: Sequence[float], tolerance_s: float) -> list[int]:
     """Index of each downbeat within `beats`, or raise naming the offender."""
     indices: list[int] = []
     for downbeat in downbeats:

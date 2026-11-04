@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { THUMB_H, thumbOffsetPx } from '../../src/lib/rb/pitch-fader-geometry';
 import { firstAnalyzedStableId } from './support/analyzed-track';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -38,7 +39,12 @@ async function dragDeckOneTempoFader(page: Page, finalValue: number): Promise<vo
 	if (box === null) throw new Error('deck 1 pitch fader has no bounding box');
 	const x = box.x + box.width / 2;
 	const startY = box.y + box.height / 2;
-	const finalY = box.y + box.height * (1 - finalValue);
+	// Aim at the thumb centre the component itself draws for finalValue.
+	// PitchFader maps the pointer through valueFromPointer, which reserves
+	// THUMB_H px of travel; scaling by the full box height instead overshoots
+	// on short tracks (64px min-height: 0.625 lands at 17/26, i.e. 1.307692
+	// at range 100, the F21 observation) - a stale input, not sync drift.
+	const finalY = box.y + thumbOffsetPx(finalValue, box.height) + THUMB_H / 2;
 	await page.mouse.move(x, startY);
 	await page.mouse.down();
 	for (let step = 1; step <= 50; step += 1) {

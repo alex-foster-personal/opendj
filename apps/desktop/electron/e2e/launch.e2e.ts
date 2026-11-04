@@ -14,6 +14,7 @@ import { after, before, test } from 'node:test';
 
 import { _electron, type ElectronApplication, type Page } from '@playwright/test';
 
+import { MAIN_MIN_W, PLAYER_W, STRIP_W, sidePlayerLayout } from '../src/side-player-layout';
 import { fakePayload, pidGone, scratchDir, waitFor } from '../test/helpers';
 
 const APP_DIR = path.resolve(__dirname, '..', '..');
@@ -127,6 +128,165 @@ test('the shell publishes its health port and reports the engine running', async
 	const health = await polledHealth();
 	assert.equal(health.engine, 'running');
 	assert.equal(health.lock_port, Number(new URL(page.url()).port));
+});
+
+// SPOT-6555b: the page's own bridge call, through the preload's ipcRenderer.invoke
+// and the trusted main-process handler, docks a real player window beside
+// Open DJ and loads the real open.spotify.com in it.
+// No network intervention, so Spotify rejecting the
+// view, its user agent or the navigation guard turns this red. With no route
+// to Spotify it fails and says the capability is UNAVAILABLE.
+type SideBridge = {
+	open: (url: string, options?: { shrinkMain?: boolean }) => Promise<void>;
+	setCollapsed: (collapsed: boolean) => Promise<void>;
+	close: () => Promise<void>;
+	importBrowserLogins: () => Promise<{ kind: string; reason?: string }>;
+};
+
+async function windowBounds(): Promise<{ main: Electron.Rectangle; player: Electron.Rectangle | null; count: number }> {
+	return app.evaluate(({ BrowserWindow }) => {
+		const all = BrowserWindow.getAllWindows();
+		const main = all.find((w) => w.getParentWindow() === null);
+		const player = all.find((w) => w.getParentWindow() !== null);
+		if (main === undefined) throw new Error('no main window');
+		return { main: main.getBounds(), player: player?.getBounds() ?? null, count: all.length };
+	});
+}
+
+test('SPOT-6555b: the bridge docks a real Spotify player window and collapses and closes it', async () => {
+	// Spotify's own public "Today's Top Hits" playlist.
+	const url = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M';
+	try {
+		const before = await windowBounds();
+		assert.equal(before.count, 1);
+		assert.equal(before.player, null);
+
+		const kind = await page.evaluate(() => {
+			const bridge = (globalThis as unknown as { opendjShell: { version: number; sidePlayer: SideBridge } }).opendjShell;
+			return { version: bridge.version, fns: Object.keys(bridge.sidePlayer).sort() };
+		});
+		assert.deepEqual(kind, { version: 2, fns: ['close', 'importBrowserLogins', 'open', 'setCollapsed'] });
+
+		await page.evaluate(
+			(target) => (globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.open(target, { shrinkMain: true }),
+			url
+		);
+		const open = await windowBounds();
+		assert.equal(open.count, 2);
+		assert.ok(open.player !== null);
+		// The real windows land where the layout says for this display: docked at
+		// Open DJ's edge when the screen has room, at the screen's edge over a
+		// main window already at its minimum width when it does not.
+		const workArea = await app.evaluate(({ screen }, bounds) => screen.getDisplayMatching(bounds).workArea, before.main);
+		const expected = sidePlayerLayout({ main: before.main, workArea, collapsed: false, shrinkMain: true, restoreWidth: null });
+		assert.deepEqual(open.main, expected.main);
+		assert.deepEqual(open.player, expected.player);
+		assert.equal(open.player.height, open.main.height);
+		if (workArea.width >= MAIN_MIN_W + PLAYER_W) assert.equal(open.player.x, open.main.x + open.main.width);
+		const readView = (): Promise<{ title?: string; url?: string; persistent?: boolean; loading?: boolean; pageTitle?: string }> =>
+			app.evaluate(({ BrowserWindow }) => {
+				const player = BrowserWindow.getAllWindows().find((w) => w.getParentWindow() !== null);
+				const views = player?.contentView.children ?? [];
+				const spotify = views.find(
+					(v) => 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().startsWith('https://')
+				);
+				const wc = (spotify as Electron.WebContentsView | undefined)?.webContents;
+				return {
+					title: player?.getTitle(),
+					url: wc?.getURL(),
+					persistent: wc?.session.isPersistent(),
+					loading: wc?.isLoading(),
+					pageTitle: wc?.getTitle()
+				};
+			});
+		const loaded = await waitFor(async () => {
+			const v = await readView();
+			return v.loading === false && /Spotify/.test(v.pageTitle ?? '');
+		}, 45_000);
+		const view = await readView();
+		assert.ok(loaded, `UNAVAILABLE or rejected: open.spotify.com did not load in the player (${JSON.stringify(view)})`);
+		assert.equal(view.title, 'Spotify');
+		// Spotify served the playlist itself: no redirect off open.spotify.com.
+		assert.equal(new URL(view.url ?? '').host, 'open.spotify.com');
+		assert.equal(new URL(view.url ?? '').pathname, new URL(url).pathname);
+		assert.equal(view.persistent, true);
+		const readPage = (): Promise<{ ua: string; text: string }> =>
+			app.evaluate(({ BrowserWindow }) => {
+				const player = BrowserWindow.getAllWindows().find((w) => w.getParentWindow() !== null);
+				const spotify = player?.contentView.children.find(
+					(v) => 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().startsWith('https://')
+				) as Electron.WebContentsView | undefined;
+				return spotify?.webContents.executeJavaScript('({ ua: navigator.userAgent, text: document.body.innerText })') as Promise<{
+					ua: string;
+					text: string;
+				}>;
+			});
+		// The web player renders the playlist itself, so Spotify served the app to
+		// this view rather than an error or unsupported-browser page.
+		const rendered = await waitFor(async () => /Today.s Top Hits/.test((await readPage()).text), 45_000);
+		const seen = await readPage();
+		assert.ok(rendered, `Spotify's web player never rendered the playlist: ${JSON.stringify(seen.text.slice(0, 400))}`);
+		// Spotify's sign-in refuses Electron's own UA.
+		assert.match(seen.ua, /Chrome\//);
+		assert.doesNotMatch(seen.ua, /Electron/);
+		// Spotify accepted the browser: its unsupported-browser page never shows.
+		assert.doesNotMatch(seen.text, /browser (is not|isn't|is no longer) supported/i);
+
+		// Permission checks are denied as well as requests.
+		const notifications = await app.evaluate(({ BrowserWindow }) => {
+			const player = BrowserWindow.getAllWindows().find((w) => w.getParentWindow() !== null);
+			const spotify = player?.contentView.children.find(
+				(v) => 'webContents' in v && (v as Electron.WebContentsView).webContents.getURL().startsWith('https://')
+			) as Electron.WebContentsView | undefined;
+			return spotify?.webContents.executeJavaScript(
+				"navigator.permissions.query({ name: 'notifications' }).then((s) => s.state)"
+			);
+		});
+		assert.equal(notifications, 'denied');
+		const viewIds = await app.evaluate(({ BrowserWindow }) => {
+			const player = BrowserWindow.getAllWindows().find((w) => w.getParentWindow() !== null);
+			return (player?.contentView.children ?? [])
+				.filter((v) => 'webContents' in v)
+				.map((v) => (v as Electron.WebContentsView).webContents.id);
+		});
+		assert.equal(viewIds.length, 2);
+
+		await page.evaluate(() => (globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.setCollapsed(true));
+		const collapsed = await windowBounds();
+		assert.equal(collapsed.player?.width, STRIP_W);
+		assert.equal(collapsed.player?.x, collapsed.main.x + collapsed.main.width);
+
+		// A URL off open.spotify.com is refused by the main process, not just the page.
+		await assert.rejects(
+			page.evaluate(() =>
+				(globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.open('https://example.com/')
+			)
+		);
+
+		await page.evaluate(() => (globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.close());
+		assert.ok(await waitFor(async () => (await windowBounds()).count === 1));
+		assert.deepEqual((await windowBounds()).main, before.main);
+		// Closing ends both embedded renderers, not only their window.
+		assert.ok(
+			await waitFor(async () =>
+				(await app.evaluate(({ webContents }, ids) => ids.every((id) => webContents.fromId(id) === undefined), viewIds))
+			)
+		);
+		assert.ok(fs.readFileSync(shellLog, 'utf8').includes('side-player'));
+	} finally {
+		await page
+			.evaluate(() => (globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.close())
+			.catch(() => undefined);
+	}
+
+	// Off macOS the Chrome import says why instead of guessing (SPOT-6555c).
+	if (process.platform !== 'darwin') {
+		const outcome = await page.evaluate(() =>
+			(globalThis as unknown as { opendjShell: { sidePlayer: SideBridge } }).opendjShell.sidePlayer.importBrowserLogins()
+		);
+		assert.notEqual(outcome.kind, 'imported');
+		assert.ok(typeof outcome.reason === 'string' && outcome.reason.length > 0, JSON.stringify(outcome));
+	}
 });
 
 test('the audio engine choice is saved to disk and handed to the next page load', async () => {

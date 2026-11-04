@@ -76,13 +76,15 @@ test('responsive TopBar keeps priority controls reachable and two-track AutoPlay
 	const twoTrack = page.locator('[data-testid="ap-two-track"]');
 	await expect(twoTrack).toBeEnabled();
 	await expect(twoTrack).not.toBeChecked();
-	const snapshotTwoDeck = await page.evaluate(async () => {
+	const dispatchState = await page.evaluate(async () => {
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		const state = await ipc.dispatch({ type: 'auto_play_two_track', enabled: true });
-		return state.ui.auto_play_two_deck;
+		return await ipc.dispatch({ type: 'auto_play_two_track', enabled: true });
 	});
-	expect(snapshotTwoDeck).toBe(true);
+	expect(dispatchState.ui.auto_play_two_deck).toBe(true);
+	expect(dispatchState.history.at(-1)?.type).toBe('auto_play_two_track');
+	expect(dispatchState.last_error).toBeNull();
+	expect(JSON.stringify(dispatchState)).not.toMatch(/auto_play_two_track: not_implemented/);
 	await expect(twoTrack).toBeChecked();
 	await page.evaluate(async () => {
 		await window.musicDjToolsPerformance?.dispatch({ type: 'auto_play_two_track', enabled: false });

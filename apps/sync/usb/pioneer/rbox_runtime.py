@@ -11,6 +11,7 @@ The library data directory is :data:`apps.shared.paths.DATA_DIR` (the
 :func:`apps.webui.server.deps.get_library_data_dir` derives from the
 running app's state database.
 """
+
 from __future__ import annotations
 
 import importlib

@@ -1,18 +1,18 @@
 """stable_id -> rekordbox content, and content -> on-disk asset.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C1 (source lines
-226-563 on ``af--t4-design``) per ``.planning/t3b-decomposition-map.md``
+226-563 on ``af--t4-design``) per ``(private path)``
 section 2 target #4. The resolution chain is unchanged:
 
     state.db ``tracks`` -> ``track_vendor_ids`` (vendor='rekordbox')
-    -> vendor_id -> ``djmdContent`` row in ``data/master.plain.db``
+    -> vendor_id -> ``djmdContent`` row in ``(private path)``
     (decrypted copy, opened read-only) -> FolderPath / ImagePath /
     AnalysisDataPath resolved on disk via the share-root rule.
 
 Fail-fast: every unresolved step raises with an explicit ``{"code",
 "message"}`` detail; there is no silent None anywhere. The symlink-escape
 guards live in :mod:`apps.shared.platform_paths` and are pinned by
-``tests/webui/test_rb_vendor_portability.py``, which this move keeps green.
+``(private path)``, which this move keeps green.
 
 Config constants are read as ``config.<NAME>`` inside function bodies rather
 than imported by value, because they are rebindable overrides -- see
@@ -108,7 +108,7 @@ def resolve_share_path(path: str) -> Path:
 
     Kept ONLY for the legacy non-owned call sites that still expect a bare
     ``Path`` back (``apps/webui/server/routes/rb_assets.py``,
-    ``tests/test_rb_assets.py``) -- new code in this module calls
+    ``(private path)``) -- new code in this module calls
     :func:`resolve_asset_path` directly so it can see the explicit
     unmapped state. Mirrors the pre-portability behaviour when the shared
     resolver reports "unmapped" by falling back to ``Path(path)`` verbatim
@@ -321,6 +321,12 @@ def online_artwork_cache() -> Any:
     from apps.shared import artwork_sources
 
     return artwork_sources.ArtworkCache(config.STATE_DB.parent / "artwork-cache")
+
+
+def online_track_query(stable_id: str) -> Any:
+    """The :class:`~apps.shared.artwork_sources.TrackQuery` an online lookup sends for a track."""
+    _file_path, duration_ms = local_track_row(stable_id)
+    return _track_query(stable_id, duration_ms)
 
 
 def _track_query(stable_id: str, duration_ms: int | None) -> Any:
@@ -568,6 +574,26 @@ def _unavailable_refusal(
     )
 
 
+def _refuse_if_offloaded(stable_id: str) -> None:
+    """OFFLOAD: an offloaded track is in the cloud on purpose, never "missing".
+
+    409 ``TRACK_OFFLOADED`` tells the deck (and an agent) to restore it first,
+    with ``POST /api/v1/offload/restore {mode: temporary}`` (spec e8da14b8).
+    """
+    from apps.cloud import offload
+
+    row = offload.offload_states(config.DATA_DIR, [stable_id]).get(stable_id)
+    if row is not None and row.state in ("offloaded", "restoring"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TRACK_OFFLOADED",
+                "message": f"track {stable_id} is offloaded to the cloud; restore it before loading",
+                "offload_state": row.state,
+            },
+        )
+
+
 def resolve_playable_audio(
     stable_id: str,
     *,
@@ -610,10 +636,13 @@ def resolve_playable_audio(
                 cfg=cfg,
             )
         except HydrationError as exc:
-            raise unavailable(
-                "CLOUD_POLICY_UNCONFIGURED",
-                str(exc),
-            ) from exc
+            message = str(exc)
+            code = (
+                "CLOUD_POLICY_UNCONFIGURED"
+                if "no sync_policies row" in message
+                else "CLOUD_HYDRATION_FAILED"
+            )
+            raise unavailable(code, message) from exc
         # A cache entry is the one hydrated object, so there is nothing for the
         # cap to choose between; only a machine serving its own copies can hold
         # a master and a lossy alternate of the same track.
@@ -655,6 +684,8 @@ def resolve_playable_audio(
 
     if local_copy is not None and local_copy.pick is not None:
         return local_copy.pick
+
+    _refuse_if_offloaded(stable_id)
 
     if source.origin == "unavailable":
         raise _unavailable_refusal(stable_id, source, local_copy)

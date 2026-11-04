@@ -35,6 +35,12 @@ import {
 	validatePlaylistTreeViewField,
 	type PlaylistTreeViewMode
 } from './playlist-tree-view-prefs';
+import {
+	PIN_VISIBLE_DAYS_DEFAULT,
+	PIN_VISIBLE_DAYS_MAX,
+	PIN_VISIBLE_DAYS_MIN,
+	isPinVisibleDays
+} from '$lib/rb/feedback-pin-age';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, DEFAULT_DECIDE_AFTER_S } from '$lib/rb/auto-play-early';
 import {
@@ -305,6 +311,11 @@ export interface RbUiPrefs
 	jog_radial_waveform: boolean;
 	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
 	show_agent_pins: boolean;
+	/**
+	 * How many days comment pins stay drawn. 0 shows every pin. Local-only:
+	 * the daemon ui-prefs schema does not have this field.
+	 */
+	pin_visible_days: number;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
 	/** DECKUX-5917b: hovering a deck, wavestack row or mixer strip highlights its linked panels. Default on. */
@@ -418,6 +429,7 @@ const DEFAULTS: RbUiPrefs = {
 	technically_working_animate: true,
 	jog_radial_waveform: false,
 	show_agent_pins: true,
+	pin_visible_days: PIN_VISIBLE_DAYS_DEFAULT,
 	show_stems: false,
 	deck_hover_link: true,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
@@ -431,7 +443,7 @@ const DEFAULTS: RbUiPrefs = {
 	radial_off_pending: false,
 	confirm: {},
 	last_playlist: null,
-	spotify_library: { pinned_ids: [], recent_ids: [] },
+	spotify_library: { pinned_ids: [], recent_ids: [], shrink_main_for_player: true },
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
@@ -766,6 +778,13 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.pin_visible_days !== undefined && !isPinVisibleDays(parsed.pin_visible_days)) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (pin_visible_days must be an integer from ` +
+				`${PIN_VISIBLE_DAYS_MIN} to ${PIN_VISIBLE_DAYS_MAX}) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.show_stems !== undefined && typeof parsed.show_stems !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (show_stems is not a boolean) - ` +
@@ -928,6 +947,9 @@ function _assembleLoadedPrefs(
 		jog_radial_waveform: radialOff.jog_radial_waveform,
 		radial_off_pending: radialOff.radial_off_pending,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
+		pin_visible_days: isPinVisibleDays(parsed.pin_visible_days)
+			? parsed.pin_visible_days
+			: DEFAULTS.pin_visible_days,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		...skinLook,
@@ -1088,7 +1110,11 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 	_persist();
 }
 
-export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
+export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain } = makeSpotifyLibrarySetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 export function setLibraryDensity(next: LibraryDensity): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
 }
@@ -1268,6 +1294,17 @@ export function setShowAgentPins(next: boolean): void {
 	uiPrefs.show_agent_pins = next;
 	_persist();
 	void _syncDiskPrefs({ show_agent_pins: next });
+}
+
+/** Local-only: how many days comment pins stay visible. 0 shows every pin. */
+export function setPinVisibleDays(next: number): void {
+	if (!isPinVisibleDays(next)) {
+		throw new Error(
+			`pin_visible_days must be an integer from ${PIN_VISIBLE_DAYS_MIN} to ${PIN_VISIBLE_DAYS_MAX}, got ${String(next)}`
+		);
+	}
+	uiPrefs.pin_visible_days = next;
+	_persist();
 }
 
 export function setShowStems(next: boolean): void {

@@ -9,8 +9,9 @@
 //    the saved audio engine choice when there is one.
 // 2. Expose `window.opendjShell`, the native features the UI needs
 //    (folder picker, open in browser, exit/relaunch, updater, CoreAudio list,
-//    and the audio engine choice it saves to disk). The main process re-checks
-//    the calling frame's origin on every call.
+//    since version 2 the Spotify side player) and the audio engine choice it
+//    saves to disk. The main process re-checks the calling frame's origin on
+//    every call.
 //
 // Sandboxed preloads may only require 'electron', so this file imports nothing
 // from the rest of the shell.
@@ -55,12 +56,25 @@ if (init !== null) {
 
 	contextBridge.exposeInMainWorld('opendjShell', {
 		kind: 'electron',
-		version: 1,
+		version: 2,
 		pickFolder: (options?: { title?: string }): Promise<string | null> =>
 			ipcRenderer.invoke('opendj:pick-folder', { title: options?.title }),
 		openExternal: (url: string): Promise<void> => ipcRenderer.invoke('opendj:open-external', String(url)),
 		exit: (code = 0): Promise<void> => ipcRenderer.invoke('opendj:exit', Number(code)),
 		relaunch: (): Promise<void> => ipcRenderer.invoke('opendj:relaunch'),
+		// Version 2: the docked Spotify side player (SPOT-6555b/03).
+		sidePlayer: {
+			open: (url: string, options?: { shrinkMain?: boolean }): Promise<void> =>
+				// Both passed through exactly as given, never rebuilt: the main
+				// process rejects a wrong type instead of a coercion here hiding
+				// bridge drift.
+				ipcRenderer.invoke('opendj:side-open', url, options),
+			setCollapsed: (collapsed: boolean): Promise<void> => ipcRenderer.invoke('opendj:side-collapse', collapsed),
+			close: (): Promise<void> => ipcRenderer.invoke('opendj:side-close'),
+			importBrowserLogins: (): Promise<
+				{ kind: 'imported'; browser: string; cookies: number; sites: string[] } | { kind: 'refused'; reason: string }
+			> => ipcRenderer.invoke('opendj:side-import-logins')
+		},
 		setAudioEngineChoice: (choice: string): Promise<void> =>
 			ipcRenderer.invoke('opendj:audio-engine-choice', String(choice)),
 		applyUpdate: async (

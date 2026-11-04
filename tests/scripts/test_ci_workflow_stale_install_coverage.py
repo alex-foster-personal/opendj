@@ -277,18 +277,24 @@ def test_enumeration_finds_the_jobs_the_reviews_named() -> None:
     assert not missing, f"enumeration no longer sees {missing}; it is not reading the workflows"
 
 
-def test_enumeration_exempts_real_hosted_jobs() -> None:
+def test_enumeration_exempts_hosted_jobs() -> None:
+    """No real workflow launches Python on a GitHub-hosted runner since Wed 4 Nov 2026 (the
+    Trunk quarantine review went with ADR-NEW-trunk-removed-from-pr-ci), so the exemption is
+    proved on a synthetic hosted job spliced beside the real ones."""
     workflows = _workflows()
-    hosted = [
+    real_hosted = [
         f"{name}:{job_id}"
         for name, doc in workflows.items()
         for job_id, job in (doc.get("jobs") or {}).items()
         if is_github_hosted(job.get("runs-on"))
         and any(launch_tokens(step, job) for step in job.get("steps", []))
     ]
-    assert hosted, "no hosted job launches Python, so the hosted exemption is untested"
-    flagged = set(self_hosted_jobs(workflows)) & set(hosted)
-    assert not flagged, f"hosted jobs were treated as self-hosted: {sorted(flagged)}"
+    assert not real_hosted, f"a real hosted job launches Python again: {real_hosted}"
+    hosted_job = {"runs-on": "ubuntu-latest", "steps": [{"run": "python3 -m scripts.probe"}]}
+    assert is_github_hosted(hosted_job["runs-on"])
+    assert launch_tokens(hosted_job["steps"][0], hosted_job), "positive control: the launch is seen"
+    spliced = {**workflows, "synthetic.yml": {"jobs": {"hosted": hosted_job}}}
+    assert "synthetic.yml:hosted" not in self_hosted_jobs(spliced)
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +429,7 @@ def test_the_hermetic_exception_never_excuses_a_checkout_job() -> None:
 
 def test_the_trunk_list_jobs_are_self_hosted_and_hermetic() -> None:
     workflows = _workflows()
-    for name in ("ci.yml", "e2e.yml"):
+    for name in ("e2e.yml",):
         key = f"{name}:trunk-quarantine-list"
         job = self_hosted_jobs(workflows)[key]
         fetch = next(step for step in job["steps"] if step.get("id") == "fetch")

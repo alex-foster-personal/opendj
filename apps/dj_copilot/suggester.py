@@ -10,6 +10,7 @@ the stub explainer inline. The documented event-bus contract
 (``ai.explain_requested`` / ``ai.explain_response``) is shipped in
 ``(private path)`` for Phase 14 / Phase 17 consumers.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -84,16 +85,12 @@ def suggest_next(
     ``context`` defaults to an empty session when None.
     """
     # Resolve current from the library.
-    current: TrackFeature | None = next(
-        (t for t in library if t.stable_id == current_stable_id), None
-    )
+    current: TrackFeature | None = next((t for t in library if t.stable_id == current_stable_id), None)
     if current is None:
         return []
 
     if context is None:
-        context = SessionContext(
-            recent=[], source="empty", captured_at=datetime.now(UTC)
-        )
+        context = SessionContext(recent=[], source="empty", captured_at=datetime.now(UTC))
 
     current_played = _current_to_played(current)
 
@@ -102,12 +99,8 @@ def suggest_next(
         library=library,
         context=context,
     )
-    stage1 = rank_stage1(
-        current_track=current_played, candidates=filtered, top_n=40
-    )
-    stage2 = rerank_with_pairings(
-        conn=conn, current_stable_id=current_stable_id, stage1=stage1
-    )
+    stage1 = rank_stage1(current_track=current_played, candidates=filtered, top_n=40)
+    stage2 = rerank_with_pairings(conn=conn, current_stable_id=current_stable_id, stage1=stage1)
     peak_plays = [
         PeakPlay(
             stable_id=p.stable_id,

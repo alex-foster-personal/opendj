@@ -8,7 +8,11 @@ export type TrackCloudKind =
 	| 'not-on-cloud'
 	| 'on-cloud-not-local'
 	| 'on-cloud-and-local'
-	| 'streaming';
+	| 'streaming'
+	/** OFFLOAD: in the cloud on purpose; a deck load downloads it first. */
+	| 'offloaded'
+	/** OFFLOAD: downloaded for 24 h; it goes back to the cloud after. */
+	| 'temporary';
 
 export type StreamingProvider = 'spotify' | 'tidal' | 'soundcloud' | 'unknown';
 
@@ -51,6 +55,14 @@ export interface TrackCloudInput {
 	fileAvailability?: string | null;
 	/** Real bytes from the backend's in-process transfer ledger. */
 	transfer: TrackCloudTransferInput | null;
+	/** OFFLOAD: the row's offload state (null when never offloaded here). */
+	offload?: { state: string; expires_at: string | null } | null | undefined;
+}
+
+function expiryText(expiresAt: string | null): string {
+	if (expiresAt === null) return 'later today';
+	const at = new Date(expiresAt);
+	return Number.isNaN(at.getTime()) ? 'later today' : `at ${at.toLocaleString()}`;
 }
 
 /** Hover text for an unavailable cloud icon: the path probed, and why. */
@@ -130,6 +142,18 @@ function overlayForKind(kind: TrackCloudKind, fileExists: boolean): CloudTickOve
 
 export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 	const transfer = transferView(input.transfer);
+	const offload = input.offload?.state;
+	if (offload === 'offloaded' || offload === 'restoring') {
+		const title =
+			offload === 'restoring'
+				? 'Downloading from the cloud.'
+				: 'Offloaded to the cloud to save disk. Loading it onto a deck downloads it first.';
+		return withTransfer('offloaded', title, transfer, null, 'none', null);
+	}
+	if (offload === 'temporary') {
+		const title = `Downloaded for 24h; it goes back to the cloud ${expiryText(input.offload?.expires_at ?? null)}.`;
+		return withTransfer('temporary', title, transfer, null, 'none', null);
+	}
 	const unavailable = unavailableIconTitle(input);
 	if (input.isStreaming || input.spotifyPending) {
 		const provider = input.spotifyPending

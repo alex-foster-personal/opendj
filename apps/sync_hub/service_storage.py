@@ -6,6 +6,7 @@ stays in ``service.py``; what lives here is the declared 507 body and the
 one place a sqlite-full ``OperationalError`` becomes an HTTP status a spoke
 can branch on instead of a bare 500.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -33,10 +34,7 @@ class HubStorageErrorResponse(BaseModel):
 PUSH_STORAGE_RESPONSES: dict[int | str, dict[str, object]] = {
     507: {
         "model": HubStorageErrorResponse,
-        "description": (
-            "The hub sqlite database cannot take the write. "
-            f"code: {STORAGE_CODE}."
-        ),
+        "description": (f"The hub sqlite database cannot take the write. code: {STORAGE_CODE}."),
     },
 }
 

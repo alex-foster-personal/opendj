@@ -11,9 +11,9 @@ Why it exists: measuring a file means decoding all of it (about 2.5 s for a
 pays it once per file version, and rows read the facts back in one bulk query.
 
 A row is current while its `rule_version` (the scanner's thresholds) matches
-and its file is the same one. The scan compares path, mtime and size; a
-listing, which already has the size from its availability probe and must not
-stat again, compares the size only.
+and its file is the same one. The scan compares path, mtime and size; listing
+rows reconstruct the same `file_version` from the stored scan path plus mtime
+and size carried by the shared availability index (no per-row stat).
 
 MINI-PRD
 --------
@@ -138,11 +138,9 @@ def current_facts(
     Current means the scanner's rule is unchanged and the file is the one that
     was scanned. A caller that stat-ed the file passes its full `file_version`
     (path, mtime, size). A listing row passes its resolved `path` and the
-    size from the shared availability index: a track remapped to another file,
-    or a file whose size changed, is never shown as checked, and a path the
-    row spells differently from the scanner errs to unchecked. The index
-    records no mtime, so a same-path same-size in-place replacement still reads
-    as current on the row until a scan re-measures it (issue #7584)."""
+    size and mtime from the shared availability index: a track remapped to
+    another file, a file whose size or mtime changed, or a NULL index mtime
+    is never shown as checked."""
     if stored is None or stored.rule_version != rule_version():
         return None, None
     if file_version is not None and stored.file_version != file_version:
@@ -160,16 +158,32 @@ def attach_grades(
     quality_by_sid: dict[str, dict[str, Any]],
     size_by_sid: dict[str, int | None],
     path_by_sid: dict[str, str | None],
+    mtime_by_sid: dict[str, int | None],
     state_db: Path,
 ) -> None:
     """Add the QLT `grade` block to each row's quality dict, in place, from
     one bulk read. Never decodes or stats anything (QLTSCAN-02). A row with
     no resolved path is never checked."""
+    from apps.webui.server.audio_quality_scan import file_version_from_parts
+
     stored = read_many(list(quality_by_sid), state_db)
     for sid, quality in quality_by_sid.items():
         row_path = path_by_sid.get(sid)
+        rec = stored.get(sid)
+        mtime = mtime_by_sid.get(sid)
+        size = size_by_sid.get(sid)
+        version = (
+            file_version_from_parts(rec.file_path, mtime, size)
+            if rec is not None and row_path and mtime is not None and size is not None
+            else None
+        )
         facts, error = (
-            current_facts(stored.get(sid), size_by_sid.get(sid), path=row_path)
+            current_facts(
+                rec,
+                size if version is not None else None,
+                file_version=version,
+                path=row_path,
+            )
             if row_path
             else (None, None)
         )

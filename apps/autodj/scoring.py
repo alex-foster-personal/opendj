@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from apps.autodj.plan import BEATMATCH_LIMIT_PCT, bpm_gap_pct, pair_beat_sync_fold
+from apps.autodj.plan import BEATMATCH_LIMIT_PCT, STRONG_BASS, _overlaps, bpm_gap_pct, pair_beat_sync_fold
 from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile
 from apps.autodj.windows import MixWindow, mix_windows
 from apps.shared.harmonic import CamelotKey, camelot_compatibility, camelot_distance
@@ -92,24 +92,6 @@ def key_at(profile: TrackProfile, bar: int) -> str | None:
     return profile.key
 
 
-def _series_at(series: tuple[float, ...] | None, bar: int) -> float | None:
-    if series is None or bar < 1 or bar > len(series):
-        return None
-    return series[bar - 1]
-
-
-def _both_at_least(
-    out_series: tuple[float, ...] | None,
-    in_series: tuple[float, ...] | None,
-    out_bar: int,
-    in_bar: int,
-    threshold: float,
-) -> bool:
-    out_value = _series_at(out_series, out_bar)
-    in_value = _series_at(in_series, in_bar)
-    return out_value is not None and in_value is not None and out_value >= threshold and in_value >= threshold
-
-
 def _clashes(
     out_profile: TrackProfile, in_profile: TrackProfile, out_start: int, in_start: int, bars: int, fold: float = 1.0
 ) -> tuple[int | None, int | None]:
@@ -120,9 +102,9 @@ def _clashes(
     bass = 0
     for offset in range(bars):
         out_bar, in_bar = out_start + offset, in_start + math.floor(offset * fold)
-        if _both_at_least(out_profile.bar_vocals, in_profile.bar_vocals, out_bar, in_bar, VOCAL_BAR_THRESHOLD):
+        if _overlaps(out_profile.bar_vocals, in_profile.bar_vocals, out_bar, in_bar, VOCAL_BAR_THRESHOLD):
             vocal += 1
-        if _both_at_least(out_profile.bar_bass, in_profile.bar_bass, out_bar, in_bar, 0.5):
+        if _overlaps(out_profile.bar_bass, in_profile.bar_bass, out_bar, in_bar, STRONG_BASS):
             bass += 1
     return (vocal if vocals_known else None, bass if bass_known else None)
 

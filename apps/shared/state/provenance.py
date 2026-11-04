@@ -6,7 +6,13 @@ Rules (open-dj v0 strawman section 4.1 + section 6):
   reserved ``cue_points`` / ``beatgrid`` blobs) are provenance-wrapped.
   Writes land in ``track_fields``; the previous value is moved to
   ``track_field_history`` before overwrite (idempotent on byte-equal
-  value+source+modified_at).
+  value+source+confidence+modified_at).
+* A later ``write_field`` for the same ``(stable_id, field_name)`` replaces
+  the current row regardless of ``source`` or ``confidence``; the previous
+  envelope moves to ``track_field_history``.
+* ``confidence`` is stored as reported provenance. It is not compared to
+  decide a write, except as one of the four fields in the byte-stable no-op
+  gate.
 * Identity facts (``title``, ``artists``, ``album``, ``isrc``,
   ``duration_ms``, ``file_path``, ``content_hash``) live on ``tracks`` and
   are NOT wrapped.
@@ -144,6 +150,12 @@ def write_field(
     then presented the same LWW key, was rejected by the hub, and bricked
     the machine on the next digest compare. ``machine_id`` defaults to the
     local machine, resolved from the connection's data dir.
+
+    This function does not rank by confidence or source. Any difference in
+    ``value_json``, ``source``, ``confidence``, or ``modified_at`` overwrites.
+    Callers that want source precedence (library import, tag unification
+    ``DEFAULT_POLICY``, MIK key bands) apply it **before** calling
+    ``write_field``.
     """
     _validate_field(field_name, source)
     _validate_rfc3339_utc(modified_at)

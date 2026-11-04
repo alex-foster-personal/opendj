@@ -62,14 +62,48 @@ def _normalize_on(document: dict) -> dict:
     return on
 
 
+#: The workflow whose completion stands in for a pull_request trigger
+#: (ADR-NEW-e2e-after-ci-gate, Wed 4 Nov 2026): e2e.yml runs for a pull request as
+#: a `workflow_run` of CI.
+PULL_REQUEST_PROXY_WORKFLOW = "CI"
+
+#: The check names a workflow that runs for a pull request as a `workflow_run` of CI
+#: PUBLISHES on the pull request head through the Checks API (scripts/ci_e2e_admission.py
+#: `publish`). GitHub attaches such a run's own job check-runs to main's tip, never to
+#: the head, so these names, and no other name of that workflow, are what a head can
+#: show; they are created on every pull request, docs-only or not. A proxied workflow
+#: absent from this map is a catalog error, not an empty set. Pinned equal to the
+#: publisher's constant by tests/scripts/test_ci_e2e_admission.py.
+WORKFLOW_RUN_PUBLISHED_CHECKS: dict[str, frozenset[str]] = {"e2e.yml": frozenset({"e2e verdict"})}
+
+
 def _pull_request_trigger(on: dict) -> dict | None:
     trigger = on.get("pull_request")
     if trigger is None:
+        follow = on.get("workflow_run")
+        if isinstance(follow, dict) and PULL_REQUEST_PROXY_WORKFLOW in (follow.get("workflows") or []):
+            # A workflow_run trigger carries no path filter of its own; the in-run scope
+            # (scripts/ci_pr_scope.py) is the only list, as for a bare pull_request.
+            return {}
         return None
     if trigger is None or trigger == "":
         return {}
     assert isinstance(trigger, dict), "pull_request trigger must be a mapping"
     return trigger
+
+
+def _published_names(workflow: str, on: dict) -> frozenset[str] | None:
+    """The names a workflow_run-proxied workflow publishes on the head; None for a
+    workflow with its own pull_request trigger, whose every job lands there."""
+    if "pull_request" in on:
+        return None
+    published = WORKFLOW_RUN_PUBLISHED_CHECKS.get(workflow)
+    if published is None:
+        raise ValueError(
+            f"{workflow} runs for a pull request as a workflow_run of {PULL_REQUEST_PROXY_WORKFLOW} "
+            "but WORKFLOW_RUN_PUBLISHED_CHECKS does not say which check it publishes on the head"
+        )
+    return published
 
 
 def _expand_matrix_job_name(name: str, matrix: dict) -> list[str]:
@@ -167,9 +201,11 @@ class WorkflowCatalog:
             document = yaml.safe_load(texts[name])
             if not isinstance(document, dict):
                 continue
-            trigger = _pull_request_trigger(_normalize_on(document))
+            on = _normalize_on(document)
+            trigger = _pull_request_trigger(on)
             if trigger is None:
                 continue
+            published = _published_names(name, on)
             paths = tuple(trigger.get("paths") or ()) or None
             paths_ignore = tuple(trigger.get("paths-ignore") or ()) or None
             in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(name)
@@ -197,8 +233,14 @@ class WorkflowCatalog:
                     alternatives[template] = names
                     alternatives.update({leg: frozenset({leg, template}) for leg in expanded})
                 for display_name in names:
+                    if published is not None and display_name not in published:
+                        # Attached to main's tip by GitHub; the head never shows it. The
+                        # job stays in `job_names` so a baseline from an earlier head
+                        # that did show it maps to this job and is dropped, not kept
+                        # fail-closed (`derive_expected_for_changed_paths`).
+                        continue
                     check_to_workflow.setdefault(display_name, name)
-                    if in_run_scope is not None and job_id not in gated:
+                    if published is not None or (in_run_scope is not None and job_id not in gated):
                         always_created.add(display_name)
 
         return cls(
@@ -227,11 +269,13 @@ class WorkflowCatalog:
 
 def _renamed_to(name: str, catalog: WorkflowCatalog, baseline_catalog: WorkflowCatalog | None) -> frozenset[str] | None:
     """The head's names for a baseline name whose job still exists but no longer reports
-    under it (a matrix resized, a job retitled). `None` when the name is still live, or
-    when its job cannot be traced to the same (workflow, job id) at the head."""
-    if baseline_catalog is None:
-        return None
-    key = baseline_catalog.job_of(name)
+    under it (a matrix resized, a job retitled, or a job of a workflow_run-proxied
+    workflow whose check-runs attach to main's tip and are no longer published on the
+    head). `None` when the name is still live, or when its job cannot be traced to the
+    same (workflow, job id) at the head. Without a baseline catalog the head's own
+    `job_names` resolve the name: an unpublished e2e job is still a job there, so a
+    baseline from before the trigger change maps and drops rather than waits forever."""
+    key = (baseline_catalog or catalog).job_of(name)
     if name in catalog.known_check_names():
         # Still live only if the SAME (workflow, job id) still reports it. If the
         # original job was retitled and another job took the old name, the owed job

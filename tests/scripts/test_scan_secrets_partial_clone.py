@@ -1,0 +1,332 @@
+"""Python materialize helper for trufflehog file:// on partial clones (issue #4224, #8613).
+
+Real `--filter=blob:none` fixtures; no mocked git output. Slow cases use the same
+HTTP git backend as tests/quality_gate_base_compare_partial_clone.py.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+import pytest
+import yaml
+
+from scripts import quality_gate as qg
+from tests.quality_gate_base_compare_partial_clone import (
+    _TOKEN,
+    _auth_gated_origin,
+    _build_partial_clone,
+    _git,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+LIB = ROOT / "scripts" / "security" / "lib.sh"
+MATERIALIZE = ROOT / "scripts" / "security" / "materialize.py"
+SCAN_SECRETS = ROOT / "scripts" / "security" / "scan_secrets.sh"
+SECURITY_YML = ROOT / ".github" / "workflows" / "security.yml"
+
+
+def _run_materialize(
+    repo: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.security.materialize", str(repo)],
+        cwd=str(ROOT),
+        env=run_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _assert_no_missing_in_batch_check(repo: Path) -> None:
+    """rev-list --objects --all | cat-file --batch-check: no unfetched objects."""
+    git = shutil.which("git")
+    assert git is not None
+    rev = subprocess.Popen(
+        [git, "-C", str(repo), "rev-list", "--objects", "--all"],
+        stdout=subprocess.PIPE,
+    )
+    assert rev.stdout is not None
+    try:
+        batch = subprocess.run(
+            [git, "-C", str(repo), "cat-file", "--batch-check"],
+            stdin=rev.stdout,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        rev.stdout.close()
+        rev.wait()
+    for line in batch.stdout.splitlines():
+        parts = line.split()
+        if not parts or parts[-1] != "missing":
+            continue
+        probe = subprocess.run(
+            [git, "-C", str(repo), "cat-file", "-e", parts[0]],
+            capture_output=True,
+            check=False,
+        )
+        assert probe.returncode == 0, line
+    missing_print = subprocess.run(
+        [
+            git,
+            "-C",
+            str(repo),
+            "rev-list",
+            "--objects",
+            "--all",
+            "--missing=print",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for line in missing_print.stdout.splitlines():
+        if not line.startswith("?"):
+            continue
+        oid = line[1:].split()[0]
+        probe = subprocess.run(
+            [git, "-C", str(repo), "cat-file", "-e", oid],
+            capture_output=True,
+            check=False,
+        )
+        assert probe.returncode == 0, line
+
+
+@contextmanager
+def _http_partial_clone(tmp_path: Path) -> Iterator[Path]:
+    """Partial clone with http(s) promisor, matching the pool checkout shape."""
+    srv_root, _, _ = _build_partial_clone(tmp_path)
+    with _auth_gated_origin(srv_root, _TOKEN) as (origin_url, prefix):
+        partial = tmp_path / "partial"
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                f"http.{prefix}.extraheader=AUTHORIZATION: basic {qg._git_basic_credential(_TOKEN)}",
+                "-c",
+                "protocol.version=2",
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--",
+                origin_url,
+                str(partial),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        yield partial
+
+
+def test_file_clone_of_partial_reproduces_upload_pack_failure(tmp_path: Path) -> None:
+    with _http_partial_clone(tmp_path) as partial:
+        copy = tmp_path / "copy"
+        result = subprocess.run(
+            ["git", "clone", f"file://{partial.resolve()}", str(copy)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 128, result.stderr
+        assert "lazy fetching disabled" in result.stderr
+
+
+def test_materialize_then_file_clone_succeeds(tmp_path: Path) -> None:
+    with _http_partial_clone(tmp_path) as partial:
+        mat = _run_materialize(partial, env={"GH_TOKEN": _TOKEN})
+        assert mat.returncode == 0, mat.stderr
+        copy = tmp_path / "copy"
+        result = subprocess.run(
+            ["git", "clone", f"file://{partial.resolve()}", str(copy)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (copy / "track.txt").read_text(encoding="utf-8") == "v2\n"
+
+
+def test_materialize_leaves_cat_file_batch_check_without_missing(tmp_path: Path) -> None:
+    with _http_partial_clone(tmp_path) as partial:
+        mat = _run_materialize(partial, env={"GH_TOKEN": _TOKEN})
+        assert mat.returncode == 0, mat.stderr
+        _assert_no_missing_in_batch_check(partial)
+
+
+def test_materialize_fails_when_git_not_on_path(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    env = os.environ.copy()
+    env["PATH"] = str(empty)
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.security.materialize", str(tmp_path / "repo")],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "git" in result.stderr.lower()
+
+
+def test_lib_sh_thin_caller_no_bash_c() -> None:
+    text = LIB.read_text(encoding="utf-8")
+    assert "bash -c" not in text
+    assert "materialize.py" in text
+    assert "sec_materialize_missing_objects" in text
+
+
+def test_full_clone_is_noop(tmp_path: Path) -> None:
+    srv = tmp_path / "srv"
+    seed = srv / "seed"
+    seed.mkdir(parents=True)
+    _git(seed, "init", "-q", "-b", "main")
+    _git(seed, "config", "user.email", "test@example.com")
+    _git(seed, "config", "user.name", "Test")
+    (seed / "f.txt").write_text("x\n", encoding="utf-8")
+    _git(seed, "add", "f.txt")
+    _git(seed, "commit", "-q", "-m", "c1")
+    bare = srv / "origin.git"
+    subprocess.run(
+        ["git", "clone", "-q", "--bare", str(seed), str(bare)],
+        check=True,
+        capture_output=True,
+    )
+    full = tmp_path / "full"
+    subprocess.run(
+        ["git", "clone", "-q", bare.resolve().as_uri(), str(full)],
+        check=True,
+        capture_output=True,
+    )
+    mat = _run_materialize(
+        full,
+        env={"GH_TOKEN": "", "GITHUB_TOKEN": ""},
+    )
+    assert mat.returncode == 0, mat.stderr
+    copy = tmp_path / "copy"
+    result = subprocess.run(
+        ["git", "clone", f"file://{full.resolve()}", str(copy)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.slow
+def test_http_origin_without_token_is_unknown(tmp_path: Path) -> None:
+    srv_root, _, _ = _build_partial_clone(tmp_path)
+    with _auth_gated_origin(srv_root, _TOKEN) as (origin_url, prefix):
+        partial = tmp_path / "partial"
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                f"http.{prefix}.extraheader=AUTHORIZATION: basic {qg._git_basic_credential(_TOKEN)}",
+                "-c",
+                "protocol.version=2",
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--",
+                origin_url,
+                str(partial),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
+        mat = subprocess.run(
+            [sys.executable, "-m", "scripts.security.materialize", str(partial)],
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert mat.returncode == 2, mat.stderr
+        assert "GH_TOKEN" in mat.stderr or "GITHUB_TOKEN" in mat.stderr
+
+
+@pytest.mark.slow
+def test_http_origin_with_gh_token_materializes(tmp_path: Path) -> None:
+    srv_root, _, _ = _build_partial_clone(tmp_path)
+    with _auth_gated_origin(srv_root, _TOKEN) as (origin_url, prefix):
+        partial = tmp_path / "partial"
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                f"http.{prefix}.extraheader=AUTHORIZATION: basic {qg._git_basic_credential(_TOKEN)}",
+                "-c",
+                "protocol.version=2",
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--",
+                origin_url,
+                str(partial),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        mat = _run_materialize(partial, env={"GH_TOKEN": _TOKEN})
+        assert mat.returncode == 0, mat.stderr
+        copy = tmp_path / "copy"
+        result = subprocess.run(
+            ["git", "clone", f"file://{partial.resolve()}", str(copy)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
+
+def test_detection_does_not_use_is_partial_clone() -> None:
+    text = MATERIALIZE.read_text(encoding="utf-8")
+    assert "is-partial-clone" not in text
+    assert "remote.origin.promisor" in text
+
+
+def test_scan_full_materializes_before_history_and_keeps_verified_unknown() -> None:
+    text = SCAN_SECRETS.read_text(encoding="utf-8")
+    mat = text.index("sec_materialize_missing_objects")
+    hist = text.index('file://$SECURITY_REPO_ROOT" --results=verified,unknown')
+    assert mat < hist
+    assert "--only-verified" not in text
+    assert "--results=verified,unknown" in text
+
+
+def test_scheduled_scan_step_has_gh_token_and_no_persisted_creds() -> None:
+    doc = yaml.safe_load(SECURITY_YML.read_text(encoding="utf-8"))
+    job = doc["jobs"]["scheduled"]
+    assert job["timeout-minutes"] == 20
+    job_if = job.get("if") or ""
+    assert "endsWith(github.repository, '/music-dj-tools')" not in job_if
+    checkouts = [
+        s
+        for s in job["steps"]
+        if str(s.get("uses", "")).startswith("actions/checkout@")
+    ]
+    assert len(checkouts) == 1
+    with_ = checkouts[0].get("with") or {}
+    assert with_.get("persist-credentials") is False
+    assert with_.get("fetch-depth") == 0
+    assert with_.get("clean") is False
+    scan_steps = [s for s in job["steps"] if s.get("id") == "scan"]
+    assert len(scan_steps) == 1
+    env = scan_steps[0].get("env") or {}
+    assert "GH_TOKEN" in env

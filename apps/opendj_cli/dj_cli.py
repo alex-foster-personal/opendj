@@ -5,11 +5,23 @@ call and prints the same JSON document the MCP tool returns, so an agent that
 shells out and one that speaks MCP see identical answers. Output is always
 JSON (the documents are nested; there is no useful text rendering).
 
-Plans are read from a file path or ``-`` for stdin, so a proposal can be
-piped straight back in::
+Plans are read from a file path or ``-`` for stdin, as JSON or as a mix score
+(AGENT-5858, :mod:`apps.autodj.notation`), so a proposal can be piped straight
+back in, or saved, edited and scheduled::
 
     opendj dj propose <in_stable_id> --intent "keep the energy up" \\
-        | jq '.proposals[0].plan' | opendj dj schedule -
+        | jq -r '.proposals[0].notation' > blend.mix
+    opendj dj show blend.mix --as grid
+    opendj dj schedule blend.mix
+
+A whole set (AGENT-27, :mod:`apps.autodj.setscore`) is planned, read and
+performed one due transition at a time::
+
+    opendj dj set-plan <id> <id> <id> --intent "wind down" | jq -r .score > set.mix
+    opendj dj set-show set.mix --as grid
+    opendj dj set-next set.mix      # again after each transition ends
+
+``show``, ``set-show`` and ``styles`` work offline; every other tool needs the engine.
 """
 
 from __future__ import annotations
@@ -22,6 +34,9 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from apps.autodj.http import build_service
+from apps.autodj.notation import ScoreError, looks_like_score, print_score, render_grid, score_document
+from apps.autodj.plan import PlanError, parse_plan
+from apps.autodj.setscore import SetPlan, print_set_score, read_set
 from apps.opendj_cli import (
     EXIT_CONFIRMED,
     EXIT_FAILED,
@@ -99,6 +114,19 @@ def _parser() -> _Parser:
     ):
         command = tools.add_parser(name, help=text)
         command.add_argument("plan", help="path to a plan JSON file, or - for stdin")
+    show = tools.add_parser("show", help="print a plan as a mix score, bar grid or JSON (offline)")
+    show.add_argument("plan", help="path to a plan (JSON or mix score), or - for stdin")
+    show.add_argument("--as", dest="view", choices=("score", "grid", "json"), default="score")
+    set_plan = tools.add_parser("set-plan", help="plan a whole set: a transition for each neighbor pair")
+    set_plan.add_argument("stable_ids", nargs="+", help="the running order")
+    set_plan.add_argument("--intent", help='free text, as for propose')
+    set_plan.add_argument("--first-deck", type=int)
+    set_plan.add_argument("--name")
+    set_next = tools.add_parser("set-next", help="perform the set's transition that is due now")
+    set_next.add_argument("set", help="path to a set (JSON or set score), or - for stdin")
+    set_show = tools.add_parser("set-show", help="print a set as a set score, bar grids or JSON (offline)")
+    set_show.add_argument("set", help="path to a set (JSON or set score), or - for stdin")
+    set_show.add_argument("--as", dest="view", choices=("score", "grid", "json"), default="score")
     tools.add_parser("try", help="render and rank candidate transitions; see opendj dj try --help", add_help=False)
     tools.add_parser(
         "pair-transition",
@@ -114,18 +142,45 @@ def _parser() -> _Parser:
     return parser
 
 
-def _read_plan(source: str) -> dict[str, Any]:
+def _read_text(source: str, what: str) -> str:
     try:
-        text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+        return sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
     except OSError as error:
-        raise _UsageError(f"cannot read plan {source}: {error}") from error
+        raise _UsageError(f"cannot read {what} {source}: {error}") from error
+
+
+def _read_set(source: str) -> SetPlan:
+    try:
+        return read_set(_read_text(source, "set"))
+    except PlanError as error:
+        raise _UsageError(f"set {source} is not a valid set: {error}") from error
+
+
+def _read_plan(source: str) -> dict[str, Any]:
+    text = _read_text(source, "plan")
+    if looks_like_score(text):
+        try:
+            return score_document(text)
+        except ScoreError as error:
+            raise _UsageError(f"plan {source} is not a mix score: {error}") from error
     try:
         document = json.loads(text)
+    except RecursionError as error:  # deep nesting exhausts the parser's stack: a plan that cannot be read
+        raise DjError("plan_invalid", f"plan {source} is nested too deeply to read") from error
     except ValueError as error:
         raise _UsageError(f"plan {source} is not JSON: {error}") from error
     if not isinstance(document, dict):
         raise _UsageError(f"plan {source} must be a JSON object")
     return document
+
+
+def _set_call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
+    if args.tool == "set-plan":
+        return lambda service: service.plan_set(
+            args.stable_ids, intent=args.intent, first_deck=args.first_deck, name=args.name
+        )
+    planned = _read_set(args.set)
+    return lambda service: service.schedule_set_next(planned)
 
 
 _NO_ARGUMENT_CALLS: dict[str, Callable[[DjService], dict[str, Any]]] = {
@@ -154,6 +209,8 @@ def _call(args: argparse.Namespace) -> Callable[[DjService], dict[str, Any]]:
         return lambda service: service.propose(
             args.in_stable_id, out_deck=args.out_deck, in_deck=args.in_deck, intent=args.intent, top=args.top
         )
+    if tool in ("show", "set-show"):
+        raise AssertionError(f"{tool} is answered offline in run()")
     if tool in ("validate", "schedule"):
         plan = _read_plan(args.plan)
         return (lambda service: service.validate(plan)) if tool == "validate" else (lambda service: service.schedule(plan))
@@ -172,6 +229,38 @@ def _exit_for(code: str) -> int:
     return EXIT_FAILED
 
 
+def _show(document: dict[str, Any], view: str) -> int:
+    """``opendj dj show``: the score and grid print as text, JSON as JSON."""
+    try:
+        plan = parse_plan(document)
+    except PlanError as error:
+        _emit({"error": "plan_invalid", "message": str(error)})
+        return _exit_for("plan_invalid")
+    if view == "json":
+        _emit(plan.to_document())
+        return EXIT_CONFIRMED
+    try:
+        text = print_score(plan) if view == "score" else render_grid(plan)
+    except ScoreError as error:
+        _emit({"error": "plan_invalid", "message": str(error)})
+        return _exit_for("plan_invalid")
+    sys.stdout.write(text)
+    return EXIT_CONFIRMED
+
+
+def _show_set(planned: SetPlan, view: str) -> int:
+    if view == "json":
+        _emit(planned.to_json())
+        return EXIT_CONFIRMED
+    try:
+        text = print_set_score(planned) if view == "score" else "\n".join(render_grid(plan) for plan in planned.transitions)
+    except ScoreError as error:
+        _emit({"error": "plan_invalid", "message": str(error)})
+        return _exit_for("plan_invalid")
+    sys.stdout.write(text)
+    return EXIT_CONFIRMED
+
+
 def run(
     rest: Sequence[str],
     *,
@@ -185,10 +274,17 @@ def run(
         return dj_pair_cli.run(rest[1:], lock=lock)
     try:
         args = _parser().parse_args(list(rest))
-        call = _call(args)
+        if args.tool == "show":
+            return _show(_read_plan(args.plan), args.view)
+        if args.tool == "set-show":
+            return _show_set(_read_set(args.set), args.view)
+        call = _set_call(args) if args.tool.startswith("set-") else _call(args)
     except _UsageError as error:
         _emit({"error": "usage", "message": str(error)})
         return EXIT_FAILED
+    except DjError as error:
+        _emit(error.document())
+        return _exit_for(error.code)
     if args.tool == "styles":  # the catalog is static: no engine needed
         _emit({"styles": [s.model_dump(mode="json") for s in build_service().list_styles()]})
         return EXIT_CONFIRMED
@@ -218,4 +314,5 @@ def _run_on_engine(
         _emit(error.document())
         return _exit_for(error.code)
     _emit(document)
-    return EXIT_CONFIRMED
+    # set-next with nothing due answered truthfully but performed nothing.
+    return EXIT_UNCONFIRMED if document.get("scheduled") is False else EXIT_CONFIRMED

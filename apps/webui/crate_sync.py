@@ -39,7 +39,7 @@ from apps.shared import fs_residency, library_mode, platform_paths
 from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.run_agentbox import (
-    AGENTBOX_HOSTNAME,
+    agentbox_host,
     allowed_ssh_host,
     allowed_ssh_hosts_description,
     ssh_agentbox_argv,
@@ -1314,6 +1314,7 @@ def _http_json(url: str) -> tuple[int, str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    host = agentbox_host()
     parser = argparse.ArgumentParser(prog="python -m apps.webui.crate_sync")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -1354,12 +1355,12 @@ def build_parser() -> argparse.ArgumentParser:
     side.add_argument(
         "--local",
         action="store_true",
-        help=f"run on the owner Mac; live mode pushes to {AGENTBOX_HOSTNAME}",
+        help=f"run on the owner Mac; live mode pushes to {host}",
     )
     side.add_argument(
         "--remote",
         action="store_true",
-        help=f"run on {AGENTBOX_HOSTNAME}; dry/live modes obtain the owner plan over SSH and pull",
+        help=f"run on {host}; dry/live modes obtain the owner plan over SSH and pull",
     )
     parser.add_argument(
         "--full",
@@ -1367,7 +1368,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="select every currently-present row (refused until spike_verified)",
     )
     parser.add_argument(
-        "--to", default=AGENTBOX_HOSTNAME, help="rsync destination host"
+        "--to", default=host, help="rsync destination host"
     )
     parser.add_argument(
         "--owner",
@@ -1389,7 +1390,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dest",
         choices=("ssh", "local"),
         default=None,
-        help=f"ssh (owner Mac -> {AGENTBOX_HOSTNAME}) or local copy into --crate-root (tests)",
+        help=f"ssh (owner Mac -> {host}) or local copy into --crate-root (tests)",
     )
     parser.add_argument("--crate-root", default=None, help="replica crate root")
     parser.add_argument(

@@ -5,6 +5,8 @@
  * No DOM, no runes, no fetch - testable with loadTypeScriptModule.
  */
 
+import { measuredPageProcess } from './memory-meter-model';
+
 export const PRESSURE_SAMPLE_IDLE_MS = 1000;
 export const PRESSURE_SAMPLE_ELEVATED_MS = 5000;
 export const KERNEL_ELEVATED_LEVEL = 2;
@@ -27,6 +29,18 @@ export interface ChartSample {
 export interface ProcessFamilyMember {
 	label: string;
 	mb: number | null;
+	/** The native probe's role (e.g. webkit-webcontent), when it named one. */
+	role?: string | null;
+	/**
+	 * True when the member exists only because of the native probe sample
+	 * (a `probe_log` member, or a by-role fallback row); such a member lives
+	 * only as long as that sample is fresh.
+	 */
+	fromProbe?: boolean;
+	/** For a live member, the fields it took from the probe sample. */
+	probeFields?: string[];
+	/** The engine walk's own resident MB (rss), without any probe fallback. */
+	liveMb?: number | null;
 }
 
 export interface ProcessFamilySnapshot {
@@ -34,6 +48,10 @@ export interface ProcessFamilySnapshot {
 	churnScore: number | null;
 	compressorRate: number | null;
 	members: ProcessFamilyMember[];
+	/** True when the engine left a stale native-probe sample out of members. */
+	probeStale?: boolean;
+	/** That probe sample's age in seconds, or null when it had no readable time. */
+	probeAgeSeconds?: number | null;
 }
 
 export type BreakdownReset = 'prefetch' | 'anlz' | 'perf-ring';
@@ -177,12 +195,28 @@ export function breakdownLines(input: BreakdownInput): BreakdownLine[] {
 		title: 'Decoded PCM held by loaded decks (not resettable).'
 	});
 
+	// Same question the compact figure asks: is the page's own process
+	// measured? Then the heap is inside it, counted once, in both views.
+	const pageProcess = measuredPageProcess(input.processes?.members);
 	if (input.jsHeapMB !== null) {
 		lines.push({
 			key: 'heap',
 			label: 'JS heap',
 			value: `${input.jsHeapMB} MB`,
-			title: 'Chromium performance.memory.usedJSHeapSize.'
+			title:
+				'Chromium performance.memory.usedJSHeapSize.' +
+				(pageProcess === null
+					? ''
+					: ` Inside the measured page process (${pageProcess.label}), so the compact meter counts it once.`)
+		});
+	} else if (pageProcess !== null) {
+		lines.push({
+			key: 'heap',
+			label: 'JS heap',
+			value: 'in page process',
+			title:
+				'performance.memory is unavailable on this webview; the heap is inside the ' +
+				`measured page process (${pageProcess.label}), which the compact meter counts.`
 		});
 	} else {
 		lines.push({

@@ -1,4 +1,5 @@
 """Fixed-tempo PQTZ beatgrid write-back for promoted own grids (#2050)."""
+
 from __future__ import annotations
 
 import base64
@@ -61,10 +62,7 @@ def served_beats_from_own(own_beats: Sequence[Mapping[str, object]]) -> list[dic
 
 
 def pqtz_own_digest(beats: Sequence[Mapping[str, object]]) -> str:
-    canonical = [
-        {"n": int(b["n"]), "bpm": float(b["bpm"]), "t": float(b["t"])}
-        for b in beats
-    ]
+    canonical = [{"n": int(b["n"]), "bpm": float(b["bpm"]), "t": float(b["t"])} for b in beats]
     payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -78,15 +76,12 @@ def is_fixed_tempo_payload(payload: Mapping[str, object]) -> bool:
     return not payload.get("tempo_changes")
 
 
-def load_own_beatgrid(
-    state_conn: sqlite3.Connection, stable_id: str
-) -> Mapping[str, object] | None:
+def load_own_beatgrid(state_conn: sqlite3.Connection, stable_id: str) -> Mapping[str, object] | None:
     pointer = canonical_pointer(state_conn, stable_id, "beatgrid")
     if pointer is None:
         return None
     row = state_conn.execute(
-        "SELECT record_json FROM analysis "
-        "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+        "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ? AND backend_version = ?",
         (stable_id, pointer[0], pointer[1]),
     ).fetchone()
     if row is None:
@@ -100,12 +95,8 @@ def load_own_beatgrid(
     return lane.payload
 
 
-def resolve_analysis_dat_path(
-    rb_conn: sqlite3.Connection, content_id: str
-) -> Path | None:
-    row = rb_conn.execute(
-        "SELECT AnalysisDataPath FROM djmdContent WHERE ID = ?", (content_id,)
-    ).fetchone()
+def resolve_analysis_dat_path(rb_conn: sqlite3.Connection, content_id: str) -> Path | None:
+    row = rb_conn.execute("SELECT AnalysisDataPath FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
     if row is None or not row[0]:
         return None
     raw = str(row[0])
@@ -122,8 +113,7 @@ def resolve_analysis_dat_path(
 
 def _pqtz_entries(own_beats: Sequence[Mapping[str, object]]) -> list[Container]:
     return [
-        Container(beat=n, tempo=tempo, time=time_ms)
-        for n, tempo, time_ms in (quantize_own_beat(b) for b in own_beats)
+        Container(beat=n, tempo=tempo, time=time_ms) for n, tempo, time_ms in (quantize_own_beat(b) for b in own_beats)
     ]
 
 
@@ -239,9 +229,7 @@ def write_pqtz_row(
 ) -> None:
     dat_path = resolve_analysis_dat_path(rb_conn, content_id)
     if dat_path is None:
-        raise SafetyAbort(
-            f"no AnalysisDataPath for content {content_id}"
-        )
+        raise SafetyAbort(f"no AnalysisDataPath for content {content_id}")
     preimage.update(snapshot_pqtz_dat(dat_path))
     if not write_pqtz(dat_path, own_beats):
         restore_pqtz_dat(preimage)

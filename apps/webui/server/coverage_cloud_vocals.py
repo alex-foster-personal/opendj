@@ -38,6 +38,7 @@ Requirements (mini-PRD):
     [if] the evictor removes every bundle between jobs [then] each bundle is
       still downloaded exactly once
 """
+
 from __future__ import annotations
 
 import json
@@ -84,9 +85,9 @@ class CloudInputs:
     source: StemHydrationSource | None
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the transient ledger
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 class TransientStore:
     """Bundles this drain fetched and has not yet let go, oldest first."""
 
@@ -115,9 +116,9 @@ def transient_path(data_dir: Path) -> Path:
     return data_dir / "state" / TRANSIENT_FILENAME
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the runner
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 @dataclass
 class CloudVocals:
     data_dir: Path
@@ -199,8 +200,7 @@ class CloudVocals:
                 kept.append(entry)
                 continue
             bundle = next(
-                (b for b in stem_cache_budget.scan_bundles(inputs.stems_dir)
-                 if b.stable_id == stable_id),
+                (b for b in stem_cache_budget.scan_bundles(inputs.stems_dir) if b.stable_id == stable_id),
                 None,
             )
             if bundle is None:
@@ -224,7 +224,9 @@ class CloudVocals:
             # Under the bundle lock, and only if it is still the bundle just
             # confirmed: a re-compress swap may have replaced it since.
             claimed = stem_cache_budget.claim_if_unchanged(
-                bundle, self.data_dir, inputs.index,
+                bundle,
+                self.data_dir,
+                inputs.index,
                 live_protected=stem_hydration.OPEN_DECKS.open_ids,
             )
             if claimed is None:
@@ -239,7 +241,7 @@ class CloudVocals:
     def run(self, stable_id: str, audio_path: str) -> None:
         cache_entry = vocals_cache.cache_path(self.data_dir, stable_id)
         if vocals_cache.load_valid_entry(cache_entry, Path(audio_path)) is not None:
-            return    # vocals exist: never fetch a bundle for them again
+            return  # vocals exist: never fetch a bundle for them again
         inputs = self.inputs_fn()
         if inputs.source is None:
             raise CloudPaused("no stem hydration source is armed on this machine")
@@ -263,8 +265,7 @@ class CloudVocals:
             raise CloudPaused(outcome.reason or "hub transport failure")
         if outcome.status == "hydrated":
             self._store.save(
-                [*self.held(inputs),
-                 {"stable_id": stable_id, "bytes": outcome.bytes_fetched, "at": self.clock()}]
+                [*self.held(inputs), {"stable_id": stable_id, "bytes": outcome.bytes_fetched, "at": self.clock()}]
             )
             self.bundles_downloaded += 1
             self.bytes_downloaded += outcome.bytes_fetched

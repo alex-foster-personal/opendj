@@ -112,6 +112,18 @@ export type EnrichSummary = {
 	coverage_error: string | null;
 	stems: StemsLine;
 	decisions: Record<string, string>;
+	/** ENRICH-08: lanes that cannot run here, and where to set what is missing. */
+	warnings?: EnrichWarning[];
+	/** LIBM-189: store covers found, waiting on the user's OK. */
+	artwork_suggestions?: number;
+};
+
+export type EnrichWarning = {
+	lane: string;
+	code: string;
+	message: string;
+	fix: string;
+	severity: 'blocking' | 'info';
 };
 
 export type CardLine = {
@@ -331,6 +343,21 @@ export function dudLines(summary: EnrichSummary): CardLine[] {
 	];
 }
 
+/**
+ * ENRICH-08: one line per capability warning, its fix on hover and after the message.
+ *
+ *   [if] a blocking warning is reported [then] its line is "unavailable" and the pill needs you
+ *   [if] an info warning (opt-in AI genre) is reported [then] its line is a note and never flags the pill
+ */
+export function warningLines(summary: EnrichSummary): CardLine[] {
+	return (summary.warnings ?? []).map((w) => ({
+		lane: `warning-${w.lane}-${w.code}`,
+		tone: w.severity === 'blocking' ? 'unavailable' : 'note',
+		text: `${w.message} ${w.fix}`,
+		title: w.fix
+	}));
+}
+
 /** The lyrics line: automatic, so progress only. */
 export function lyricsLine(summary: EnrichSummary): CardLine | null {
 	const c = summary.coverage;
@@ -539,8 +566,23 @@ export function needsAttention(summary: EnrichSummary | null, loadError: string 
 	if (stemsFailed(summary.stems) > 0 && summary.stems.state !== 'user_declined' && summary.decisions.stems !== 'never') return true;
 	// A stems lane this computer cannot make stays collapsed: no answer here can change it, and the
 	// collapsed line names it (collapsedLine), the same as background progress.
-	const lines = [...analysisLines(summary), lyricsLine(summary)];
+	if ((summary.artwork_suggestions ?? 0) > 0) return true; // LIBM-189: covers wait on the user
+	const lines = [...analysisLines(summary), lyricsLine(summary), ...warningLines(summary)];
 	return lines.some((line) => line !== null && (line.tone === 'failed' || line.tone === 'unavailable'));
+}
+
+/** Hover for the collapsed pill when the library needs a person, not just time. */
+export function attentionTitle(summary: EnrichSummary): string {
+	const parts: string[] = [];
+	if (summary.stems.state === 'ask') parts.push('Stems still need a yes or no');
+	if (summary.stems.state === 'unknown') {
+		parts.push(`Stems status unknown: ${summary.stems.reason ?? 'no reason given'}`);
+	}
+	const lines = [...analysisLines(summary), lyricsLine(summary)].filter(
+		(line): line is CardLine => line !== null && (line.tone === 'failed' || line.tone === 'unavailable')
+	);
+	for (const line of lines) parts.push(line.text);
+	return `${parts.length > 0 ? parts.join('. ') : 'Something in the library needs you'}. Click to see it.`;
 }
 
 /** The collapsed card: a lane count, with the lane names on hover. */

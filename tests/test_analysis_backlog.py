@@ -684,3 +684,45 @@ def test_a_retired_record_is_queued_again_and_a_current_one_is_not(tmp_path: Pat
     else:
         assert queued == [], "a current record is still skipped"
         assert pending == []
+
+
+def test_scan_resolves_the_machine_id_once_not_per_track(state_db, tmp_path, monkeypatch):
+    # NATIVE-8340: if every pending track re-resolves the local machine id
+    # (a PRAGMA, a realpath and an id-file read each) then GET /analysis-queue
+    # costs 6x the scan's old time on a 15k library and hangs at boot -> broken
+    from apps.shared.state import sync_stamp
+
+    for i in range(20):
+        sid = f"{i:040x}"
+        _add_track(state_db, sid, _audio(tmp_path, f"t{i}.mp3"))
+    calls = {"n": 0}
+    real = sync_stamp.local_machine_id
+
+    def counted(conn):
+        calls["n"] += 1
+        return real(conn)
+
+    monkeypatch.setattr(sync_stamp, "local_machine_id", counted)
+    result = _scan(state_db)
+    assert result.pending_total == 20
+    assert calls["n"] <= 2, f"local_machine_id ran {calls['n']} times for 20 tracks"
+
+
+@pytest.mark.requirement("NATIVE-38")
+def test_a_track_over_the_analyzer_cap_counts_too_long_and_is_never_queued(state_db, tmp_path):
+    """[if] a track's stored duration is over max_track_minutes [then] it counts
+    too_long and is never pending, so the drain cannot answer TrackTooLong for it
+    on every run; an under-cap or unknown duration stays pending [else broken]."""
+    cap_ms = backlog_mod.analyzer_cap_ms()
+    assert cap_ms is not None
+    for sid, duration_ms in (("long0001", cap_ms + 1), ("short001", cap_ms), ("unknown1", None)):
+        _add_track(state_db, sid, _audio(tmp_path, f"{sid}.mp3"))
+        conn = sqlite3.connect(state_db)
+        conn.execute("UPDATE tracks SET duration_ms = ? WHERE stable_id = ?", (duration_ms, sid))
+        conn.commit()
+        conn.close()
+
+    out = _scan(state_db)
+    assert sorted(i.stable_id for i in out.pending) == ["short001", "unknown1"]
+    assert out.too_long == 1
+    assert out.analyzed + out.unreachable + out.too_long + out.pending_total == out.unmapped == 3

@@ -15,7 +15,9 @@ const meta = {
 		pinsVisible: false,
 		showAgentPins: false,
 		ontoggle: fn(),
-		ontoggleagentpins: fn()
+		ontoggleagentpins: fn(),
+		pinVisibleDays: 0,
+		onvisibledays: fn()
 	}
 } satisfies Meta<typeof FeedbackPinVisibilityActionsView>;
 
@@ -27,3 +29,6 @@ export const AllOff: Story = {};
 export const PinsVisible: Story = { args: { pinsVisible: true } };
 
 export const AllOn: Story = { args: { pinsVisible: true, showAgentPins: true } };
+
+/** Pins older than two weeks are hidden. */
+export const FourteenDays: Story = { args: { pinsVisible: true, pinVisibleDays: 14 } };

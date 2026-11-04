@@ -64,11 +64,20 @@ for (const { name, anchor } of MIXER_SETTERS) {
 	});
 }
 
-test('setFilter and setFader still call _setParam', () => {
+test('setFilter drives the color knob and setFader still calls _setParam', () => {
 	const filterBody = engineBlockAfter('setFilter(deck: DeckId, value: number, pressT0Ms?: number): void {');
 	const faderBody = engineBlockAfter('setFader(deck: DeckId, value: number, pressT0Ms?: number): void {');
-	assert.match(filterBody, /_setParam/);
+	// COLORFX-01: the knob's drive moved to color-fx.svelte.ts (FILTER, SPACE or
+	// ECHO per channel); it ramps on the same smoothing constant _setParam uses.
+	assert.match(filterBody, /applyColorKnob\(deck, nodes, value\)/);
 	assert.match(faderBody, /_setParam/);
+	const graph = readSource('src/lib/rb/color-fx-graph.ts');
+	const constants = readSource('src/lib/player/constants.ts');
+	const ramp = Number(/export const COLOR_FX_RAMP_SEC = ([0-9.]+);/.exec(graph)?.[1]);
+	const smooth = Number(/export const PARAM_SMOOTH_S = ([0-9.]+);/.exec(constants)?.[1]);
+	assert.ok(Number.isFinite(ramp) && ramp > 0, 'color FX ramp constant parsed');
+	assert.equal(ramp, smooth, 'the color knob ramps exactly as _setParam does');
+	assert.match(graph, /param\.setTargetAtTime\(value, now, tau\)/);
 });
 
 test('performance-ipc forwards pressT0Ms into mixer setters', () => {

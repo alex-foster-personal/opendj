@@ -220,9 +220,11 @@ html[data-theme='light'][data-wave-palette='mono'] .perf-root {
 /* -------- skin: mono-dev (preview) --------
  * Near-black grayscale chrome. Declared after the theme blocks so it wins at
  * equal specificity; dark-only by design (it repaints light too). Red is kept
- * for errors and missing-file badges only. Section 1 is pure token overrides;
- * section 2 overrides shapes the token set has no knob for (radius, gradient
- * fills, BPM size) and is the list of what resisted the theme. */
+ * for errors and missing-file badges. Loaded-track titles stay green (the
+ * .rb-row-loaded rule in section 2); --rb-green itself stays gray. Section 1
+ * is pure token overrides; section 2 overrides shapes the token set has no
+ * knob for (radius, gradient fills, BPM size) and is the list of what
+ * resisted the theme. */
 html[data-skin='mono-dev'] {
 	color-scheme: dark;
 }
@@ -345,6 +347,40 @@ html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .readout .bpm {
 	font-weight: 500;
 	color: #bdbdbd;
 	letter-spacing: -0.02em;
+}
+/* Played tracks (loaded on a deck) keep a green title and artist. Gothic
+   grays --rb-green for the rest of the chrome; this is the library signal
+   the maintainer still wants. Master rows keep --rb-master-text (more specific). */
+html[data-skin='mono-dev'] .perf-root .rb-row-loaded {
+	color: #35c04f;
+}
+/* Pin f29c147b1480: gothic jog copies the light-skin wheel. Light's cream
+   deck is what makes the dark rim a thick black line; gothic's deck is the
+   same black as the rim, so the dial carries its own cream plate. A playing
+   deck's spin marks and progress trail are the thick white line on that rim
+   (downbeat stays the thicker mark, still outside the face). */
+html[data-skin='mono-dev'] .perf-root .dial-wrap {
+	border-radius: 50%;
+	background: #efe9dd;
+	box-shadow: 0 0 0 2px #efe9dd;
+}
+html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing .dial > circle:first-child {
+	stroke: #101216;
+	stroke-width: 3.5px;
+}
+html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing.jog-off-tempo .dial > circle:first-child {
+	stroke: var(--rb-red, #d0342c);
+}
+html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing .progress-trail {
+	stroke: #fff;
+	stroke-width: 3.2;
+}
+html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing .phase-mark {
+	stroke: #fff;
+	stroke-width: 2.4;
+}
+html[data-skin='mono-dev'] .perf-root .dial-wrap.dial-playing .phase-mark.downbeat {
+	stroke-width: 3;
 }
 
 /* -------- skin: light --------

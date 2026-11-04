@@ -4,6 +4,7 @@ Used by the daemon main loop to record wake/vad/stt/grammar/dispatch
 timings per utterance and append them to ``<data dir>/voice/timings.jsonl``
 for post-set analysis (CONTEXT success criterion 7).
 """
+
 from __future__ import annotations
 
 import time
@@ -45,9 +46,7 @@ class Timings:
         return out
 
 
-def budget_warning(
-    total_ms: float, budget_ms: float = READ_ONLY_LATENCY_BUDGET_MS
-) -> str | None:
+def budget_warning(total_ms: float, budget_ms: float = READ_ONLY_LATENCY_BUDGET_MS) -> str | None:
     """Return a warning string if ``total_ms`` exceeds the read-only budget."""
     if total_ms > budget_ms:
         return (

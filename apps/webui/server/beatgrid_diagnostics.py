@@ -24,6 +24,7 @@ thresholds or shape ever change; there is no shared runtime between Python
 (parses ANLZ) and TypeScript (renders the UI dot / unit-tests the math), so
 this is a deliberate duplication of one small pure function.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -66,7 +67,9 @@ def _beat_direction(disagreements: list[float], i: int) -> int:
 
 
 def _direction_run_length(
-    disagreements: list[float], interval_count: int, i: int,
+    disagreements: list[float],
+    interval_count: int,
+    i: int,
 ) -> int:
     dir_ = _beat_direction(disagreements, i)
     start = i
@@ -101,9 +104,7 @@ def detect_beatgrid_issue(
         disagreement_bpm = abs(disagreements[i])
         if worst is not None and disagreement_bpm <= worst["disagreement_bpm"]:
             continue
-        severity: BeatgridIssueSeverity = (
-            "error" if disagreement_bpm > ERROR_DISAGREEMENT_BPM else "warning"
-        )
+        severity: BeatgridIssueSeverity = "error" if disagreement_bpm > ERROR_DISAGREEMENT_BPM else "warning"
         worst = {
             "severity": severity,
             "at_sec": float(beats[i]["t"]),

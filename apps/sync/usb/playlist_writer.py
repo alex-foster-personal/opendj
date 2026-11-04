@@ -10,6 +10,7 @@ Output contract (confirmed by djay Pro, Serato DJ, VLC)::
     <drive-relative path with forward slashes>
     ...
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

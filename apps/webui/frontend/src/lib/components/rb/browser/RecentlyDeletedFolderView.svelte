@@ -2,6 +2,7 @@
 	// RecentlyDeletedFolder's rows as props only: the container owns the
 	// deleted-playlist list and the restore call (null rows = still loading).
 	import type { DeletedPlaylistOut } from '$lib/rb/playlist-deleted';
+	import { collapse } from '$lib/motion/collapse';
 
 	let {
 		open,
@@ -53,37 +54,41 @@
 	<span class="count" title={_countTitle()}>{_countText()}</span>
 </div>
 {#if open}
-	{#if error !== null}
-		<div class="row child rb-inert" title={error}>
-			<span class="name error">deleted playlists unavailable</span>
+	<div class="collapse" in:collapse out:collapse>
+		<div class="collapse-inner">
+			{#if error !== null}
+				<div class="row child rb-inert" title={error}>
+					<span class="name error">deleted playlists unavailable</span>
+				</div>
+			{:else if rows === null}
+				<div class="row child rb-inert">
+					<span class="name dim">...</span>
+				</div>
+			{:else if rows.length === 0}
+				<div class="row child rb-inert" data-testid="playlist-recently-deleted-empty">
+					<span class="name dim">no deleted playlists</span>
+				</div>
+			{:else}
+				{#each rows as row (row.playlist_id)}
+					<div class="row child rb-inert" data-testid="playlist-deleted-row">
+						<span class="name" title={row.name}>{row.name}</span>
+						<button
+							type="button"
+							class="restore"
+							title="Restore playlist"
+							data-testid="restore-playlist"
+							onclick={(e) => {
+								e.stopPropagation();
+								onrestore(row.playlist_id, row.name);
+							}}
+						>
+							&#8635;
+						</button>
+					</div>
+				{/each}
+			{/if}
 		</div>
-	{:else if rows === null}
-		<div class="row child rb-inert">
-			<span class="name dim">...</span>
-		</div>
-	{:else if rows.length === 0}
-		<div class="row child rb-inert" data-testid="playlist-recently-deleted-empty">
-			<span class="name dim">no deleted playlists</span>
-		</div>
-	{:else}
-		{#each rows as row (row.playlist_id)}
-			<div class="row child rb-inert" data-testid="playlist-deleted-row">
-				<span class="name" title={row.name}>{row.name}</span>
-				<button
-					type="button"
-					class="restore"
-					title="Restore playlist"
-					data-testid="restore-playlist"
-					onclick={(e) => {
-						e.stopPropagation();
-						onrestore(row.playlist_id, row.name);
-					}}
-				>
-					&#8635;
-				</button>
-			</div>
-		{/each}
-	{/if}
+	</div>
 {/if}
 </div>
 
@@ -159,5 +164,14 @@
 	}
 	.restore:hover {
 		color: var(--rb-accent);
+	}
+	/* Shared collapse rule ($lib/motion/collapse.ts): the transition animates
+	 * this grid's single row from 0fr to 1fr; the inner block clips while it does. */
+	.collapse {
+		display: grid;
+	}
+	.collapse-inner {
+		min-height: 0;
+		overflow: hidden;
 	}
 </style>

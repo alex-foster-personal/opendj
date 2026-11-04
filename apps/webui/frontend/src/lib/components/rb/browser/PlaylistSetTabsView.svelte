@@ -2,6 +2,7 @@
 	// PlaylistSetTabs as props only: the container loads the playlist's sets
 	// and runs create and start; selection and the new-set name are bound
 	// back to it because its refresh and create flows read and reset them.
+	import type { Snippet } from 'svelte';
 	import type { PlaylistSet } from '$lib/rb/api-playlist-sets';
 	import { setTabLabel } from './playlist-set-tabs';
 
@@ -16,6 +17,10 @@
 		runError = false,
 		runIsLive = () => false,
 		startLabel = (kind) => (kind === 'practice' ? 'Start practice' : 'Start performance'),
+		routeLitId = null,
+		glyphFor = () => null,
+		onselect = () => {},
+		extra,
 		oncreate,
 		onrun
 	}: {
@@ -29,6 +34,14 @@
 		runError?: boolean;
 		runIsLive?: (kind: 'practice' | 'performance') => boolean;
 		startLabel?: (kind: 'practice' | 'performance') => string;
+		/** The set whose route the Routes view has lit, if any (SET-6586). */
+		routeLitId?: number | null;
+		/** Tab glyph for a set's route, or null for none (SET-6586). */
+		glyphFor?: (set: PlaylistSet) => string | null;
+		/** Called after a tab is selected, so the Routes view can follow it (SET-6586). */
+		onselect?: (set: PlaylistSet) => void;
+		/** Extra tab-row controls, such as the Routes tools (SET-6586). */
+		extra?: Snippet;
 		oncreate: () => void;
 		onrun: (kind: 'practice' | 'performance') => void;
 	} = $props();
@@ -41,16 +54,27 @@
 				type="button"
 				class="set-tab"
 				class:selected={selectedId === set.id}
+				class:route-lit={routeLitId === set.id}
 				data-testid="playlist-set-tab"
 				data-set-id={set.id}
 				aria-selected={selectedId === set.id}
 				onclick={() => {
 					selectedId = set.id;
+					onselect(set);
 				}}
 			>
 				{setTabLabel(set.name, set.play_count)}
+				{#if glyphFor(set) !== null}
+					<span
+						class="route-glyph"
+						data-testid="playlist-set-route-glyph"
+						title="This set's route: one component per slot, by initials"
+						>{glyphFor(set)}</span
+					>
+				{/if}
 			</button>
 		{/each}
+		{@render extra?.()}
 		<div class="create-set">
 			<input
 				type="text"
@@ -155,6 +179,16 @@
 	.set-tab.selected {
 		border-color: var(--rb-accent);
 		background: color-mix(in srgb, var(--rb-panel) 70%, var(--rb-accent) 30%);
+	}
+	.set-tab.route-lit {
+		border-color: var(--rb-text);
+		background: var(--rb-text);
+		color: var(--rb-panel);
+	}
+	.route-glyph {
+		font-size: calc(var(--rb-fs-label) - 1px);
+		opacity: 0.7;
+		margin-left: 4px;
 	}
 	.create-set {
 		display: flex;

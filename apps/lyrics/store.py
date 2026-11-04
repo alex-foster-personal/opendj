@@ -24,7 +24,7 @@ That needs a real file-backed, writable connection with the machine-id file
 beside it. A router MUST therefore pass the cloudsync-style write connection
 (``apps/webui/server/routes/cloudsync.py:get_cloudsync_write_conn``, which
 resolves the DB path from ``request.app.state``), never a connection opened
-from a hardcoded ``"data/state/state.db"`` default: that default writes one
+from a hardcoded ``"(private path)"`` default: that default writes one
 machine's verdicts into whichever DB the process happened to start next to.
 
 **Tombstones.** Deletes do not exist; ``apps.lyrics.purge`` sets
@@ -138,16 +138,14 @@ class LyricVerdict:
         return self.override or self.verdict
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # writes
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _validated_hash(words_content_hash: str | None, stable_id: str) -> str | None:
     if words_content_hash is None:
         return None
     candidate = words_content_hash.strip()
-    if len(candidate) != _SHA256_HEX_LEN or any(
-        character not in "0123456789abcdef" for character in candidate
-    ):
+    if len(candidate) != _SHA256_HEX_LEN or any(character not in "0123456789abcdef" for character in candidate):
         raise LyricStoreError(
             f"words_content_hash for {stable_id!r} must be {_SHA256_HEX_LEN} "
             f"lowercase hex chars (a sha256 digest); got {words_content_hash!r}"
@@ -155,9 +153,7 @@ def _validated_hash(words_content_hash: str | None, stable_id: str) -> str | Non
     return candidate
 
 
-def _row_is_coverage_only(
-    words_content_hash: str | None, override: str | None, source: str | None
-) -> bool:
+def _row_is_coverage_only(words_content_hash: str | None, override: str | None, source: str | None) -> bool:
     """True iff an EXISTING ``lyric_verdict`` row is fair game for
     :func:`upsert_stem_coverage_verdict` to overwrite.
 
@@ -181,12 +177,8 @@ def _row_is_coverage_only(
     )
 
 
-def _guard_tombstone(
-    conn: sqlite3.Connection, stable_id: str, resurrect: bool
-) -> None:
-    row = conn.execute(
-        f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+def _guard_tombstone(conn: sqlite3.Connection, stable_id: str, resurrect: bool) -> None:
+    row = conn.execute(f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)).fetchone()
     if row is None or row[0] is None:
         return
     if not resurrect:
@@ -260,9 +252,19 @@ def upsert_verdict(  # noqa: PLR0913 - one keyword per lyric_verdict column, by 
                 deleted_at = NULL
             """,
             (
-                stable_id, verdict, coverage_pct, source, language_iso3,
-                n_words, n_lines, pct_witness_red, pipeline_version, digest,
-                computed_at, stamp.updated_at, stamp.origin_device_id,
+                stable_id,
+                verdict,
+                coverage_pct,
+                source,
+                language_iso3,
+                n_words,
+                n_lines,
+                pct_witness_red,
+                pipeline_version,
+                digest,
+                computed_at,
+                stamp.updated_at,
+                stamp.origin_device_id,
             ),
         )
 
@@ -304,7 +306,7 @@ def upsert_stem_coverage_verdict(
     with no word alignment, or a legacy-migrated row all pass that same test
     without ever having been written by this backfill. The guard now also
     requires ``source`` to start with :data:`STEM_COVERAGE_SOURCE_PREFIX`
-    (see :func:`_row_is_coverage_only`) -- absence of word-level data/override
+    (see :func:`_row_is_coverage_only`) -- absence of word-level (private path)
     is necessary but not sufficient; ownership of the row is what makes it
     overwritable. All three conditions are guarded together, in the SAME
     statement.
@@ -362,8 +364,7 @@ def upsert_stem_coverage_verdict(
     with sync_stamp.stamped_transaction(conn):
         _guard_tombstone(conn, stable_id, resurrect=False)
         existing = conn.execute(
-            f"SELECT words_content_hash, override, source FROM {TABLE} "
-            "WHERE stable_id = ?",
+            f"SELECT words_content_hash, override, source FROM {TABLE} WHERE stable_id = ?",
             (stable_id,),
         ).fetchone()
         if existing is not None and not _row_is_coverage_only(*existing):
@@ -391,8 +392,14 @@ def upsert_stem_coverage_verdict(
               AND {TABLE}.source LIKE ?
             """,
             (
-                stable_id, verdict, coverage_pct, source, pipeline_version,
-                computed_at, stamp.updated_at, stamp.origin_device_id,
+                stable_id,
+                verdict,
+                coverage_pct,
+                source,
+                pipeline_version,
+                computed_at,
+                stamp.updated_at,
+                stamp.origin_device_id,
                 f"{STEM_COVERAGE_SOURCE_PREFIX}%",
             ),
         )
@@ -423,14 +430,9 @@ def set_override(
 
 
 def _missing_row_reason(conn: sqlite3.Connection, stable_id: str) -> str:
-    row = conn.execute(
-        f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute(f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)).fetchone()
     if row is None:
-        return (
-            f"no lyric_verdict row for stable_id {stable_id!r}; an override "
-            "needs a computed row to override."
-        )
+        return f"no lyric_verdict row for stable_id {stable_id!r}; an override needs a computed row to override."
     return (
         f"lyric_verdict {stable_id!r} was purged (deleted_at={row[0]!r}); "
         "overriding it would make a purged track visible again."
@@ -451,9 +453,9 @@ def tombstone(conn: sqlite3.Connection, stable_id: str) -> None:
             raise LyricStoreError(_missing_row_reason(conn, stable_id))
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # reads
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _verdict_from_row(row: Sequence[Any]) -> LyricVerdict:
     return LyricVerdict(**dict(zip(COLUMNS, row, strict=True)))
 
@@ -464,16 +466,12 @@ def verdict_absence_detail(conn: sqlite3.Connection, stable_id: str) -> str | No
     Unlike :func:`get_verdict`, this distinguishes "no row" from "tombstoned"
     so the router can return an honest 404 detail without SQL in the handler.
     """
-    row = conn.execute(
-        f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute(f"SELECT deleted_at FROM {TABLE} WHERE stable_id = ?", (stable_id,)).fetchone()
     if row is None:
         return f"no live lyric_verdict row for {stable_id!r}"
     if row[0] is not None:
         return f"lyric_verdict {stable_id!r} is tombstoned"
-    track = conn.execute(
-        "SELECT deleted_at FROM tracks WHERE stable_id = ?", (stable_id,)
-    ).fetchone()
+    track = conn.execute("SELECT deleted_at FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()
     if track is None or track[0] is not None:
         return f"no live lyric_verdict row for {stable_id!r}"
     return None
@@ -481,15 +479,11 @@ def verdict_absence_detail(conn: sqlite3.Connection, stable_id: str) -> str | No
 
 def get_verdict(conn: sqlite3.Connection, stable_id: str) -> LyricVerdict | None:
     """The live verdict, or None. A tombstoned row reads as absent."""
-    row = conn.execute(
-        f"{_SELECT} WHERE {_LIVE} AND v.stable_id = ?", (stable_id,)
-    ).fetchone()
+    row = conn.execute(f"{_SELECT} WHERE {_LIVE} AND v.stable_id = ?", (stable_id,)).fetchone()
     return _verdict_from_row(row) if row is not None else None
 
 
-def bulk_verdicts(
-    conn: sqlite3.Connection, stable_ids: Sequence[str]
-) -> dict[str, LyricVerdict]:
+def bulk_verdicts(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, LyricVerdict]:
     """One SELECT for a listing page's worth of verdicts, keyed by stable_id.
 
     Missing ids are simply absent from the dict: absence IS the honest "no
@@ -498,9 +492,7 @@ def bulk_verdicts(
     if not stable_ids:
         return {}
     marks = ",".join("?" for _ in stable_ids)
-    rows = conn.execute(
-        f"{_SELECT} WHERE {_LIVE} AND v.stable_id IN ({marks})", tuple(stable_ids)
-    )
+    rows = conn.execute(f"{_SELECT} WHERE {_LIVE} AND v.stable_id IN ({marks})", tuple(stable_ids))
     return {row[0]: _verdict_from_row(row) for row in rows}
 
 
@@ -542,9 +534,7 @@ def count_verdicts(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
-def verdicts_by_source(
-    conn: sqlite3.Connection, source_prefix: str
-) -> list[LyricVerdict]:
+def verdicts_by_source(conn: sqlite3.Connection, source_prefix: str) -> list[LyricVerdict]:
     """Every LIVE row whose source starts with ``source_prefix``.
 
     The read half of the licensing purge (:mod:`apps.lyrics.purge`): one

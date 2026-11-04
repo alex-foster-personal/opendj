@@ -10,7 +10,7 @@ tests/adapters/traktor/test_adapter.py
 tests/adapters/traktor/test_capabilities.py
 tests/adapters/traktor/test_mappers.py
 tests/adapters/traktor/test_nml.py
-tests/agentbox/test_crate_state.py
+(private path)
 tests/analysis/test_auto_cues.py
 tests/analysis/test_detect_bad_beatgrid.py
 tests/analysis/test_librosa_backend.py
@@ -82,11 +82,11 @@ tests/reconcile/test_list_broken.py
 tests/reconcile/test_locate.py
 tests/reconcile/test_relink.py
 tests/reconcile/test_remove_track.py
-tests/scripts/test_build_reqs_json.py
+(private path)
 tests/scripts/test_desktop_lane_config.py
 tests/scripts/test_dev_attach_topology.py
-tests/scripts/test_engine_payload.py
-tests/scripts/test_engine_payload_extras.py
+(private path)
+(private path)
 tests/scripts/test_engine_payload_macho.py
 tests/scripts/test_macos_signing.py
 tests/scripts/test_webkit_build_watch_loop.py
@@ -95,7 +95,7 @@ tests/sets/classify/test_model.py
 tests/sets/classify/test_rules.py
 tests/sets/classify/test_transitions.py
 tests/sets/test_api.py
-tests/sets/test_audio.py
+(private path)
 tests/sets/test_capture.py
 tests/sets/test_cli_stop.py
 tests/sets/test_djay_source.py
@@ -139,10 +139,10 @@ tests/shared/state/test_writer_bus_ordering.py
 tests/shared/state/test_writer_sync_stamps.py
 tests/shared/test_audio_files.py
 tests/shared/test_audio_files_embedded_artwork.py
-tests/shared/test_djay_db.py
+(private path)
 tests/shared/test_djay_db_write_guard.py
 tests/shared/test_fingerprints_phase7.py
-tests/shared/test_harmonic.py
+(private path)
 tests/shared/test_library_mode.py
 tests/shared/test_paths.py
 tests/shared/test_rekordbox_db.py
@@ -168,7 +168,7 @@ tests/spotify/test_rematch.py
 tests/spotify/test_reporting.py
 tests/spotify/test_state_writer.py
 tests/spotify/test_url_parse.py
-tests/stems/test_farm_memory_gate.py
+(private path)
 tests/stems/test_stem_split_experiment_arms.py
 tests/stems/test_tier_throughput_fit_and_merge.py
 tests/sync/test_apply_analysis_completeness.py
@@ -205,12 +205,11 @@ tests/sync/usb/test_pioneer_agent_dispatch.py
 tests/sync/usb/test_pioneer_agent_focus.py
 tests/sync/usb/test_pioneer_cli.py
 tests/sync/usb/test_pioneer_export_workflow.py
-tests/sync/usb/test_pioneer_reader.py
+(private path)
 tests/sync/usb/test_pioneer_reader_big.py
 tests/sync/usb/test_playlist_writer.py
 tests/sync/usb/test_preflight.py
 tests/sync/usb/test_profile.py
-tests/sync/usb/test_reversal.py
 tests/sync/usb/test_state_helpers.py
 tests/sync/usb/test_verify.py
 tests/tags/test_apply.py
@@ -219,7 +218,7 @@ tests/tags/test_collect_wired.py
 tests/tags/test_preview.py
 tests/tags/test_unify.py
 tests/test_analysis_backlog.py
-tests/test_analysis_reader.py
+(private path)
 tests/test_analysis_route.py
 tests/test_analysis_run_classification.py
 tests/test_apply_analysis.py
@@ -233,12 +232,12 @@ tests/test_conflict_cues.py
 tests/test_conformance.py
 tests/test_copilot_route.py
 tests/test_cue_comparison.py
-tests/test_djay_writer.py
+(private path)
 tests/test_ratings_persistence.py
 tests/test_rb_cues.py
 tests/test_rb_writer.py
-tests/test_reconcile_route.py
-tests/test_relocate_route.py
+(private path)
+(private path)
 tests/test_sync_diff.py
 tests/test_sync_safety.py
 tests/test_tsaf_cues.py
@@ -261,20 +260,20 @@ tests/voice/test_timings.py
 tests/voice/test_tts.py
 tests/voice/test_vad.py
 tests/voice/test_wake.py
-tests/webui/analysis/test_autodrain.py
-tests/webui/analysis/test_autodrain_booking.py
-tests/webui/analysis/test_autodrain_lifecycle.py
-tests/webui/analysis/test_autodrain_slot.py
-tests/webui/analysis/test_queue.py
-tests/webui/test_anlz_partial_parse.py
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
 tests/webui/test_audio_deck_load_contract.py
 tests/webui/test_cloud_sync.py
-tests/webui/test_crate_sync.py
+(private path)
 tests/webui/test_deps.py
 tests/webui/test_edit_suite_atomic.py
 tests/webui/test_feedback_routes.py
 tests/webui/test_health.py
-tests/webui/test_hot_cue_waveform_source_agreement.py
+(private path)
 tests/webui/test_pairings.py
 tests/webui/test_playlists.py
 tests/webui/test_preflight.py
@@ -283,8 +282,8 @@ tests/webui/test_settings.py
 tests/webui/test_spotify_routes.py
 tests/webui/test_sqlite_backend.py
 tests/webui/test_tracks.py
-tests/webui/test_usb_export_router.py
-tests/webui/test_waveform_native.py
+(private path)
+(private path)
 tests/cloudsync/test_asset_tier_writes.py
 tests/dj_copilot/test_candidates_zero_bpm.py
 tests/engine_core/test_migrate_on_boot.py
@@ -293,32 +292,32 @@ tests/quality/test_frontend_typing_gate.py
 tests/quality/test_frontend_typing_ratchet.py
 tests/quality/test_mypy_scope.py
 tests/scripts/test_dmg_preflight.py
-tests/scripts/test_dmg_preflight_updater_key.py
-tests/scripts/test_ops_skill_runners.py
-tests/scripts/test_perf_squeeze.py
-tests/scripts/test_ship_dmg_close_and_reuse.py
-tests/shared/test_tsaf_format.py
-tests/test_progress.py
-tests/test_progress_interprocess.py
-tests/test_rb_assets.py
-tests/test_rekordbox_writeback_gate.py
-tests/test_rekordbox_writeback_recovery.py
-tests/test_rekordbox_writeback_surfaces.py
-tests/test_requirement_markers.py
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
 tests/vocals/test_cache_contract.py
-tests/vocals/test_cli_queue.py
+(private path)
 tests/vocals/test_worker_portability.py
 tests/vocals/test_worker_runner.py
 tests/vocals/test_worker_units.py
 tests/webui/test_dedup_review.py
-tests/webui/test_local_waveform_decode.py
+(private path)
 tests/webui/test_local_waveform_share_audience.py
 tests/webui/test_rb_artwork_local_track.py
-tests/webui/test_rb_hot_cue_write.py
+(private path)
 tests/webui/test_rb_mapping_flag.py
 tests/webui/test_rb_meta_local_track.py
-tests/webui/test_rb_vendor_hot_cue_split.py
-tests/webui/test_rb_vendor_units.py
-tests/webui/test_vocal_cache_merge.py
+(private path)
+(private path)
+(private path)
 tests/webui/test_vocals_routes.py
 tests/webui/test_wavestack_contract.py

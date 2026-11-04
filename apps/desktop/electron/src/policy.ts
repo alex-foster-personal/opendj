@@ -364,6 +364,11 @@ function matchesOpenDjLocalhostParsed(parsed: URL): boolean {
 	);
 }
 
+/** The named local origin `http://opendj.localhost:<4-5 digit port>/...`, matched raw and parsed as the Tauri opener does. */
+export function isOpenDjLocalhostUrl(url: string, parsed: URL): boolean {
+	return matchesOpenDjLocalhostRaw(url) && matchesOpenDjLocalhostParsed(parsed);
+}
+
 /**
  * What the system browser may be asked to open: any https URL without
  * userinfo (Google sign-in, the BlackHole installer, the privacy policy, and
@@ -382,7 +387,7 @@ export function isExternalUrlAllowed(url: string): boolean {
 		return false;
 	}
 	if (parsed.username !== '' || parsed.password !== '') return false;
-	if (matchesOpenDjLocalhostRaw(url) && matchesOpenDjLocalhostParsed(parsed)) return true;
+	if (isOpenDjLocalhostUrl(url, parsed)) return true;
 	return parsed.protocol === 'https:' && parsed.hostname !== '';
 }
 

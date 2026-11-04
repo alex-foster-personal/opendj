@@ -12,6 +12,7 @@ expression index for an ORDER BY that matches it.
 ``tests/test_playlist_add_constant_time.py`` reads the query plan of the SQL
 the add really runs and fails when the index stops being used.
 """
+
 from __future__ import annotations
 
 _V22: list[str] = [

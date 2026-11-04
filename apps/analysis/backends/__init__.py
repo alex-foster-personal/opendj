@@ -23,7 +23,7 @@ NONSHIPPABLE_ENV: str = "MDT_BENCH_NONSHIPPABLE"
 
 #: Backends the registry refuses to resolve without ``NONSHIPPABLE_ENV=1``,
 #: keyed by name with the licensing reason ``get_backend`` raises verbatim.
-#: madmom's own code is BSD-3-Clause, but the pretrained beat/downbeat
+#: madmom's own code is BSD-2-Clause, but the pretrained beat/downbeat
 #: models ``librosa+madmom`` loads are Creative Commons
 #: Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA), which forbids
 #: shipping them in a product that is not itself CC BY-NC-SA.
@@ -31,7 +31,7 @@ NONSHIPPABLE_BACKENDS: dict[str, str] = {
     "librosa+madmom": (
         "librosa+madmom loads madmom's pretrained beat/downbeat models, "
         "licensed CC BY-NC-SA 4.0 (non-commercial, share-alike); madmom's "
-        "own code is BSD-3-Clause but the models are not, so this backend "
+        "own code is BSD-2-Clause but the models are not, so this backend "
         "can never ship. Set MDT_BENCH_NONSHIPPABLE=1 to select it for "
         "bench/reference use only (see "
         "scripts/beatbench/run_madmom_reference_only.py)."
@@ -42,7 +42,7 @@ NONSHIPPABLE_BACKENDS: dict[str, str] = {
 #: from :mod:`apps.analysis.backends.own_beatgrid`, because this branch decides
 #: whether to import that module: importing it to learn its name would defeat
 #: the laziness the whole function exists for. The two are held equal by
-#: ``tests/analysis_beatgrid/test_backfill_write.py``.
+#: ``(private path)``.
 OWN_BEATGRID_BACKEND: str = "own_beatgrid.backfill"
 
 #: The own key backfill producer, spelled out for the identical reason and

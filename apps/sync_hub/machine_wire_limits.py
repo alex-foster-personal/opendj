@@ -1,4 +1,5 @@
 """Shared bounds for sync hub machine registry fields on the wire."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -16,13 +17,9 @@ class MachineWireLimitError(Exception):
 
 def validate_machine_wire_fields(machine_id: str, name: str) -> None:
     if len(machine_id) > MACHINE_ID_MAX_LENGTH:
-        raise MachineWireLimitError(
-            f"machine_id exceeds {MACHINE_ID_MAX_LENGTH} characters"
-        )
+        raise MachineWireLimitError(f"machine_id exceeds {MACHINE_ID_MAX_LENGTH} characters")
     if len(name) > MACHINE_NAME_MAX_LENGTH:
-        raise MachineWireLimitError(
-            f"name exceeds {MACHINE_NAME_MAX_LENGTH} characters"
-        )
+        raise MachineWireLimitError(f"name exceeds {MACHINE_NAME_MAX_LENGTH} characters")
 
 
 def clamp_machine_row_for_wire(row: MachineRow) -> MachineRow:

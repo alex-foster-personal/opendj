@@ -31,10 +31,11 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_right
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from functools import partial
 from itertools import pairwise
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypeVar
 
 from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
 from apps.autodj.styles import STYLES
@@ -62,6 +63,9 @@ BEATMATCH_LIMIT_PCT = 6.0
 EARLIEST_BAR = -1.0
 #: A quantized launch fires on the master's next downbeat, so a play sent one beat ahead lands on the plan's bar.
 PLAY_LEAD_BARS = 0.25
+#: How deep an ``extra`` extension value may nest. Far above any real extension, far below every encoder's stack,
+#: so a plan that parses always prints, encodes and sends.
+EXTRA_MAX_DEPTH = 32
 #: Fader and EQ above these count as "the deck is heard" in the simulation.
 AUDIBLE_FADER = 0.3
 #: ADR-0135: the trim every deck loads at (apps.autodj.profile.DECK_LOAD_TRIM_DB), as a gain.
@@ -94,7 +98,29 @@ TEMPO_FOLDS = (1.0, 0.5, 2.0)
 
 
 class PlanError(ValueError):
-    """The document is not a plan (shape, types, unknown names)."""
+    """The document is not a plan (shape, types, unknown names).
+
+    ``path`` names the top-level field the error is about (``style``, ``out``,
+    ``in``, ``tempo``, ``anchor`` or ``events[i]``, ``i`` the event's index in
+    the document) when :func:`parse_plan` knows it, else None.
+    """
+
+    def __init__(self, message: str, *, path: str | None = None) -> None:
+        super().__init__(message)
+        self.path = path
+
+
+_T = TypeVar("_T")
+
+
+def _in_field(path: str, parse: Callable[[], _T]) -> _T:
+    """``parse()``, with ``path`` stamped on a PlanError that names no field yet."""
+    try:
+        return parse()
+    except PlanError as error:
+        if error.path is None:
+            error.path = path
+        raise
 
 
 @dataclass(frozen=True)
@@ -180,6 +206,10 @@ class TransitionPlan:
             "shape": self.shape,
         }
 
+    def to_document(self) -> dict[str, Any]:
+        """``to_json`` plus the extension keys in ``extra``: the full plan JSON."""
+        return {**self.extra, **self.to_json()}
+
 
 @dataclass(frozen=True)
 class BassEntry:
@@ -219,7 +249,10 @@ def _number(value: Any, where: str) -> float:
         raise PlanError(f"{where} must be a number, got {value!r}")
     if value != value or value in (float("inf"), float("-inf")):
         raise PlanError(f"{where} must be finite, got {value!r}")
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError as error:  # a huge integer, such as 10**400, has no float
+        raise PlanError(f"{where} must be finite, got {value!r}") from error
 
 
 def _deck(value: Any, where: str) -> int:
@@ -261,6 +294,13 @@ def _side(document: Any, where: str) -> Side:
     )
 
 
+def _member(value: Any, allowed: frozenset[str], where: str) -> str:
+    """A text value from ``allowed``. Any other JSON type is a plan error, never an unhashable-value crash."""
+    if not isinstance(value, str) or value not in allowed:
+        raise PlanError(f"{where} must be one of {sorted(allowed)}, got {value!r}")
+    return value
+
+
 def _single(mapping: Any, where: str) -> tuple[str, float]:
     if not isinstance(mapping, Mapping) or len(mapping) != 1:
         raise PlanError(f'{where} must name exactly one control, e.g. {{"fader": 1.0}}')
@@ -295,9 +335,7 @@ def _event(document: Any, index: int) -> PlanEvent:
     deck = None if raw_deck is None else _deck(raw_deck, f"{where}.deck")
     kind = kinds[0]
     if kind == "do":
-        action = document["do"]
-        if action not in ACTIONS:
-            raise PlanError(f"{where}.do must be one of {sorted(ACTIONS)}, got {action!r}")
+        action = _member(document["do"], ACTIONS, f"{where}.do")
         if deck is None:
             raise PlanError(f"{where}: do {action} needs a deck")
         return PlanEvent(at_bar=at_bar, deck=deck, kind="do", name=str(action))
@@ -312,20 +350,20 @@ def _event(document: Any, index: int) -> PlanEvent:
 
 
 def _tempo_mode(document: Mapping[str, Any]) -> str:
-    """The tempo mode: synced when the field is absent; an object must name its mode, and anything else is refused, never defaulted."""
-    if "tempo" not in document:
+    """The tempo mode: synced when the field is absent or null; an object must name its mode, and anything else is refused, never defaulted."""
+    if "tempo" not in document or document["tempo"] is None:
         return "sync_to_out"
     tempo = document["tempo"]
     if not isinstance(tempo, Mapping) or "mode" not in tempo:
         raise PlanError(f"tempo must be an object with a mode, got {tempo!r}")
-    tempo_mode = tempo["mode"]
-    if tempo_mode not in TEMPO_MODES:
-        raise PlanError(f"tempo.mode must be one of {sorted(TEMPO_MODES)}, got {tempo_mode!r}")
-    return str(tempo_mode)
+    return _member(tempo["mode"], TEMPO_MODES, "tempo.mode")
 
 
-def _optional_text(value: Any) -> str | None:
-    return value if isinstance(value, str) else None
+def _optional_text(value: Any, field: str) -> str | None:
+    """Text, or absent. Any other type is refused, so no metadata is silently dropped on the way through."""
+    if value is None or isinstance(value, str):
+        return value
+    raise PlanError(f"{field} must be text")
 
 
 def _bass_entry(document: Any) -> BassEntry | None:
@@ -349,38 +387,62 @@ def _bass_entry(document: Any) -> BassEntry | None:
     )
 
 
+def _nesting_depth(value: Any) -> int:
+    """How many containers deep ``value`` goes (a scalar is 0), walked without recursion."""
+    deepest, stack = 0, [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, Mapping):
+            stack.extend((child, depth + 1) for child in item.values())
+            deepest = max(deepest, depth + 1)
+        elif isinstance(item, list | tuple):
+            stack.extend((child, depth + 1) for child in item)
+            deepest = max(deepest, depth + 1)
+    return deepest
+
+
+def _extensions(document: Mapping[str, Any], known: set[str]) -> dict[str, Any]:
+    """The plan's extension keys, each refused past :data:`EXTRA_MAX_DEPTH`."""
+    extra = {key: value for key, value in document.items() if key not in known}
+    for key, value in extra.items():
+        if _nesting_depth(value) > EXTRA_MAX_DEPTH:
+            raise PlanError(f"{key} is nested too deeply: an extension may nest at most {EXTRA_MAX_DEPTH} levels")
+    return extra
+
+
 def parse_plan(document: Any) -> TransitionPlan:
     """A :class:`TransitionPlan` from its JSON, or :class:`PlanError` naming the field."""
     if not isinstance(document, Mapping):
         raise PlanError("a plan must be a JSON object")
     style_name = document.get("style")
     if not isinstance(style_name, str) or not style_name:
-        raise PlanError("style must name a transition style")
+        raise PlanError("style must name a transition style", path="style")
     events = document.get("events")
     if not isinstance(events, list) or not events:
         raise PlanError("events must be a non-empty list")
     tempo_mode = _tempo_mode(document)
-    anchor = document.get("anchor", "window")
-    if anchor not in ANCHORS:
-        raise PlanError(f"anchor must be one of {sorted(ANCHORS)}, got {anchor!r}")
+    anchor = _in_field("anchor", lambda: _member(document.get("anchor", "window"), ANCHORS, "anchor"))
     known = {"out", "in", "style", "events", "tempo", "anchor", "intent", "rationale", "bass_entry", "shape"}
     shape = document.get("shape")
     if shape is not None and shape not in SHAPES:
         raise PlanError(f"shape must be one of {sorted(SHAPES)} or null, got {shape!r}")
-    parsed = TransitionPlan(
-        out=_side(document.get("out"), "out"),
-        in_=_side(document.get("in"), "in"),
+    parsed_events = [
+        _in_field(f"events[{index}]", partial(_event, event, index))
+        for index, event in enumerate(events)
+    ]
+    return TransitionPlan(
+        out=_in_field("out", lambda: _side(document.get("out"), "out")),
+        in_=_in_field("in", lambda: _side(document.get("in"), "in")),
         style=style_name,
-        events=tuple(sorted((_event(event, index) for index, event in enumerate(events)), key=lambda e: e.at_bar)),
+        events=tuple(sorted(parsed_events, key=lambda e: e.at_bar)),
         tempo_mode=str(tempo_mode),
         anchor=str(anchor),
-        intent=_optional_text(document.get("intent")),
-        rationale=_optional_text(document.get("rationale")),
+        intent=_optional_text(document.get("intent"), "intent"),
+        rationale=_optional_text(document.get("rationale"), "rationale"),
         bass_entry=_bass_entry(document.get("bass_entry")),
         shape=shape,
-        extra={key: value for key, value in document.items() if key not in known},
+        extra=_extensions(document, known),
     )
-    return parsed
 
 
 # ----- simulation ----------------------------------------------------------

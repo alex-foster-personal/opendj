@@ -133,6 +133,193 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "AccountPlaylistOut": {
+        "description": "One playlist on the signed-in Spotify account (imported or not).",
+        "properties": {
+          "collaborative": {
+            "title": "Collaborative",
+            "type": "boolean"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_url": {
+            "title": "Open Url",
+            "type": "string"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "boolean"
+          },
+          "owner_id": {
+            "minLength": 1,
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "public": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "spotify_id": {
+            "minLength": 1,
+            "title": "Spotify Id",
+            "type": "string"
+          },
+          "track_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Count"
+          }
+        },
+        "required": [
+          "spotify_id",
+          "name",
+          "owner_id",
+          "owner_name",
+          "owned",
+          "collaborative",
+          "public",
+          "track_count",
+          "image_url",
+          "open_url",
+          "snapshot_id"
+        ],
+        "title": "AccountPlaylistOut",
+        "type": "object"
+      },
+      "AccountPlaylistsOut": {
+        "description": "Every playlist on the account, or why the engine cannot list them.",
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/AccountPlaylistOut"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify_extra_missing",
+                  "no_client_id",
+                  "not_signed_in",
+                  "scope_missing",
+                  "token_refresh_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "total_reported": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Reported"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "connected",
+          "playlists"
+        ],
+        "title": "AccountPlaylistsOut",
+        "type": "object"
+      },
       "AccountUserOut": {
         "properties": {
           "avatar_url": {
@@ -745,7 +932,7 @@
         "type": "object"
       },
       "AnalysisQueueOut": {
-        "description": "``analyzed + unreachable + pending`` always equals ``unmapped``.",
+        "description": "``analyzed + unreachable + too_long + pending`` always equals ``unmapped``.",
         "properties": {
           "analyzed": {
             "title": "Analyzed",
@@ -772,6 +959,10 @@
             "title": "Signature",
             "type": "string"
           },
+          "too_long": {
+            "title": "Too Long",
+            "type": "integer"
+          },
           "unmapped": {
             "title": "Unmapped",
             "type": "integer"
@@ -786,6 +977,7 @@
           "pending",
           "analyzed",
           "unreachable",
+          "too_long",
           "signature",
           "items",
           "job",
@@ -1213,6 +1405,39 @@
           "general_archived"
         ],
         "title": "ArchiveOut",
+        "type": "object"
+      },
+      "ArtworkSuggestionDecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "accept": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Accept",
+            "type": "array"
+          },
+          "accept_all": {
+            "default": false,
+            "title": "Accept All",
+            "type": "boolean"
+          },
+          "skip": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Skip",
+            "type": "array"
+          },
+          "skip_all": {
+            "default": false,
+            "title": "Skip All",
+            "type": "boolean"
+          }
+        },
+        "title": "ArtworkSuggestionDecisionIn",
         "type": "object"
       },
       "AssistantStatusOut": {
@@ -5411,6 +5636,17 @@
       },
       "ClientErrorRecord": {
         "properties": {
+          "build_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Sha"
+          },
           "context": {
             "anyOf": [
               {
@@ -5571,6 +5807,34 @@
           "stored"
         ],
         "title": "ClientEventOut",
+        "type": "object"
+      },
+      "ClientIdIn": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id"
+        ],
+        "title": "ClientIdIn",
+        "type": "object"
+      },
+      "ClientIdOut": {
+        "properties": {
+          "saved": {
+            "const": true,
+            "title": "Saved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
+        ],
+        "title": "ClientIdOut",
         "type": "object"
       },
       "ClientOut": {
@@ -7247,6 +7511,177 @@
         "title": "CompatibleFilterOut",
         "type": "object"
       },
+      "ComponentCreateIn": {
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slot": {
+            "minLength": 1,
+            "title": "Slot",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "slot",
+          "stable_ids"
+        ],
+        "title": "ComponentCreateIn",
+        "type": "object"
+      },
+      "ComponentListOut": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentOut"
+            },
+            "title": "Components",
+            "type": "array"
+          }
+        },
+        "required": [
+          "components"
+        ],
+        "title": "ComponentListOut",
+        "type": "object"
+      },
+      "ComponentOut": {
+        "properties": {
+          "borrowed": {
+            "default": false,
+            "title": "Borrowed",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "playlist_id",
+          "name",
+          "slot",
+          "stable_ids",
+          "tags",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ComponentOut",
+        "type": "object"
+      },
+      "ComponentUpdateIn": {
+        "description": "Only the fields given change; ``tags: []`` clears every tag.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "ComponentUpdateIn",
+        "type": "object"
+      },
       "ConfigIn": {
         "properties": {
           "enabled": {
@@ -7283,6 +7718,50 @@
           "path"
         ],
         "title": "ConfigOut",
+        "type": "object"
+      },
+      "ConnectStartOut": {
+        "properties": {
+          "authorize_url": {
+            "title": "Authorize Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorize_url"
+        ],
+        "title": "ConnectStartOut",
+        "type": "object"
+      },
+      "ConnectStatusOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "waiting",
+              "connected",
+              "failed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase",
+          "detail"
+        ],
+        "title": "ConnectStatusOut",
         "type": "object"
       },
       "ConsentIn": {
@@ -11823,6 +12302,18 @@
             ],
             "title": "Error"
           },
+          "fidelity_guard": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fidelity Guard"
+          },
           "head_delay_ms": {
             "title": "Head Delay Ms",
             "type": "number"
@@ -11833,6 +12324,18 @@
             },
             "title": "Inputs",
             "type": "array"
+          },
+          "launch_restore": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Restore"
           },
           "level": {
             "title": "Level",
@@ -12666,7 +13169,7 @@
       "IdentityBacklogOut": {
         "properties": {
           "hash_pending": {
-            "description": "live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.",
+            "description": "live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.sync_hub.hash_pending_backfill --live` on a machine that holds the audio.",
             "title": "Hash Pending",
             "type": "integer"
           },
@@ -16757,6 +17260,103 @@
         "title": "NodePatchOut",
         "type": "object"
       },
+      "OffloadOut": {
+        "description": "OFFLOAD: this machine's cloud offload state for one row (spec e8da14b8).\n\n``offloaded`` rows keep every field and stay listed; the browser draws them\nmuted with a cloud glyph, never as a broken link.",
+        "properties": {
+          "bytes_offloaded": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Bytes Offloaded",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played At"
+          },
+          "offloaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offloaded At"
+          },
+          "restore_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "temporary",
+                  "permanent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Mode"
+          },
+          "restored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored At"
+          },
+          "state": {
+            "enum": [
+              "local",
+              "uploading",
+              "offloaded",
+              "restoring",
+              "temporary"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "OffloadOut",
+        "type": "object"
+      },
       "OpsErrorBody": {
         "properties": {
           "code": {
@@ -19333,6 +19933,24 @@
         "title": "PlaylistRenameIn",
         "type": "object"
       },
+      "PlaylistRestoreIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PlaylistRestoreIn",
+        "type": "object"
+      },
       "PlaylistRewriteOut": {
         "properties": {
           "after": {
@@ -19384,6 +20002,21 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A route of component ids, instead of a snapshot (SET-6586).",
+            "title": "Parts"
           }
         },
         "required": [
@@ -19447,6 +20080,14 @@
             "title": "Name",
             "type": "string"
           },
+          "parts": {
+            "description": "Component ids of the set's route (SET-6586); empty for a snapshot set.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
           "play_count": {
             "title": "Play Count",
             "type": "integer"
@@ -19486,6 +20127,23 @@
         "title": "PlaylistSetOut",
         "type": "object"
       },
+      "PlaylistSetPartsIn": {
+        "properties": {
+          "parts": {
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parts"
+        ],
+        "title": "PlaylistSetPartsIn",
+        "type": "object"
+      },
       "PlaylistSetRunIn": {
         "properties": {
           "kind": {
@@ -19495,6 +20153,21 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "played_parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The route actually played, when an ending was picked live (SET-6586).",
+            "title": "Played Parts"
           }
         },
         "required": [
@@ -21569,6 +22242,103 @@
         "title": "ReceiptModel",
         "type": "object"
       },
+      "RecentPlayOut": {
+        "additionalProperties": false,
+        "description": "One live Spotify play, scored against the local library.",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "title": "Artist",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "isrc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isrc"
+          },
+          "matched_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Stable Id"
+          },
+          "ownership": {
+            "enum": [
+              "owned",
+              "review",
+              "unmatched"
+            ],
+            "title": "Ownership",
+            "type": "string"
+          },
+          "played_at": {
+            "title": "Played At",
+            "type": "string"
+          },
+          "spotify_uri": {
+            "title": "Spotify Uri",
+            "type": "string"
+          },
+          "suggested_sources": {
+            "$ref": "#/components/schemas/SuggestedSourcesOut"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "played_at",
+          "spotify_uri",
+          "isrc",
+          "title",
+          "artist",
+          "album",
+          "duration_ms",
+          "ownership",
+          "confidence",
+          "matched_stable_id",
+          "suggested_sources"
+        ],
+        "title": "RecentPlayOut",
+        "type": "object"
+      },
       "RecentResultOut": {
         "properties": {
           "finished_at": {
@@ -22502,6 +23272,35 @@
         "title": "RelocateCandidateOut",
         "type": "object"
       },
+      "RerunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "title": "RerunIn",
+        "type": "object"
+      },
       "RescueAppendOut": {
         "properties": {
           "bytes": {
@@ -22673,6 +23472,34 @@
         "title": "RescueSnapshotsOut",
         "type": "object"
       },
+      "RestoreIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "temporary",
+              "permanent"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "mode"
+        ],
+        "title": "RestoreIn",
+        "type": "object"
+      },
       "RevokeOut": {
         "properties": {
           "changed": {
@@ -22699,6 +23526,76 @@
           "credential_deleted"
         ],
         "title": "RevokeOut",
+        "type": "object"
+      },
+      "RouteListOut": {
+        "properties": {
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/RouteOut"
+            },
+            "title": "Routes",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "routes",
+          "total",
+          "truncated"
+        ],
+        "title": "RouteListOut",
+        "type": "object"
+      },
+      "RouteOut": {
+        "properties": {
+          "parts": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "repeats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repeats",
+            "type": "array"
+          },
+          "set_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Id"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parts",
+          "stable_ids",
+          "set_id",
+          "repeats"
+        ],
+        "title": "RouteOut",
         "type": "object"
       },
       "RowAssetOut": {
@@ -23537,6 +24434,16 @@
           "match_context": {
             "title": "Match Context",
             "type": "string"
+          },
+          "offload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffloadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "play_count": {
             "default": 0,
@@ -24935,6 +25842,97 @@
           "feature_id"
         ],
         "title": "SpokeCheckoutBody",
+        "type": "object"
+      },
+      "SpotifyStatusOut": {
+        "additionalProperties": false,
+        "description": "What the operator panel can PROVE about the Spotify connection.\n\n``connected`` is true only after a live ``/me`` call returned a profile.\nA present client id and a token file on disk are NOT a connection: a token\ncan be expired, revoked, or minted for a narrower scope set. Those two\nfields are reported separately so a failure says which half is missing.",
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "client_id_present": {
+            "title": "Client Id Present",
+            "type": "boolean"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "needs_authorization": {
+            "title": "Needs Authorization",
+            "type": "boolean"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "token_cache_path": {
+            "title": "Token Cache Path",
+            "type": "string"
+          },
+          "token_cache_present": {
+            "title": "Token Cache Present",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected",
+          "needs_authorization",
+          "client_id_present",
+          "token_cache_path",
+          "token_cache_present",
+          "scopes",
+          "display_name",
+          "account_id",
+          "product",
+          "error"
+        ],
+        "title": "SpotifyStatusOut",
         "type": "object"
       },
       "SqlQueryIn": {
@@ -26633,6 +27631,18 @@
           "seconds_since_request"
         ],
         "title": "SurfaceActivityOut",
+        "type": "object"
+      },
+      "SweepIn": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "SweepIn",
         "type": "object"
       },
       "SyncErrorBody": {
@@ -28650,6 +29660,16 @@
             ],
             "title": "Notes"
           },
+          "offload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffloadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -29203,6 +30223,16 @@
             ],
             "title": "Notes"
           },
+          "offload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffloadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -29345,6 +30375,93 @@
           "energy_reason"
         ],
         "title": "TrackListItemOut",
+        "type": "object"
+      },
+      "TrackLocationAddIn": {
+        "properties": {
+          "confirm": {
+            "description": "Must be true. Explicit gate: this writes state.db.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "file_path": {
+            "description": "Absolute path of the file to attach.",
+            "minLength": 1,
+            "title": "File Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path",
+          "confirm"
+        ],
+        "title": "TrackLocationAddIn",
+        "type": "object"
+      },
+      "TrackLocationListOut": {
+        "properties": {
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/TrackLocationOut"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "locations"
+        ],
+        "title": "TrackLocationListOut",
+        "type": "object"
+      },
+      "TrackLocationOut": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location_id",
+          "stable_id",
+          "kind",
+          "role",
+          "file_path",
+          "available"
+        ],
+        "title": "TrackLocationOut",
         "type": "object"
       },
       "TrackLoudnessOut": {
@@ -30228,6 +31345,16 @@
               }
             ]
           },
+          "offload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffloadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -30418,6 +31545,25 @@
           "id"
         ],
         "title": "TrackUpdateModel",
+        "type": "object"
+      },
+      "TracksIn": {
+        "additionalProperties": false,
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "TracksIn",
         "type": "object"
       },
       "TracksPage": {
@@ -31486,6 +32632,11 @@
             "title": "Show Tempo Lane",
             "type": "boolean"
           },
+          "spotify_shrink_main_for_player": {
+            "default": true,
+            "title": "Spotify Shrink Main For Player",
+            "type": "boolean"
+          },
           "technically_working_animate": {
             "default": true,
             "title": "Technically Working Animate",
@@ -32038,6 +33189,17 @@
               }
             ],
             "title": "Show Tempo Lane"
+          },
+          "spotify_shrink_main_for_player": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spotify Shrink Main For Player"
           },
           "technically_working_animate": {
             "anyOf": [
@@ -36301,6 +37463,112 @@
         ]
       }
     },
+    "/api/v1/artwork/suggestions": {
+      "get": {
+        "operationId": "get_suggestions_api_v1_artwork_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Suggestions Api V1 Artwork Suggestions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Suggestions",
+        "tags": [
+          "artwork"
+        ]
+      }
+    },
+    "/api/v1/artwork/suggestions/decide": {
+      "post": {
+        "operationId": "post_decide_api_v1_artwork_suggestions_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtworkSuggestionDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Decide Api V1 Artwork Suggestions Decide Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Decide",
+        "tags": [
+          "artwork"
+        ]
+      }
+    },
+    "/api/v1/artwork/suggestions/{stable_id}/image": {
+      "get": {
+        "operationId": "get_suggestion_image_api_v1_artwork_suggestions__stable_id__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Suggestion Image",
+        "tags": [
+          "artwork"
+        ]
+      }
+    },
     "/api/v1/assistant/agent": {
       "post": {
         "description": "Run the tool-using loop, streaming NDJSON events.\n\nEverything that can refuse without a model call refuses here, before the\nstream opens, in the same envelope /chat uses. Once the stream is open an\nupstream failure is a terminal ``error`` event instead.",
@@ -38237,6 +39505,7 @@
     },
     "/api/v1/client-errors": {
       "get": {
+        "description": "Every stored client error, oldest first, optionally filtered (AGENT-8304).",
         "operationId": "list_client_errors_api_v1_client_errors_get",
         "parameters": [
           {
@@ -38247,6 +39516,100 @@
               "default": false,
               "title": "Untriaged",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "ISO 8601 time; records received at or after it",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO 8601 time; records received at or after it",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "build_sha prefix",
+            "in": "query",
+            "name": "build_sha",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "build_sha prefix",
+              "title": "Build Sha"
+            }
+          },
+          {
+            "description": "exact client error kind",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "exact client error kind",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "case-insensitive message substring",
+            "in": "query",
+            "name": "contains",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "case-insensitive message substring",
+              "title": "Contains"
+            }
+          },
+          {
+            "description": "newest N, oldest first",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "newest N, oldest first",
+              "title": "Limit"
             }
           }
         ],
@@ -38884,6 +40247,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "CLOUDSYNC_MACHINE_NAME_CONFLICT (the configured name belongs to another machine id; nothing was changed)"
           },
           "500": {
             "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown)"
@@ -39549,7 +40915,7 @@
             "description": "Validation Error"
           },
           "503": {
-            "description": "The order got no result. Body reason no_leader (AGENT-21): no performance page claimed it within the claim deadline (ORDER_CLAIM_DEADLINE_S). Body reason engine_quitting (INSTALL-36): the engine began quitting while the order was still waiting for a page."
+            "description": "The order got no result. Body reason no_leader (AGENT-21): no performance page claimed it within the claim deadline (ORDER_CLAIM_DEADLINE_S). Body reason page_gone (AGENT-21): the claiming page did not answer within ORDER_RESULT_DEADLINE_S. Body reason engine_quitting (INSTALL-36): the engine began quitting while the order was still waiting for a page."
           }
         },
         "summary": "Post Command",
@@ -39587,6 +40953,24 @@
               "minimum": 0,
               "title": "Wait Ms",
               "type": "integer"
+            }
+          },
+          {
+            "description": "AGENT-18: the claiming page's client id; refused when another page holds the mirror lease or the lease is stale.",
+            "in": "header",
+            "name": "x-opendj-lease",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "AGENT-18: the claiming page's client id; refused when another page holds the mirror lease or the lease is stale.",
+              "title": "X-Opendj-Lease"
             }
           }
         ],
@@ -43003,6 +44387,116 @@
         ]
       }
     },
+    "/api/v1/ingest/enrichment": {
+      "get": {
+        "operationId": "get_enrichment_api_v1_ingest_enrichment_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Enrichment Api V1 Ingest Enrichment Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Enrichment",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/enrichment/rerun": {
+      "post": {
+        "operationId": "post_rerun_api_v1_ingest_enrichment_rerun_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Rerun Api V1 Ingest Enrichment Rerun Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Rerun",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/enrichment/{batch_id}": {
+      "get": {
+        "operationId": "get_batch_api_v1_ingest_enrichment__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Batch Api V1 Ingest Enrichment  Batch Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
     "/api/v1/ingest/pending": {
       "get": {
         "operationId": "list_pending_api_v1_ingest_pending_get",
@@ -44765,6 +46259,417 @@
         "summary": "Rename Mytag",
         "tags": [
           "mytags"
+        ]
+      }
+    },
+    "/api/v1/offload/operations": {
+      "get": {
+        "operationId": "offload_operations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Offload Operations",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Operations",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/operations/{op_id}": {
+      "get": {
+        "operationId": "offload_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "op_id",
+            "required": true,
+            "schema": {
+              "title": "Op Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Operation",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operation",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/operations/{op_id}/cancel": {
+      "post": {
+        "operationId": "offload_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "op_id",
+            "required": true,
+            "schema": {
+              "title": "Op Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Cancel",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Operation",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/playlists/{playlist_id}": {
+      "post": {
+        "operationId": "offload_playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Playlist",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Offload Playlist",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/playlists/{playlist_id}/restore": {
+      "post": {
+        "operationId": "offload_restore_playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Restore Playlist",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Playlist",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/restore": {
+      "post": {
+        "operationId": "offload_restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Restore",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Tracks",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/summary": {
+      "get": {
+        "operationId": "offload_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Offload Summary",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Summary",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/sweep": {
+      "post": {
+        "operationId": "offload_sweep",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Sweep",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Sweep",
+        "tags": [
+          "cloud-offload"
+        ]
+      }
+    },
+    "/api/v1/offload/tracks": {
+      "get": {
+        "operationId": "offload_status",
+        "parameters": [
+          {
+            "description": "comma-separated stable_ids",
+            "in": "query",
+            "name": "stable_ids",
+            "required": true,
+            "schema": {
+              "description": "comma-separated stable_ids",
+              "title": "Stable Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Status",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Track States",
+        "tags": [
+          "cloud-offload"
+        ]
+      },
+      "post": {
+        "description": "Upload, verify, then delete the local files of each track.",
+        "operationId": "offload_tracks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TracksIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Offload Tracks",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Offload Tracks",
+        "tags": [
+          "cloud-offload"
         ]
       }
     },
@@ -46920,6 +48825,201 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/components": {
+      "get": {
+        "operationId": "list_playlist_components",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Playlist Components",
+        "tags": [
+          "playlist-sets"
+        ]
+      },
+      "post": {
+        "operationId": "create_playlist_component",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Playlist Component",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/components/{component_id}": {
+      "delete": {
+        "operationId": "delete_playlist_component",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "component_id",
+            "required": true,
+            "schema": {
+              "title": "Component Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Playlist Component",
+        "tags": [
+          "playlist-sets"
+        ]
+      },
+      "patch": {
+        "operationId": "update_playlist_component",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "component_id",
+            "required": true,
+            "schema": {
+              "title": "Component Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Playlist Component",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/duplicate": {
       "post": {
         "operationId": "duplicate_playlist_api_v1_playlists__playlist_id__duplicate_post",
@@ -47325,6 +49425,71 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/routes": {
+      "get": {
+        "operationId": "list_playlist_routes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 64,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Playlist Routes",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/sets": {
       "get": {
         "operationId": "list_playlist_sets",
@@ -47463,6 +49628,68 @@
           }
         },
         "summary": "Get Set",
+        "tags": [
+          "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}/parts": {
+      "put": {
+        "description": "Replace a set's route (SET-6586). Past runs keep what they played.",
+        "operationId": "update_playlist_set_parts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistSetPartsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Parts",
         "tags": [
           "playlist-sets"
         ]
@@ -50917,6 +53144,111 @@
         ]
       }
     },
+    "/api/v1/spotify/account/client-id": {
+      "put": {
+        "description": "Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).\n\nA PKCE client id is public, not a secret; it only names the app the user\nregistered with redirect URI http://127.0.0.1:8888/callback.",
+        "operationId": "put_account_client_id_api_v1_spotify_account_client_id_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientIdIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientIdOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Account Client Id",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
+    "/api/v1/spotify/account/connect": {
+      "get": {
+        "operationId": "get_account_connect_api_v1_spotify_account_connect_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Account Connect",
+        "tags": [
+          "spotify"
+        ]
+      },
+      "post": {
+        "description": "Begin an in-app sign-in; the caller opens the URL in a browser.",
+        "operationId": "start_account_connect_api_v1_spotify_account_connect_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStartOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Account Connect",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
+    "/api/v1/spotify/account/playlists": {
+      "get": {
+        "description": "Every playlist the signed-in account owns or follows, all pages (SPOT-6555).\n\nNot being signed in is a normal state, not an error: the body says\n``connected: false`` with a reason code the panel turns into a sign-in\nprompt. A Spotify API failure after sign-in is a 502.",
+        "operationId": "get_account_playlists_api_v1_spotify_account_playlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountPlaylistsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Account Playlists",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
     "/api/v1/spotify/playlists/{playlist_id}/pending-tracks": {
       "get": {
         "description": "Return persisted pending rows for one imported Spotify playlist.",
@@ -50959,6 +53291,78 @@
           }
         },
         "summary": "Get Pending Tracks",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
+    "/api/v1/spotify/recently-played": {
+      "get": {
+        "description": "Live plays, newest first, each scored owned / review / unmatched.\n\nA Spotify or matcher failure is a 502/500 with the real reason, never an\nempty list: an empty list here means \"you have played nothing recently\",\nand that claim must not be produced by a broken call.",
+        "operationId": "get_recently_played_api_v1_spotify_recently_played_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentPlayOut"
+                  },
+                  "title": "Response Get Recently Played Api V1 Spotify Recently Played Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Recently Played",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
+    "/api/v1/spotify/status": {
+      "get": {
+        "description": "Probe the Spotify connection with a real API call.\n\nNever raises for a disconnected account: \"not connected, and here is why\"\nis the answer the pane is asking for. It DOES raise for a state the\noperator cannot act on, because a 200 carrying a lie is worse than a 500.",
+        "operationId": "get_status_api_v1_spotify_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpotifyStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
         "tags": [
           "spotify"
         ]
@@ -55618,6 +58022,174 @@
         "summary": "Restore Hot Cue",
         "tags": [
           "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/locations": {
+      "get": {
+        "operationId": "list_track_locations_api_v1_tracks__stable_id__locations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLocationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Track Locations",
+        "tags": [
+          "track-locations"
+        ]
+      },
+      "post": {
+        "operationId": "add_track_location_api_v1_tracks__stable_id__locations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackLocationAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLocationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Track Location",
+        "tags": [
+          "track-locations"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/locations/{location_id}": {
+      "delete": {
+        "operationId": "remove_track_location_api_v1_tracks__stable_id__locations__location_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Track Location",
+        "tags": [
+          "track-locations"
         ]
       }
     },

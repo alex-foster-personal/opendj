@@ -1,24 +1,49 @@
 /** Actual browser/engine liveness probes and validated ingest coverage readout. */
 import { pingHealth, timeoutSignal } from '$lib/api';
 import { noteEngineBoot } from '$lib/rb/autoplay-next-up-lazy';
-import type { IngestCoverage } from '$lib/rb/api-ingest';
+import { CoverageTimeoutError, type IngestCoverage } from '$lib/rb/api-ingest';
 import type { LibraryHealthDot } from '$lib/rb/library-health-dots';
+import type { ProbeOutcome } from '$lib/rb/liveness-dots';
+
+// Re-exported so the panel reaches the liveness policy through the probes
+// module it already imports, adding no edge to its import fan-out.
+export { appUiDot, coverageTimeoutDot, createLivenessTracker } from '$lib/rb/liveness-dots';
+
+/** A coverage read the engine did not answer in time (HEALTH-8304c). */
+export function isCoverageTimeout(error: unknown): boolean {
+	return error instanceof CoverageTimeoutError;
+}
 
 const CONN_PING_TIMEOUT_MS = 2000;
 
-export async function _pingBackend(): Promise<LibraryHealthDot> {
+/** True for the abort our own timeout signal raises. Chromium rejects with
+ * the signal's TimeoutError reason; WebKit (the Tauri shell) rejects with an
+ * AbortError whose message is "Fetch is aborted". Nothing else aborts these
+ * probes, so both mean "no answer in time". */
+export function isProbeTimeout(error: unknown): boolean {
+	return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+}
+
+function _probeFailure(error: unknown): ProbeOutcome {
+	if (isProbeTimeout(error)) {
+		return { ok: false, timedOut: true, why: `no answer within ${CONN_PING_TIMEOUT_MS / 1000} s` };
+	}
+	// The reason is kept rather than flattened to "offline": a refused
+	// connection and a 500 want different things from the reader.
+	return { ok: false, timedOut: false, why: error instanceof Error ? error.message : String(error) };
+}
+
+export async function _pingBackend(): Promise<ProbeOutcome> {
 	try {
 		noteEngineBoot(await pingHealth(CONN_PING_TIMEOUT_MS));
-		return { label: 'Backend', state: 'complete', detail: 'engine online' };
+		return { ok: true };
 	} catch (error: unknown) {
-		// The reason is kept rather than flattened to "offline": a timeout
-		// and a 500 want different things from the reader.
-		const why = error instanceof Error ? error.message : String(error);
-		return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
+		return _probeFailure(error);
 	}
 }
 
-export async function _pingFrontend(): Promise<LibraryHealthDot> {
+/** Dev only: in a packaged app the engine serves the page, see `appUiDot`. */
+export async function _pingFrontend(): Promise<ProbeOutcome> {
 	const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
 	try {
 		const response = await fetch(`${window.location.origin}/`, {
@@ -26,17 +51,10 @@ export async function _pingFrontend(): Promise<LibraryHealthDot> {
 			cache: 'no-store',
 			signal
 		});
-		if (!response.ok) {
-			return {
-				label: 'Frontend',
-				state: 'error',
-				detail: `dev server returned HTTP ${response.status}`
-			};
-		}
-		return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
+		if (!response.ok) return { ok: false, timedOut: false, why: `HTTP ${response.status}` };
+		return { ok: true };
 	} catch (error: unknown) {
-		const why = error instanceof Error ? error.message : String(error);
-		return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
+		return _probeFailure(error);
 	} finally {
 		clear();
 	}

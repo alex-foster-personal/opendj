@@ -6,7 +6,6 @@ import {
 	effectiveCamelotKey,
 	type CompatibleKeyShift
 } from '$lib/player/key/camelot';
-import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
 import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 import {
 	COMPATIBLE_FILTER_DEFAULTS,
@@ -62,13 +61,40 @@ export interface NextOnlyDeckSlice {
 	playing: boolean;
 	stable_id: string | null;
 	key: string | null;
+	/** The track's own (tag) BPM. */
 	bpm: number | null;
+	/** COMPATBPM-01: the deck's tempo ratio (1 = unpitched). The reference is the
+	 * tempo the deck is heard at, `bpm * pitch`, not the track's own BPM. */
+	pitch: number;
+	/** COMPATBPM-03: the loaded track's library BPM confidence. 0 marks a
+	 * placeholder grid (unknown tempo), so that deck is not a BPM reference.
+	 * null means none published (rekordbox) and the BPM is trusted. */
+	bpm_confidence: number | null;
 	/** KEYSHIFT-03: a deck loaded shifted plays in its shifted key. Required: a
 	 * caller that omits it fails loudly in computeNextOnlyRef, never as 0. */
 	key_shift_semitones: number;
 }
 
+/** COMPATBPM-03: a BPM is known only when it is a positive number and its
+ * confidence is not 0 (the placeholder grid of an unanalysed track publishes
+ * 125.0 at confidence 0). Unknown BPMs never match a BPM window. */
+export function bpmIsKnown(bpm: number | null | undefined, confidence: number | null | undefined): bpm is number {
+	return typeof bpm === 'number' && bpm > 0 && confidence !== 0;
+}
+
+/** COMPATBPM-03: the library's BPM confidence for a loaded deck track, from the
+ * held rows (library index or pane rows); null when the track is not in them. */
+export function bpmConfidenceIn(
+	stableId: string | null,
+	rows: readonly { stable_id: string; bpm_confidence?: number | null }[] | null | undefined
+): number | null {
+	if (stableId === null || !rows) return null;
+	return rows.find((r) => r.stable_id === stableId)?.bpm_confidence ?? null;
+}
+
 /** Reference for next-only: master, else playing loaded, else any loaded with key+BPM.
+ * The reference BPM is the deck's heard tempo (bpm * pitch, COMPATBPM-01); a deck
+ * whose BPM is unknown (COMPATBPM-03) is passed over like a deck with no BPM.
  * With no Camelot rule ticked the key is not checked, so a keyless deck can be the
  * reference (`needsKey: false`); otherwise a keyless master would hand the BPM
  * check to another deck's tempo. */
@@ -82,8 +108,12 @@ export function computeNextOnlyRef(
 		...states.filter((s) => s.stable_id !== null)
 	];
 	for (const s of ordered) {
-		if ((s.key !== null || !needsKey) && s.bpm !== null && s.bpm > 0) {
-			if (s.key === null) return { key: null, bpm: s.bpm };
+		if ((s.key !== null || !needsKey) && bpmIsKnown(s.bpm, s.bpm_confidence)) {
+			if (!(typeof s.pitch === 'number' && s.pitch > 0)) {
+				throw new Error(`computeNextOnlyRef: reference deck ${s.stable_id} has no tempo ratio; pass pitch`);
+			}
+			const bpm = s.bpm * s.pitch;
+			if (s.key === null) return { key: null, bpm };
 			// Match against the key the deck is heard in, not its source key.
 			const shift = s.key_shift_semitones;
 			if (!Number.isInteger(shift)) {
@@ -91,7 +121,7 @@ export function computeNextOnlyRef(
 					`computeNextOnlyRef: reference deck ${s.stable_id} has no key shift; pass key_shift_semitones`
 				);
 			}
-			return { key: shift === 0 ? s.key : effectiveCamelotKey(s.key, shift), bpm: s.bpm };
+			return { key: shift === 0 ? s.key : effectiveCamelotKey(s.key, shift), bpm };
 		}
 	}
 	return null;
@@ -129,9 +159,13 @@ export function bpmMatchesCompatiblePrefs(
 	// Direction compares RAW tempo (PR #4014): a half-time candidate is below
 	// the reference and a double-time one above, so `above` keeps only the
 	// double fold and `below` only the half fold.
+	// COMPATBPM-02: the fold is judged at the reference's tempo with the user's
+	// own window (a 64 BPM row against 128 is heard as 128). It used to be a
+	// fixed 15 BPM around ref * fold, borrowed from the BPM heat colours, which
+	// at a 125 master let 47.5 to 77.5 BPM rows through (up to 24% off).
 	for (const fold of [0.5, 2] as const) {
 		if (prefs.bpm_direction === 'above' ? fold < 1 : prefs.bpm_direction === 'below' && fold > 1) continue;
-		if (Math.abs(candidateBpm - refBpm * fold) <= BPM_HALF_ABS) return true;
+		if (Math.abs(candidateBpm / fold - refBpm) <= window) return true;
 	}
 	return false;
 }
@@ -155,13 +189,14 @@ export function compatibleRowKeyShift(
 }
 
 export function isAppropriateNext(
-	row: { key: string | null; bpm: number | null },
+	row: { key: string | null; bpm: number | null; bpm_confidence?: number | null },
 	ref: NextOnlyRef,
 	prefs: CompatibleFilterPrefs = COMPATIBLE_FILTER_DEFAULTS
 ): boolean {
 	return (
 		// No rule ticked means the key is not checked: BPM alone decides.
 		(!compatibleKeyChecked(prefs) || compatibleRowKeyShift(row.key, ref.key, prefs) !== null) &&
-		bpmMatchesCompatiblePrefs(row.bpm, ref.bpm, prefs)
+		// COMPATBPM-03: a placeholder BPM (confidence 0) is unknown, never a match.
+		bpmMatchesCompatiblePrefs(bpmIsKnown(row.bpm, row.bpm_confidence) ? row.bpm : null, ref.bpm, prefs)
 	);
 }

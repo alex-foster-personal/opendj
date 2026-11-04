@@ -85,9 +85,7 @@ def _run_key_builder(args: argparse.Namespace, lane: lanes.Lane) -> int:
     if lane.fixture_builder is None:
         raise SystemExit(f"[bench] lane {lane.name} names no fixture builder")
     builder = ["-m", lane.fixture_builder.removesuffix(".py").replace("/", ".")]
-    return subprocess.run(
-        [sys.executable, *builder, *_key_builder_argv(args)], cwd=REPO_ROOT, check=False
-    ).returncode
+    return subprocess.run([sys.executable, *builder, *_key_builder_argv(args)], cwd=REPO_ROOT, check=False).returncode
 
 
 def _cmd_fixtures(args: argparse.Namespace) -> int:
@@ -104,8 +102,7 @@ def _cmd_fixtures(args: argparse.Namespace) -> int:
     if args.action == "seal":
         staged = Path(args.dir)
         manifest = bundles.seal_bundle(staged, lane=lane.name, version=args.version)
-        print(f"[bench] sealed {staged}: {manifest['payload_count']} payload files, "
-              f"{manifest['payload_bytes']} bytes")
+        print(f"[bench] sealed {staged}: {manifest['payload_count']} payload files, {manifest['payload_bytes']} bytes")
         print(f"[bench] bundle_id {manifest['bundle_id']}")
         return 0
 
@@ -122,7 +119,10 @@ def _cmd_fixtures(args: argparse.Namespace) -> int:
     store = stores.resolve_store(args.store)
     dest = Path(args.dest) if args.dest else bundle
     pulled = stores.pull_bundle(
-        store, lane=lane.name, version=args.version, dest=dest,
+        store,
+        lane=lane.name,
+        version=args.version,
+        dest=dest,
         expect_bundle_id=args.expect_bundle_id,
     )
     print(f"[bench] pulled {store.describe()} -> {pulled}, checksums verified")
@@ -290,9 +290,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     _emit(report, args.out)
     if args.post:
         log_path = Path(args.log_path or lane.log_path)
-        number = rounds.append_round(
-            log_path, lane.name, report, floor=lane.round_floor, host=_host()
-        )
+        number = rounds.append_round(log_path, lane.name, report, floor=lane.round_floor, host=_host())
         print(f"[bench] appended {lane.name} bench round {number} to {log_path}")
     return 0
 
@@ -318,8 +316,7 @@ def _parser() -> argparse.ArgumentParser:
     fixtures.add_argument("--copy-manifest", help="copy-manifest.nfc.jsonl, key-lane build")
     fixtures.add_argument("--seed", type=int, help="sample seed, key-lane build")
     fixtures.add_argument("--sample-size", type=int, help="sample size, key-lane build")
-    fixtures.add_argument("--allow-tiny", action="store_true",
-                          help="permit a tiny rekordbox db, tests only")
+    fixtures.add_argument("--allow-tiny", action="store_true", help="permit a tiny rekordbox db, tests only")
     fixtures.set_defaults(func=_cmd_fixtures)
 
     for name, func in (("score", _cmd_score), ("run", _cmd_run)):
@@ -334,13 +331,17 @@ def _parser() -> argparse.ArgumentParser:
         else:
             cmd.add_argument("--candidate", required=True)
             cmd.add_argument("--workdir", default=".tmp/analysis_bench")
-            cmd.add_argument("--no-controls", action="store_true",
-                             help="score without a floor or a ceiling; blocks --post")
-            cmd.add_argument("--post", action="store_true",
-                             help="append the numbered round to the lane's experiment log")
-            cmd.add_argument("--log-path",
-                             help="post the round to this log instead of the lane's declared "
-                                  "one, for a dry run before the spec edit is committed")
+            cmd.add_argument(
+                "--no-controls", action="store_true", help="score without a floor or a ceiling; blocks --post"
+            )
+            cmd.add_argument(
+                "--post", action="store_true", help="append the numbered round to the lane's experiment log"
+            )
+            cmd.add_argument(
+                "--log-path",
+                help="post the round to this log instead of the lane's declared "
+                "one, for a dry run before the spec edit is committed",
+            )
     return parser
 
 

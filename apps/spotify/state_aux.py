@@ -14,6 +14,7 @@ Split out of :mod:`state_writer` (which keeps the backup / reversal /
 live-write orchestration) so each module stays holdable-in-head; the
 public names remain re-exported from :mod:`state_writer`.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -81,20 +82,13 @@ CREATE TABLE IF NOT EXISTS pending_tracks (
 )
 """
 
-_AUX_IDX_PENDING_PLAYLIST = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_playlist "
-    "ON pending_tracks(playlist_id)"
-)
+_AUX_IDX_PENDING_PLAYLIST = "CREATE INDEX IF NOT EXISTS idx_pending_tracks_playlist ON pending_tracks(playlist_id)"
 
 _AUX_IDX_PENDING_ISRC = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_isrc "
-    "ON pending_tracks(isrc) WHERE isrc IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_isrc ON pending_tracks(isrc) WHERE isrc IS NOT NULL"
 )
 
-_AUX_IDX_PENDING_STATUS = (
-    "CREATE INDEX IF NOT EXISTS idx_pending_tracks_status "
-    "ON pending_tracks(status)"
-)
+_AUX_IDX_PENDING_STATUS = "CREATE INDEX IF NOT EXISTS idx_pending_tracks_status ON pending_tracks(status)"
 
 _AUX_DDL_PLAYLIST_LINKS = """
 CREATE TABLE IF NOT EXISTS spotify_playlist_links (
@@ -109,8 +103,7 @@ CREATE TABLE IF NOT EXISTS spotify_playlist_links (
 """
 
 _AUX_IDX_PLAYLIST_LINKS_ODJ = (
-    "CREATE INDEX IF NOT EXISTS idx_spotify_playlist_links_odj "
-    "ON spotify_playlist_links(odj_playlist_id)"
+    "CREATE INDEX IF NOT EXISTS idx_spotify_playlist_links_odj ON spotify_playlist_links(odj_playlist_id)"
 )
 
 AUX_MIGRATIONS: tuple[str, ...] = (
@@ -193,8 +186,7 @@ def link_odj_playlist(
     existing = fetch_playlist_link(conn, vendor_pl_id)
     if existing is not None and existing.odj_playlist_id == odj_playlist_id:
         conn.execute(
-            "UPDATE spotify_playlist_links SET updated_at = ?, "
-            "spotify_playlist_id = ? WHERE vendor_pl_id = ?",
+            "UPDATE spotify_playlist_links SET updated_at = ?, spotify_playlist_id = ? WHERE vendor_pl_id = ?",
             (ts, spotify_playlist_id, vendor_pl_id),
         )
         return PlaylistLink(

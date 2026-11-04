@@ -17,7 +17,18 @@ import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { resolveArmAtPosition, TempoOutOfSyncRangeError } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import { electMaster, masterHandoffMessage, runAutomaticRejoin } from '$lib/rb/master-election';
+import {
+	autoPlayYieldsNow,
+	electMaster,
+	HANDOFF_TICK_MS,
+	LEVEL_HANDOFF_IDLE,
+	masterHandoffMessage,
+	reportLevelHandoffFailure,
+	runAutomaticMasterElection,
+	runAutomaticRejoin,
+	stepLiveLevelHandoff,
+	type LevelHandoffStep
+} from '$lib/rb/master-election';
 import type { MasterReason } from '$lib/rb/audio-engine-types';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
@@ -27,7 +38,7 @@ import type { EngineCommand } from './client';
 import { phaseLocks, type PhaseLock } from './rust-phase-lock';
 
 export { phaseLocksForTest, invalidateRustPhaseLocks } from './rust-phase-lock';
-import { DECKS, type DeckId, displayLoops, loadFences, notify, playheadMs, send } from './rust-link';
+import { DECKS, type DeckId, displayLoops, link, loadFences, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
 	lateJumpPositionMs,
@@ -46,9 +57,35 @@ export const rustMaster: { deck: DeckId | null; mode: 'auto' | 'locked' } = {
 	mode: 'auto'
 };
 
-function _assignMaster(deck: DeckId | null, reason: MasterReason): void {
+let _levelHandoff = LEVEL_HANDOFF_IDLE;
+let _lastHandoffCheckMs = -Infinity;
+let _levelHandoffQueued = false;
+let _levelHandoffGeneration = 0;
+
+/** Restores level-handoff module state for unit tests. */
+export function resetRustLevelHandoffForTest(): void {
+	_levelHandoff = LEVEL_HANDOFF_IDLE;
+	_lastHandoffCheckMs = -Infinity;
+	_levelHandoffQueued = false;
+	_levelHandoffGeneration = 0;
+}
+
+function _assignMaster(
+	deck: DeckId | null,
+	reason: MasterReason,
+	levels?: { masterDb: number; toDb: number | null }
+): void {
 	// Every master change is a performance event, as in the Web Audio engine.
-	if (deck !== rustMaster.deck) recordPerfEvent('master-handoff', masterHandoffMessage(rustMaster.deck, deck, reason ?? 'restore'), deck, 'info');
+	if (deck !== rustMaster.deck) {
+		recordPerfEvent(
+			'master-handoff',
+			masterHandoffMessage(rustMaster.deck, deck, reason ?? 'restore', levels),
+			deck,
+			'info'
+		);
+		_levelHandoff = LEVEL_HANDOFF_IDLE; // a new master earns its own unbroken beat of quiet
+		_lastHandoffCheckMs = -Infinity;
+	}
 	rustMaster.deck = deck;
 	for (const d of DECKS) deckStates[d].is_master = d === deck;
 }
@@ -59,10 +96,19 @@ function _syncMaster(): DeckId | null {
 	return d !== null && deckStates[d].playing ? d : null;
 }
 
-export function electIfAuto(options?: { force?: boolean; reason?: MasterReason }): void {
+export function electIfAuto(options?: {
+	force?: boolean;
+	reason?: MasterReason;
+	to?: DeckId;
+	levels?: { masterDb: number; toDb: number | null };
+}): void {
 	if (rustMaster.mode === 'locked' && !options?.force) return;
 	if (options?.force) rustMaster.mode = 'auto';
-	_assignMaster(electMaster(electionInputFrom(deckStates, mixerState)), options?.reason ?? 'play-claim');
+	_assignMaster(
+		options?.to ?? electMaster(electionInputFrom(deckStates, mixerState)),
+		options?.reason ?? 'play-claim',
+		options?.levels
+	);
 }
 
 /**
@@ -74,12 +120,58 @@ export function electIfAuto(options?: { force?: boolean; reason?: MasterReason }
  * follower that is off phase; the new master was itself locked to the old
  * one, so this is normally a tempo-only re-lock.
  */
-export async function electAndRejoin(options?: { force?: boolean; reason?: MasterReason }): Promise<void> {
+export async function electAndRejoin(options?: {
+	force?: boolean;
+	reason?: MasterReason;
+	to?: DeckId;
+	levels?: { masterDb: number; toDb: number | null };
+}): Promise<void> {
 	const previous = rustMaster.deck;
 	electIfAuto(options);
 	const next = _syncMaster();
 	if (next === null || next === previous) return;
 	await _reanchor(next, _lockedFollowers(next));
+}
+
+function _stepLevelHandoff(nowMs: number): LevelHandoffStep {
+	// ?extroute= is a Web Audio graph concept with no Rust analogue, so the
+	// estimate uses '' rather than location.search.
+	const live = {
+		master: rustMaster.deck,
+		locked: rustMaster.mode === 'locked',
+		state: { decks: deckStates, mixer: mixerState },
+		masterMuted: link.lastState?.master.muted === true,
+		extrouteQuery: '' as const
+	};
+	const step = stepLiveLevelHandoff(_levelHandoff, live, DECKS, nowMs);
+	_levelHandoff = step.state;
+	return step;
+}
+
+export function maybeLevelHandoff(nowMs: number = performance.now()): void {
+	if (link.client === null) return; // rust-mode.test.mjs calls applyAcknowledged with no client
+	_lastHandoffCheckMs = nowMs;
+	const master = rustMaster.deck;
+	const step = _stepLevelHandoff(nowMs);
+	if (step.handoffTo === null || master === null || _levelHandoffQueued) return;
+	_levelHandoffQueued = true;
+	const generation = _levelHandoffGeneration;
+	void runAutomaticMasterElection(async () => {
+		_levelHandoffQueued = false;
+		if (generation !== _levelHandoffGeneration || rustMaster.deck !== master || rustMaster.mode === 'locked') return;
+		if (autoPlayYieldsNow()) return;
+		const due = _stepLevelHandoff(performance.now());
+		if (due.handoffTo !== null) await electAndRejoin({ reason: 'master-left', to: due.handoffTo, levels: due });
+	}).catch((e: unknown) => {
+		_levelHandoffQueued = false;
+		reportLevelHandoffFailure(master, e, recordPerfEvent, (message) => {
+			if (link.toast !== null) link.toast(message, 'error');
+		});
+	});
+}
+
+export function maybeLevelHandoffTick(nowMs: number = performance.now()): void {
+	if (nowMs - _lastHandoffCheckMs >= HANDOFF_TICK_MS) maybeLevelHandoff(nowMs);
 }
 
 function _view(deck: DeckId, positionSec?: number): SyncDeckView {
@@ -540,6 +632,8 @@ async function _setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {
 
 async function _setDeckMaster(deck: DeckId, lock: boolean | undefined): Promise<void> {
 	const st = loadedDeck(deck, 'setDeckMaster');
+	_levelHandoff = LEVEL_HANDOFF_IDLE;
+	_levelHandoffGeneration += 1;
 	const applyLock = (): void => {
 		if (lock === true) rustMaster.mode = 'locked';
 		else if (lock === false) {

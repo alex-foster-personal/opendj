@@ -12,8 +12,8 @@ itself already imports from ``apps.sync_hub`` (its own app-lifespan wiring
 pulls in the sync scheduler) -- so ``sync_hub`` importing back from
 ``engine_core`` would close a package cycle the quality gate's
 ``python.package_cycles`` check catches. This module has no ``apps.*``
-imports of its own, so it can sit below every consumer without cycling back to
-any of them. ``apps.engine_core.origin`` and ``apps.opendj_cli.origin`` both
+imports of its own beyond the leaf ``apps.shared.engine_data_dir`` (itself import-free), so it can sit below every
+consumer without cycling back to any of them. ``apps.engine_core.origin`` and ``apps.opendj_cli.origin`` both
 re-export it so neither import path moves for their existing callers.
 
 A missing or unusable lock file is an explicit refusal that names the path
@@ -25,12 +25,15 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+from apps.shared.engine_data_dir import engine_data_dir
 
 EXPECTED_ENGINE_ROLE = "opendj-engine"
 HEALTH_PATH = "/api/v1/health"
@@ -39,9 +42,15 @@ IDENTITY_PROBE_TIMEOUT_S = 3.0
 # The same override the live-debug skill uses, so an agent that already points
 # OPENDJ_LIVE_LOCK_PATH at a sandboxed engine drives that engine from the CLI.
 LOCK_PATH_ENV = "OPENDJ_LIVE_LOCK_PATH"
-DEFAULT_LOCK_PATH = (
-    Path.home() / "Library/Application Support/com.opendj.desktop/.engine.lock"
-)
+LOCK_FILE_NAME = ".engine.lock"
+
+
+def default_lock_path(environ: Mapping[str, str] | None = None) -> Path:
+    """The packaged app's lock for this OS; raises where the data dir cannot be resolved."""
+    return engine_data_dir(env=environ) / LOCK_FILE_NAME
+
+_LOCK_READ_ATTEMPTS = 5
+_LOCK_READ_RETRY_S = 0.01
 
 
 class EngineNotRunning(RuntimeError):
@@ -94,8 +103,20 @@ def lock_path(environ: Mapping[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
     override = env.get(LOCK_PATH_ENV, "").strip()
     if override == "":
-        return DEFAULT_LOCK_PATH
+        return default_lock_path(env)
     return Path(override).expanduser()
+
+
+def _parse_lock_object(raw: str) -> dict[str, Any] | None:
+    if not raw.strip():
+        return None
+    try:
+        loaded = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return loaded
 
 
 def _lock_document(resolved: Path) -> dict[str, Any]:
@@ -105,23 +126,25 @@ def _lock_document(resolved: Path) -> dict[str, Any]:
             f"no engine lock file at {resolved}; the engine is not running",
             resolved,
         )
-    try:
-        payload = json.loads(resolved.read_text(encoding="utf-8"))
-    except OSError as error:
-        raise EngineNotRunning(
-            f"engine lock file {resolved} could not be read: {error}", resolved
-        ) from error
-    except ValueError as error:
-        raise EngineNotRunning(
-            f"engine lock file {resolved} is not valid JSON, so its port cannot be "
-            f"trusted: {error}",
-            resolved,
-        ) from error
-    if not isinstance(payload, dict):
-        raise EngineNotRunning(
-            f"engine lock file {resolved} does not hold a JSON object", resolved
-        )
-    return payload
+    last_error: ValueError | None = None
+    for attempt in range(_LOCK_READ_ATTEMPTS):
+        try:
+            raw = resolved.read_text(encoding="utf-8")
+        except OSError as error:
+            raise EngineNotRunning(
+                f"engine lock file {resolved} could not be read: {error}", resolved
+            ) from error
+        payload = _parse_lock_object(raw)
+        if payload is not None:
+            return payload
+        last_error = ValueError("empty or not a JSON object")
+        if attempt + 1 < _LOCK_READ_ATTEMPTS:
+            time.sleep(_LOCK_READ_RETRY_S)
+    raise EngineNotRunning(
+        f"engine lock file {resolved} is not valid JSON, so its port cannot be "
+        f"trusted: {last_error}",
+        resolved,
+    ) from last_error
 
 
 def _lock_port(payload: Mapping[str, Any], resolved: Path) -> int:
@@ -252,4 +275,4 @@ def unreachable(origin: EngineOrigin, error: BaseException) -> EngineNotRunning:
 
 def lock_document(path: Path) -> dict[str, Any]:
     """The raw lock document, for diagnostics that must show what was read."""
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _lock_document(path)

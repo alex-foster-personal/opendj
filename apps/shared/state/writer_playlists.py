@@ -9,6 +9,7 @@ exposes to every write method. It is not usable on its own. Imports its
 constants and helpers from :mod:`apps.shared.state.writer_common`, never
 from ``writer`` itself -- see that module's docstring for why.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -132,9 +133,7 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
-    def set_playlist_memberships(
-        self: _WriterHost, playlist_id: str, stable_ids: list[str]
-    ) -> None:
+    def set_playlist_memberships(self: _WriterHost, playlist_id: str, stable_ids: list[str]) -> None:
         """Full-replace playlist memberships. Positions become 0..N-1.
 
         Also bumps ``playlists.updated_at`` so row-version etags derived
@@ -155,7 +154,9 @@ class _PlaylistWriterMixin:
             keys = renumbered_keys(len(stable_ids))
             for position, sid in enumerate(stable_ids):
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
@@ -173,8 +174,7 @@ class _PlaylistWriterMixin:
                 )
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             ev = self._append_event(
@@ -194,21 +194,19 @@ class _PlaylistWriterMixin:
         rows: list[tuple[str, str, str]],
     ) -> None:
         """O(1) insert of new membership rows (item_id, stable_id, order_key)."""
-        transaction = (
-            self._tx() if self._conn.in_transaction
-            else immediate_transaction(self._conn)
-        )
+        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
         with transaction as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id, stable_id, order_key in rows:
                 max_pos = conn.execute(
-                    "SELECT COALESCE(MAX(position), -1) FROM playlist_memberships "
-                    "WHERE playlist_id = ?",
+                    "SELECT COALESCE(MAX(position), -1) FROM playlist_memberships WHERE playlist_id = ?",
                     (playlist_id,),
                 ).fetchone()[0]
                 slot = int(max_pos) + 1
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, slot), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, slot),
+                    now,
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
@@ -226,8 +224,7 @@ class _PlaylistWriterMixin:
                 )
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             ev = self._append_event(
@@ -239,15 +236,14 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
 
     def tombstone_playlist_memberships(
-        self: _WriterHost, playlist_id: str, item_ids: list[str],
+        self: _WriterHost,
+        playlist_id: str,
+        item_ids: list[str],
     ) -> None:
         """Soft-delete membership rows by item_id without touching neighbors."""
         if not item_ids:
             return
-        transaction = (
-            self._tx() if self._conn.in_transaction
-            else immediate_transaction(self._conn)
-        )
+        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
         with transaction as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id in item_ids:
@@ -260,7 +256,9 @@ class _PlaylistWriterMixin:
                     continue
                 position = row[0]
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
@@ -275,8 +273,7 @@ class _PlaylistWriterMixin:
                 )
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             ev = self._append_event(
@@ -288,15 +285,14 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
 
     def restore_playlist_memberships(
-        self: _WriterHost, playlist_id: str, item_ids: list[str],
+        self: _WriterHost,
+        playlist_id: str,
+        item_ids: list[str],
     ) -> None:
         """Undelete tombstoned membership rows, preserving item_id/order_key."""
         if not item_ids:
             return
-        transaction = (
-            self._tx() if self._conn.in_transaction
-            else immediate_transaction(self._conn)
-        )
+        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
         with transaction as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             for item_id in item_ids:
@@ -309,7 +305,9 @@ class _PlaylistWriterMixin:
                     continue
                 position = row[0]
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=NULL, "
@@ -324,8 +322,7 @@ class _PlaylistWriterMixin:
                 )
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
+                "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
                 (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             ev = self._append_event(
@@ -360,8 +357,7 @@ class _PlaylistWriterMixin:
         """
         with self._tx() as conn:
             existing = conn.execute(
-                "SELECT name, vendor, vendor_pl_id FROM playlists "
-                "WHERE playlist_id = ? AND deleted_at IS NULL",
+                "SELECT name, vendor, vendor_pl_id FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
                 (playlist_id,),
             ).fetchone()
             if existing is None:
@@ -378,14 +374,15 @@ class _PlaylistWriterMixin:
             member_positions = [
                 row[0]
                 for row in conn.execute(
-                    "SELECT position FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND deleted_at IS NULL",
+                    "SELECT position FROM playlist_memberships WHERE playlist_id = ? AND deleted_at IS NULL",
                     (playlist_id,),
                 )
             ]
             for position in member_positions:
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
@@ -399,8 +396,7 @@ class _PlaylistWriterMixin:
                     ),
                 )
             conn.execute(
-                "UPDATE playlists SET updated_at=?, origin_device_id=?, "
-                "deleted_at=? WHERE playlist_id=?",
+                "UPDATE playlists SET updated_at=?, origin_device_id=?, deleted_at=? WHERE playlist_id=?",
                 (stamp.updated_at, stamp.origin_device_id, tombstone_ts, playlist_id),
             )
             ev = self._append_event(
@@ -421,8 +417,7 @@ class _PlaylistWriterMixin:
         """Clear a playlist tombstone and restore memberships from this delete."""
         with self._tx() as conn:
             row = conn.execute(
-                "SELECT name, vendor, vendor_pl_id, deleted_at FROM playlists "
-                "WHERE playlist_id = ?",
+                "SELECT name, vendor, vendor_pl_id, deleted_at FROM playlists WHERE playlist_id = ?",
                 (playlist_id,),
             ).fetchone()
             if row is None:
@@ -434,18 +429,18 @@ class _PlaylistWriterMixin:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET deleted_at=NULL, updated_at=?, origin_device_id=? "
-                "WHERE playlist_id=?",
+                "UPDATE playlists SET deleted_at=NULL, updated_at=?, origin_device_id=? WHERE playlist_id=?",
                 (stamp.updated_at, stamp.origin_device_id, playlist_id),
             )
             restored = conn.execute(
-                "SELECT position FROM playlist_memberships "
-                "WHERE playlist_id = ? AND deleted_at = ?",
+                "SELECT position FROM playlist_memberships WHERE playlist_id = ? AND deleted_at = ?",
                 (playlist_id, tombstone_ts),
             ).fetchall()
             for (position,) in restored:
                 member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
+                    MEMBERSHIPS_TABLE,
+                    (playlist_id, position),
+                    now,
                 )
                 conn.execute(
                     "UPDATE playlist_memberships SET deleted_at=NULL, updated_at=?, "
@@ -474,13 +469,14 @@ class _PlaylistWriterMixin:
         return True
 
     def set_playlist_forbid_duplicates(
-        self: _WriterHost, playlist_id: str, value: bool,
+        self: _WriterHost,
+        playlist_id: str,
+        value: bool,
     ) -> bool:
         """Set forbid_duplicates on a live playlist. Returns True on change."""
         with self._tx() as conn:
             row = conn.execute(
-                "SELECT forbid_duplicates FROM playlists "
-                "WHERE playlist_id = ? AND deleted_at IS NULL",
+                "SELECT forbid_duplicates FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
                 (playlist_id,),
             ).fetchone()
             if row is None:
@@ -491,8 +487,7 @@ class _PlaylistWriterMixin:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
             conn.execute(
-                "UPDATE playlists SET forbid_duplicates=?, updated_at=?, "
-                "origin_device_id=? WHERE playlist_id=?",
+                "UPDATE playlists SET forbid_duplicates=?, updated_at=?, origin_device_id=? WHERE playlist_id=?",
                 (
                     1 if value else 0,
                     stamp.updated_at,
@@ -531,9 +526,7 @@ class _PlaylistWriterMixin:
         """
         write_membership_order_keys(self, playlist_id, "position", rows, renumbered=True)
 
-    def append_playlist_history(
-        self: _WriterHost, kind: str, payload: dict[str, Any]
-    ) -> object:
+    def append_playlist_history(self: _WriterHost, kind: str, payload: dict[str, Any]) -> object:
         """Append a playlist.edit / undo / redo row on the events log.
 
         Does not change insert / memberships.set / delete payloads. Callers
@@ -557,4 +550,3 @@ __all__ = [
     "PlaylistNotFoundError",
     "_PlaylistWriterMixin",
 ]
-

@@ -172,10 +172,10 @@
 		applyMsg = null;
 		applyOk = null;
 		pendingProposal = null;
-		// Untracked: _seedNumbers reads the drag-sensitivity settings, and a
-		// tracked read would rerun this opening work on every slider step,
-		// clearing the AI state and stealing focus (Codex P2, PR #6829). The
-		// sensitivity subscription below keeps the rows current.
+		// Untracked: _seedNumbers reads uiPrefs.pin_visible_days and the
+		// drag-sensitivity settings, and a tracked read would rerun this opening
+		// work (search focus, AI reset) on every slider step (Codex P2, PR #6829).
+		// The pin days and sensitivity effects below keep the rows current.
 		numberDraft = untrack(_seedNumbers);
 		void tick().then(() => searchEl?.focus());
 	});
@@ -358,11 +358,12 @@
 		return numberDraft[def.id] ?? _readNumber(def.id);
 	}
 
-	/** Two decimals: the sliders step in 0.05, and the shipped trackpad default
-	 * is 1/3, which no step lands on exactly but which still has to read as a
-	 * believable number rather than 0.3333333333333333. */
-	function formatNumber(value: number): string {
-		return value.toFixed(2);
+	/** Whole-number settings (step 1, such as pin days) read as integers.
+	 * Fractional ones keep two decimals: the sliders step in 0.05, and the
+	 * shipped trackpad default is 1/3, which still has to read as a believable
+	 * number rather than 0.3333333333333333. */
+	function formatNumber(value: number, step: number): string {
+		return value.toFixed(Number.isInteger(step) ? 0 : 2);
 	}
 
 	/** One writer for both the drag and the Reset button. The subscription
@@ -371,6 +372,13 @@
 	function writeNumber(def: SettingDef, value: number): void {
 		applySettingChange(def.id, String(value));
 	}
+
+	// uiPrefs is a $state store, so it is tracked: re-read the number rows
+	// whenever the pin days-visible value changes (slider, Reset, or the agent bridge).
+	$effect(() => {
+		void uiPrefs.pin_visible_days;
+		numberDraft = _seedNumbers();
+	});
 
 	// Drag sensitivity lives in a $state store, so it is tracked: re-read the
 	// number rows whenever it changes (slider, Reset, or the agent bridge).
@@ -666,12 +674,12 @@
 														oninput={(e) => onNumberInput(def, e)}
 													/>
 													<span class="so-number-out" title={`Current value of ${def.label}`}>
-														{formatNumber(numberValue(def))}{def.control.unit}
+														{formatNumber(numberValue(def), def.control.step)}{def.control.unit}
 													</span>
 													<button
 														type="button"
 														class="so-number-reset"
-														title={`Back to the default ${formatNumber(def.control.defaultValue)}${def.control.unit}`}
+														title={`Back to the default ${formatNumber(def.control.defaultValue, def.control.step)}${def.control.unit}`}
 														onclick={() => resetNumber(def)}
 													>
 														Reset

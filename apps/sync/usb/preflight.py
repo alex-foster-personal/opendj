@@ -7,6 +7,7 @@ read-only fixture drive) can bypass it with an audit log line.
 Checks that fail return an ``error`` (stops apply). Checks that warn
 allow apply to continue; they are shown in the preflight summary.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -110,9 +111,7 @@ def preflight(
     # -- drive_mounted ---------------------------------------------------
     if not _skip("drive_mounted"):
         if not root.exists() or not root.is_dir():
-            res.errors.append(
-                f"drive_mounted: {root} does not exist or is not a directory"
-            )
+            res.errors.append(f"drive_mounted: {root} does not exist or is not a directory")
 
     # -- drive_label -----------------------------------------------------
     if not _skip("drive_label"):
@@ -121,19 +120,13 @@ def preflight(
             # mount at ``/Volumes/<label>``. Tests pass ``tmp_path`` with
             # a name that matches the profile.
             if root.name != profile.drive_label:
-                res.errors.append(
-                    f"drive_label: expected '{profile.drive_label}', "
-                    f"drive mounted as '{root.name}'"
-                )
+                res.errors.append(f"drive_label: expected '{profile.drive_label}', drive mounted as '{root.name}'")
 
     # -- drive_uuid ------------------------------------------------------
     if not _skip("drive_uuid"):
         if profile.drive_uuid is not None and marker_uuid is not None:
             if profile.drive_uuid != marker_uuid:
-                res.errors.append(
-                    f"drive_uuid: profile '{profile.drive_uuid}' != "
-                    f"marker '{marker_uuid}'"
-                )
+                res.errors.append(f"drive_uuid: profile '{profile.drive_uuid}' != marker '{marker_uuid}'")
         elif profile.drive_uuid is None and marker_uuid is None:
             # First run; no UUID to compare. Soft warning only.
             pass
@@ -173,10 +166,7 @@ def preflight(
     if not _skip("no_other_writer") and root.exists():
         writers = _lsof_writers(root)
         if writers:
-            msg = (
-                f"no_other_writer: {len(writers)} other processes "
-                "have files open for write on the drive"
-            )
+            msg = f"no_other_writer: {len(writers)} other processes have files open for write on the drive"
             if write_probe:
                 res.errors.append(msg)
             else:
@@ -198,15 +188,10 @@ def preflight(
         rels_lower: dict[str, list[str]] = {}
         for op in plan.ops:
             if op.kind in ("copy", "transcode", "overwrite"):
-                rels_lower.setdefault(str(op.dst_rel).lower(), []).append(
-                    str(op.dst_rel)
-                )
+                rels_lower.setdefault(str(op.dst_rel).lower(), []).append(str(op.dst_rel))
         collisions = {k: v for k, v in rels_lower.items() if len(v) > 1}
         if collisions:
-            res.errors.append(
-                f"no_case_collisions: {len(collisions)} collision(s) -- "
-                f"{sorted(collisions.values())[0]}"
-            )
+            res.errors.append(f"no_case_collisions: {len(collisions)} collision(s) -- {sorted(collisions.values())[0]}")
 
     res.ok = not res.errors
     return res

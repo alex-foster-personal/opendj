@@ -67,9 +67,7 @@ class StaticEntitlementSource:
     None, never as a guessed state.
     """
 
-    def __init__(
-        self, table: Mapping[tuple[str, str], Standing], *, provider: str = "static"
-    ) -> None:
+    def __init__(self, table: Mapping[tuple[str, str], Standing], *, provider: str = "static") -> None:
         if not provider.strip():
             raise ValueError("provider must be a non-empty name")
         self._table = dict(table)

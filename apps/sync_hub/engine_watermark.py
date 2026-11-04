@@ -5,6 +5,7 @@ round 4). Nothing here is synced -- ``sync_state`` is machine-local
 bookkeeping about THIS machine's progress against a peer, never a row this
 module offers anyone.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -59,8 +60,7 @@ class Watermark:
 def read_watermark(conn: sqlite3.Connection, peer: str) -> Watermark:
     """Load the ``sync_state`` row for ``peer``; zeros if never synced."""
     row = conn.execute(
-        "SELECT last_push_seq, last_pull_seq, last_sync_at, peer_generation "
-        "FROM sync_state WHERE peer = ?",
+        "SELECT last_push_seq, last_pull_seq, last_sync_at, peer_generation FROM sync_state WHERE peer = ?",
         (peer,),
     ).fetchone()
     if row is None:
@@ -124,9 +124,7 @@ def local_seq(conn: sqlite3.Connection) -> int:
     return _max_changelog_seq(conn, LOCAL_CHANGELOG_TABLE)
 
 
-def settled_push_seq(
-    *, previous: int, ceiling: int, held_seq: int | None, undelivered: bool
-) -> int:
+def settled_push_seq(*, previous: int, ceiling: int, held_seq: int | None, undelivered: bool) -> int:
     """The push fence to record after one round trip. Round 5 gate B1.
 
     ``last_push_seq`` means "every ``local_changelog`` entry at or below this

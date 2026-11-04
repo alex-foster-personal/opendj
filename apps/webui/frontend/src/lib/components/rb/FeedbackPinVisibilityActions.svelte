@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { isPinVisibleDays } from '$lib/rb/feedback-pin-age';
+	import { setPinVisibleDays, setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import FeedbackPinVisibilityActionsView from './FeedbackPinVisibilityActionsView.svelte';
 
 	/** Interactive comment-pin controls in the FeedbackWidget and shell-button
@@ -17,6 +18,12 @@
 	function toggleAgentPins(): void {
 		setShowAgentPins(!uiPrefs.show_agent_pins);
 	}
+
+	function setVisibleDays(raw: string): void {
+		const next = Number(raw);
+		if (!isPinVisibleDays(next)) return;
+		setPinVisibleDays(next);
+	}
 </script>
 
 <FeedbackPinVisibilityActionsView
@@ -24,4 +31,6 @@
 	showAgentPins={uiPrefs.show_agent_pins}
 	{ontoggle}
 	ontoggleagentpins={toggleAgentPins}
+	pinVisibleDays={uiPrefs.pin_visible_days}
+	onvisibledays={setVisibleDays}
 />

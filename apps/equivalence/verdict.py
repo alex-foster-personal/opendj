@@ -56,20 +56,13 @@ from apps.equivalence.verdict_types import (
 
 def _cluster_coverage_phrase(cluster: OffsetCluster, *, include_subset: bool) -> str:
     """Parenthetical share stats for mapping-bug and suspect-cluster reason lines."""
-    phrase = (
-        f"({cluster.share:.1%} of disagreements, "
-        f"{cluster.population_share:.1%} of the comparable population"
-    )
+    phrase = f"({cluster.share:.1%} of disagreements, {cluster.population_share:.1%} of the comparable population"
     if include_subset and cluster.subset_coverage is not None:
-        phrase += (
-            f", {cluster.subset_coverage:.0%} of all {cluster.subset_form} rows"
-        )
+        phrase += f", {cluster.subset_coverage:.0%} of all {cluster.subset_form} rows"
     return phrase + ")"
 
 
-def _structural_check(
-    verdict: PairVerdict, spec: FieldPair, left: Probe, right: Probe
-) -> bool:
+def _structural_check(verdict: PairVerdict, spec: FieldPair, left: Probe, right: Probe) -> bool:
     """Step 1: is a comparison meaningful at all? Mutates ``verdict`` in
     place and returns ``True`` when :func:`decide` must return immediately.
 
@@ -95,10 +88,7 @@ def _structural_check(
         structural = True
         verdict.reasons.append(
             f"UNTESTED: {side} side {probe.locator} is not comparable - "
-            + (
-                "; ".join(probe.findings)
-                or f"declared unit {probe.declared_unit!r}, {probe.present} values"
-            )
+            + ("; ".join(probe.findings) or f"declared unit {probe.declared_unit!r}, {probe.present} values")
         )
     if structural:
         verdict.reasons.append(
@@ -164,8 +154,7 @@ def _evidence_check(
         got = 0 if agreement is None else agreement.comparable
         verdict.suite_status = SUITE_THIN
         verdict.reasons.append(
-            f"UNTESTED: only {got} comparable pairs, below the "
-            f"{CFG.min_comparable} needed for a rate to be evidence"
+            f"UNTESTED: only {got} comparable pairs, below the {CFG.min_comparable} needed for a rate to be evidence"
         )
         return
     suspects = [c for c in clusters if not c.is_mapping_bug]
@@ -193,9 +182,7 @@ def _evidence_check(
     # threshold, so "no cluster found" must not be read as "the sources
     # agree": require the unexplained disagreement to be under the same noise
     # floor a named cluster would have to clear to even be reported.
-    disagreement_share = (
-        agreement.disagree / agreement.comparable if agreement.comparable else 0.0
-    )
+    disagreement_share = agreement.disagree / agreement.comparable if agreement.comparable else 0.0
     if disagreement_share > CFG.suspect_population_share:
         verdict.suite_status = SUITE_DIFFUSE_DISAGREEMENT
         verdict.reasons.append(
@@ -243,8 +230,7 @@ def decide(
         mismatches.append(cross)
 
     normaliser = (
-        f"{normaliser_name(spec.left.kind, spec.left.unit)} | "
-        f"{normaliser_name(spec.right.kind, spec.right.unit)}"
+        f"{normaliser_name(spec.left.kind, spec.left.unit)} | {normaliser_name(spec.right.kind, spec.right.unit)}"
     )
 
     verdict = PairVerdict(

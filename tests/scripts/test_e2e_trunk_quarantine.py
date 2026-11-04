@@ -175,6 +175,9 @@ def test_the_list_job_is_self_hosted_and_never_checks_out() -> None:
     assert job["timeout-minutes"] == 3
     assert job["if"] == (
         "${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request'"
+        # A workflow_run run's github.ref is main's (ADR-NEW-e2e-after-ci-gate), so the
+        # event is excluded by name or the token job would run on every pull request.
+        " && github.event_name != 'workflow_run'"
         " && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}"
     )
     assert "inputs.tier" not in str(job["if"])
@@ -197,15 +200,15 @@ def test_the_list_job_is_self_hosted_and_never_checks_out() -> None:
     assert "continue-on-error" not in _step("gate", name=VERDICT_STEP)
 
 
-def test_the_e2e_list_client_is_python_and_ci_runs_it_too() -> None:
-    """e2e.yml inlines the protocol under a resolved python3; ci.yml runs the same block.
+def test_the_e2e_list_client_is_python() -> None:
+    """e2e.yml inlines the protocol under a resolved python3.
 
-    ci.yml's curl client called /v2/test-cases, which Trunk v2 does not have."""
+    An earlier curl client called /v2/test-cases, which Trunk v2 does not have. ci.yml ran
+    the same block until Wed 4 Nov 2026 (ADR-NEW-trunk-removed-from-pr-ci)."""
     e2e_run = _fetch_run(E2E)
     assert 'py="$(command -v python3)"' in e2e_run
     assert "/v2/test-collections/" in e2e_run and "/v2/tests" in e2e_run
     assert "/v2/test-cases" not in e2e_run
-    assert _fetch_run(CI) == e2e_run
 
 
 def test_the_inlined_list_fetch_fails_closed_without_a_checkout(tmp_path: Path) -> None:

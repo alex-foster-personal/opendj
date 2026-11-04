@@ -1,4 +1,5 @@
 """Shared JSONL append and UTC timestamp helpers for voice audit logs."""
+
 from __future__ import annotations
 
 import json

@@ -57,9 +57,7 @@ FEATURES: tuple[Feature, ...] = (
     ),
 )
 
-FEATURES_BY_ID: dict[str, Feature] = {
-    feature.feature_id: feature for feature in FEATURES
-}
+FEATURES_BY_ID: dict[str, Feature] = {feature.feature_id: feature for feature in FEATURES}
 
 
 def assert_sellable(feature: Feature) -> None:

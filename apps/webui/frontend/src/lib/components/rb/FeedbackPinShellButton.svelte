@@ -89,11 +89,15 @@
 			ontoggle={togglePinsVisible}
 		/>
 	{/snippet}
+	<!-- Closed while placement is armed: the open hover card would sit over the
+	     canvas (the dock's opens over the Audio I/O panel) and take the
+	     "click anywhere" press meant for the placement overlay. PGCL-7693g. -->
 	<ControlExplainer
 		title={EXPLAINER_TITLE}
 		bullets={commentPinBullets}
 		action={pinVisibilityActions}
 		placement={overlay ? 'above' : 'below'}
+		disabled={feedbackState.placementArmed}
 	>
 		<button
 			type="button"

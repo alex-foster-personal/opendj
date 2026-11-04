@@ -8,6 +8,7 @@ Entry points:
 
 Requirement coverage: CAT-05, CAT-05a (UI surfaces), CAT-05b (auth posture).
 """
+
 from __future__ import annotations
 
 from apps.shared.app_version import APP_VERSION

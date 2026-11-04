@@ -128,15 +128,12 @@ def python_prefix(*, with_modal: bool = False) -> list[str]:
                 "installed app does not ship; the app separates through the relay"
             )
         if not Path(packaged).is_file():
-            raise WorkerLaunchError(
-                f"the packaged stems interpreter {packaged} does not exist"
-            )
+            raise WorkerLaunchError(f"the packaged stems interpreter {packaged} does not exist")
         return [packaged]
     uv = uv_bin()
     if shutil.which(uv) is None:
         raise WorkerLaunchError(
-            f"{uv!r} is not on PATH, and the stems worker needs uv in a "
-            f"checkout. Install uv, or set {UV_BIN_ENV}."
+            f"{uv!r} is not on PATH, and the stems worker needs uv in a checkout. Install uv, or set {UV_BIN_ENV}."
         )
     prefix = [uv, "run", "--no-sync"]
     if with_modal:

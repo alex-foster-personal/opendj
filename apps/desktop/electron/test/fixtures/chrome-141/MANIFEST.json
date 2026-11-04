@@ -1,0 +1,11 @@
+{
+  "file": "Cookies",
+  "sha256": "cc9e93d68dbe4c18edf0d6d8a1940bd2d3d390ca7f20270ed6ec72a82bfbf66f",
+  "writer": "Chromium 141.0.7390.37 (Linux, --password-store=basic), via capture.mjs; values re-keyed by rekey.mjs",
+  "captured": "Tue 13 Oct 2026",
+  "captured_unix": 1791919841,
+  "cookie_db_version": 24,
+  "key": "chromeKeyFromPassword(\"open-dj-chrome-fixture\"), the macOS derivation (PBKDF2-SHA1, 1003 iterations): opens only these fixture values. Chromium's own basic-store key is not recorded here (research rule R7).",
+  "contents": "fixture values only: .spotify.com sp_dc, open.spotify.com host_only (host-only), .beatport.com session, .google.com SID (a site the importer must skip)",
+  "rekeyed": "Sun 18 Oct 2026"
+}

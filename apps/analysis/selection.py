@@ -43,7 +43,7 @@ from typing import Any, Literal, cast
 from ._value_check import require_allowed_value
 from .canonical import PROJECTION_FIELDS
 from .lane_enums import SELECTION_LANES
-from .lanes import LANES, Lane
+from .lanes import LANES, OWN_BACKEND_PREFIX, Lane
 from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
 from .time_iso import utc_now_iso
 
@@ -573,6 +573,108 @@ def _fetch_projection(
     return out
 
 
+def rbx_value_is_missing(field_name: str, value: Any) -> bool:
+    """True when rekordbox holds no usable value for ``field_name`` (PGCL-7693).
+
+    rekordbox stores an unanalyzed track's tempo as 0 and its key as empty,
+    so those read as ABSENT, the same as no row at all. Only then may an rbx
+    lane serve an ``ok`` own value: a real rekordbox value is never replaced.
+    :func:`_rbx_missing_sql` is this predicate's SQL twin.
+    """
+    if value is None:
+        return True
+    if field_name == "bpm":
+        # bool included on purpose: json_extract hands SQLite a JSON false as 0.
+        return isinstance(value, (int, float)) and value <= 0
+    elif field_name == "key":
+        # Spaces only, because SQLite's trim() strips nothing else.
+        return isinstance(value, str) and value.strip(" ") == ""
+    raise SelectionError(f"{field_name!r} is not a field rekordbox serves")
+
+
+def _rbx_missing_sql(field_name: str, column: str) -> str:
+    """SQL twin of :func:`rbx_value_is_missing` over ``column``."""
+    if field_name == "bpm":
+        return f"({column} IS NULL OR (typeof({column}) IN ('integer', 'real') AND {column} <= 0))"
+    elif field_name == "key":
+        return f"({column} IS NULL OR (typeof({column}) = 'text' AND trim({column}) = ''))"
+    raise SelectionError(f"{field_name!r} is not a field rekordbox serves")
+
+
+def _falls_through(field_name: str) -> bool:
+    """False while the PARITY-02 toggle pins this field's lane to ``rbx``.
+
+    An explicit toggle is a live A/B: it must show exactly what rekordbox
+    has, gaps included. Only the persisted default falls through.
+    """
+    return get_toggle(lane_for_field(field_name)) != "rbx"
+
+
+def _fill_missing_rbx_from_own(
+    conn: sqlite3.Connection,
+    field_names: tuple[str, ...],
+    rbx_ids: list[str],
+    out: dict[str, dict[str, EffectiveField]],
+    projection_available: bool,
+) -> None:
+    """Serve an ``ok`` own value where rekordbox has none (PGCL-7693).
+
+    The served field keeps the own backend as its ``source``, so the row says
+    where the number came from. A failed or absent own value changes nothing.
+    """
+    if not projection_available:
+        return
+    for field_name in field_names:
+        if not _falls_through(field_name):
+            continue
+        gap_ids = [
+            sid for sid in rbx_ids
+            if field_name not in out[sid]
+            or rbx_value_is_missing(field_name, out[sid][field_name].value)
+        ]
+        if not gap_ids:
+            continue
+        projected = _fetch_projection(conn, gap_ids, (field_name,))
+        for sid in gap_ids:
+            own = projected[sid].get(field_name)
+            if own is not None and own.status == "ok" and own.value is not None:
+                out[sid][field_name] = own
+
+
+def batch_has_missing_rbx_with_own(conn: sqlite3.Connection, stable_ids: list[str]) -> bool:
+    """True when any id has an ``ok`` own bpm/key beside a missing rekordbox one.
+
+    The listing's all-rbx skip asks this before it skips the projection read.
+    One primary-key probe of ``analysis_projection`` per id; an install with
+    no own records answers from an empty table.
+    """
+    if not stable_ids or not _table_exists(conn, "analysis_projection"):
+        return False
+    rbx_value = (
+        "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
+        "WHERE tf.stable_id = ap.stable_id AND tf.field_name = ap.field LIMIT 1)"
+    )
+    gaps = " OR ".join(
+        f"(ap.field = {_sql_text(name)} AND {_rbx_missing_sql(name, rbx_value)})"
+        for name in sorted(_RBX_FIELDS)
+        if _falls_through(name)
+    )
+    if not gaps:
+        return False
+    for i in range(0, len(stable_ids), 500):
+        sub = stable_ids[i:i + 500]
+        placeholders = ",".join("?" * len(sub))
+        row = conn.execute(
+            "SELECT 1 FROM analysis_projection ap "
+            f"WHERE ap.stable_id IN ({placeholders}) AND ap.status = 'ok' "
+            f"AND ap.value IS NOT NULL AND ({gaps}) LIMIT 1",
+            sub,
+        ).fetchone()
+        if row is not None:
+            return True
+    return False
+
+
 def _missing_own_field(field_name: str) -> EffectiveField:
     return EffectiveField(
         value=None,
@@ -656,6 +758,11 @@ def lane_sources_by_mapping(
     }
 
 
+def _served_from_own(served: EffectiveField | None) -> bool:
+    """True when the field a row already serves came from an own lane record."""
+    return served is not None and served.source.startswith(OWN_BACKEND_PREFIX)
+
+
 def _available_not_selected(served: EffectiveField | None, lane: str) -> EffectiveField:
     """The served rekordbox field, restated as "own analysis exists, not selected"."""
     reason = f"{lane} analysis available (rekordbox source selected)"
@@ -706,7 +813,10 @@ def _annotate_available_not_selected(
             own_row = own_rows[sid].get(field_name)
             if own_row is None or own_row.status != "ok":
                 continue
-            out[sid][field_name] = _available_not_selected(out[sid].get(field_name), lane)
+            served = out[sid].get(field_name)
+            if _served_from_own(served):
+                continue  # PGCL-7693: the own value IS what this row serves
+            out[sid][field_name] = _available_not_selected(served, lane)
 
 
 def effective_fields(
@@ -724,6 +834,13 @@ def effective_fields(
     the silent substitution the milestone exists to remove; an rbx lane
     with no ``track_fields`` row yields nothing, which is how an
     unanalyzed track already reads.
+
+    One exception, in one direction (PGCL-7693): an rbx lane whose rekordbox
+    value is MISSING (:func:`rbx_value_is_missing`) serves an ``ok`` own
+    value when one exists, with the own backend as its ``source``. That
+    fills an absence; it never replaces a rekordbox value. A lane the
+    PARITY-02 toggle pins to ``rbx`` does not fall through: a live A/B
+    shows exactly what rekordbox has.
 
     Fields rekordbox cannot serve (``loudness_lufs``, ``loudness_dbtp``,
     ``key_change_count``, ``tempo_change_count``) are absent under rbx.
@@ -752,6 +869,7 @@ def effective_fields(
             if selection.source(lane) == "rbx" and f in _RBX_FIELDS
         )
         out = _fetch_track_fields(conn, ids, rbx_fields)
+        _fill_missing_rbx_from_own(conn, rbx_fields, ids, out, projection_available)
         projected = (
             _fetch_projection(conn, ids, own_fields)
             if projection_available
@@ -783,6 +901,7 @@ def effective_fields(
             for sid in rbx_ids:
                 if field_name in fetched[sid]:
                     out[sid][field_name] = fetched[sid][field_name]
+            _fill_missing_rbx_from_own(conn, (field_name,), rbx_ids, out, projection_available)
         if own_ids:
             projected = (
                 _fetch_projection(conn, own_ids, (field_name,))
@@ -863,10 +982,23 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
         )
     if field_name not in _RBX_FIELDS:
         return "NULL"
-    return (
+    rbx = (
         "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
         f"WHERE tf.stable_id = {table}.stable_id "
         f"AND tf.field_name = {_sql_text(field_name)} LIMIT 1)"
+    )
+    if not selection.projection_available or not _falls_through(field_name):
+        return rbx
+    # PGCL-7693: a missing rekordbox value serves an ok own one, else itself.
+    own = (
+        "(SELECT ap.value FROM analysis_projection ap "
+        f"WHERE ap.stable_id = {table}.stable_id "
+        f"AND ap.field = {_sql_text(field_name)} "
+        "AND ap.status = 'ok' LIMIT 1)"
+    )
+    return (
+        f"(SELECT CASE WHEN {_rbx_missing_sql(field_name, 'rbx.v')} "
+        f"THEN COALESCE({own}, rbx.v) ELSE rbx.v END FROM (SELECT {rbx} AS v) rbx)"
     )
 
 

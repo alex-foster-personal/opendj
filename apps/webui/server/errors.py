@@ -6,6 +6,7 @@ to exist whether or not a handler reads it. The underscore says "required by
 the framework, deliberately unused" instead of leaving four ARG001s that read
 as coupling debt.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -51,7 +52,9 @@ def _error_response(
 
 async def handle_not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
     return _error_response(
-        status.HTTP_404_NOT_FOUND, error="not_found", message=str(exc),
+        status.HTTP_404_NOT_FOUND,
+        error="not_found",
+        message=str(exc),
     )
 
 
@@ -61,21 +64,26 @@ async def handle_conflict(_request: Request, exc: ConflictError) -> JSONResponse
         headers={"ETag": exc.etag},
         content=ConflictBody(
             message="If-Match does not match the current row etag",
-            current=exc.current, etag=exc.etag,
+            current=exc.current,
+            etag=exc.etag,
         ).model_dump(),
     )
 
 
 async def handle_already_exists(
-    _request: Request, exc: AlreadyExistsError,
+    _request: Request,
+    exc: AlreadyExistsError,
 ) -> JSONResponse:
     return _error_response(
-        status.HTTP_409_CONFLICT, error="already_exists", message=str(exc),
+        status.HTTP_409_CONFLICT,
+        error="already_exists",
+        message=str(exc),
     )
 
 
 async def handle_smartlist_immutable(
-    _request: Request, exc: SmartlistImmutableError,
+    _request: Request,
+    exc: SmartlistImmutableError,
 ) -> JSONResponse:
     return _error_response(
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -85,7 +93,8 @@ async def handle_smartlist_immutable(
 
 
 async def handle_slice_not_contiguous(
-    _request: Request, exc: SliceNotContiguousError,
+    _request: Request,
+    exc: SliceNotContiguousError,
 ) -> JSONResponse:
     return _error_response(
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -95,7 +104,8 @@ async def handle_slice_not_contiguous(
 
 
 async def handle_target_inside_slice(
-    _request: Request, exc: TargetInsideSliceError,
+    _request: Request,
+    exc: TargetInsideSliceError,
 ) -> JSONResponse:
     return _error_response(
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -106,13 +116,17 @@ async def handle_target_inside_slice(
 
 async def handle_bulk_limit(_request: Request, exc: BulkLimitError) -> JSONResponse:
     return _error_response(
-        status.HTTP_422_UNPROCESSABLE_ENTITY, error="bulk_limit", message=str(exc),
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error="bulk_limit",
+        message=str(exc),
     )
 
 
 async def handle_backend_error(_request: Request, exc: BackendError) -> JSONResponse:
     return _error_response(
-        status.HTTP_422_UNPROCESSABLE_ENTITY, error="invalid_patch", message=str(exc),
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error="invalid_patch",
+        message=str(exc),
     )
 
 
@@ -134,7 +148,8 @@ def _state_store_busy_body(exc: BaseException) -> dict[str, Any]:
 
 
 async def handle_state_store_busy(
-    _request: Request, exc: StateStoreBusyError,
+    _request: Request,
+    exc: StateStoreBusyError,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -143,7 +158,8 @@ async def handle_state_store_busy(
 
 
 async def handle_sqlite_busy_operational_error(
-    _request: Request, exc: sqlite3.OperationalError,
+    _request: Request,
+    exc: sqlite3.OperationalError,
 ) -> JSONResponse:
     if not is_sqlite_busy(exc):
         raise exc
@@ -153,9 +169,7 @@ async def handle_sqlite_busy_operational_error(
     )
 
 
-async def handle_rekordbox_writeback_disabled(
-    _request: Request, exc: RekordboxWritebackDisabled
-) -> JSONResponse:
+async def handle_rekordbox_writeback_disabled(_request: Request, exc: RekordboxWritebackDisabled) -> JSONResponse:
     """One-way import mode refused this write. 403, never a fake 200.
 
     The body carries the machine-readable ``rekordbox_writeback_disabled``

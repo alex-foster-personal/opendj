@@ -32,6 +32,8 @@ Known quirks and gotchas (data dirs, signing, permissions, CDP, CI): see
 | `src/shell-health.ts`, `src/output-health.ts` | `shell_health.rs`, `output_health.rs`; `list` via `odj-output-probe` |
 | `src/updater.ts` | the updater plugin (OPS-15) |
 | `src/policy.ts` | flags, window size, build identity, trusted origins, permissions |
+| `src/side-player.ts`, `src/side-player-layout.ts` | new: the docked Spotify side player (SPOT-6555b), bridge version 2 |
+| `src/chrome-logins.ts` | new: import music-site sign-ins from Chrome on macOS (SPOT-6555c) |
 
 ## Commands
 
@@ -48,6 +50,10 @@ and `mac.identity` null, so it does not sign, notarize, or open a keychain dialo
 The `.app` lands at `out/mac-arm64/Open DJ.app`. `payload/` is an empty
 `extraResources` placeholder (see `payload/README.md`); it is not a built engine
 payload.
+
+A runnable packed app with the real engine and output probe is
+`scripts/ship_dmg.sh --shell electron`, which builds the payload and swaps it into
+`Contents/Resources/payload` after `pack:dir`.
 
 The stamp (`scripts/stamp-build.mjs`) reads the lane label and release channel
 from `OPENDJ_BUILD_LANE_LABEL` and `OPENDJ_BUILD_CHANNEL`, the same two variables
@@ -84,7 +90,9 @@ Dock show the Open DJ mark before the app runs. `assets/` is also in
 `test/pack-config.test.ts` fails if either is dropped; without `mac.icon`
 electron-builder ships the stock `electron.icns`.
 
-`build.appId` is `com.opendj.desktop`, the id the Tauri app uses. An unsigned
+`build.appId` is `com.opendj.desktop`, the id the Tauri app uses, for macOS; the Windows target overrides it with
+`build.win.appId` `com.opendj.desktop.electron` so the two apps never share installer or single-instance identity
+(ADR windows-data-dir-and-app-identity). An unsigned
 pack can be given its own bundle id for that pack only:
 
 ```sh

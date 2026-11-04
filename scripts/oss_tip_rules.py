@@ -288,7 +288,7 @@ _URL_AUTHORITY_BEFORE = re.compile(r"[a-z][a-z0-9+.\-]*://[^\s/]+$", re.IGNORECA
 # The trade this makes explicit: a real identity typed into a NEW record will not
 # fail CI. That is accepted, and is the reason this list is four directories
 # rather than "anything dated".
-RECORD_PATHS = ("app_docs/", "(private path)/", ".planning/", "specs/")
+RECORD_PATHS = ("app_docs/", "docs/threads/", ".planning/", "specs/")
 
 
 def is_record_path(rel: str) -> bool:
@@ -301,6 +301,12 @@ def is_record_path(rel: str) -> bool:
 # rather than a mailbox.
 _TAILNET_HOST = re.compile(r"[a-z0-9-]+\.([a-z0-9-]+)\.ts\.net", re.IGNORECASE)
 _TAILNET_HOST_INLINE = re.compile(r"\b[a-z0-9-]+\.([a-z0-9-]+)\.ts\.net\b", re.IGNORECASE)
+
+# The mirror's replace pass turns one retired login into this placeholder, which
+# then appears in every exported file that still spelled the login. Assembled
+# from fragments because this file is scanned by its own gate. Defined here, not
+# in oss_tip_audit, so the native backend scans it too.
+_PUBLISHED_ACCOUNT = "former" + "-work-" + "account"
 
 # A lowercase literal that MUST be present for the rule to have any chance. The
 # regex engine costs microseconds per start position, so on a multi-megabyte file
@@ -315,6 +321,7 @@ RULE_PREFILTERS: dict[str, tuple[str, ...]] = {
     "consumer-mailbox": ("@",),
     "tailnet-name": (".ts.net",),
     "cgnat-address": ("100.",),
+    "published-account-placeholder": (_PUBLISHED_ACCOUNT,),
 }
 
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -494,6 +501,7 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){2}(?![\d.])"
         ),
     ),
+    ("published-account-placeholder", re.compile(re.escape(_PUBLISHED_ACCOUNT), re.IGNORECASE)),
 )
 
 

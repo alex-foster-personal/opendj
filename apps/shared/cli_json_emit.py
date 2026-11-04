@@ -1,4 +1,5 @@
 """Small CLI helpers shared by backup-style entrypoints."""
+
 from __future__ import annotations
 
 import json

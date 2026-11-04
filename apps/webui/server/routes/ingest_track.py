@@ -1,4 +1,5 @@
 """Track-order target selection shared by request validation and the worker."""
+
 from __future__ import annotations
 
 from fastapi import HTTPException

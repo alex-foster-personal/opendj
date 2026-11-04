@@ -1,7 +1,7 @@
 """T3b split target for ``apps.webui.server.rb_vendor`` (the monolith).
 
 Each module here is a verbatim move of one cluster from the original
-``rb_vendor.py`` (see ``.planning/t3b-decomposition-map.md`` section 2).
+``rb_vendor.py`` (see ``(private path)`` section 2).
 ``rb_vendor.py`` re-exports every name back out of this package so its 10
 route importers and test modules never change until the facade is retired
 (T3b wave 4 / S8).
@@ -27,4 +27,5 @@ is the module that imports the one sidecar-DDL home in
 into ``rb_vendor`` for the C0/C1 constants and path helpers that slice S0
 never extracted, so they cannot follow until that extraction lands.
 """
+
 from __future__ import annotations

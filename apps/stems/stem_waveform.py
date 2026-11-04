@@ -192,35 +192,22 @@ def _bundle_part_path(bundle: StemBundle, part: str) -> Path:
         if bundle.layout != "demucs4":
             if part in bundle.parts:
                 return bundle.files[cast(StemPart, part)]
-            raise StemArtifactError(
-                f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}"
-            )
+            raise StemArtifactError(f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}")
         bass = bundle.files.get("bass")
         other = bundle.files.get("other")
         if bass is None or other is None:
-            raise StemArtifactError(
-                f"{bundle.layout} bundle missing bass/other for instrumental envelope"
-            )
+            raise StemArtifactError(f"{bundle.layout} bundle missing bass/other for instrumental envelope")
         return bass  # fingerprint uses both files below
     if part not in bundle.parts:
-        raise StemArtifactError(
-            f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}"
-        )
+        raise StemArtifactError(f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}")
     return bundle.files[cast(StemPart, part)]
 
 
-def _instrumental_fingerprint(
-    bundle: StemBundle, bass_stat: os.stat_result, other_stat: os.stat_result
-) -> str:
+def _instrumental_fingerprint(bundle: StemBundle, bass_stat: os.stat_result, other_stat: os.stat_result) -> str:
     bass = bundle.files["bass"]
     other = bundle.files["other"]
     return hashlib.sha256(
-        (
-            _file_fingerprint(bass, bass_stat)
-            + ":"
-            + _file_fingerprint(other, other_stat)
-            + ":instrumental"
-        ).encode()
+        (_file_fingerprint(bass, bass_stat) + ":" + _file_fingerprint(other, other_stat) + ":instrumental").encode()
     ).hexdigest()[:16]
 
 
@@ -320,9 +307,7 @@ def build_stem_waveform_payload(
         bass, other = source(bundle.files["bass"]), source(bundle.files["other"])
         fingerprint = _instrumental_fingerprint(bundle, bass_stat, other_stat)
         cache_path = (
-            _cache_path(cache_root, bundle.manifest.stable_id, part, fingerprint)
-            if cache_root is not None
-            else None
+            _cache_path(cache_root, bundle.manifest.stable_id, part, fingerprint) if cache_root is not None else None
         )
         if cache_path is not None:
             cached = _read_cache(cache_path)
@@ -341,9 +326,7 @@ def build_stem_waveform_payload(
         part_stat = stat_as_resolved(path)
         fingerprint = _file_fingerprint(path, part_stat)
         cache_path = (
-            _cache_path(cache_root, bundle.manifest.stable_id, part, fingerprint)
-            if cache_root is not None
-            else None
+            _cache_path(cache_root, bundle.manifest.stable_id, part, fingerprint) if cache_root is not None else None
         )
         if cache_path is not None:
             cached = _read_cache(cache_path)

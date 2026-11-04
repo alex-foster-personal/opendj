@@ -3,6 +3,7 @@
 Split out of :mod:`apps.sync_hub.engine` (quality-gate file_size ratchet,
 round 4).
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -51,17 +52,12 @@ def prune_changelog(
     format (``apps.shared.state.sync_stamp.CANONICAL_FORMAT``).
     """
     if changelog not in CHANGELOG_TABLES:
-        raise SyncApplyError(
-            f"{changelog!r} is not a changelog table; expected one of "
-            f"{sorted(CHANGELOG_TABLES)}."
-        )
+        raise SyncApplyError(f"{changelog!r} is not a changelog table; expected one of {sorted(CHANGELOG_TABLES)}.")
     if keep_days < 0:
         raise SyncApplyError(f"keep_days must be >= 0, got {keep_days}")
     if keep_rows < 0:
         raise SyncApplyError(f"keep_rows must be >= 0, got {keep_rows}")
-    cutoff_at = (
-        datetime.now(UTC) if now is None else sync_stamp.parse_canonical(now)
-    ) - timedelta(days=keep_days)
+    cutoff_at = (datetime.now(UTC) if now is None else sync_stamp.parse_canonical(now)) - timedelta(days=keep_days)
     cursor = conn.execute(
         f"""
         DELETE FROM {changelog}

@@ -259,3 +259,5 @@ RAISED Tue 3 Nov 2026 (fold-notice follow-up #7662, merged main 2dd433890d): CI 
 +179 B. Measured ceiled to KiB (300,032) plus 1 KiB of jitter => 301,056. Payback: none planned.
 { name: 'library', limit: 301056, measured: 299419, note: 'initial load of "/"' }
 ```
+
+REBASELINED Tue 3 Nov 2026 (main 9a76938d0e, PR #8464): one clean vite build of main measured 304,540. Measured ceiled to KiB plus 1 KiB => 306,176 (was base 301,056 + charges 3,072 from #6561, #7892 = 304,128); those charges are folded into the base and deleted. Main alone was 412 B over its limit, which failed every PR's frontend job.

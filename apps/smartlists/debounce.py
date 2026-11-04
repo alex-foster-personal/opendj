@@ -1,4 +1,5 @@
 """Per-key debouncer (SMART-03 support)."""
+
 from __future__ import annotations
 
 import time
@@ -24,8 +25,7 @@ class Debouncer:
 
     def ready(self, *, now: float | None = None) -> list[str]:
         t = self.clock() if now is None else now
-        expired = [k for k, ts in self._armed_at.items()
-                   if t - ts >= self.window_seconds]
+        expired = [k for k, ts in self._armed_at.items() if t - ts >= self.window_seconds]
         for k in expired:
             del self._armed_at[k]
         return expired

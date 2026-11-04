@@ -144,8 +144,7 @@ def require_credential(
         if verdict != "valid" and (machine_id, verdict) not in _OBSERVED:
             _OBSERVED.add((machine_id, verdict))
             log.warning(
-                "sync credential %s for machine %s on %s (observe mode: not "
-                "refused; %s=enforce would answer 401)",
+                "sync credential %s for machine %s on %s (observe mode: not refused; %s=enforce would answer 401)",
                 verdict,
                 machine_id,
                 endpoint,

@@ -99,10 +99,10 @@ export default defineConfig(({ command, mode }) => {
 			target: ['es2020', 'chrome91', 'edge91', 'firefox78', 'safari14'],
 			minify: 'terser' as const,
 			// One exception to "defaults only". Vite forces terser's `safari10`
-			// workarounds on (loop-scoped `let` and `await` naming bugs in Safari
+			// transforms on (loop-scoped `let` and `await` naming bugs in Safari
 			// 10 and 11). The build target is Vite's default, which starts at
-			// Safari 14, and the packaged shell is a current WKWebView, so the
-			// workaround guards nothing here. Measured Thu 1 Oct 2026 on
+			// Safari 14, and the packaged shell is a current WKWebView, so those
+			// transforms guard nothing here. Measured Thu 1 Oct 2026 on
 			// af--preview-mixtour-io 7e14328ea0: library 270,039 -> 269,310,
 			// performance 242,107 -> 241,529, other-lazy 293,004 -> 292,698.
 			terserOptions: { safari10: false, ecma: 2020, compress: { passes: 5, hoist_funs: true } },

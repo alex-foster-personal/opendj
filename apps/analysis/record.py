@@ -48,6 +48,7 @@ either.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -152,10 +153,7 @@ class AnalysisRecord:
         data.setdefault("uses_model", False)
         data.setdefault("model_sha256", None)
         data.setdefault("decode_fingerprint", "")
-        data["lanes"] = {
-            lane: LaneResult.from_dict(block)
-            for lane, block in (data.get("lanes") or {}).items()
-        }
+        data["lanes"] = {lane: LaneResult.from_dict(block) for lane, block in (data.get("lanes") or {}).items()}
         return cls(**data)
 
 

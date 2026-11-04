@@ -17,6 +17,7 @@ thrown away because its dependency moved.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -57,9 +58,10 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # staleness
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 def mark_stale(
     conn: sqlite3.Connection,
@@ -101,18 +103,16 @@ def clear_stale(
     return conn.execute(sql, params).rowcount
 
 
-def stale_rows(
-    conn: sqlite3.Connection, stable_id: str, lane: str
-) -> set[tuple[str, str]]:
+def stale_rows(conn: sqlite3.Connection, stable_id: str, lane: str) -> set[tuple[str, str]]:
     """``(backend, backend_version)`` pairs excluded from the canonical pointer."""
     return {
         (row[0], row[1])
         for row in conn.execute(
-            "SELECT backend, backend_version FROM analysis_stale "
-            "WHERE stable_id = ? AND lane = ?",
+            "SELECT backend, backend_version FROM analysis_stale WHERE stable_id = ? AND lane = ?",
             (stable_id, lane),
         )
     }
+
 
 def retired_rows(conn: sqlite3.Connection, backend: str) -> set[tuple[str, str]]:
     """``(stable_id, backend_version)`` of ``backend`` rows a whole-record marker withholds.
@@ -120,9 +120,7 @@ def retired_rows(conn: sqlite3.Connection, backend: str) -> set[tuple[str, str]]
     These describe bytes the file no longer holds (folder ingest kept them for
     history), so a "has this track been analyzed" check must not count them.
     """
-    if conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analysis_stale'"
-    ).fetchone() is None:
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analysis_stale'").fetchone() is None:
         return set()
     return {
         (str(row[0]), str(row[1]))
@@ -131,6 +129,7 @@ def retired_rows(conn: sqlite3.Connection, backend: str) -> set[tuple[str, str]]
             (WHOLE_RECORD, backend),
         )
     }
+
 
 __all__ = [
     "STALE_AUDIO_REPLACED",

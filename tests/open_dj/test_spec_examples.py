@@ -18,6 +18,7 @@ _APPENDIX_A_HEADING = "## Appendix A — Canonical example"
 _APPENDIX_B_HEADING = "## Appendix B —"
 _SECTION_11_HEADING = "## 11. Versioning"
 _SECTION_12_HEADING = "## 12. License and governance"
+_SECTION_13_HEADING = "## 13. Roadmap to 1.0"
 
 pytestmark = pytest.mark.requirement("OPEN-03a")
 
@@ -62,3 +63,30 @@ def test_versioning_section_declares_v0_2() -> None:
     section = after[:end]
     assert 'schema_version: "0.2"' in section
     assert 'schema_version: "0.1"' not in section
+
+
+def test_roadmap_0_2_matches_shipped_rekordbox_scope() -> None:
+    """[if] v0.2 roadmap row claims Rekordbox read/write [then] test fails, [else stop]."""
+    spec_text = _read_spec()
+    start = spec_text.find(_SECTION_13_HEADING)
+    assert start != -1, f"missing heading: {_SECTION_13_HEADING}"
+    after = spec_text[start + len(_SECTION_13_HEADING) :]
+    end = after.find(_APPENDIX_A_HEADING)
+    assert end != -1, f"missing heading: {_APPENDIX_A_HEADING}"
+    section = after[:end]
+    row = next(
+        (line for line in section.splitlines() if "| **0.2** |" in line),
+        None,
+    )
+    assert row is not None, "roadmap table has no 0.2 row"
+    lowered = row.lower()
+    assert "read/write" not in lowered.replace(" ", "")
+    assert "read + write" not in lowered
+    assert "export" in lowered
+    assert "document level" in lowered
+
+    from apps.open_dj.registry import ADAPTERS
+
+    spec = ADAPTERS["rekordbox"]
+    assert spec.export_supported is True
+    assert spec.import_supported is False

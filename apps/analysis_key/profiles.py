@@ -11,10 +11,9 @@ librosa.feature.chroma_cqt).
 PROFILE PROVENANCE.
 
 krumhansl: Krumhansl & Kessler (1982) correlation profiles, ported verbatim
-from apps/analysis/backends/librosa.py's `_KS_MAJOR`/`_KS_MINOR` (this module
-is now that logic's single source; librosa.py should migrate to call it
-rather than keep a second copy -- tracked as follow-up, not done here to keep
-this PR's diff to the new lane).
+from apps/analysis/backends/librosa.py's `_KS_MAJOR`/`_KS_MINOR`. This module
+is the single source; the librosa backend delegates through
+:func:`estimate_key_krumhansl`.
 
 An EDM-tuned candidate (edma/bgate, Faraldo, Jorda & Herrera 2017, "A
 Multi-Profile Method for Key Estimation in EDM," AES Conference on Semantic

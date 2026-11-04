@@ -12,10 +12,18 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { SHUTDOWN_GRACE_MS, sleep, sweepOrphanedGroup } from './engine';
+import {
+	SHUTDOWN_GRACE_MS,
+	signalGroup,
+	sleep,
+	sweepOrphanedGroup,
+	TaskkillUnavailableError
+} from './engine';
 import { appendShellLog } from './shell-log';
 
 const LOCK_FILE_NAME = '.engine.lock';
+const LOCK_READ_ATTEMPTS = 5;
+const LOCK_READ_RETRY_MS = 10;
 
 export type LaunchPlan =
 	| { kind: 'spawn' }
@@ -44,6 +52,8 @@ export function pidAlive(pid: number): boolean {
 }
 
 function processState(pid: number): string | null {
+	// Windows has no zombie state to read, and no ps: a bare name would only find a shadow.
+	if (process.platform === 'win32') return null;
 	try {
 		if (process.platform === 'linux') {
 			const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
@@ -71,15 +81,15 @@ export function pidCanAct(pid: number): boolean {
 	return !(state === 'Z' || state === 'z');
 }
 
-export function parseLockJson(raw: string): LockJson {
-	const empty: LockJson = { pid: null, host: null, port: null };
+/** Parsed lock JSON, or null when the body is empty or not a JSON object. */
+export function tryParseLockJson(raw: string): LockJson | null {
 	let value: unknown;
 	try {
 		value = JSON.parse(raw);
 	} catch {
-		return empty;
+		return null;
 	}
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) return empty;
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
 	const obj = value as Record<string, unknown>;
 	const uint = (field: unknown): number | null =>
 		typeof field === 'number' && Number.isInteger(field) && field >= 0 ? field : null;
@@ -90,16 +100,43 @@ export function parseLockJson(raw: string): LockJson {
 	};
 }
 
+export function parseLockJson(raw: string): LockJson {
+	return tryParseLockJson(raw) ?? { pid: null, host: null, port: null };
+}
+
+function sleepMs(ms: number): void {
+	const deadline = Date.now() + ms;
+	while (Date.now() < deadline) {
+		// Busy-wait: sync reads must not depend on timers in tests.
+	}
+}
+
+/** Retry unparsable reads; for tests pass a queue via `readRaw`. */
+export function readLockJsonWithAttempts(readRaw: () => string | null): LockJson | null {
+	for (let attempt = 0; attempt < LOCK_READ_ATTEMPTS; attempt++) {
+		const raw = readRaw();
+		if (raw === null) return null;
+		const parsed = tryParseLockJson(raw);
+		if (parsed !== null) return parsed;
+		if (attempt + 1 < LOCK_READ_ATTEMPTS) sleepMs(LOCK_READ_RETRY_MS);
+	}
+	return null;
+}
+
+function readLockJsonFromPath(lock: string): LockJson | null {
+	return readLockJsonWithAttempts(() => {
+		try {
+			return fs.readFileSync(lock, 'utf8');
+		} catch {
+			return null;
+		}
+	});
+}
+
 /** The holder's pid and port, or null when the lock does not name both. */
 export function readLockFields(lock: string): { pid: number; port: number } | null {
-	let raw: string;
-	try {
-		raw = fs.readFileSync(lock, 'utf8');
-	} catch {
-		return null;
-	}
-	const holder = parseLockJson(raw);
-	if (!holder.pid || !holder.port) return null;
+	const holder = readLockJsonFromPath(lock);
+	if (!holder?.pid || !holder?.port) return null;
 	return { pid: holder.pid, port: holder.port };
 }
 
@@ -111,16 +148,34 @@ export interface LockProbe {
 	method: 'flock' | 'pid-liveness';
 }
 
-// The same call apps/engine_core/lock.py makes, from the other side.
+// The same call apps/engine_core/lock.py makes, from the other side, through the
+// one seam apps/shared/file_lock.py has: flock on POSIX, msvcrt.locking of the
+// byte at 1 << 30 on Windows. Held means another process owns it. Any other
+// failure on Windows exits non-zero, so the caller falls back to pid liveness
+// instead of guessing.
 const FLOCK_PROBE = [
-	'import fcntl, json, os, sys',
+	'import errno, json, os, sys',
 	'fd = os.open(sys.argv[1], os.O_RDWR)',
-	'try:',
-	'    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)',
-	'    held = False',
-	'    fcntl.flock(fd, fcntl.LOCK_UN)',
-	'except OSError:',
-	'    held = True',
+	'if sys.platform == "win32":',
+	'    import msvcrt',
+	'    os.lseek(fd, 1 << 30, 0)',
+	'    try:',
+	'        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)',
+	'        held = False',
+	'        os.lseek(fd, 1 << 30, 0)',
+	'        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)',
+	'    except OSError as exc:',
+	'        if exc.errno != errno.EACCES:',
+	'            raise',
+	'        held = True',
+	'else:',
+	'    import fcntl',
+	'    try:',
+	'        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)',
+	'        held = False',
+	'        fcntl.flock(fd, fcntl.LOCK_UN)',
+	'    except OSError:',
+	'        held = True',
 	'os.lseek(fd, 0, 0)',
 	'contents = os.read(fd, 4096).decode("utf-8", "replace")',
 	'print(json.dumps({"held": held, "contents": contents}))'
@@ -161,6 +216,18 @@ export function makeLockProbe(python: string | null): (lock: string) => LockProb
 	};
 }
 
+function readLockContentsRetrying(lock: string, initial: string): LockJson | null {
+	const first = tryParseLockJson(initial);
+	if (first !== null) return first;
+	return readLockJsonWithAttempts(() => {
+		try {
+			return fs.readFileSync(lock, 'utf8');
+		} catch {
+			return null;
+		}
+	});
+}
+
 export async function inspectLock(
 	lock: string,
 	healthCheck: (port: number) => Promise<boolean>,
@@ -175,7 +242,14 @@ export async function inspectLock(
 	if (!isFile) return { kind: 'spawn' };
 	const state = probe(lock);
 	if (state === null || !state.held) return { kind: 'spawn' };
-	const holder = parseLockJson(state.contents);
+	const holder = readLockContentsRetrying(lock, state.contents);
+	if (holder === null) {
+		return {
+			kind: 'stop-or-quit',
+			pid: 0,
+			detail: `engine lock ${lock} is held but does not name a pid`
+		};
+	}
 	const pid = holder.pid ?? 0;
 	if (pid === 0) {
 		return { kind: 'stop-or-quit', pid: 0, detail: `engine lock ${lock} is held but does not name a pid` };
@@ -208,7 +282,32 @@ export function performancePageUrl(origin: string, env: NodeJS.ProcessEnv = proc
 	return env.OPENDJ_PERF_PROBE === '1' ? `${origin}/performance?perfprobe=1` : `${origin}/performance`;
 }
 
-function signalHolder(pid: number, signal: NodeJS.Signals): void {
+/**
+ * Signal an adopted engine and its descendants. Windows has no groups, so the tree
+ * goes through the same taskkill seam a spawned engine's shutdown uses; with no
+ * taskkill.exe the leader alone is killed, logged, so quitting never hangs on it.
+ */
+export function signalHolder(
+	pid: number,
+	signal: NodeJS.Signals,
+	platform: NodeJS.Platform = process.platform,
+	signalTree: (pid: number, signal: NodeJS.Signals) => boolean = (target, sig) => signalGroup(target, sig, platform)
+): void {
+	if (platform === 'win32') {
+		try {
+			signalTree(pid, signal);
+			return;
+		} catch (error) {
+			if (!(error instanceof TaskkillUnavailableError)) throw error;
+			appendShellLog('ERROR', `adopted engine pid ${pid}: ${error.message}; stopping the leader alone`);
+		}
+		try {
+			process.kill(pid, signal);
+		} catch {
+			// Already gone.
+		}
+		return;
+	}
 	try {
 		process.kill(-pid, signal);
 	} catch {

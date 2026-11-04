@@ -52,18 +52,24 @@ test('needsSetupForEmptyLibrary ignores healthy library', () => {
 	assert.equal(mod.needsSetupForEmptyLibrary(checks, false), false);
 });
 
-// The dismissal path. preflight answers 'fail' for an empty library that has NOT
-// been dismissed and 'pending' for one that HAS, so 'pending' is the only status
-// that can appear after the user clicks "Continue without importing". Until now
-// no test used it, which is why the predicate returning true for BOTH went
-// unnoticed: dismissing changes the engine's answer without changing the outcome,
-// so the wizard reopens on the next poll and the escape hatch does nothing.
+// The dismissal path and CloudSync waiting path. preflight answers 'fail' for an
+// empty library that has NOT been dismissed and 'pending' when setup was dismissed
+// or when CloudSync is configured and the first ok pull has not landed yet.
 function libraryAt(status, detail) {
 	return [
 		check(),
 		check({ id: 'library-attached', label: 'Library attached', status, detail })
 	];
 }
+
+test('cloudsync waiting pending must not re-trigger the wizard', () => {
+	const waiting = libraryAt(
+		'pending',
+		'0 tracks in the library; waiting for CloudSync'
+	);
+	assert.equal(mod.needsSetupForEmptyLibrary(waiting, false), false);
+	assert.equal(mod.shouldAutoOpenEmptyLibrarySetup(waiting, false, false), false);
+});
 
 test('dismissing an empty library must not re-trigger the wizard', () => {
 	const beforeDismiss = libraryAt('fail', '0 tracks');

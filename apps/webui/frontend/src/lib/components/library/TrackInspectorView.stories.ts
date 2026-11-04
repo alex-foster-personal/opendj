@@ -63,6 +63,7 @@ const meta = {
 		paneTitle: 'Warehouse Warmups',
 		summary: null,
 		single: row(),
+		keyShown: '8A \u2022 Am',
 		track,
 		loadError: null,
 		saveError: null,

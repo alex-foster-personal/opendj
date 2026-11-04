@@ -793,6 +793,7 @@ def _collect_playable_candidates(
     extra_paths: Sequence[tuple[str, str, Kind]] = (),
     path_map: PathMap | None = None,
     media_types: Mapping[str, str] = AUDIO_MEDIA_TYPES,
+    machine_id: str | None = None,
 ) -> list[_Candidate]:
     """Every resolved candidate for ``stable_id``, in collection order."""
     duration = duration_ms
@@ -814,7 +815,7 @@ def _collect_playable_candidates(
 
     seen: set[str] = set()
     candidates: list[_Candidate] = []
-    for loc in list_locations(conn, stable_id):
+    for loc in list_locations(conn, stable_id, machine_id=machine_id):
         cand = _candidate_from_path(
             loc.file_path,
             kind=loc.kind,
@@ -951,6 +952,7 @@ def ordered_playable_candidates(
     extra_paths: Sequence[tuple[str, str, Kind]] = (),
     path_map: PathMap | None = None,
     for_analysis: bool = False,
+    machine_id: str | None = None,
 ) -> list[PickedAudio]:
     """All playable candidates in the same order ``pick_playable`` uses.
 
@@ -961,6 +963,9 @@ def ordered_playable_candidates(
     outside the venue window, unknown venue) appended after the pool in
     collection order, as decode fallbacks: a corrupt winner must not hide a
     valid copy behind it.
+
+    ``machine_id`` defaults to the local machine; a caller looping over many
+    tracks resolves it once and passes it (the analysis backlog, NATIVE-8340).
     """
     residency: ResidencyPredicate = (
         fs_residency.is_materialised if for_analysis else fs_residency.exists_for_audio_open_probe
@@ -975,6 +980,7 @@ def ordered_playable_candidates(
         extra_paths=extra_paths,
         path_map=path_map,
         media_types=media_types,
+        machine_id=machine_id,
     )
     materialized = [c for c in raw if residency(c.path)]
     ordered = _order_playable_pool(materialized, policy)

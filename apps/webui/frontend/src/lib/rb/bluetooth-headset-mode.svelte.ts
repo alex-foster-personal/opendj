@@ -15,6 +15,8 @@
 import { API_BASE } from '$lib/api/base';
 import type { components } from '$lib/api-types';
 
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
+
 export type AudioHeadsetModeReport = components['schemas']['AudioHeadsetModeOut'];
 
 export interface HeadsetModeWarning {
@@ -67,6 +69,22 @@ export function headsetModeWarning(report: AudioHeadsetModeReport | null): Heads
 const AUDIO_HEADSET_MODE_PATH = `${API_BASE}/api/v1/audio-headset-mode`;
 export const HEADSET_MODE_POLL_MS = 5_000;
 
+/** AUDFID-03: log the audio-headset-mode verdict whenever it changes (the
+ * first reading counts as a change), so an output that dropped to the
+ * Bluetooth call profile shows up in the perf log next to the output_mode
+ * changes. A failed read that repeats the same verdict logs nothing. */
+export function logHeadsetVerdictChange(
+	previous: Pick<AudioHeadsetModeReport, 'verdict'> | null,
+	next: Pick<AudioHeadsetModeReport, 'verdict' | 'output' | 'input'>,
+	record: (kind: string, message: string, deck: null, level: 'info' | 'warn') => void
+): boolean {
+	if (previous !== null && previous.verdict === next.verdict) return false;
+	const from = previous === null ? 'none' : previous.verdict;
+	const level = next.verdict === 'headset_mode' || next.verdict === 'mic_selected' ? 'warn' : 'info';
+	record('audio-headset-mode-change', `audio-headset-mode ${from} -> ${next.verdict} (output ${JSON.stringify(next.output)}, input ${JSON.stringify(next.input)})`, null, level);
+	return true;
+}
+
 export const bluetoothHeadsetMode = $state<{
 	report: AudioHeadsetModeReport | null;
 	dismissedKey: string | null;
@@ -85,6 +103,7 @@ export async function refreshBluetoothHeadsetMode(fetcher: typeof fetch = fetch)
 		const report: AudioHeadsetModeReport = res.ok
 			? ((await res.json()) as AudioHeadsetModeReport)
 			: { supported: false, verdict: 'unsupported', output: null, input: null, error: `HTTP ${res.status}` };
+		logHeadsetVerdictChange(bluetoothHeadsetMode.report, report, recordPerfEvent);
 		bluetoothHeadsetMode.report = report;
 		// A dismissal covers one episode: once a real reading shows that state has
 		// ended (clear, or a different state), the next occurrence warns again. A

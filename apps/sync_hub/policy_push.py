@@ -102,9 +102,7 @@ def _registered_machines(conn: sqlite3.Connection) -> set[str]:
     return {str(row[0]) for row in conn.execute("SELECT machine_id FROM machines")}
 
 
-def _registered_only(
-    proposed: ProposedPolicy, registered: set[str]
-) -> ProposedPolicy | None:
+def _registered_only(proposed: ProposedPolicy, registered: set[str]) -> ProposedPolicy | None:
     """Keep only rows whose ``machine_id`` is already in ``machines``.
 
     Rows naming a machine the hub has not met are left for ``hub_apply``'s
@@ -113,9 +111,7 @@ def _registered_only(
     """
     policies = tuple(c for c in proposed.policies if c.machine_id in registered)
     pins = tuple(p for p in proposed.pins if p.machine_id in registered)
-    removed_policies = tuple(
-        k for k in proposed.removed_policies if k.machine_id in registered
-    )
+    removed_policies = tuple(k for k in proposed.removed_policies if k.machine_id in registered)
     removed_pins = tuple(k for k in proposed.removed_pins if k.machine_id in registered)
     if not (policies or pins or removed_policies or removed_pins):
         return None

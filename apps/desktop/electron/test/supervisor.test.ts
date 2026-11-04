@@ -27,7 +27,7 @@ import {
 	supervisedOrigin,
 	writeParentFile
 } from '../src/supervisor';
-import { REPO_ROOT, fakePayload, pidGone, resolveRepoPython, scratchDir, waitFor } from './helpers';
+import { REPO_ROOT, fakePayload, killEngine, KILLED, pidGone, PYTHON, resolveRepoPython, scratchDir, waitFor } from './helpers';
 
 // Supervisor decisions go to the shell log, as in the Tauri shell.
 const shellLog = path.join(scratchDir('supervisor-shell-log'), 'shell.log');
@@ -94,7 +94,7 @@ async function running(mode = 'healthy', overrides: Partial<SupervisorDeps> = {}
 	await engine.waitUntilHealthy(10_000);
 	const health = await ShellHealthServer.start(dataDir, () => '{}');
 	const { surface, seen } = recordingSurface(choice);
-	const deps: SupervisorDeps = { ...defaultDeps(makeLockProbe('python3')), bootTimeoutMs: 5_000, ...overrides };
+	const deps: SupervisorDeps = { ...defaultDeps(makeLockProbe(PYTHON)), bootTimeoutMs: 5_000, ...overrides };
 	// The restart payload is `mode`; the first engine is always healthy.
 	fs.rmSync(payload, { recursive: true });
 	fakePayload(dir, mode);
@@ -125,7 +125,7 @@ test('a healthy engine publishes running and the plain title', async () => {
 test('a killed engine is detected, reaped, and restarted on a fresh port', async () => {
 	const { supervisor, engine, health, seen } = await running();
 	try {
-		process.kill(engine.pid, 'SIGKILL');
+		killEngine(engine.pid);
 		await engine.waitReap();
 		await supervisor.tick();
 		assert.equal(supervisor.phase, 'restarting');
@@ -138,8 +138,8 @@ test('a killed engine is detected, reaped, and restarted on a fresh port', async
 		assert.notEqual(current.engine.pid, engine.pid);
 		assert.deepEqual(seen.origins, [supervisedOrigin(current)]);
 		const log = fs.readFileSync(shellLog, 'utf8');
-		assert.match(log, /engine-exited\(signal SIGKILL\)/);
-		assert.match(log, /\d{4}-\d\d-\d\dT[\d:.]+\+00:00 engine restarted after exit code -1/);
+		assert.match(log, new RegExp(`engine-exited\\(${KILLED.exit}\\)`));
+		assert.match(log, new RegExp(`\\d{4}-\\d\\d-\\d\\dT[\\d:.]+\\+00:00 engine restarted after exit code ${KILLED.code}`));
 	} finally {
 		await supervisor.shutdown();
 		await health.close();
@@ -149,7 +149,7 @@ test('a killed engine is detected, reaped, and restarted on a fresh port', async
 test('a restart that fails goes fatal and shows the relaunch page, not a spinner', async () => {
 	const { supervisor, engine, health, seen } = await running('exit');
 	try {
-		process.kill(engine.pid, 'SIGKILL');
+		killEngine(engine.pid);
 		await engine.waitReap();
 		await supervisor.tick(); // dead -> restarting
 		await supervisor.tick(); // restart attempt fails
@@ -166,7 +166,7 @@ test('a restart that fails goes fatal and shows the relaunch page, not a spinner
 test('a failed restart on a full disk waits for space instead of going fatal', async () => {
 	const { supervisor, engine, health, seen } = await running('exit', { diskFree: () => 0 });
 	try {
-		process.kill(engine.pid, 'SIGKILL');
+		killEngine(engine.pid);
 		await engine.waitReap();
 		await supervisor.tick();
 		await supervisor.tick();
@@ -187,7 +187,7 @@ test('once disk space is back, the waiting engine is restarted', async () => {
 		await supervisor.tick();
 		assert.equal(supervisor.phase, 'awaiting-disk-space', 'no restart while the disk is still full');
 		free = 2 * ENGINE_LOG_MIN_FREE_BYTES;
-		process.kill(engine.pid, 'SIGKILL');
+		killEngine(engine.pid);
 		await engine.waitReap();
 		await supervisor.tick();
 		assert.equal(supervisor.phase, 'running');
@@ -211,11 +211,11 @@ test('still restarting after the recovery timeout raises the native fatal dialog
 		{ payload: path.join(dir, 'payload'), dataDir, logPath, productName: 'Open DJ' },
 		health,
 		surface,
-		defaultDeps(makeLockProbe('python3')),
+		defaultDeps(makeLockProbe(PYTHON)),
 		() => now
 	);
 	try {
-		process.kill(engine.pid, 'SIGKILL');
+		killEngine(engine.pid);
 		await engine.waitReap();
 		await supervisor.tick(); // -> restarting, dead_at = 0
 		supervisor.phase = 'restarting';
@@ -227,7 +227,7 @@ test('still restarting after the recovery timeout raises the native fatal dialog
 		await supervisor.tick();
 		assert.equal(supervisor.phase, 'fatal');
 		assert.ok(await waitFor(() => seen.quits.length === 1));
-		assert.match(seen.dialogs[0] as string, /The engine exited with code -1/);
+		assert.match(seen.dialogs[0] as string, new RegExp(`The engine exited with code ${KILLED.code}`));
 		assert.deepEqual(seen.quits, [1]);
 	} finally {
 		await supervisor.shutdown();

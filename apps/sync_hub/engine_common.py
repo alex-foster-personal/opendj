@@ -8,6 +8,7 @@ retention). Everything here has no connection-reading logic of its own --
 it exists so the other engine submodules can depend on ONE shared module
 instead of on each other, keeping the split acyclic.
 """
+
 from __future__ import annotations
 
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
@@ -45,9 +46,7 @@ class SyncSchemaMismatch(SyncApplyError):
 #: Parents-before-children order for a batch of mixed-table changes; the
 #: chunking in :mod:`apps.sync_hub.client` depends on it (a chunk boundary
 #: must never put a child row in an earlier request than its parent).
-_APPLY_ORDER: dict[str, int] = {
-    spec.name: index for index, spec in enumerate(SYNC_TABLES)
-}
+_APPLY_ORDER: dict[str, int] = {spec.name: index for index, spec in enumerate(SYNC_TABLES)}
 
 
 def apply_rank(table: str, *, source: str) -> int:

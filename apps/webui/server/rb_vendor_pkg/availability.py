@@ -24,6 +24,7 @@ Two invariants the call sites rely on:
 """
 from __future__ import annotations
 
+import sqlite3
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -59,6 +60,11 @@ PROBE_BUDGET_ROW_HYDRATION: int = 16
 #: the background (PERF-RB-06). Twice the window in which an unchanged answer is
 #: written back (PERF-RB-05), so a row that keeps being probed never ages out.
 SERVE_RECENT_MAX_S: float = 2 * path_index.UNCHANGED_REWRITE_AFTER_S
+
+# Opportunistic path_availability upsert on the listing GET. A long wait
+# here stalls the pane and, past busy_timeout, used to 503 the whole
+# playlist (OPEN-DJ-BE-8Y). The disk answers already live in L1.
+PATH_INDEX_HYDRATE_BUSY_TIMEOUT_S: float = 0.25
 
 
 class AvailabilityProbeMode(Enum):
@@ -111,15 +117,26 @@ class ProbeBudget:
 @dataclass(frozen=True)
 class PathProbeResult:
     """``resolved_path`` is the file ``materialised_size`` was measured at, or
-    None when that cannot be proven without touching the disk."""
+    None when that cannot be proven without touching the disk. ``st_mtime_ns`` is
+    from the same stat as ``materialised_size`` when present."""
 
     status: FileAvailabilityStatus
     materialised_size: int | None = None
     resolved_path: str | None = None
+    st_mtime_ns: int | None = None
 
 
-def _size_result(size: int | None, measured_path: str | None = None) -> PathProbeResult:
-    return PathProbeResult("present" if size is not None else "absent", size, measured_path)
+def _size_result(
+    size: int | None,
+    measured_path: str | None = None,
+    mtime_ns: int | None = None,
+) -> PathProbeResult:
+    return PathProbeResult(
+        "present" if size is not None else "absent",
+        size,
+        measured_path,
+        mtime_ns,
+    )
 
 
 def _index_measured_path(path: str, path_map: PathMap) -> str | None:
@@ -139,11 +156,11 @@ def status_to_file_exists(status: FileAvailabilityStatus) -> bool | None:
     return status == "present"
 
 
-def _stat_size(resolved: Path | None) -> int | None:
-    """Materialised st_size, or None when missing / not a file / dataless stub."""
+def _stat_size(resolved: Path | None) -> tuple[int, int] | None:
+    """Materialised ``(st_size, st_mtime_ns)``, or None when missing / not a file / dataless stub."""
     if resolved is None:
         return None
-    return fs_residency.materialised_size(resolved)
+    return fs_residency.materialised_stat(resolved)
 
 
 def _l1_hits(wanted: Sequence[str], now: float, namespace: str) -> dict[str, PathProbeResult]:
@@ -152,7 +169,7 @@ def _l1_hits(wanted: Sequence[str], now: float, namespace: str) -> dict[str, Pat
     with config._FILE_EXISTS_LOCK:
         hits = {path: config._FILE_EXISTS_CACHE.get(path) for path in wanted}
     return {
-        path: _size_result(hit[1], hit[2])
+        path: _size_result(hit[1], hit[2], hit[4])
         for path, hit in hits.items()
         if hit is not None and hit[3] == namespace and now - hit[0] < config.FILE_EXISTS_TTL_S
     }
@@ -179,6 +196,35 @@ def _load_index(
         conn.close()
 
 
+def _persist_path_stats(
+    namespace: str,
+    rows: Sequence[tuple[str, int | None, int | None]],
+    *,
+    state_db_path: Path | None = None,
+) -> None:
+    """Best-effort index write. Busy must not fail the listing that just statted."""
+    db_path = _state_db(state_db_path)
+    if not rows or not db_path.exists():
+        return
+    try:
+        conn = state_db.open_rw(
+            db_path,
+            apply_schema=False,
+            busy_timeout_s=PATH_INDEX_HYDRATE_BUSY_TIMEOUT_S,
+        )
+        try:
+            with state_db.write_unit(conn, "path_avail_hydrate"):
+                path_index.upsert_rows(conn, namespace, rows)
+        finally:
+            conn.close()
+    except state_db.StateStoreBusyError:
+        return
+    except sqlite3.OperationalError as exc:
+        if state_db.is_sqlite_busy(exc):
+            return
+        raise
+
+
 def _record_stats(
     namespace: str,
     measured: Mapping[str, PathProbeResult],
@@ -192,26 +238,32 @@ def _record_stats(
     (STATE-18): the running refresher persists the rows, so a writer holding
     the state.db lock cannot turn ``GET /api/v1/tracks`` into a 503. With no
     refresher running (CLI, script, no-lifespan test) the rows are written
-    here, as before, because nothing else would write them.
+    here, as before, because nothing else would write them. That inline write
+    uses a short ``busy_timeout`` and ignores lock exhaustion (OPEN-DJ-BE-8Y):
+    the disk-truth answers already live in L1.
     """
     if not measured:
         return
     with config._FILE_EXISTS_LOCK:
         for path, result in measured.items():
             config._FILE_EXISTS_CACHE[path] = (
-                now, result.materialised_size, result.resolved_path, namespace
+                now,
+                result.materialised_size,
+                result.resolved_path,
+                namespace,
+                result.st_mtime_ns,
             )
-    rows = [(path, result.materialised_size) for path, result in measured.items()]
+    rows = [
+        (path, result.materialised_size, result.st_mtime_ns)
+        for path, result in measured.items()
+    ]
     if path_availability_refresh.record(namespace, rows, state_db_path=state_db_path):
         return
-    db_path = _state_db(state_db_path)
-    if db_path.exists():
-        conn = state_db.open_rw(db_path)
-        try:
-            path_index.upsert_rows(conn, namespace, rows)
-            conn.commit()
-        finally:
-            conn.close()
+    _persist_path_stats(
+        namespace,
+        rows,
+        state_db_path=state_db_path,
+    )
 
 
 def _recent_answers(
@@ -232,12 +284,14 @@ def _recent_answers(
     for path in paths:
         hit, entry = l1[path], index.get(path)
         if hit is not None and hit[3] == namespace and now - hit[0] < SERVE_RECENT_MAX_S:
-            out[path] = _size_result(hit[1], hit[2])
+            out[path] = _size_result(hit[1], hit[2], hit[4])
         elif entry is not None and (wall_now - entry.checked_at).total_seconds() < (
             SERVE_RECENT_MAX_S
         ):
             out[path] = _size_result(
-                entry.materialised_size, _index_measured_path(path, path_map)
+                entry.materialised_size,
+                _index_measured_path(path, path_map),
+                entry.st_mtime_ns,
             )
     return out
 
@@ -260,7 +314,9 @@ def _triage(
         entry = index.get(path)
         if entry is not None and not entry.stale:
             out[path] = _size_result(
-                entry.materialised_size, _index_measured_path(path, path_map)
+                entry.materialised_size,
+                _index_measured_path(path, path_map),
+                entry.st_mtime_ns,
             )
         elif budget.take():
             stat_now.append(path)
@@ -268,7 +324,9 @@ def _triage(
             background.append(path)
             if entry is not None and budget.serves_stale:
                 out[path] = _size_result(
-                    entry.materialised_size, _index_measured_path(path, path_map)
+                    entry.materialised_size,
+                    _index_measured_path(path, path_map),
+                    entry.st_mtime_ns,
                 )
             elif path in recent and budget.serves_recent:
                 out[path] = recent[path]
@@ -318,10 +376,15 @@ def bulk_probe_paths(
     )
     stat_now, background = _triage(rest, index, budget, out, recent, path_map)
     resolved = {path: resolve_asset_path(path).resolved for path in stat_now}
-    measured = {
-        path: _size_result(_stat_size(target), str(target) if target is not None else None)
-        for path, target in resolved.items()
-    }
+    measured: dict[str, PathProbeResult] = {}
+    for path, target in resolved.items():
+        stat = _stat_size(target)
+        resolved_str = str(target) if target is not None else None
+        if stat is None:
+            measured[path] = _size_result(None, resolved_str, None)
+        else:
+            size, mtime_ns = stat
+            measured[path] = _size_result(size, resolved_str, mtime_ns)
     out.update(measured)
     _record_stats(namespace, measured, now, state_db_path=state_db_path)
     if background:
@@ -522,6 +585,7 @@ def classify_rows(
 
 __all__ = [
     "PENDING",
+    "PATH_INDEX_HYDRATE_BUSY_TIMEOUT_S",
     "PROBE_BUDGET_ROW_HYDRATION",
     "PROBE_BUDGET_TREE_SUMMARY",
     "SERVE_RECENT_MAX_S",

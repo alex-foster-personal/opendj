@@ -148,13 +148,8 @@ def _numeric_histogram(values: Sequence[float], bins: int) -> dict[str, int]:
     if low == high:
         return {f"{low:g}": len(values)}
     width = (high - low) / bins
-    counts: Counter[int] = Counter(
-        min(int((v - low) / width), bins - 1) for v in values
-    )
-    return {
-        f"{low + idx * width:.4g}..{low + (idx + 1) * width:.4g}": counts[idx]
-        for idx in sorted(counts)
-    }
+    counts: Counter[int] = Counter(min(int((v - low) / width), bins - 1) for v in values)
+    return {f"{low + idx * width:.4g}..{low + (idx + 1) * width:.4g}": counts[idx] for idx in sorted(counts)}
 
 
 def _categorical_histogram(values: Sequence[Any], max_buckets: int) -> dict[str, int]:
@@ -163,9 +158,7 @@ def _categorical_histogram(values: Sequence[Any], max_buckets: int) -> dict[str,
         return dict(counts.most_common())
         # ordered by frequency so the tail is visible at a glance
     top = dict(counts.most_common(max_buckets))
-    top[f"<{len(counts) - max_buckets} rarer values>"] = sum(
-        n for _, n in counts.most_common()[max_buckets:]
-    )
+    top[f"<{len(counts) - max_buckets} rarer values>"] = sum(n for _, n in counts.most_common()[max_buckets:])
     return top
 
 
@@ -178,15 +171,10 @@ def _populate_raw_extremes(probe: Probe, present_raw: list[Any]) -> None:
     if probe.numeric:
         numeric_raw = [float(v) for v in present_raw if isinstance(v, (int, float))]
         if len(numeric_raw) != len(present_raw):
-            probe.findings.append(
-                f"{len(present_raw) - len(numeric_raw)} non-numeric values in a "
-                f"numeric column"
-            )
+            probe.findings.append(f"{len(present_raw) - len(numeric_raw)} non-numeric values in a numeric column")
         if numeric_raw:
             probe.raw_min, probe.raw_max = min(numeric_raw), max(numeric_raw)
-            probe.histogram = _numeric_histogram(
-                numeric_raw, CFG.numeric_histogram_bins
-            )
+            probe.histogram = _numeric_histogram(numeric_raw, CFG.numeric_histogram_bins)
     else:
         as_text = sorted(str(v) for v in present_raw)
         probe.raw_min, probe.raw_max = as_text[0], as_text[-1]
@@ -202,9 +190,7 @@ class _CanonicalAccumulation:
     mapped_spellings: set[str]
 
 
-def _accumulate_canonical(
-    probe: Probe, spec: SourceField, present_raw: list[Any]
-) -> _CanonicalAccumulation:
+def _accumulate_canonical(probe: Probe, spec: SourceField, present_raw: list[Any]) -> _CanonicalAccumulation:
     acc = _CanonicalAccumulation(
         canonical=[],
         canonical_seen=set(),
@@ -234,17 +220,12 @@ def _accumulate_canonical(
     return acc
 
 
-def _report_canonical_findings(
-    probe: Probe, spec: SourceField, acc: _CanonicalAccumulation
-) -> None:
+def _report_canonical_findings(probe: Probe, spec: SourceField, acc: _CanonicalAccumulation) -> None:
     probe.canonical_distinct = len(acc.canonical_seen)
     probe.mapped_raw_distinct = len(acc.mapped_spellings)
     if acc.canonical:
         probe.canonical_min, probe.canonical_max = min(acc.canonical), max(acc.canonical)
-    collapsed = (
-        probe.canonical_distinct
-        and probe.canonical_distinct < probe.mapped_raw_distinct
-    )
+    collapsed = probe.canonical_distinct and probe.canonical_distinct < probe.mapped_raw_distinct
     if collapsed:
         # Sentinel and unmapped spellings are EXCLUDED from the left-hand
         # side: a spelling that resolved to MISSING is not a second spelling
@@ -322,9 +303,7 @@ def probe_field(rows: Sequence[Any], spec: SourceField) -> Probe:
     )
 
     if spec.unit in ABSENT_UNITS:
-        probe.findings.append(
-            f"{spec.source} has no such column; this pair cannot be compared"
-        )
+        probe.findings.append(f"{spec.source} has no such column; this pair cannot be compared")
         return probe
     if spec.unit in UNDECIDABLE_UNITS:
         probe.findings.append(

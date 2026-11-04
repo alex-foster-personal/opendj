@@ -2,6 +2,7 @@
 
 Must not import ``writer_onelibrary`` or ``export_workflow`` (overlay-only writers).
 """
+
 from __future__ import annotations
 
 import enum
@@ -136,9 +137,7 @@ def _obs(
     return FieldObservation(status, stick_value, expected_value, source, note)
 
 
-def _compare_key(
-    stick_key: str | None, key_id: int, expected_key: str | None
-) -> FieldObservation:
+def _compare_key(stick_key: str | None, key_id: int, expected_key: str | None) -> FieldObservation:
     if key_id == 0 or not stick_key:
         return _obs(
             FieldStatus.ABSENT,
@@ -167,12 +166,8 @@ def _compare_key(
         )
 
 
-def _compare_grid(
-    pioneer: Path, anlz_path: str | None, expected_grid: ExpectedGrid | None
-) -> FieldObservation:
-    expected_repr = (
-        json.dumps(asdict(expected_grid), sort_keys=True) if expected_grid else None
-    )
+def _compare_grid(pioneer: Path, anlz_path: str | None, expected_grid: ExpectedGrid | None) -> FieldObservation:
+    expected_repr = json.dumps(asdict(expected_grid), sort_keys=True) if expected_grid else None
     if not anlz_path:
         return _obs(FieldStatus.ABSENT, None, expected_repr, "USBANLZ")
     device_path = PurePosixPath(anlz_path)
@@ -181,7 +176,10 @@ def _compare_grid(
         anlz_dir = pioneer.joinpath(*device_path.parts[2:])
         if not anlz_dir.resolve().is_relative_to(pioneer.resolve()):
             return _obs(
-                FieldStatus.UNREAD, None, expected_repr, "USBANLZ",
+                FieldStatus.UNREAD,
+                None,
+                expected_repr,
+                "USBANLZ",
                 "device ANLZ path escapes the inspected Pioneer root",
             )
     else:
@@ -190,10 +188,7 @@ def _compare_grid(
     summary = grid_summary_from_anlz(anlz_dir)
     if summary is None:
         return _obs(FieldStatus.ABSENT, None, expected_repr, "USBANLZ")
-    stick_value = (
-        f"{summary['beat_count']}@{summary['first_bpm']:.1f}"
-        f"#{summary['first_time_ms']}"
-    )
+    stick_value = f"{summary['beat_count']}@{summary['first_bpm']:.1f}#{summary['first_time_ms']}"
     if expected_grid is None:
         return _obs(FieldStatus.PRESENT, stick_value, None, "USBANLZ")
     bpm_ok = abs(summary["first_bpm"] - expected_grid.first_bpm) <= 0.01
@@ -241,9 +236,7 @@ def _compare_loudness_scalar(
         )
 
 
-def _loudness_summary_status(
-    lufs: FieldObservation, dbtp: FieldObservation
-) -> FieldObservation:
+def _loudness_summary_status(lufs: FieldObservation, dbtp: FieldObservation) -> FieldObservation:
     order = {
         FieldStatus.MISMATCH: 4,
         FieldStatus.ABSENT: 3,
@@ -261,30 +254,19 @@ def _loudness_summary_status(
     )
 
 
-def _find_expected_for_track(
-    track: dict[str, Any], expected_list: list[ExpectedTrack]
-) -> ExpectedTrack | None:
+def _find_expected_for_track(track: dict[str, Any], expected_list: list[ExpectedTrack]) -> ExpectedTrack | None:
     filename = track.get("filename")
     title = track.get("title")
     artist = track.get("artist")
     for exp in expected_list:
         if exp.filename and filename and exp.filename == filename:
             return exp
-        if (
-            exp.title
-            and exp.artist
-            and title
-            and artist
-            and exp.title == title
-            and exp.artist == artist
-        ):
+        if exp.title and exp.artist and title and artist and exp.title == title and exp.artist == artist:
             return exp
     return None
 
 
-def _not_on_stick_labels(
-    stick_tracks: list[dict[str, Any]], expected: Mapping[str, ExpectedTrack] | None
-) -> list[str]:
+def _not_on_stick_labels(stick_tracks: list[dict[str, Any]], expected: Mapping[str, ExpectedTrack] | None) -> list[str]:
     if expected is None:
         return []
     missing: list[str] = []
@@ -318,9 +300,7 @@ def verify_stick_values(
             loudness=FieldCounts(),
             grid=FieldCounts(),
             tracks=[],
-            overlay_note=(
-                "export.pdb missing; overlay-only OneLibrary is not a rekordbox export"
-            ),
+            overlay_note=("export.pdb missing; overlay-only OneLibrary is not a rekordbox export"),
         )
 
     stick_tracks = read_usb_export(pioneer)["tracks"]
@@ -328,9 +308,7 @@ def verify_stick_values(
     contents_by_filename: dict[str, dict[str, Any]] = {}
     unread_reasons: list[str] = []
     if one_lib_path.exists():
-        sidecar, contents_by_filename, unread_reasons = (
-            read_scalar_sidecar_from_onelibrary(one_lib_path)
-        )
+        sidecar, contents_by_filename, unread_reasons = read_scalar_sidecar_from_onelibrary(one_lib_path)
 
     expected_list = list(expected.values()) if expected else []
     key_counts = FieldCounts()
@@ -340,12 +318,8 @@ def verify_stick_values(
 
     for track in stick_tracks:
         exp = _find_expected_for_track(track, expected_list)
-        key_obs = _compare_key(
-            track.get("key"), int(track.get("key_id", 0)), exp.key if exp else None
-        )
-        grid_obs = _compare_grid(
-            pioneer, track.get("anlz_path"), exp.grid if exp else None
-        )
+        key_obs = _compare_key(track.get("key"), int(track.get("key_id", 0)), exp.key if exp else None)
+        grid_obs = _compare_grid(pioneer, track.get("anlz_path"), exp.grid if exp else None)
 
         lufs_stick = dbtp_stick = None
         loudness_source = "none"
@@ -382,12 +356,16 @@ def verify_stick_values(
             )
         else:
             lufs_obs = _compare_loudness_scalar(
-                lufs_stick, exp.loudness_lufs if exp else None,
-                source=loudness_source, note=loudness_note,
+                lufs_stick,
+                exp.loudness_lufs if exp else None,
+                source=loudness_source,
+                note=loudness_note,
             )
             dbtp_obs = _compare_loudness_scalar(
-                dbtp_stick, exp.loudness_dbtp if exp else None,
-                source=loudness_source, note=loudness_note,
+                dbtp_stick,
+                exp.loudness_dbtp if exp else None,
+                source=loudness_source,
+                note=loudness_note,
             )
 
         key_counts.add(key_obs)

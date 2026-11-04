@@ -714,6 +714,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/artwork/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Suggestions */
+        get: operations["get_suggestions_api_v1_artwork_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artwork/suggestions/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Decide */
+        post: operations["post_decide_api_v1_artwork_suggestions_decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artwork/suggestions/{stable_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Suggestion Image */
+        get: operations["get_suggestion_image_api_v1_artwork_suggestions__stable_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/agent": {
         parameters: {
             query?: never;
@@ -1592,7 +1643,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Client Errors */
+        /**
+         * List Client Errors
+         * @description Every stored client error, oldest first, optionally filtered (AGENT-8304).
+         */
         get: operations["list_client_errors_api_v1_client_errors_get"];
         put?: never;
         /** Capture Client Error */
@@ -3427,6 +3481,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/enrichment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Enrichment */
+        get: operations["get_enrichment_api_v1_ingest_enrichment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/enrichment/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Rerun */
+        post: operations["post_rerun_api_v1_ingest_enrichment_rerun_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/enrichment/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch */
+        get: operations["get_batch_api_v1_ingest_enrichment__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingest/pending": {
         parameters: {
             query?: never;
@@ -4146,6 +4251,163 @@ export interface paths {
         put?: never;
         /** Rename Mytag */
         post: operations["rename_mytag_api_v1_mytags_rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Operations */
+        get: operations["offload_operations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/operations/{op_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Operation */
+        get: operations["offload_operation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/operations/{op_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Operation */
+        post: operations["offload_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/playlists/{playlist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Offload Playlist */
+        post: operations["offload_playlist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/playlists/{playlist_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Playlist */
+        post: operations["offload_restore_playlist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Tracks */
+        post: operations["offload_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Summary */
+        get: operations["offload_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Sweep */
+        post: operations["offload_sweep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/offload/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Track States */
+        get: operations["offload_status"];
+        put?: never;
+        /**
+         * Offload Tracks
+         * @description Upload, verify, then delete the local files of each track.
+         */
+        post: operations["offload_tracks"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5010,6 +5272,42 @@ export interface paths {
         patch: operations["rename_playlist_api_v1_playlists__playlist_id__patch"];
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Playlist Components */
+        get: operations["list_playlist_components"];
+        put?: never;
+        /** Create Playlist Component */
+        post: operations["create_playlist_component"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/components/{component_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Playlist Component */
+        delete: operations["delete_playlist_component"];
+        options?: never;
+        head?: never;
+        /** Update Playlist Component */
+        patch: operations["update_playlist_component"];
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/duplicate": {
         parameters: {
             query?: never;
@@ -5132,6 +5430,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Playlist Routes */
+        get: operations["list_playlist_routes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/sets": {
         parameters: {
             query?: never;
@@ -5160,6 +5475,26 @@ export interface paths {
         /** Get Set */
         get: operations["get_playlist_set"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/{playlist_id}/sets/{set_id}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Parts
+         * @description Replace a set's route (SET-6586). Past runs keep what they played.
+         */
+        put: operations["update_playlist_set_parts"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6445,6 +6780,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/spotify/account/client-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Account Client Id
+         * @description Save the Spotify app Client ID a fresh install needs before Connect (SPOT-6555).
+         *
+         *     A PKCE client id is public, not a secret; it only names the app the user
+         *     registered with redirect URI http://127.0.0.1:8888/callback.
+         */
+        put: operations["put_account_client_id_api_v1_spotify_account_client_id_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spotify/account/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Connect */
+        get: operations["get_account_connect_api_v1_spotify_account_connect_get"];
+        put?: never;
+        /**
+         * Start Account Connect
+         * @description Begin an in-app sign-in; the caller opens the URL in a browser.
+         */
+        post: operations["start_account_connect_api_v1_spotify_account_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spotify/account/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Account Playlists
+         * @description Every playlist the signed-in account owns or follows, all pages (SPOT-6555).
+         *
+         *     Not being signed in is a normal state, not an error: the body says
+         *     ``connected: false`` with a reason code the panel turns into a sign-in
+         *     prompt. A Spotify API failure after sign-in is a 502.
+         */
+        get: operations["get_account_playlists_api_v1_spotify_account_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/spotify/playlists/{playlist_id}/pending-tracks": {
         parameters: {
             query?: never;
@@ -6457,6 +6860,54 @@ export interface paths {
          * @description Return persisted pending rows for one imported Spotify playlist.
          */
         get: operations["get_pending_tracks_api_v1_spotify_playlists__playlist_id__pending_tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spotify/recently-played": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recently Played
+         * @description Live plays, newest first, each scored owned / review / unmatched.
+         *
+         *     A Spotify or matcher failure is a 502/500 with the real reason, never an
+         *     empty list: an empty list here means "you have played nothing recently",
+         *     and that claim must not be produced by a broken call.
+         */
+        get: operations["get_recently_played_api_v1_spotify_recently_played_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spotify/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Probe the Spotify connection with a real API call.
+         *
+         *     Never raises for a disconnected account: "not connected, and here is why"
+         *     is the answer the pane is asking for. It DOES raise for a state the
+         *     operator cannot act on, because a 200 carrying a lie is worse than a 500.
+         */
+        get: operations["get_status_api_v1_spotify_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7971,6 +8422,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Track Locations */
+        get: operations["list_track_locations_api_v1_tracks__stable_id__locations_get"];
+        put?: never;
+        /** Add Track Location */
+        post: operations["add_track_location_api_v1_tracks__stable_id__locations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/locations/{location_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Track Location */
+        delete: operations["remove_track_location_api_v1_tracks__stable_id__locations__location_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/lyrics": {
         parameters: {
             query?: never;
@@ -9005,6 +9491,54 @@ export interface components {
             signed_in: boolean;
             user: components["schemas"]["AccountUserOut"] | null;
         };
+        /**
+         * AccountPlaylistOut
+         * @description One playlist on the signed-in Spotify account (imported or not).
+         */
+        AccountPlaylistOut: {
+            /** Collaborative */
+            collaborative: boolean;
+            /** Image Url */
+            image_url: string | null;
+            /** Name */
+            name: string;
+            /** Open Url */
+            open_url: string;
+            /** Owned */
+            owned: boolean;
+            /** Owner Id */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string | null;
+            /** Public */
+            public: boolean | null;
+            /** Snapshot Id */
+            snapshot_id: string | null;
+            /** Spotify Id */
+            spotify_id: string;
+            /** Track Count */
+            track_count: number | null;
+        };
+        /**
+         * AccountPlaylistsOut
+         * @description Every playlist on the account, or why the engine cannot list them.
+         */
+        AccountPlaylistsOut: {
+            /** Connected */
+            connected: boolean;
+            /** Display Name */
+            display_name?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Playlists */
+            playlists: components["schemas"]["AccountPlaylistOut"][];
+            /** Reason */
+            reason?: ("spotify_extra_missing" | "no_client_id" | "not_signed_in" | "scope_missing" | "token_refresh_failed") | null;
+            /** Total Reported */
+            total_reported?: number | null;
+            /** User Id */
+            user_id?: string | null;
+        };
         /** AccountUserOut */
         AccountUserOut: {
             /** Avatar Url */
@@ -9217,7 +9751,7 @@ export interface components {
         };
         /**
          * AnalysisQueueOut
-         * @description ``analyzed + unreachable + pending`` always equals ``unmapped``.
+         * @description ``analyzed + unreachable + too_long + pending`` always equals ``unmapped``.
          */
         AnalysisQueueOut: {
             /** Analyzed */
@@ -9230,6 +9764,8 @@ export interface components {
             pending: number;
             /** Signature */
             signature: string;
+            /** Too Long */
+            too_long: number;
             /** Unmapped */
             unmapped: number;
             /** Unreachable */
@@ -9397,6 +9933,23 @@ export interface components {
             todo_feedback_archived: number;
             /** Todos Archived */
             todos_archived: number;
+        };
+        /** ArtworkSuggestionDecisionIn */
+        ArtworkSuggestionDecisionIn: {
+            /** Accept */
+            accept?: string[];
+            /**
+             * Accept All
+             * @default false
+             */
+            accept_all: boolean;
+            /** Skip */
+            skip?: string[];
+            /**
+             * Skip All
+             * @default false
+             */
+            skip_all: boolean;
         };
         /**
          * AssistantStatusOut
@@ -10919,6 +11472,8 @@ export interface components {
         };
         /** ClientErrorRecord */
         ClientErrorRecord: {
+            /** Build Sha */
+            build_sha?: string | null;
             /** Context */
             context?: {
                 [key: string]: string | number | boolean | null;
@@ -10966,6 +11521,19 @@ export interface components {
             event_id: string;
             /** Stored */
             stored: boolean;
+        };
+        /** ClientIdIn */
+        ClientIdIn: {
+            /** Client Id */
+            client_id: string;
+        };
+        /** ClientIdOut */
+        ClientIdOut: {
+            /**
+             * Saved
+             * @constant
+             */
+            saved: true;
         };
         /** ClientOut */
         ClientOut: {
@@ -11532,6 +12100,60 @@ export interface components {
             /** Rules */
             rules?: string[];
         };
+        /** ComponentCreateIn */
+        ComponentCreateIn: {
+            /** Name */
+            name: string;
+            /** Slot */
+            slot: string;
+            /** Stable Ids */
+            stable_ids: string[];
+            /** Tags */
+            tags?: string[];
+        };
+        /** ComponentListOut */
+        ComponentListOut: {
+            /** Components */
+            components: components["schemas"]["ComponentOut"][];
+        };
+        /** ComponentOut */
+        ComponentOut: {
+            /**
+             * Borrowed
+             * @default false
+             */
+            borrowed: boolean;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Slot */
+            slot: string;
+            /** Stable Ids */
+            stable_ids: string[];
+            /** Tags */
+            tags: string[];
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * ComponentUpdateIn
+         * @description Only the fields given change; ``tags: []`` clears every tag.
+         */
+        ComponentUpdateIn: {
+            /** Name */
+            name?: string | null;
+            /** Slot */
+            slot?: string | null;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
         /** ConfigIn */
         ConfigIn: {
             /** Enabled */
@@ -11547,6 +12169,21 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
+        };
+        /** ConnectStartOut */
+        ConnectStartOut: {
+            /** Authorize Url */
+            authorize_url: string;
+        };
+        /** ConnectStatusOut */
+        ConnectStatusOut: {
+            /** Detail */
+            detail: string | null;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "waiting" | "connected" | "failed";
         };
         /** ConsentIn */
         ConsentIn: {
@@ -13314,10 +13951,18 @@ export interface components {
             device_access: components["schemas"]["IoDeviceAccessOut"];
             /** Error */
             error: string | null;
+            /** Fidelity Guard */
+            fidelity_guard?: {
+                [key: string]: unknown;
+            } | null;
             /** Head Delay Ms */
             head_delay_ms: number;
             /** Inputs */
             inputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
+            /** Launch Restore */
+            launch_restore?: {
+                [key: string]: unknown;
+            } | null;
             /** Level */
             level: number;
             /** Master Delay Ms */
@@ -13597,7 +14242,7 @@ export interface components {
         IdentityBacklogOut: {
             /**
              * Hash Pending
-             * @description live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.shared.state.backfill_content_hash --for-hub --live` on a machine that holds the audio.
+             * @description live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.sync_hub.hash_pending_backfill --live` on a machine that holds the audio.
              */
             hash_pending: number;
             /**
@@ -15241,6 +15886,37 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * OffloadOut
+         * @description OFFLOAD: this machine's cloud offload state for one row (spec e8da14b8).
+         *
+         *     ``offloaded`` rows keep every field and stay listed; the browser draws them
+         *     muted with a cloud glyph, never as a broken link.
+         */
+        OffloadOut: {
+            /**
+             * Bytes Offloaded
+             * @default 0
+             */
+            bytes_offloaded: number;
+            /** Error */
+            error?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Last Played At */
+            last_played_at?: string | null;
+            /** Offloaded At */
+            offloaded_at?: string | null;
+            /** Restore Mode */
+            restore_mode?: ("temporary" | "permanent") | null;
+            /** Restored At */
+            restored_at?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "local" | "uploading" | "offloaded" | "restoring" | "temporary";
+        };
         /** OpsErrorBody */
         OpsErrorBody: {
             /** Code */
@@ -16180,6 +16856,14 @@ export interface components {
              */
             name?: string | null;
         };
+        /** PlaylistRestoreIn */
+        PlaylistRestoreIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "temporary" | "permanent";
+        };
         /** PlaylistRewriteOut */
         PlaylistRewriteOut: {
             /** After */
@@ -16197,6 +16881,11 @@ export interface components {
             from_play_order?: string | null;
             /** Name */
             name: string;
+            /**
+             * Parts
+             * @description A route of component ids, instead of a snapshot (SET-6586).
+             */
+            parts?: number[] | null;
         };
         /** PlaylistSetEntryOut */
         PlaylistSetEntryOut: {
@@ -16220,6 +16909,11 @@ export interface components {
             id: number;
             /** Name */
             name: string;
+            /**
+             * Parts
+             * @description Component ids of the set's route (SET-6586); empty for a snapshot set.
+             */
+            parts?: number[];
             /** Play Count */
             play_count: number;
             /** Playlist Id */
@@ -16229,6 +16923,11 @@ export interface components {
             /** Updated At */
             updated_at: string;
         };
+        /** PlaylistSetPartsIn */
+        PlaylistSetPartsIn: {
+            /** Parts */
+            parts: number[];
+        };
         /** PlaylistSetRunIn */
         PlaylistSetRunIn: {
             /**
@@ -16236,6 +16935,11 @@ export interface components {
              * @enum {string}
              */
             kind: "practice" | "performance";
+            /**
+             * Played Parts
+             * @description The route actually played, when an ending was picked live (SET-6586).
+             */
+            played_parts?: number[] | null;
         };
         /** PlaylistSetRunOut */
         PlaylistSetRunOut: {
@@ -17066,6 +17770,36 @@ export interface components {
             /** Volume Uuid */
             volume_uuid: string;
         };
+        /**
+         * RecentPlayOut
+         * @description One live Spotify play, scored against the local library.
+         */
+        RecentPlayOut: {
+            /** Album */
+            album: string | null;
+            /** Artist */
+            artist: string;
+            /** Confidence */
+            confidence: number;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Matched Stable Id */
+            matched_stable_id: string | null;
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "owned" | "review" | "unmatched";
+            /** Played At */
+            played_at: string;
+            /** Spotify Uri */
+            spotify_uri: string;
+            suggested_sources: components["schemas"]["SuggestedSourcesOut"];
+            /** Title */
+            title: string;
+        };
         /** RecentResultOut */
         RecentResultOut: {
             /** Finished At */
@@ -17389,6 +18123,13 @@ export interface components {
             /** Triple Validated */
             triple_validated: boolean;
         };
+        /** RerunIn */
+        RerunIn: {
+            /** Batch Id */
+            batch_id?: string | null;
+            /** Playlist Id */
+            playlist_id?: string | null;
+        };
         /** RescueAppendOut */
         RescueAppendOut: {
             /** Bytes */
@@ -17459,6 +18200,16 @@ export interface components {
             /** Snapshots */
             snapshots: components["schemas"]["RescueSnapshotMeta"][];
         };
+        /** RestoreIn */
+        RestoreIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "temporary" | "permanent";
+            /** Stable Ids */
+            stable_ids: string[];
+        };
         /** RevokeOut */
         RevokeOut: {
             /** Changed */
@@ -17469,6 +18220,26 @@ export interface components {
             machine_id: string;
             /** Revoked At */
             revoked_at: string;
+        };
+        /** RouteListOut */
+        RouteListOut: {
+            /** Routes */
+            routes: components["schemas"]["RouteOut"][];
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** RouteOut */
+        RouteOut: {
+            /** Parts */
+            parts: number[];
+            /** Repeats */
+            repeats: string[];
+            /** Set Id */
+            set_id: number | null;
+            /** Stable Ids */
+            stable_ids: string[];
         };
         /**
          * RowAssetOut
@@ -17731,6 +18502,7 @@ export interface components {
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
+            offload?: components["schemas"]["OffloadOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -18224,6 +18996,37 @@ export interface components {
         SpokeCheckoutBody: {
             /** Feature Id */
             feature_id: string;
+        };
+        /**
+         * SpotifyStatusOut
+         * @description What the operator panel can PROVE about the Spotify connection.
+         *
+         *     ``connected`` is true only after a live ``/me`` call returned a profile.
+         *     A present client id and a token file on disk are NOT a connection: a token
+         *     can be expired, revoked, or minted for a narrower scope set. Those two
+         *     fields are reported separately so a failure says which half is missing.
+         */
+        SpotifyStatusOut: {
+            /** Account Id */
+            account_id: string | null;
+            /** Client Id Present */
+            client_id_present: boolean;
+            /** Connected */
+            connected: boolean;
+            /** Display Name */
+            display_name: string | null;
+            /** Error */
+            error: string | null;
+            /** Needs Authorization */
+            needs_authorization: boolean;
+            /** Product */
+            product: string | null;
+            /** Scopes */
+            scopes: string[];
+            /** Token Cache Path */
+            token_cache_path: string;
+            /** Token Cache Present */
+            token_cache_present: boolean;
         };
         /** SqlQueryIn */
         SqlQueryIn: {
@@ -18987,6 +19790,14 @@ export interface components {
             /** Seconds Since Request */
             seconds_since_request: number | null;
         };
+        /** SweepIn */
+        SweepIn: {
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
         /**
          * SyncErrorBody
          * @description The ``detail`` of every sync refusal: a stable code and prose.
@@ -19633,6 +20444,7 @@ export interface components {
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Notes */
             notes?: string | null;
+            offload?: components["schemas"]["OffloadOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -19792,6 +20604,7 @@ export interface components {
             lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
+            offload?: components["schemas"]["OffloadOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -19835,6 +20648,41 @@ export interface components {
             vocals: {
                 [key: string]: unknown;
             };
+        };
+        /** TrackLocationAddIn */
+        TrackLocationAddIn: {
+            /**
+             * Confirm
+             * @description Must be true. Explicit gate: this writes state.db.
+             */
+            confirm: boolean;
+            /**
+             * File Path
+             * @description Absolute path of the file to attach.
+             */
+            file_path: string;
+        };
+        /** TrackLocationListOut */
+        TrackLocationListOut: {
+            /** Locations */
+            locations: components["schemas"]["TrackLocationOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** TrackLocationOut */
+        TrackLocationOut: {
+            /** Available */
+            available: boolean;
+            /** File Path */
+            file_path: string | null;
+            /** Kind */
+            kind: string;
+            /** Location Id */
+            location_id: string;
+            /** Role */
+            role: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /**
          * TrackLoudnessOut
@@ -20101,6 +20949,7 @@ export interface components {
              */
             loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
+            offload?: components["schemas"]["OffloadOut"] | null;
             /**
              * Play Count
              * @default 0
@@ -20147,6 +20996,11 @@ export interface components {
             rating?: number | null;
             /** Title */
             title?: string | null;
+        };
+        /** TracksIn */
+        TracksIn: {
+            /** Stable Ids */
+            stable_ids: string[];
         };
         /** TracksPage */
         TracksPage: {
@@ -20611,6 +21465,11 @@ export interface components {
              */
             show_tempo_lane: boolean;
             /**
+             * Spotify Shrink Main For Player
+             * @default true
+             */
+            spotify_shrink_main_for_player: boolean;
+            /**
              * Technically Working Animate
              * @default true
              */
@@ -20724,6 +21583,8 @@ export interface components {
             show_stems?: boolean | null;
             /** Show Tempo Lane */
             show_tempo_lane?: boolean | null;
+            /** Spotify Shrink Main For Player */
+            spotify_shrink_main_for_player?: boolean | null;
             /** Technically Working Animate */
             technically_working_animate?: boolean | null;
             /** Tempo Lane Scale */
@@ -22898,6 +23759,94 @@ export interface operations {
             };
         };
     };
+    get_suggestions_api_v1_artwork_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_decide_api_v1_artwork_suggestions_decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtworkSuggestionDecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_suggestion_image_api_v1_artwork_suggestions__stable_id__image_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     assistant_agent_api_v1_assistant_agent_post: {
         parameters: {
             query?: never;
@@ -24339,6 +25288,16 @@ export interface operations {
         parameters: {
             query?: {
                 untriaged?: boolean;
+                /** @description ISO 8601 time; records received at or after it */
+                since?: string | null;
+                /** @description build_sha prefix */
+                build_sha?: string | null;
+                /** @description exact client error kind */
+                kind?: string | null;
+                /** @description case-insensitive message substring */
+                contains?: string | null;
+                /** @description newest N, oldest first */
+                limit?: number | null;
             };
             header?: never;
             path?: never;
@@ -24869,6 +25828,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MachineOut"][];
                 };
+            };
+            /** @description CLOUDSYNC_MACHINE_NAME_CONFLICT (the configured name belongs to another machine id; nothing was changed) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID (cloudsync-config.json is malformed, so the configured name is unknown) */
             500: {
@@ -25444,7 +26410,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description The order got no result. Body reason no_leader (AGENT-21): no performance page claimed it within the claim deadline (ORDER_CLAIM_DEADLINE_S). Body reason engine_quitting (INSTALL-36): the engine began quitting while the order was still waiting for a page. */
+            /** @description The order got no result. Body reason no_leader (AGENT-21): no performance page claimed it within the claim deadline (ORDER_CLAIM_DEADLINE_S). Body reason page_gone (AGENT-21): the claiming page did not answer within ORDER_RESULT_DEADLINE_S. Body reason engine_quitting (INSTALL-36): the engine began quitting while the order was still waiting for a page. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -25461,7 +26427,10 @@ export interface operations {
                 /** @description AGENT-19 long poll, performance consumer only: hold the request up to this many ms until an order arrives. 0 answers at once (the AGENT-03 contract). The honoured hold is echoed in the x-opendj-order-wait-ms header. */
                 wait_ms?: number;
             };
-            header?: never;
+            header?: {
+                /** @description AGENT-18: the claiming page's client id; refused when another page holds the mirror lease or the lease is stale. */
+                "x-opendj-lease"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -28067,6 +29036,96 @@ export interface operations {
             };
         };
     };
+    get_enrichment_api_v1_ingest_enrichment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_rerun_api_v1_ingest_enrichment_rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_api_v1_ingest_enrichment__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_pending_api_v1_ingest_pending_get: {
         parameters: {
             query?: never;
@@ -29347,6 +30406,325 @@ export interface operations {
             };
         };
     };
+    offload_operations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    offload_operation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                op_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                op_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_playlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_restore_playlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistRestoreIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+    };
+    offload_sweep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SweepIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_status: {
+        parameters: {
+            query: {
+                /** @description comma-separated stable_ids */
+                stable_ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offload_tracks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TracksIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_pairings_api_v1_pairings_get: {
         parameters: {
             query?: {
@@ -30612,6 +31990,138 @@ export interface operations {
             };
         };
     };
+    list_playlist_components: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playlist_component: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComponentCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_playlist_component: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                component_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_playlist_component: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                component_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComponentUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     duplicate_playlist_api_v1_playlists__playlist_id__duplicate_post: {
         parameters: {
             query?: never;
@@ -30858,6 +32368,40 @@ export interface operations {
             };
         };
     };
+    list_playlist_routes: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_playlist_sets: {
         parameters: {
             query?: never;
@@ -30935,6 +32479,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistSetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_playlist_set_parts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+                set_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistSetPartsIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -33367,6 +34947,99 @@ export interface operations {
             };
         };
     };
+    put_account_client_id_api_v1_spotify_account_client_id_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientIdIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientIdOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_account_connect_api_v1_spotify_account_connect_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectStatusOut"];
+                };
+            };
+        };
+    };
+    start_account_connect_api_v1_spotify_account_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectStartOut"];
+                };
+            };
+        };
+    };
+    get_account_playlists_api_v1_spotify_account_playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPlaylistsOut"];
+                };
+            };
+        };
+    };
     get_pending_tracks_api_v1_spotify_playlists__playlist_id__pending_tracks_get: {
         parameters: {
             query?: never;
@@ -33394,6 +35067,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recently_played_api_v1_spotify_recently_played_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentPlayOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_spotify_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyStatusOut"];
                 };
             };
         };
@@ -36663,6 +38387,106 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_track_locations_api_v1_tracks__stable_id__locations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLocationListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_track_location_api_v1_tracks__stable_id__locations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackLocationAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLocationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_track_location_api_v1_tracks__stable_id__locations__location_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                stable_id: string;
+                location_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

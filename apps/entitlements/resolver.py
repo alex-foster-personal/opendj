@@ -54,9 +54,7 @@ NOT_IN_PLAN_MESSAGE: str = (
 #: daemon does not offer it). Mirrored verbatim in
 #: apps/webui/frontend/src/lib/api/entitlements.svelte.ts and pinned by a test
 #: on each side.
-UI_REFUSAL_TITLE: str = (
-    "not included in your plan - see your account for what is included"
-)
+UI_REFUSAL_TITLE: str = "not included in your plan - see your account for what is included"
 
 #: The plan id reported while no payment provider is configured. NOT "free":
 #: a free tier implies a paid one to graduate to, and there is not one. ENT-05

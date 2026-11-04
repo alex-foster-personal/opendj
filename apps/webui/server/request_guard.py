@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse, Response
 
 from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 from apps.shared.sync_bind_guard import is_loopback_host
-from apps.webui.port_config import WEBUI_ENV_FILE, _read_dotenv, _resolved_raw_value
+from apps.webui.port_config import _read_dotenv, _resolved_raw_value, default_dotenv_path
 from apps.webui.server.ui_url import NAMED_LOCAL_HOST, named_origin
 
 SHARE_ORIGIN_ENV = "MUSIC_DJ_SHARE_ORIGIN"
@@ -70,10 +70,12 @@ def request_host(request: Request) -> str:
 def resolve_allowed_hosts_from_environ(
     environ: Mapping[str, str] | None = None,
     *,
-    dotenv_path: Path = WEBUI_ENV_FILE,
+    dotenv_path: Path | None = None,
 ) -> list[str]:
     effective = os.environ if environ is None else environ
-    raw = _resolved_raw_value(ALLOWED_HOSTS_ENV, effective, _read_dotenv(dotenv_path))
+    raw = _resolved_raw_value(
+        ALLOWED_HOSTS_ENV, effective, _read_dotenv(default_dotenv_path(dotenv_path))
+    )
     return parse_allowed_hosts(raw)
 
 

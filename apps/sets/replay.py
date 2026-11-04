@@ -54,7 +54,7 @@ def replay(
     ensure_transitions: bool = True,
 ) -> int:
     """Render a session's transitions; returns a shell exit code."""
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     session = get_session(session_id, sets_root=root)
     if session is None:
         (console or Console()).print(

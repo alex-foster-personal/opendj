@@ -46,7 +46,7 @@ def resolve_segment_path(
         raise PathTraversalError(f"disallowed chars in segment name {segment_name!r}")
     if not sets_paths.is_segment_name(segment_name):
         raise PathTraversalError(f"unexpected segment name {segment_name!r}")
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     session_dir = sets_paths.session_dir(session_id, root=root)
     candidate = (session_dir / segment_name).resolve()
     try:
@@ -67,7 +67,7 @@ def list_segments(
     available; otherwise they are ``None`` and callers must not rely
     on them.
     """
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     session_dir = sets_paths.session_dir(session_id, root=root)
     if not session_dir.exists():
         return []

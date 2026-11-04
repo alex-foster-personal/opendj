@@ -16,7 +16,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from apps.webui.server import enrich_prompt
+from apps.webui.server import enrich_prompt, ingest_enrichment
+from apps.webui.server.routes import artwork_suggestions
 from apps.webui.server.routes import ingest as ingest_routes
 from apps.webui.server.routes.ingest_coverage_out import read_coverage
 
@@ -45,6 +46,8 @@ def get_summary(request: Request) -> dict[str, Any]:
         coverage=coverage,
         coverage_error=coverage_error,
         decisions=enrich_prompt.load_decisions(ingest_routes.COVERAGE_DATA_DIR),
+        warnings=ingest_enrichment.coordinator_for(request.app).warnings(),
+        artwork_suggestions=len(artwork_suggestions.pending_document()["pending"]),
     )
 
 

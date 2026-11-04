@@ -1697,7 +1697,8 @@
 			// All Tracks rows start row.is_streaming at null and hydrate the
 			// real value into row.rb_meta later - same effective flag
 			// _loadOntoDeck already checks, so the two refusal paths agree.
-			is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
+			is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+			offload: row.offload ?? null
 		});
 		if (refusal !== null) {
 			event.preventDefault();
@@ -2315,7 +2316,8 @@
 										direction: row.cloud_transfer.direction,
 										bytesTransferred: row.cloud_transfer.bytes_transferred,
 										bytesTotal: row.cloud_transfer.bytes_total
-									}
+									},
+						offload: row.offload ?? null
 					})}
 					{@const minorIssues = minorIssuesFor(row)}
 					{@const rowIndex = windowInfo.startIndex + i}
@@ -2363,6 +2365,7 @@
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
 						class:broken={rowRendersUnavailable(row)}
+						class:rb-row-offloaded={cloudView.kind === 'offloaded'}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
 						title={libraryRowHoverTitle(row)}
@@ -3833,6 +3836,10 @@
 
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay
 	 * selectable; deck load is blocked upstream with an explicit toast. */
+	/* OFFLOAD: an offloaded row is muted, never struck or red (spec e8da14b8 veto 2). */
+	tbody tr.rb-row-offloaded td {
+		opacity: 0.6;
+	}
 	tbody tr.broken td {
 		color: var(--rb-text-dim);
 	}

@@ -88,9 +88,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 try:
-    from scripts import electron_local_sign, electron_payload
+    from scripts import build_ffmpeg_lgpl, electron_local_sign, electron_payload
     from scripts import electron_post_install as post
 except ImportError:  # run as a file: scripts/ship_electron.py
+    import build_ffmpeg_lgpl  # type: ignore[no-redef,import-not-found]
     import electron_local_sign  # type: ignore[no-redef,import-not-found]
     import electron_payload  # type: ignore[no-redef,import-not-found]
     import electron_post_install as post  # type: ignore[no-redef,import-not-found]
@@ -264,6 +265,12 @@ def verify_packed_app(app: Path, target_sha: str) -> list[str]:
     payload_sha = (manifest.get("identity") or {}).get("git_sha_full")
     if payload_sha != target_sha:
         raise ShipError(f"payload manifest says {payload_sha!r}, target is {target_sha}")
+    payload_dir = manifest_path.parent
+    missing = electron_payload.missing_executables(payload_dir, "darwin")
+    if missing:
+        raise ShipError(f"packed payload lacks executable {', '.join(missing)}")
+    if manifest.get("output_probe", {}).get("staged") is not True:
+        raise ShipError("payload manifest output_probe.staged is not true")
     return [
         f"[OK] bundle: {BUNDLE_DISPLAY_NAME} / {BUNDLE_ID}, data dir identifier {identifier}",
         f"[OK] shell stamp and payload manifest both {target_sha[:12]}",
@@ -564,6 +571,10 @@ class Build:
         # OPS-50's rule: an unreachable target stops the run BEFORE the build.
         for machine in self.opts.machines:
             _require_reachable(self.runner, machine)
+        try:
+            build_ffmpeg_lgpl.build_readiness()
+        except build_ffmpeg_lgpl.FfmpegBuildError as exc:
+            raise ShipError(str(exc)) from exc
 
     def build_spa(self) -> None:
         self.runner.local_run(["pnpm", "install", "--frozen-lockfile"], cwd=REPO_ROOT / FRONTEND_DIR_REL)
@@ -682,6 +693,7 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, iden
             [
                 f"git rev-parse HEAD  # must be {target_sha}",
                 "git status --porcelain  # must be empty",
+                "python -m scripts.build_ffmpeg_lgpl --preflight",
                 *[f"ssh {m} echo opendj-ship-reachable" for m in opts.machines if m != opts.local],
             ],
             build.preflight,
@@ -720,6 +732,7 @@ def build_plan(opts: Options, target_sha: str, run_id: str, runner: Runner, iden
             [
                 f"Info.plist CFBundleIdentifier == {BUNDLE_ID}, CFBundleName == {BUNDLE_DISPLAY_NAME}",
                 f"app.asar {SHELL_STAMP_IN_ASAR} git_sha_full == payload manifest git_sha_full == {target_sha}",
+                "Contents/Resources/payload/bin/odj-output-probe executable and manifest.output_probe.staged",
             ],
             build.verify,
         ),

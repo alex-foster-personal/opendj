@@ -49,8 +49,8 @@ CANARY_REF = "refs/heads/canary/" + "0" * 40
 #: ci.yml `test` steps the canary deliberately omits, all trailing. The first three are
 #: non-verdict uploads: their artifact names would collide across vendors in one run, and
 #: their readers (the shard rebalance and the CI Insights job) live in the source
-#: repository. The fourth is the Trunk-quarantine verdict, which reads a list job the
-#: canary does not have (ADR-NEW-trunk-flaky-quarantine-on); the canary instead keeps its
+#: repository. The fourth is the fast-lane verdict step (the pytest exit code, since
+#: ADR-NEW-trunk-removed-from-pr-ci on Wed 4 Nov 2026); the canary instead keeps its
 #: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
 CI_ONLY_STEPS = (
     "Name this shard's failing tests (annotations and job summary)",
@@ -58,7 +58,7 @@ CI_ONLY_STEPS = (
     "Upload the PR test selection record (DEVOPS-20 escape measurement)",
     "Stage this shard's JUnit report for the isolated CI Insights job",
     "Upload this shard's JUnit report for CI Insights",
-    "Fast lane verdict (pytest exit code, Trunk quarantine applied)",
+    "Fast lane verdict (pytest exit code)",
 )
 
 
@@ -417,6 +417,21 @@ def vendor_label_problems(texts: dict[str, str], config: dict[str, Any]) -> list
         for name, text in texts.items()
         for v in config["vendors"].values()
         if v["label"] in text
+    ]
+
+
+# v1 has no bifrost1 / windows-x64 pool; budget-gate's vars.CI_RUNS_ON_BIFROST1 seat stays on
+# its current pin until a v2 inventory covers it. There was no self-hosted pool-label assertion
+# here to move.
+
+
+def pool_label_problems(config: dict[str, Any], pools: dict[str, list[str]]) -> list[str]:
+    """Vendor labels must not equal any token of any vendored pool (a vendor must never route onto a self-hosted pool)."""
+    tokens = {token for labels in pools.values() for token in labels}
+    return [
+        f"vendor {name} label {v['label']!r} collides with a vendored pool label"
+        for name, v in config["vendors"].items()
+        if v["label"] in tokens
     ]
 
 

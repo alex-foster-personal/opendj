@@ -53,7 +53,9 @@ from .title_fix_rows import (  # noqa: F401  # re-exported: the row types are pa
 
 
 class CFG:
-    SCHEMA_VERSION = 4  # PRAGMA user_version once the schema and column migrations are applied; bump with a new migration
+    SCHEMA_VERSION = (
+        4  # PRAGMA user_version once the schema and column migrations are applied; bump with a new migration
+    )
     BUSY_TIMEOUT_S = 5.0  # how long a store connection waits on another writer before raising "database is locked"
     SQL_IN_CHUNK = 500  # ids per IN (...): under SQLite's default 999 variable cap, as apps/shared/state/queries.py
     STORE_FILENAME = "title-fix.db"
@@ -112,10 +114,21 @@ def _utcnow() -> str:
 
 #: Row-level source / provenance tags (apps/tags/title_fix.py provenance_tags) plus the release-context tags: all of
 #: them are the "context" family, so switching that family off stops every one of them being written.
-CONTEXT_TAGS = frozenset({
-    "soundtrack", "unreleased", "mik-analyzed", "low-bitrate", "streaming-only", "youtube-rip", "beatport-sourced",
-    "duplicate-copy", "video-source", "live-set", "dj-mix",
-})
+CONTEXT_TAGS = frozenset(
+    {
+        "soundtrack",
+        "unreleased",
+        "mik-analyzed",
+        "low-bitrate",
+        "streaming-only",
+        "youtube-rip",
+        "beatport-sourced",
+        "duplicate-copy",
+        "video-source",
+        "live-set",
+        "dj-mix",
+    }
+)
 
 
 #: Version tags are the names VERSION_TAGS derives from titles, plus the JEV-judged "mashup".
@@ -197,7 +210,9 @@ def load_config(paths: StorePaths) -> TitleFixConfig:
     if unknown := set(raw) - known:
         raise ConfigError(f"{paths.config} has unknown keys {sorted(unknown)}")
     if missing := known - set(raw):  # save_config always writes every key: a partial file is damage, not "use defaults"
-        raise ConfigError(f"{paths.config} is missing keys {sorted(missing)}; repair or delete it to restore the defaults")
+        raise ConfigError(
+            f"{paths.config} is missing keys {sorted(missing)}; repair or delete it to restore the defaults"
+        )
     base = TitleFixConfig()
     families = raw.get("tag_families", base.tag_families)
     if not isinstance(families, (list, tuple)):
@@ -245,7 +260,9 @@ def _read_user_key(paths: StorePaths) -> str | None:
         )
     key = paths.key.read_text(encoding="utf-8").strip()
     if not key:  # a saved-but-empty key is a broken save, never a silent fall back to the environment key
-        raise ConfigError(f"the API key file {paths.key} is empty; save the key again or clear it from the Title Fix tab")
+        raise ConfigError(
+            f"the API key file {paths.key} is empty; save the key again or clear it from the Title Fix tab"
+        )
     return key
 
 
@@ -347,30 +364,34 @@ CREATE TABLE IF NOT EXISTS batches (
 """
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Columns added after the first shipped schema. CREATE TABLE IF NOT EXISTS never alters an existing table,
 # so a store file written by an older build gets them here. (table, column, DDL, backfill SQL or None)
 _ADDED_COLUMNS: tuple[tuple[str, str, str, str | None], ...] = (
-    ("scans", "auto_apply_policy", "TEXT NOT NULL DEFAULT ''", None),  # the policy the scan started under (settings can move)
-    ("scans", "heartbeat_at", "TEXT NOT NULL DEFAULT ''", None),  # '' sorts before any cutoff: an old running row is stale
-    ("batches", "committed_at", "TEXT", "UPDATE batches SET committed_at = created_at"),  # old batches were already written
+    (
+        "scans",
+        "auto_apply_policy",
+        "TEXT NOT NULL DEFAULT ''",
+        None,
+    ),  # the policy the scan started under (settings can move)
+    (
+        "scans",
+        "heartbeat_at",
+        "TEXT NOT NULL DEFAULT ''",
+        None,
+    ),  # '' sorts before any cutoff: an old running row is stale
+    (
+        "batches",
+        "committed_at",
+        "TEXT",
+        "UPDATE batches SET committed_at = created_at",
+    ),  # old batches were already written
     ("batches", "undo_started_at", "TEXT", None),
-    ("batches", "undo_targets_json", "TEXT", None),  # the proposal ids a running undo restores (a partial undo skips some)
+    (
+        "batches",
+        "undo_targets_json",
+        "TEXT",
+        None,
+    ),  # the proposal ids a running undo restores (a partial undo skips some)
     ("batches", "applied_state_json", "TEXT", None),  # proposal_id -> the track ETag and tags as of the write
 )
 
@@ -403,8 +424,6 @@ _RECOVER_AUTO_BATCH = (
     "auto_batch_id = COALESCE(auto_batch_id, (SELECT b.batch_id FROM proposals p JOIN batches b ON b.batch_id = p.batch_id "
     "WHERE p.scan_id = scans.scan_id AND b.kind = 'auto' AND b.committed_at IS NOT NULL ORDER BY b.created_at LIMIT 1))"
 )
-
-
 
 
 def _notes_with_producer(verdict: Verdict) -> list[str]:
@@ -444,7 +463,9 @@ class ProposalStore:
                 (_utcnow(),),
             )
             # The database-level singleton: two engine processes cannot both hold a running scan.
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS scans_single_running ON scans(state) WHERE state = 'running'")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS scans_single_running ON scans(state) WHERE state = 'running'"
+            )
             conn.execute(f"PRAGMA user_version = {int(CFG.SCHEMA_VERSION)}")
 
     @contextmanager
@@ -483,7 +504,12 @@ class ProposalStore:
         return cur.rowcount
 
     def begin_scan(
-        self, requested: int, spend_cap_usd: float, *, auto_apply_policy: str, stale_before: str,
+        self,
+        requested: int,
+        spend_cap_usd: float,
+        *,
+        auto_apply_policy: str,
+        stale_before: str,
     ) -> ScanRow | None:
         """The scan lease: fail scans whose heartbeat is older than ``stale_before``, then start one unless a
         live scan holds it. One write transaction, so two engine processes cannot both win; the unique index
@@ -555,11 +581,16 @@ class ProposalStore:
         changed = verdict.title != track.title or verdict.artist != track.artist or bool(verdict.tags)
         state = "pending" if changed and verdict.status != "unknown" else "noop"
         with self._conn() as conn:
-            if conn.execute(  # first write of the transaction: proves the lease, so a fenced worker stores nothing
-                "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'", (_utcnow(), scan_id)
-            ).rowcount == 0:
+            if (
+                conn.execute(  # first write of the transaction: proves the lease, so a fenced worker stores nothing
+                    "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'", (_utcnow(), scan_id)
+                ).rowcount
+                == 0
+            ):
                 raise ScanLeaseLostError(f"scan {scan_id} no longer holds the scan lease")
-            if verdict.status != "unknown":  # a transient failure must not discard the earlier, still usable paid result
+            if (
+                verdict.status != "unknown"
+            ):  # a transient failure must not discard the earlier, still usable paid result
                 conn.execute(
                     "UPDATE proposals SET state = 'superseded', decided_at = ? WHERE stable_id = ? AND state = 'pending'",
                     (_utcnow(), track.id),
@@ -570,11 +601,25 @@ class ProposalStore:
                 "fixer_status, source, confidence, jev_kind, notes_json, error, cost_usd, state) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    proposal_id, scan_id, track.id, _utcnow(), track.title, track.artist,
-                    json.dumps(original_artists, ensure_ascii=False), verdict.title, verdict.artist,
-                    verdict.original_artist, json.dumps(list(verdict.tags)), verdict.status, verdict.source,
-                    verdict.jev_p_ok, verdict.jev_kind, json.dumps(_notes_with_producer(verdict), ensure_ascii=False),
-                    verdict.error, verdict.cost_usd, state,
+                    proposal_id,
+                    scan_id,
+                    track.id,
+                    _utcnow(),
+                    track.title,
+                    track.artist,
+                    json.dumps(original_artists, ensure_ascii=False),
+                    verdict.title,
+                    verdict.artist,
+                    verdict.original_artist,
+                    json.dumps(list(verdict.tags)),
+                    verdict.status,
+                    verdict.source,
+                    verdict.jev_p_ok,
+                    verdict.jev_kind,
+                    json.dumps(_notes_with_producer(verdict), ensure_ascii=False),
+                    verdict.error,
+                    verdict.cost_usd,
+                    state,
                 ),
             )
         return self.get_proposals([proposal_id])[0]
@@ -595,8 +640,13 @@ class ProposalStore:
 
     def list_proposals(self, flt: ProposalFilter) -> tuple[list[ProposalRow], int]:
         where, args = [], []
-        for col, value in (("state", flt.state), ("fixer_status", flt.fixer_status), ("source", flt.source),
-                           ("scan_id", flt.scan_id), ("batch_id", flt.batch_id)):
+        for col, value in (
+            ("state", flt.state),
+            ("fixer_status", flt.fixer_status),
+            ("source", flt.source),
+            ("scan_id", flt.scan_id),
+            ("batch_id", flt.batch_id),
+        ):
             if value is not None:
                 where.append(f"{col} = ?")
                 args.append(value)
@@ -617,8 +667,15 @@ class ProposalStore:
             rows = conn.execute("SELECT state, COUNT(*) AS n FROM proposals GROUP BY state").fetchall()
         return {r["state"]: r["n"] for r in rows}
 
-    def set_state(self, proposal_ids: list[str], state: ProposalState, *, batch_id: str | None = None,
-                  tags_added: dict[str, list[str]] | None = None, conn: sqlite3.Connection | None = None) -> None:
+    def set_state(
+        self,
+        proposal_ids: list[str],
+        state: ProposalState,
+        *,
+        batch_id: str | None = None,
+        tags_added: dict[str, list[str]] | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         now = _utcnow()
         with self._scoped(conn) as db:
             for pid in proposal_ids:
@@ -662,7 +719,12 @@ class ProposalStore:
         return [_batch_from_row(r) for r in rows]
 
     def claim_pending(
-        self, proposal_ids: list[str], batch_id: str, tags_added: dict[str, list[str]], *, fence_scan_id: str | None = None,
+        self,
+        proposal_ids: list[str],
+        batch_id: str,
+        tags_added: dict[str, list[str]],
+        *,
+        fence_scan_id: str | None = None,
     ) -> list[str]:
         """Atomically move each still-pending proposal into the batch; returns the ids this call won.
 
@@ -673,9 +735,13 @@ class ProposalStore:
         now = _utcnow()
         claimed: list[str] = []
         with self._conn() as conn:
-            if fence_scan_id is not None and conn.execute(
-                "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'", (now, fence_scan_id)
-            ).rowcount == 0:
+            if (
+                fence_scan_id is not None
+                and conn.execute(
+                    "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'", (now, fence_scan_id)
+                ).rowcount
+                == 0
+            ):
                 raise ScanLeaseLostError(f"scan {fence_scan_id} no longer holds the scan lease")
             for pid in proposal_ids:
                 cur = conn.execute(
@@ -736,13 +802,22 @@ class ProposalStore:
         auto-apply's scan must still hold the lease; either failure raises before anything is written."""
 
         def prove(conn: sqlite3.Connection) -> None:
-            if conn.execute(
-                "SELECT 1 FROM batches WHERE batch_id = ? AND committed_at IS NULL AND undone_at IS NULL", (batch_id,)
-            ).fetchone() is None:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM batches WHERE batch_id = ? AND committed_at IS NULL AND undone_at IS NULL",
+                    (batch_id,),
+                ).fetchone()
+                is None
+            ):
                 raise BatchReleasedError(f"batch {batch_id} is no longer open for writing")
-            if fence_scan_id is not None and conn.execute(
-                "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'", (_utcnow(), fence_scan_id)
-            ).rowcount == 0:
+            if (
+                fence_scan_id is not None
+                and conn.execute(
+                    "UPDATE scans SET heartbeat_at = ? WHERE scan_id = ? AND state = 'running'",
+                    (_utcnow(), fence_scan_id),
+                ).rowcount
+                == 0
+            ):
                 raise ScanLeaseLostError(f"scan {fence_scan_id} no longer holds the scan lease")
 
         return self._hold_write_lock(prove)
@@ -752,10 +827,13 @@ class ProposalStore:
         re-taken by an undo that judged it abandoned."""
 
         def prove(conn: sqlite3.Connection) -> None:
-            if conn.execute(
-                "SELECT 1 FROM batches WHERE batch_id = ? AND undo_started_at = ? AND undone_at IS NULL",
-                (batch_id, token),
-            ).fetchone() is None:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM batches WHERE batch_id = ? AND undo_started_at = ? AND undone_at IS NULL",
+                    (batch_id, token),
+                ).fetchone()
+                is None
+            ):
                 raise UndoIntentLostError(f"the undo of batch {batch_id} no longer owns its intent")
 
         return self._hold_write_lock(prove)
@@ -775,7 +853,10 @@ class ProposalStore:
                 yield own
 
     def mark_batch_committed(
-        self, batch_id: str, *, applied_state: dict[str, dict[str, Any]] | None = None,
+        self,
+        batch_id: str,
+        *,
+        applied_state: dict[str, dict[str, Any]] | None = None,
         conn: sqlite3.Connection | None = None,
     ) -> None:
         """The batch's track write landed: from here its rows are real changes and Undo may restore them.
@@ -824,19 +905,26 @@ class ProposalStore:
         with self._conn() as conn:
             cur = conn.execute(
                 "UPDATE batches SET undo_started_at = ?, undo_targets_json = ? WHERE batch_id = ? "
-                "AND undone_at IS NULL AND undo_started_at IS NULL", (token, json.dumps(target_proposal_ids), batch_id),
+                "AND undone_at IS NULL AND undo_started_at IS NULL",
+                (token, json.dumps(target_proposal_ids), batch_id),
             )
         return token if cur.rowcount == 1 else None
 
     def finish_undo(
-        self, batch_id: str, *, complete: bool, token: str | None = None, conn: sqlite3.Connection | None = None,
+        self,
+        batch_id: str,
+        *,
+        complete: bool,
+        token: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Clear the intent; a complete undo also stamps the batch undone. With a ``token`` only the intent's
         owner may finish it: an undo that lost its intent changes nothing."""
         with self._scoped(conn) as db:
             db.execute(
                 "UPDATE batches SET undo_started_at = NULL, undo_targets_json = NULL, undone_at = CASE WHEN ? THEN ? ELSE undone_at END "
-                "WHERE batch_id = ? AND (? IS NULL OR undo_started_at = ?)", (complete, _utcnow(), batch_id, token, token),
+                "WHERE batch_id = ? AND (? IS NULL OR undo_started_at = ?)",
+                (complete, _utcnow(), batch_id, token, token),
             )
 
     def mark_batch_undone(self, batch_id: str) -> None:

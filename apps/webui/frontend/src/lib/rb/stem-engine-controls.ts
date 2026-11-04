@@ -17,6 +17,14 @@ export interface StemEngineControlDeps {
 	requireLoaded: (deck: DeckId, op: string) => { st: DeckState; rt: StemEngineRuntime };
 	getChannel: (deck: DeckId) => MixerChannelState;
 	exclusive?: boolean;
+	/** AUDFID-02: the ready bundle held while the deck plays the original
+	 * file, or null when none is held (the stems are the deck's processor, or
+	 * there is no bundle). */
+	heldStems: (deck: DeckId) => AlignedStemDeckProcessor | null;
+	/** AUDFID-02: the first touch: make the held stems audible (crossfade on a
+	 * playing deck, instant swap on a stopped one). Called after the touched
+	 * value is already set on them, so the press is never lost. */
+	engageHeldStems: (deck: DeckId) => void;
 }
 
 export function applyStemControl(
@@ -57,7 +65,9 @@ export function applyStemControl(
 		// normal, permanent state of any track without stems.
 		return;
 	}
-	if (st.stems.status !== 'ready' || !(rt.processor instanceof AlignedStemDeckProcessor)) {
+	const held = st.stems.status === 'ready' ? deps.heldStems(deck) : null;
+	const target = held ?? rt.processor;
+	if (st.stems.status !== 'ready' || !(target instanceof AlignedStemDeckProcessor)) {
 		throw new Error(
 			`deck ${deck} stems are ${st.stems.status}: ${st.stems.error ?? 'no aligned artifact'}`
 		);
@@ -84,7 +94,8 @@ export function applyStemControl(
 		controls[stem][field] = value;
 	}
 	st.stems.controls = controls;
-	rt.processor.setControls(controls);
+	target.setControls(controls);
+	if (held !== null) deps.engageHeldStems(deck);
 }
 
 export function applyStemEqMode(

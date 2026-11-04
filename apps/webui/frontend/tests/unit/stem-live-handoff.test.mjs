@@ -254,13 +254,18 @@ test('each retry gives the acknowledgement more room', () => {
 // [if] the landing ends deferred [then] the bundle is handed back, not retired
 // [if] the deck graph is gone [then] the landing rejects, mix untouched
 
+/** AUDFID-02: the engine's crossfade, mix out and stems in. */
+const FADE = 0.02;
+
 function landing(overrides = {}) {
+	let gains = 0;
 	const log = [];
 	const timers = [];
 	const clock = { currentTime: 100, sampleRate: 48000 };
 	const processor = (name, latency) => ({
 		name,
 		connect: (node) => log.push([`${name}.connect`, node]),
+		disconnect: () => log.push([`${name}.disconnect`]),
 		schedule: async (when, change) => {
 			log.push([`${name}.schedule`, when, change]);
 		},
@@ -315,6 +320,19 @@ function landing(overrides = {}) {
 			timers.push({ run, ms });
 			if (overrides.autoTimers !== false) queueMicrotask(run);
 		},
+		crossfadeSec: FADE,
+		createGain: () => {
+			const id = `gain${++gains}`;
+			return {
+				id,
+				gain: {
+					setValueAtTime: (value, time) => log.push([`${id}.set`, value, time]),
+					linearRampToValueAtTime: (value, time) => log.push([`${id}.ramp`, value, time])
+				},
+				connect: (node) => log.push([`${id}.connect`, node]),
+				disconnect: () => log.push([`${id}.disconnect`])
+			};
+		},
 		...overrides.port
 	};
 	return { port, log, timers, runtime, clock, mix, stems };
@@ -331,9 +349,16 @@ test('a playing deck: stems are scheduled, connected once acknowledged, then sta
 	const commit = order.indexOf('commit');
 	assert.ok(schedule >= 0 && schedule < connect, 'stems were connected before their schedule was acknowledged');
 	assert.ok(connect < stop && stop < commit, `wrong order: ${order.join(', ')}`);
-	assert.equal(log[connect][1], 'analyser', 'stems are not wired into the deck channel');
 	const when = log[schedule][1];
-	assert.equal(log[stop][1], when, 'the mix does not stop at the instant the stems start');
+	// AUDFID-02: the stems go in through a fade, the mix out through another,
+	// both on the handoff instant, and the mix stops once its fade has ended.
+	const fadeIn = log[connect][1];
+	assert.ok(log.some((e) => e[0] === `${fadeIn.id}.connect` && e[1] === 'analyser'), 'stems are not wired into the deck channel');
+	assert.deepEqual(log.filter((e) => e[0] === `${fadeIn.id}.set` || e[0] === `${fadeIn.id}.ramp`), [[`${fadeIn.id}.set`, 0, when], [`${fadeIn.id}.ramp`, 1, when + FADE]]);
+	const mixFade = log.find((e) => e[0] === 'mix.connect')[1];
+	assert.deepEqual(log.filter((e) => e[0] === `${mixFade.id}.set` || e[0] === `${mixFade.id}.ramp`), [[`${mixFade.id}.set`, 1, when], [`${mixFade.id}.ramp`, 0, when + FADE]]);
+	assert.ok(order.indexOf('mix.disconnect') < order.indexOf('mix.connect'), 'the mix was re-routed out of order');
+	assert.equal(log[stop][1], when + FADE, 'the mix does not stop when its fade ends');
 	assert.equal(log[commit][1], when);
 	// The segment began at ctx 90 on position 10 and runs at tempo 1.25.
 	assert.ok(Math.abs(log[schedule][2].start - (10 + (when - 90) * 1.25)) < 1e-9, 'stems start at the wrong position');
@@ -344,15 +369,16 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	const done = mod.landStemsOnDeck(port);
 	assert.equal(await done, 'handed_off');
 	assert.ok(!names(log).includes('retire'), 'the mix was retired while it could still be the audible tail');
-	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
+	const when = log.find((entry) => entry[0] === 'mix.stop')[1] - FADE;
 	assert.equal(timers.length, 3);
 	// The stop was acknowledged, so the timer at the handoff instant does nothing.
 	timers[0].run();
 	assert.ok(!names(log).includes('retire'), 'an acknowledged stop was retired at the instant it renders');
-	const expectedMs = (when - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
+	const expectedMs = (when + FADE - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
 	assert.ok(Math.abs(timers[1].ms - expectedMs) < 1e-6, `retire timer ${timers[1].ms}ms, expected ${expectedMs}ms`);
 	timers[1].run();
-	assert.deepEqual(log.at(-1), ['retire', 'mix']);
+	const mixFade = log.find((e) => e[0] === 'mix.connect')[1];
+	assert.deepEqual(log.slice(-2), [['retire', 'mix'], [`${mixFade.id}.disconnect`]], 'the mix fade must leave the graph with the mix');
 });
 
 test('a command sent before the handoff instant waits for it, so it never reaches the stems beside the mix', async () => {
@@ -375,7 +401,7 @@ test('a mix whose stop is still unacknowledged when the stems start is retired t
 	port.runtime.processor.stop = () => new Promise(() => {}); // the ack never comes back in time
 	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
 	const when = log.find((entry) => entry[0] === 'commit')[1];
-	assert.ok(Math.abs(timers[0].ms - (when - 100) * 1000) < 1e-6, `first retire check at ${timers[0].ms}ms, expected the handoff instant`);
+	assert.ok(Math.abs(timers[0].ms - (when + FADE - 100) * 1000) < 1e-6, `first retire check at ${timers[0].ms}ms, expected the fade end`);
 	timers[0].run();
 	assert.deepEqual(log.filter((entry) => entry[0] === 'retire'), [['retire', 'mix']], 'the unstopped mix stayed under the stems');
 	timers[1].run();
@@ -400,7 +426,7 @@ test('a mix that refuses its stop keeps playing until the stems start, then is r
 	assert.ok(errors.some((args) => args.some((arg) => arg instanceof Error && arg.message === 'stop timed out')), 'the stop error was swallowed');
 	const when = log.find((entry) => entry[0] === 'commit')[1];
 	assert.equal(timers.length, 4);
-	assert.ok(Math.abs(timers[3].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[3].ms}ms, expected the handoff instant`);
+	assert.ok(Math.abs(timers[3].ms - (when + FADE - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[3].ms}ms, expected the fade end`);
 	timers[3].run();
 	timers[0].run();
 	timers[1].run();

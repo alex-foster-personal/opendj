@@ -79,5 +79,28 @@ export const contracts = {
 			await expect(el.querySelector('.tick-overlay')).toBeNull();
 			await expect(el).toHaveAttribute('aria-label', 'Streaming from SoundCloud');
 		}
+	},
+	/** OFFLOAD: offloaded is a hollow cloud with a down arrow, muted, no tick (never broken-link red). */
+	Offloaded: {
+		args: { view: view({ kind: 'offloaded', title: 'Offloaded to the cloud' }) } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = icon(canvasElement);
+			await expect(el).toHaveClass('offloaded');
+			await expect(el).not.toHaveClass('on-cloud-not-local');
+			await expect(el.querySelectorAll('svg.offload-icon path')).toHaveLength(2);
+			await expect(el.querySelector('svg.cloud-icon')).toBeNull();
+			await expect(el.querySelector('.tick-overlay')).toBeNull();
+			await expect(el).toHaveAttribute('aria-label', 'Offloaded to the cloud');
+		}
+	},
+	/** OFFLOAD: downloaded for 24h is Spotify's filled disk with a down arrow. */
+	Temporary: {
+		args: { view: view({ kind: 'temporary', title: 'Downloaded for 24h' }) } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = icon(canvasElement);
+			await expect(el).toHaveClass('temporary');
+			await expect(el.querySelector('svg.offload-icon circle')).toHaveAttribute('fill', 'currentColor');
+			await expect(el.querySelector('svg.cloud-icon')).toBeNull();
+		}
 	}
 };

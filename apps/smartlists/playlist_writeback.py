@@ -7,6 +7,7 @@ path, one vendor playlist ID, and the target membership revision.  A live apply
 must present that exact token and an explicit confirmation.  Names are display
 data only - they are never used to select a vendor playlist.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -52,16 +53,17 @@ class VendorPlaylistWriter(Protocol):
     def list_playlists(self) -> list[VendorPlaylist]: ...
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
-        self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
+        self,
+        playlist_id: str,
+        stable_members: list[str],
+        expected_target_revision: str,
         expected_mapping_revision: str,
         source_transaction: Callable[[], AbstractContextManager[None]],
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
 
 
-WriterFactory = Callable[
-    [Vendor, TargetMode, Path], AbstractContextManager[VendorPlaylistWriter | None]
-]
+WriterFactory = Callable[[Vendor, TargetMode, Path], AbstractContextManager[VendorPlaylistWriter | None]]
 SourceLockFactory = Callable[[], AbstractContextManager[None]]
 
 
@@ -96,15 +98,16 @@ def _require_exact_live_target(vendor: Vendor, target_mode: TargetMode, target_p
 
 @contextmanager
 def default_writer_factory(
-    vendor: Vendor, target_mode: TargetMode, target_path: Path, *,
+    vendor: Vendor,
+    target_mode: TargetMode,
+    target_path: Path,
+    *,
     state_db_path: Path | None = None,
 ) -> Iterator[VendorPlaylistWriter | None]:
     """Yield a live-target writer and close every factory-owned resource."""
     target_path = _require_exact_live_target(vendor, target_mode, str(target_path))
     if state_db_path is None:
-        raise WritebackUnavailable(
-            "writeback mapping state database ownership is unavailable"
-        )
+        raise WritebackUnavailable("writeback mapping state database ownership is unavailable")
 
     from apps.shared.state.db import open_ro
 
@@ -116,7 +119,9 @@ def default_writer_factory(
 
             rekordbox_db = resources.enter_context(closing(open_db(target_path)))
             writer: VendorPlaylistWriter | None = RBPlaylistWriter(
-                db=rekordbox_db, state_conn=state_conn, live=True,
+                db=rekordbox_db,
+                state_conn=state_conn,
+                live=True,
                 live_db_path=target_path,
             )
         elif vendor == "djay":
@@ -133,10 +138,15 @@ def bind_default_writer_factory(state_db_path: str | Path) -> WriterFactory:
     bound_path = Path(state_db_path)
 
     def factory(
-        vendor: Vendor, target_mode: TargetMode, target_path: Path,
+        vendor: Vendor,
+        target_mode: TargetMode,
+        target_path: Path,
     ) -> AbstractContextManager[VendorPlaylistWriter | None]:
         return default_writer_factory(
-            vendor, target_mode, target_path, state_db_path=bound_path,
+            vendor,
+            target_mode,
+            target_path,
+            state_db_path=bound_path,
         )
 
     return factory
@@ -211,7 +221,9 @@ def _revision(value: object) -> str:
 
 class WritebackService:
     def __init__(
-        self, *, writer_factory: WriterFactory = default_writer_factory,
+        self,
+        *,
+        writer_factory: WriterFactory = default_writer_factory,
         source_members_reader: Callable[[str], list[str]] | None = None,
         source_lock_factory: SourceLockFactory | None = None,
     ) -> None:
@@ -221,19 +233,18 @@ class WritebackService:
 
     @contextmanager
     def _writer(
-        self, vendor: Vendor, target_mode: TargetMode, target_path: str,
+        self,
+        vendor: Vendor,
+        target_mode: TargetMode,
+        target_path: str,
     ) -> Iterator[VendorPlaylistWriter]:
         with ExitStack() as writer_lifecycle:
             try:
-                writer = writer_lifecycle.enter_context(
-                    self._writer_factory(vendor, target_mode, Path(target_path))
-                )
+                writer = writer_lifecycle.enter_context(self._writer_factory(vendor, target_mode, Path(target_path)))
             except (FileNotFoundError, ValueError) as exc:
                 raise WritebackUnavailable(str(exc)) from exc
             if writer is None:
-                raise WritebackUnavailable(
-                    f"{vendor}: exact live database is not reachable"
-                )
+                raise WritebackUnavailable(f"{vendor}: exact live database is not reachable")
             yield writer
 
     def capability(self, vendor: Vendor) -> WritebackCapability:
@@ -252,8 +263,8 @@ class WritebackService:
         unique = list(dict.fromkeys(desired_ids))
         placeholders = ",".join("?" * len(unique))
         rows = writer.state_conn.execute(
-            "SELECT stable_id FROM track_vendor_ids WHERE vendor = ? "
-            f"AND stable_id IN ({placeholders})", (writer.vendor, *unique),
+            f"SELECT stable_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ({placeholders})",
+            (writer.vendor, *unique),
         ).fetchall()
         known = {row[0] for row in rows}
         return [sid for sid in desired_ids if sid in known], [sid for sid in unique if sid not in known]
@@ -265,8 +276,8 @@ class WritebackService:
         unique = list(dict.fromkeys(desired_ids))
         placeholders = ",".join("?" * len(unique))
         rows = writer.state_conn.execute(
-            "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? "
-            f"AND stable_id IN ({placeholders})", (writer.vendor, *unique),
+            f"SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ({placeholders})",
+            (writer.vendor, *unique),
         ).fetchall()
         return _revision(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows))
 
@@ -281,7 +292,9 @@ class WritebackService:
 
     @contextmanager
     def _source_transaction(
-        self, source_playlist_id: str, expected_source_revision: str,
+        self,
+        source_playlist_id: str,
+        expected_source_revision: str,
     ) -> Iterator[None]:
         """Lock and validate the source before any vendor-side mutation.
 
@@ -300,8 +313,14 @@ class WritebackService:
             return writer.list_playlists()
 
     def plan(
-        self, *, vendor: Vendor, source_playlist_id: str, desired_ids: list[str],
-        target_mode: TargetMode, target_path: str, target_id: str,
+        self,
+        *,
+        vendor: Vendor,
+        source_playlist_id: str,
+        desired_ids: list[str],
+        target_mode: TargetMode,
+        target_path: str,
+        target_id: str,
     ) -> WritebackPlan:
         with self._writer(vendor, target_mode, target_path) as writer:
             targets = {target.playlist_id: target for target in writer.list_playlists()}
@@ -315,17 +334,33 @@ class WritebackService:
             target_revision = _revision({"target_id": target_id, "members": current})
             mapping_revision = self._mapping_revision(writer, desired_ids)
             token_data = {
-                "vendor": vendor, "source_playlist_id": source_playlist_id,
-                "source_revision": source_revision, "target_mode": target_mode,
-                "target_path": target_path, "target_id": target_id,
-                "target_revision": target_revision, "added": added, "removed": removed,
-                "unresolved": unresolved, "mapping_revision": mapping_revision,
+                "vendor": vendor,
+                "source_playlist_id": source_playlist_id,
+                "source_revision": source_revision,
+                "target_mode": target_mode,
+                "target_path": target_path,
+                "target_id": target_id,
+                "target_revision": target_revision,
+                "added": added,
+                "removed": removed,
+                "unresolved": unresolved,
+                "mapping_revision": mapping_revision,
             }
             return WritebackPlan(
-                vendor=vendor, source_playlist_id=source_playlist_id, target_mode=target_mode,
-                target_path=target_path, target_id=target_id, target_name=target.name,
-                source_revision=source_revision, target_revision=target_revision, mapping_revision=mapping_revision, ordered_match=current == resolved,
-                plan_token=_revision(token_data), added=added, removed=removed, unresolved=unresolved,
+                vendor=vendor,
+                source_playlist_id=source_playlist_id,
+                target_mode=target_mode,
+                target_path=target_path,
+                target_id=target_id,
+                target_name=target.name,
+                source_revision=source_revision,
+                target_revision=target_revision,
+                mapping_revision=mapping_revision,
+                ordered_match=current == resolved,
+                plan_token=_revision(token_data),
+                added=added,
+                removed=removed,
+                unresolved=unresolved,
             )
 
     def apply(
@@ -340,34 +375,71 @@ class WritebackService:
         confirmed: bool = False,
     ) -> WritebackApplyResult:
         plan = self.plan(
-            vendor=vendor, source_playlist_id=source_playlist_id, desired_ids=desired_ids,
-            target_mode=target.target_mode, target_path=target.target_path, target_id=target.target_id,
+            vendor=vendor,
+            source_playlist_id=source_playlist_id,
+            desired_ids=desired_ids,
+            target_mode=target.target_mode,
+            target_path=target.target_path,
+            target_id=target.target_id,
         )
         if plan.plan_token != plan_token:
             raise WritebackConflict("writeback plan is stale: source or target revision changed; plan again")
         if plan.unresolved:
-            return WritebackApplyResult(vendor, target.target_id, plan.target_name, False, dry_run,
-                added=plan.added, removed=plan.removed,
-                error=f"{len(plan.unresolved)} track(s) have no {vendor} mapping: {plan.unresolved[:5]}")
+            return WritebackApplyResult(
+                vendor,
+                target.target_id,
+                plan.target_name,
+                False,
+                dry_run,
+                added=plan.added,
+                removed=plan.removed,
+                error=f"{len(plan.unresolved)} track(s) have no {vendor} mapping: {plan.unresolved[:5]}",
+            )
         if dry_run:
-            return WritebackApplyResult(vendor, target.target_id, plan.target_name, False, True,
-                added=plan.added, removed=plan.removed, target_revision=plan.target_revision)
+            return WritebackApplyResult(
+                vendor,
+                target.target_id,
+                plan.target_name,
+                False,
+                True,
+                added=plan.added,
+                removed=plan.removed,
+                target_revision=plan.target_revision,
+            )
         if not confirmed:
             raise WritebackConflict("live writeback requires confirmed=true")
         if vendor == "rekordbox":
             require_writeback_enabled("module.playlist_writeback.service_apply")
         with self._writer(vendor, target.target_mode, target.target_path) as writer:
             backup, target_revision = writer.apply_with_backup_by_id(
-                target.target_id, desired_ids, plan.target_revision, plan.mapping_revision,
+                target.target_id,
+                desired_ids,
+                plan.target_revision,
+                plan.mapping_revision,
                 lambda: self._source_transaction(source_playlist_id, plan.source_revision),
             )
-        return WritebackApplyResult(vendor, target.target_id, plan.target_name, True, False,
-            added=plan.added, removed=plan.removed, backup_id=backup.backup_id,
-            target_revision=target_revision)
+        return WritebackApplyResult(
+            vendor,
+            target.target_id,
+            plan.target_name,
+            True,
+            False,
+            added=plan.added,
+            removed=plan.removed,
+            backup_id=backup.backup_id,
+            target_revision=target_revision,
+        )
 
     def rollback(
-        self, *, vendor: Vendor, target_mode: TargetMode, target_path: str,
-        target_id: str, backup_id: str, expected_target_revision: str, confirmed: bool,
+        self,
+        *,
+        vendor: Vendor,
+        target_mode: TargetMode,
+        target_path: str,
+        target_id: str,
+        backup_id: str,
+        expected_target_revision: str,
+        confirmed: bool,
     ) -> WritebackRollbackResult:
         if not confirmed:
             raise WritebackConflict("rollback requires confirmed=true")
@@ -379,15 +451,29 @@ class WritebackService:
         # RBPlaylistWriter.restore_backup.
         with self._writer(vendor, target_mode, target_path) as writer:
             target_revision = writer.restore_backup(
-                backup_id, target_id, expected_target_revision,
+                backup_id,
+                target_id,
+                expected_target_revision,
             )
         return WritebackRollbackResult(vendor, target_id, backup_id, True, target_revision)
 
 
 __all__ = [
-    "TargetMode", "VENDORS", "Vendor", "VendorPlaylist", "VendorPlaylistWriter",
-    "WritebackApplyResult", "WritebackBackup", "WritebackCapability", "WritebackConflict",
-    "WritebackPlan", "WritebackRollbackResult", "WritebackService", "WritebackTarget",
-    "WritebackUnavailable", "WriterFactory", "bind_default_writer_factory",
+    "TargetMode",
+    "VENDORS",
+    "Vendor",
+    "VendorPlaylist",
+    "VendorPlaylistWriter",
+    "WritebackApplyResult",
+    "WritebackBackup",
+    "WritebackCapability",
+    "WritebackConflict",
+    "WritebackPlan",
+    "WritebackRollbackResult",
+    "WritebackService",
+    "WritebackTarget",
+    "WritebackUnavailable",
+    "WriterFactory",
+    "bind_default_writer_factory",
     "default_writer_factory",
 ]

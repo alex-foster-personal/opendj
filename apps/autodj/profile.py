@@ -23,6 +23,7 @@ from __future__ import annotations
 import bisect
 import math
 import statistics
+from itertools import pairwise
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -446,7 +447,7 @@ def _timing(
     else:
         duration_s = float(beats[-1]["t"]) + (60.0 / bpm if bpm else 0.5)
         notes.append("duration taken from the last beat: the library row has none")
-    bar_s = 240.0 / bpm if bpm else statistics.median(b - a for a, b in zip(downbeats, downbeats[1:], strict=False))
+    bar_s = 240.0 / bpm if bpm else statistics.median(b - a for a, b in pairwise(downbeats))
     return bpm, duration_s, bar_s
 
 

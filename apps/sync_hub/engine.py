@@ -1,6 +1,6 @@
 """Merge engine: push selection, last-writer-wins apply, changelog, watermarks.
 
-Contract: ``specs/design_decision_04.md``. Nothing in this module stamps a
+Contract: ``(private path)``. Nothing in this module stamps a
 timestamp onto a domain row -- rows carry the ``updated_at`` /
 ``origin_device_id`` their originating machine wrote, and that pair is the
 only thing the merge looks at. The single clock this module reads is
@@ -44,6 +44,7 @@ re-exports all of it, so every caller that already does
 ``from apps.sync_hub import engine`` and reads ``engine.spoke_push`` (or any
 other name below) keeps the surface it had.
 """
+
 from __future__ import annotations
 
 from apps.sync_hub.engine_apply import (

@@ -17,6 +17,7 @@ Mini-PRD
   [if] the new metadata fits the old [then] the audio offset does not move
   [if] the write fails midway        [then] the original file is intact
 """
+
 from __future__ import annotations
 
 import struct
@@ -114,10 +115,13 @@ def encode_picture(mime: str, picture_type: int, data: bytes, description: str =
     return b"".join(
         [
             struct.pack(">I", picture_type),
-            struct.pack(">I", len(mime_raw)), mime_raw,
-            struct.pack(">I", len(desc_raw)), desc_raw,
+            struct.pack(">I", len(mime_raw)),
+            mime_raw,
+            struct.pack(">I", len(desc_raw)),
+            desc_raw,
             struct.pack(">IIII", 0, 0, 0, 0),  # width, height, depth, colours: unknown
-            struct.pack(">I", len(data)), data,
+            struct.pack(">I", len(data)),
+            data,
         ]
     )
 
@@ -138,7 +142,6 @@ def _render_block(block: Block, *, last: bool) -> bytes:
     if len(block.data) > _MAX_BLOCK:
         raise FlacError(f"metadata block {block.block_type} is {len(block.data)} bytes, over the 16 MiB limit")
     return bytes([(0x80 if last else 0) | block.block_type]) + len(block.data).to_bytes(3, "big") + block.data
-
 
 
 __all__ = [

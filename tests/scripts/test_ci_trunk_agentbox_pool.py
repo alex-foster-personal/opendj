@@ -15,7 +15,7 @@ use (`==`, `&&`, `||`, parentheses, `contains`, `startsWith`, `fromJSON`, `vars.
 and `github.*` paths), so the routing claims below are checked as behavior, not as
 text. Its own semantics are pinned by a control case against the pre-change
 expression, which must resolve to today's pools.
-tests/scripts/test_ci_merge_queue_runner_pool.py reuses it for the Trunk draft
+(private path) reuses it for the Trunk draft
 route (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool).
 
 Regression lines:
@@ -44,9 +44,10 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.scripts.ci_runner_routes import without_main_fix
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-TRUNK_TIP_ONLY = REPO_ROOT / ".github" / "workflows" / "trunk-tip-only.yml"
 
 MAIN_FIX = '["self-hosted","linux","main-fix"]'
 TRUNK = '["self-hosted","linux","trunk-agentbox"]'
@@ -106,7 +107,10 @@ class Event:
                 "head": {"repo": {"full_name": self.head_repo}},
             }
             github["head_ref"] = self.head_ref
-        return {"github": github, "vars": self.variables}
+        # e2e.yml's scope job publishes the pull request's `ci:trunk-repair` label as an
+        # output (ADR-NEW-e2e-after-ci-gate); the gate's reserve reads it through `needs`.
+        needs = {"scope": {"outputs": {"repair": "true" if "ci:trunk-repair" in self.labels else "false"}}}
+        return {"github": github, "vars": self.variables, "needs": needs}
 
 
 _TOKEN = re.compile(
@@ -265,9 +269,17 @@ def test_trunk_repair_shards_keep_the_reserve_then_fall_to_the_trunk_pool() -> N
     assert resolve(_runs_on("test"), no_reserve) == json.loads(TRUNK)
 
 
-def test_trunk_repair_fast_legs_resolve_to_the_trunk_pool() -> None:
-    """if trunk-repair fast legs do not resolve to CI_RUNS_ON_TRUNK then a leg can be nucbox"""
-    assert resolve(_runs_on("fast"), REPAIR_PR) == json.loads(TRUNK)
+def test_trunk_repair_fast_legs_resolve_to_the_main_fix_seats_then_the_trunk_pool() -> None:
+    """if trunk-repair fast legs leave the main-fix reserve, or its fallback CI_RUNS_ON_TRUNK, then a leg can be nucbox
+
+    Wed 4 Nov 2026 (ADR-NEW-repair-pr-every-job-on-main-fix-seats): the main-fix seats
+    win on every job of a repair PR; CI_RUNS_ON_TRUNK is the fast legs' fallback.
+    """
+    assert resolve(_runs_on("fast"), REPAIR_PR) == json.loads(MAIN_FIX)
+    no_reserve = Event(
+        REPAIR_PR.name, REPAIR_PR.ref, REPAIR_PR.labels, _without("CI_RUNS_ON_MAIN_FIX")
+    )
+    assert resolve(_runs_on("fast"), no_reserve) == json.loads(TRUNK)
 
 
 @pytest.mark.parametrize(
@@ -290,16 +302,10 @@ def test_unset_trunk_variable_is_exactly_todays_routing(event: Event) -> None:
     """if an unset CI_RUNS_ON_TRUNK differs from the pre-change routing then rollback breaks"""
     unset = Event(event.name, event.ref, event.labels, _without("CI_RUNS_ON_TRUNK"))
     assert resolve(_runs_on("test"), unset) == resolve(PRE_CHANGE_SHARD, unset)
-    assert resolve(_runs_on("fast"), unset) == resolve(PRE_CHANGE_FAST, unset)
+    # The fast legs gained the main-fix reserve on Wed 4 Nov 2026; minus that one
+    # disjunct, an unset CI_RUNS_ON_TRUNK is still the pre-change fast chain.
+    assert resolve(without_main_fix(_runs_on("fast")), unset) == resolve(PRE_CHANGE_FAST, unset)
     bare = Event(event.name, event.ref, event.labels, {})
     assert resolve(_runs_on("test"), bare) == "ubuntu-latest"
     assert resolve(_runs_on("fast"), bare) == "ubuntu-latest"
 
-
-def test_trunk_tip_sweeper_stays_off_the_trunk_pool() -> None:
-    """if the trunk-tip sweeper reads CI_RUNS_ON_TRUNK then it queues behind main's shards"""
-    text = TRUNK_TIP_ONLY.read_text(encoding="utf-8")
-    assert "vars.CI_RUNS_ON_MAIN_FIX" in text, (
-        "positive control: the sweeper's own variable must be found"
-    )
-    assert "CI_RUNS_ON_TRUNK" not in text

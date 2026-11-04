@@ -13,6 +13,7 @@ the EPOCH comparison sentinel instead of the row's own ``updated_at``. The
 sentinel loses every LWW comparison, so a spoke past those sequences keeps its
 stale value permanently (#3057).
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -38,10 +39,7 @@ _V17: list[str] = []
 
 def _live_rows_union_sql(conn: sqlite3.Connection) -> str:
     """Union of every synced table this database has at its current rung."""
-    present = {
-        str(row[0])
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
+    present = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     parts: list[str] = []
     for spec in SYNC_TABLES:
         if spec.name not in present:
@@ -88,18 +86,13 @@ def _scan_stamp_mismatch_candidates(
         return []
     return [
         (str(table_name), str(row_pk), updated_at, origin)
-        for table_name, row_pk, updated_at, origin in conn.execute(
-            _candidate_query_sql(conn)
-        ).fetchall()
+        for table_name, row_pk, updated_at, origin in conn.execute(_candidate_query_sql(conn)).fetchall()
     ]
 
 
-def _latest_changelog_stamp(
-    conn: sqlite3.Connection, table_name: str, row_pk: str
-) -> str | None:
+def _latest_changelog_stamp(conn: sqlite3.Connection, table_name: str, row_pk: str) -> str | None:
     row = conn.execute(
-        f"SELECT updated_at FROM {HUB_CHANGELOG_TABLE} "
-        "WHERE table_name = ? AND row_pk = ? ORDER BY seq DESC LIMIT 1",
+        f"SELECT updated_at FROM {HUB_CHANGELOG_TABLE} WHERE table_name = ? AND row_pk = ? ORDER BY seq DESC LIMIT 1",
         (table_name, row_pk),
     ).fetchone()
     return None if row is None else str(row[0])
@@ -115,8 +108,7 @@ def _fetch_live_stamp(
         return None
     pk = tuple(str(part) for part in decode_row_pk(row_pk))
     row = conn.execute(
-        f"SELECT updated_at, origin_device_id FROM {table_name} "
-        f"WHERE {_pk_predicate(spec)}",
+        f"SELECT updated_at, origin_device_id FROM {table_name} WHERE {_pk_predicate(spec)}",
         pk,
     ).fetchone()
     if row is None:
@@ -140,11 +132,7 @@ def _append_repair_changelog_rows(
         changelog_stamp = _latest_changelog_stamp(conn, table_name, row_pk)
         if changelog_stamp is not None and str(changelog_stamp) == str(live_updated_at):
             continue
-        stamp_value = (
-            str(live_updated_at)
-            if live_updated_at is not None
-            else sync_stamp.FLOOR_STAMP
-        )
+        stamp_value = str(live_updated_at) if live_updated_at is not None else sync_stamp.FLOOR_STAMP
         if live_origin is None or str(live_origin) == NO_ORIGIN:
             if machine_id is None:
                 machine_id = sync_stamp.ensure_local_machine(conn)
@@ -197,9 +185,7 @@ def repair_hub_changelog_stamps(
     logged = 0
     with sync_stamp.stamped_transaction(conn):
         if not schema_markers.has_marker(conn, REPAIR_MARKER):
-            logged = _append_repair_changelog_rows(
-                conn, candidates, received_at=received_at
-            )
+            logged = _append_repair_changelog_rows(conn, candidates, received_at=received_at)
             schema_markers.insert_marker(conn, REPAIR_MARKER)
     return logged
 

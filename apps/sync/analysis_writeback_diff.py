@@ -1,4 +1,5 @@
 """Read-only write-back dry-run planner for analysis projection fields."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -24,9 +25,7 @@ WRITEBACK_FIELDS: dict[str, str] = {
 }
 WRITEBACK_LANES: tuple[str, ...] = ("beatgrid", "key", "loudness")
 
-DENOMINATOR_LABEL = (
-    "tracks resolvable in rekordbox that carry an own value for a promoted lane"
-)
+DENOMINATOR_LABEL = "tracks resolvable in rekordbox that carry an own value for a promoted lane"
 
 Bucket = Literal["writable", "no-own-value", "unmatched", "dynamic"]
 
@@ -69,10 +68,7 @@ def _default_score_for(_lane: str) -> str:
 def _validate_lanes(lanes: tuple[str, ...]) -> None:
     for lane in lanes:
         if lane not in WRITEBACK_LANES:
-            raise SelectionError(
-                f"lane {lane!r} is not a write-back lane; "
-                f"lanes are {WRITEBACK_LANES}"
-            )
+            raise SelectionError(f"lane {lane!r} is not a write-back lane; lanes are {WRITEBACK_LANES}")
 
 
 def _refuse_unpromoted(state_conn: sqlite3.Connection, lanes: tuple[str, ...]) -> None:
@@ -80,18 +76,13 @@ def _refuse_unpromoted(state_conn: sqlite3.Connection, lanes: tuple[str, ...]) -
         _validate_lanes((lane,))
         if not lane_is_promoted(state_conn, lane):
             raise UnpromotedLaneError(
-                f"lane {lane!r} is not promoted "
-                f"(persisted default={get_default(state_conn, lane)!r})"
+                f"lane {lane!r} is not promoted (persisted default={get_default(state_conn, lane)!r})"
             )
 
 
-def _fields_for_lanes(
-    fields: tuple[str, ...], lanes: tuple[str, ...]
-) -> tuple[str, ...]:
+def _fields_for_lanes(fields: tuple[str, ...], lanes: tuple[str, ...]) -> tuple[str, ...]:
     lane_set = set(lanes)
-    return tuple(
-        f for f in fields if f in WRITEBACK_FIELDS and WRITEBACK_FIELDS[f] in lane_set
-    )
+    return tuple(f for f in fields if f in WRITEBACK_FIELDS and WRITEBACK_FIELDS[f] in lane_set)
 
 
 def _load_resolvable(
@@ -100,10 +91,7 @@ def _load_resolvable(
     only_tracks: set[str] | None,
 ) -> dict[str, str]:
     """stable_id -> rekordbox content id for resolvable tracks."""
-    content_ids = {
-        row[0]
-        for row in rb_conn.execute("SELECT ID FROM djmdContent").fetchall()
-    }
+    content_ids = {row[0] for row in rb_conn.execute("SELECT ID FROM djmdContent").fetchall()}
     rows = state_conn.execute(
         """
         SELECT stable_id, vendor_id
@@ -189,9 +177,7 @@ def _load_own_values(
 
 
 def _rbx_bpm(rb_conn: sqlite3.Connection, content_id: str) -> float | None:
-    row = rb_conn.execute(
-        "SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)
-    ).fetchone()
+    row = rb_conn.execute("SELECT BPM FROM djmdContent WHERE ID = ?", (content_id,)).fetchone()
     if row is None or row[0] is None or int(row[0]) == 0:
         return None
     return int(row[0]) / 100.0
@@ -380,10 +366,7 @@ def render_plan(plan: WritebackPlan) -> None:
     print(f"unmatched: {counts['unmatched']}")
     print(f"dynamic: {counts['dynamic']}")
     print()
-    print(
-        "stable_id  field          rbx     own     delta   lane      "
-        "promoted  last_round  bucket"
-    )
+    print("stable_id  field          rbx     own     delta   lane      promoted  last_round  bucket")
     for row in plan.rows:
         print(
             f"{row.stable_id:<10} {row.field:<14} {row.rbx_value:<7} "

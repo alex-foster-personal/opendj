@@ -3,6 +3,7 @@
 A note is keyed by a scope string, not a foreign key, so scratch notes and
 notes for playlists that live outside state.db share one table.
 """
+
 from __future__ import annotations
 
 import re
@@ -71,9 +72,7 @@ def open_set_notes(db_path: Path) -> sqlite3.Connection:
 
 def validate_scope(scope: str) -> str:
     if not _SCOPE_RE.fullmatch(scope):
-        raise ValueError(
-            "scope must be 'scratch', 'playlist:<id>' or 'playlist_set:<int>'"
-        )
+        raise ValueError("scope must be 'scratch', 'playlist:<id>' or 'playlist_set:<int>'")
     return scope
 
 
@@ -90,17 +89,13 @@ def _row_to_note(row: sqlite3.Row | tuple) -> SetNote:
 
 
 def _current_rev(conn: sqlite3.Connection, scope: str) -> int:
-    row = conn.execute(
-        "SELECT rev FROM set_notes WHERE scope = ?", (scope,)
-    ).fetchone()
+    row = conn.execute("SELECT rev FROM set_notes WHERE scope = ?", (scope,)).fetchone()
     return int(row[0]) if row is not None else 0
 
 
 def list_set_notes(conn: sqlite3.Connection) -> list[SetNote]:
     apply_set_notes_migrations(conn)
-    rows = conn.execute(
-        f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes ORDER BY scope"
-    ).fetchall()
+    rows = conn.execute(f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes ORDER BY scope").fetchall()
     return [_row_to_note(row) for row in rows]
 
 

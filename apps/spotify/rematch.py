@@ -8,6 +8,7 @@ No filesystem watching in v1; explicit re-run. Safety mirrors
 :mod:`state_writer`: dry-run default, single transaction, backup +
 reversal handled by the caller.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -94,11 +95,7 @@ def _linked_odj_playlist_id(
     playlist_id: str,
 ) -> str | None:
     """ODJ twin id linked to this Spotify playlist, if any."""
-    vendor_pl_id = (
-        playlist_id.split(":", 1)[1]
-        if playlist_id.startswith("spotify:")
-        else playlist_id
-    )
+    vendor_pl_id = playlist_id.split(":", 1)[1] if playlist_id.startswith("spotify:") else playlist_id
     link = fetch_playlist_link(conn, vendor_pl_id)
     return link.odj_playlist_id if link is not None else None
 
@@ -126,7 +123,10 @@ def _promote_pending_row(
         if pl_id is None:
             continue
         member_stamp = sync_stamp.stamp_and_log(
-            conn, "playlist_memberships", (pl_id, pending.position), machine_id,
+            conn,
+            "playlist_memberships",
+            (pl_id, pending.position),
+            machine_id,
             now=now,
         )
         conn.execute(
@@ -141,15 +141,21 @@ def _promote_pending_row(
               deleted_at = NULL
             """,
             (
-                pl_id, target.stable_id, pending.position,
-                member_stamp.updated_at, member_stamp.origin_device_id,
+                pl_id,
+                target.stable_id,
+                pending.position,
+                member_stamp.updated_at,
+                member_stamp.origin_device_id,
             ),
         )
     # Link local track -> Spotify id for future de-dup.
     vendor_track = _track_id_from_spotify_uri(pending.spotify_uri or "")
     if vendor_track:
         vendor_stamp = sync_stamp.stamp_and_log(
-            conn, "track_vendor_ids", (target.stable_id, "spotify"), machine_id,
+            conn,
+            "track_vendor_ids",
+            (target.stable_id, "spotify"),
+            machine_id,
             now=now,
         )
         conn.execute(
@@ -160,8 +166,10 @@ def _promote_pending_row(
             "vendor_id=excluded.vendor_id, updated_at=excluded.updated_at, "
             "origin_device_id=excluded.origin_device_id, deleted_at=NULL",
             (
-                target.stable_id, vendor_track,
-                vendor_stamp.updated_at, vendor_stamp.origin_device_id,
+                target.stable_id,
+                vendor_track,
+                vendor_stamp.updated_at,
+                vendor_stamp.origin_device_id,
             ),
         )
     conn.execute(
@@ -188,18 +196,13 @@ def _bump_playlist_revisions(
         if pl_id is None:
             continue
         revision = next_playlist_revision(conn, pl_id, now)
-        stamp = sync_stamp.stamp_and_log(
-            conn, "playlists", (pl_id,), machine_id, now=revision
-        )
+        stamp = sync_stamp.stamp_and_log(conn, "playlists", (pl_id,), machine_id, now=revision)
         updated = conn.execute(
-            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-            "WHERE playlist_id = ?",
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
             (stamp.updated_at, stamp.origin_device_id, pl_id),
         )
         if pl_id == primary_playlist_id and updated.rowcount != 1:
-            raise RuntimeError(
-                f"playlist not found during rematch: {primary_playlist_id}"
-            )
+            raise RuntimeError(f"playlist not found during rematch: {primary_playlist_id}")
 
 
 def rematch_playlist(
@@ -242,20 +245,21 @@ def rematch_playlist(
         target_playlists = (playlist_id, _linked_odj_playlist_id(conn, playlist_id))
         for pending, _pair, target in resolved_pairs:
             _promote_pending_row(
-                conn, target_playlists, pending, target, now,
+                conn,
+                target_playlists,
+                pending,
+                target,
+                now,
                 machine_id=machine_id,
             )
-        _bump_playlist_revisions(
-            conn, target_playlists, playlist_id, now, machine_id=machine_id
-        )
+        _bump_playlist_revisions(conn, target_playlists, playlist_id, now, machine_id=machine_id)
 
     return outcome
 
 
 def _count_abandoned(conn: sqlite3.Connection, playlist_id: str) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) FROM pending_tracks "
-        "WHERE playlist_id = ? AND status = 'abandoned'",
+        "SELECT COUNT(*) FROM pending_tracks WHERE playlist_id = ? AND status = 'abandoned'",
         (playlist_id,),
     ).fetchone()
     return int(row[0]) if row else 0

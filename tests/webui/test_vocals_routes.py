@@ -69,7 +69,7 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     Tracks (stable_id -> scenario):
       hasstem   audio on disk, ANLZ .DAT present, stem bundle
-                -> todo, from-stems succeeds
+                -> stem_derivable, from-stems succeeds
       nostem    audio on disk, ANLZ .DAT present, NO stem bundle
                 -> todo, from-stems refuses missing_stems
       noanlz    audio on disk, no ANLZ .DAT -> missing_analysis
@@ -247,6 +247,21 @@ def test_from_stems_happy_path_claims_and_writes_cache(
     )
     assert loaded is not None
     assert loaded["regions"]
+
+
+def test_one_refuses_stem_derivable(
+    client: TestClient, data_dir: Path, stem_bundle: None
+) -> None:
+    response = client.post(
+        "/api/v1/vocals/analyze",
+        json={"stable_ids": ["hasstem"], "mode": "one"},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json() == {
+        "claimed": [],
+        "refused": {"hasstem": "stem_derivable"},
+    }
+    assert not vcache.cache_path(data_dir, "hasstem").exists()
 
 
 def test_missing_analysis_refuses_and_writes_nothing(client: TestClient, data_dir: Path) -> None:

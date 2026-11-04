@@ -171,13 +171,21 @@ def is_timeout_transport(exc: SyncTransportError) -> bool:
     return "client timeout after" in text or "timed out" in text or "timeout" in text
 
 
-def _url_error_is_timeout(exc: urllib.error.URLError) -> bool:
-    reason = exc.reason
-    if isinstance(reason, TimeoutError):
+def _os_error_is_timeout(exc: BaseException) -> bool:
+    """True for a mid-read socket timeout or a URLError wrapping one.
+
+    Connect-time stalls usually arrive as ``URLError(reason=TimeoutError)``.
+    After headers, ``urlopen`` + ``read()`` raises bare ``TimeoutError('timed
+    out')``, which is an ``OSError`` and not a ``URLError``. That is the
+    Sentry OPEN-DJ-BE-90 title.
+    """
+    if isinstance(exc, urllib.error.URLError):
+        exc = exc.reason if isinstance(exc.reason, BaseException) else exc
+    if isinstance(exc, TimeoutError):
         return True
-    if isinstance(reason, socket.timeout):
+    if isinstance(exc, socket.timeout):
         return True
-    return "timed out" in str(reason).lower()
+    return "timed out" in str(exc).lower()
 
 
 def is_unreachable(exc: SyncTransportError) -> bool:
@@ -269,16 +277,19 @@ class HttpTransport:
                 detail,
                 elapsed_s=elapsed,
             ) from exc
-        except urllib.error.URLError as exc:
+        except OSError as exc:
+            # URLError (connect-time) and bare TimeoutError (mid-read) are
+            # both OSError. HTTPError is handled above.
             elapsed = time.monotonic() - started
-            if _url_error_is_timeout(exc):
+            reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            if _os_error_is_timeout(exc):
                 raise SyncTransportError(
                     f"{request.get_method()} {request.full_url} client timeout "
-                    f"after {elapsed:.1f}s: {exc.reason}"
+                    f"after {elapsed:.1f}s: {reason}"
                 ) from exc
             raise SyncTransportError(
                 f"{request.get_method()} {request.full_url} failed after "
-                f"{elapsed:.1f}s: {exc.reason}"
+                f"{elapsed:.1f}s: {reason}"
             ) from exc
         return _decode(body, request.full_url)
 

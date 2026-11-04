@@ -7,6 +7,7 @@ module would otherwise have with ``load.py`` (``load_plan`` needs these;
 re-exports every name here, so ``from apps.mik.load import LoadPlan`` (the
 existing import shape used throughout the codebase) is unaffected.
 """
+
 from __future__ import annotations
 
 import sqlite3

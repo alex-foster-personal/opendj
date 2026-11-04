@@ -71,8 +71,8 @@ Full milestone-level status: `(private path)` through `M7-complete.md`. Full cha
 Python 3.11 or newer:
 
 ```bash
-git clone https://github.com/private_owner/music-dj-tools.git
-cd music-dj-tools
+git clone https://github.com/alex-foster-personal/opendj.git
+cd opendj
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --no-build-isolation -r requirements.txt

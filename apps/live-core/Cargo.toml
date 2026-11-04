@@ -1,0 +1,49 @@
+[package]
+name = "odj-live-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Open DJ Track Catcher live core: chroma, key, tuning and BPM frames from audio"
+publish = false
+
+[lib]
+name = "odj_live_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "odj-live"
+path = "src/bin/odj-live.rs"
+
+[features]
+default = []
+# A C ABI (feed f32 mono samples, take frame JSON) for the Swift app to link.
+# Build a static library for it with
+#   cargo rustc --release --features ffi --lib --crate-type staticlib
+# Header: include/odj_live.h. Off by default so the CLI build carries no
+# exported symbols; CI tests it with --features ffi.
+ffi = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Same decoder and feature list as apps/audio-engine (odj-audio).
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "wav", "aiff", "pcm", "aac", "alac", "isomp4", "ogg", "vorbis"] }
+# Resampling to the 22050 Hz analysis rate; already in the tree through odj-audio.
+rubato = "0.16"
+# The FFTs behind the constant-Q kernels, tuning peaks and onset flux; rubato
+# already depends on it, so it adds no crate to the build.
+realfft = "3.5"
+# The complex FFT that builds the constant-Q kernels once; realfft is built on it.
+rustfft = "6.4"
+clap = { version = "=4.5.23", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.test]
+opt-level = 2

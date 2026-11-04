@@ -84,6 +84,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' }),
 		null
 	);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track' }), null);
 });
 
 test('load suppressCommandErrorToast parses through parsePerformanceCommandForTest', () => {
@@ -1147,6 +1148,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			selected_input_device_id: null,
 			output_mode: 'practice',
 			split_reason: null,
+			launch_restore: null,
+			fidelity_guard: null,
 			head_delay_ms: 0,
 			alignment_mode: 'hybrid',
 			master_delay_ms: 0,
@@ -1574,6 +1577,22 @@ test('IOPIN-06 takeover mode is a strict dispatcher command with a query-visible
 	}
 });
 
+// Issue #3543 / AGENT-01: auto_play_two_track must record on the bus without the old
+// not_implemented command error (TOPVIEW-06 wires the live pref toggle on main).
+test('auto_play_two_track is a registered performance command that completes without a command error', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const state = await ipc.dispatchPerformanceCommand({ type: 'auto_play_two_track', enabled: true });
+		assert.equal(state.history.at(-1)?.type, 'auto_play_two_track');
+		assert.equal(state.last_error, null);
+		assert.doesNotMatch(JSON.stringify(state), /auto_play_two_track: not_implemented/);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('TOPVIEW-06 two-track AutoPlay has a queue scope and the checkbox uses the typed dispatcher', async () => {
 	// [if] auto_play_two_track has no queue scope [then] every IPC/CLI call throws, [else stop].
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track', enabled: true }), null);
@@ -1654,9 +1673,7 @@ test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', a
 // The community-pins toggle in FeedbackWidget is inert (rb-inert, disabled),
 // but per AGENT-NATIVE PARITY every UI control still needs a matching
 // performance-bus command - one that answers honestly rather than pretending
-// to work. Modelled on auto_play_two_track, the existing precedent for a
-// UI-contract-only command that is rejected at the dispatch boundary before
-// it ever reaches deck/engine logic.
+// to work.
 test('pins_show_other_users is a registered performance command that refuses not_implemented', async () => {
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();

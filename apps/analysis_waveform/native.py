@@ -28,8 +28,7 @@ log = logging.getLogger(__name__)
 _WAVEFORM_BACKEND_REQUEST = os.environ.get("MDT_WAVEFORM_BACKEND", "auto").strip().lower()
 if _WAVEFORM_BACKEND_REQUEST not in {"auto", "python", "native"}:
     raise RuntimeError(
-        "MDT_WAVEFORM_BACKEND must be one of auto, python, or native; "
-        f"got {_WAVEFORM_BACKEND_REQUEST!r}"
+        f"MDT_WAVEFORM_BACKEND must be one of auto, python, or native; got {_WAVEFORM_BACKEND_REQUEST!r}"
     )
 
 _WAVEFORM_NATIVE_IMPORT_ERROR: ImportError | None = None
@@ -42,8 +41,7 @@ else:
         _WAVEFORM_NATIVE_IMPORT_ERROR = exc
         if _WAVEFORM_BACKEND_REQUEST == "native":
             raise RuntimeError(
-                "MDT_WAVEFORM_BACKEND=native requested, but the release "
-                "waveform extension could not be imported"
+                "MDT_WAVEFORM_BACKEND=native requested, but the release waveform extension could not be imported"
             ) from exc
         # auto is the compatibility default: source checkouts, unsupported
         # platforms, and baseline wheels keep the exact NumPy path.
@@ -71,7 +69,5 @@ def waveform_materialization_status() -> dict[str, Any]:
         "requested": _WAVEFORM_BACKEND_REQUEST,
         "selected": waveform_materialization_backend(),
         "native_available": _WAVEFORM_NATIVE is not None,
-        "native_import_error": (
-            f"{type(error).__name__}: {error}" if error is not None else None
-        ),
+        "native_import_error": (f"{type(error).__name__}: {error}" if error is not None else None),
     }

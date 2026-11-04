@@ -15,6 +15,7 @@ Platform seam: Windows has no ``O_NOFOLLOW`` and no fd paths, and the FAT and
 exFAT file systems sticks use there hold no symlinks, so the checked path is
 served as it is.
 """
+
 from __future__ import annotations
 
 import contextlib

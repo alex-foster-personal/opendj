@@ -147,14 +147,7 @@ class ErrorEvent(BaseModel):
 
 
 AgentEvent = Annotated[
-    TierEvent
-    | TextEvent
-    | ToolCallEvent
-    | ConfirmEvent
-    | ToolResultEvent
-    | MessageEvent
-    | DoneEvent
-    | ErrorEvent,
+    TierEvent | TextEvent | ToolCallEvent | ConfirmEvent | ToolResultEvent | MessageEvent | DoneEvent | ErrorEvent,
     Field(discriminator="type"),
 ]
 

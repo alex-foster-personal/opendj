@@ -12,7 +12,7 @@
 	 * knob/fader positions inseparable.
 	 */
 	import { onMount, untrack } from 'svelte';
-	import { listIoDevicesOnOpen, refreshIoDeviceList } from '$lib/rb/io-device-refresh';
+	import { listIoDevicesAndRestoreOutputsOnMount, listIoDevicesOnOpen } from '$lib/rb/io-device-refresh';
 	import { ioDeviceAccessOnOpen } from '$lib/player/io-device-access';
 	import { ioSurface } from '$lib/rb/io-surface.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
@@ -109,6 +109,10 @@
 		void runPerformanceCommandFromUi({ type: 'filter', deck, value });
 	}
 
+	function handleColorFx(deck: DeckId, effect: 'filter' | 'space' | 'echo' | 'next'): void {
+		void runPerformanceCommandFromUi({ type: 'color_fx', deck, effect });
+	}
+
 	function handleFader(deck: DeckId, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'fader', deck, value });
 	}
@@ -192,7 +196,7 @@
 	// build's one switch, set in vite.config.ts (dev server: ask once per origin;
 	// every built app: only the grant button asks).
 	const ioOpenMode = ioDeviceAccessOnOpen(import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN);
-	onMount(() => void refreshIoDeviceList());
+	onMount(() => void listIoDevicesAndRestoreOutputsOnMount());
 	$effect(() => {
 		if (ioSurface.open) untrack(() => void listIoDevicesOnOpen(ioOpenMode));
 	});
@@ -299,6 +303,7 @@
 					onAutoGainOffset={(db, id) => handleAutoGainOffset(deck, db, id)}
 					oneq={(band, v) => handleEq(deck, band, v)}
 					onfilter={(v) => handleFilter(deck, v)}
+					oncolorfx={(effect) => handleColorFx(deck, effect)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
 					onStemEqMode={(enabled) => handleStemEqMode(deck, enabled)}

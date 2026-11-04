@@ -86,9 +86,6 @@ DEFAULT_REMOTE_CHECKOUT: str = "~/code/music-dj-tools"
 #: e.g. ``mac-mini=/Volumes/work/music-dj-tools`` (issue #5639, .env.sample).
 #: No host name is built in; unset or blank means every host uses the default.
 REMOTE_CHECKOUTS_ENV: str = "MDT_SYNC_REMOTE_CHECKOUTS"
-#: Stage-1 alias for the old single-host variable, read as ``silver=<value>``
-#: so a machine that set it keeps its path. Stage 2 of #5639 deletes it.
-LEGACY_SILVER_CHECKOUT_ENV: str = "MDT_SILVER_CHECKOUT"
 
 
 # -----------------------------------------------------------------------------
@@ -342,10 +339,9 @@ def do_worktree(repo: Path, dest: Path, live: bool) -> int:
 
 
 def remote_checkouts(environ: Mapping[str, str] | None = None) -> dict[str, str]:
-    """{host: remote checkout} from MDT_SYNC_REMOTE_CHECKOUTS (+ the legacy alias).
+    """{host: remote checkout} from MDT_SYNC_REMOTE_CHECKOUTS.
 
-    Read per call, not at import. A malformed entry, or the legacy alias
-    disagreeing with an explicit ``silver=`` entry, raises naming the variable
+    Read per call, not at import. A malformed entry raises naming the variable
     rather than syncing into a guessed directory.
     """
     env = os.environ if environ is None else environ
@@ -357,12 +353,6 @@ def remote_checkouts(environ: Mapping[str, str] | None = None) -> dict[str, str]
         if not (sep and host and path):
             raise ValueError(f"{REMOTE_CHECKOUTS_ENV}: expected host=path, got {entry.strip()!r}")
         checkouts[host] = path
-    legacy = (env.get(LEGACY_SILVER_CHECKOUT_ENV) or "").strip()
-    if legacy and checkouts.setdefault("silver", legacy) != legacy:
-        raise ValueError(
-            f"{LEGACY_SILVER_CHECKOUT_ENV}={legacy!r} disagrees with silver={checkouts['silver']!r} "
-            f"in {REMOTE_CHECKOUTS_ENV}; unset the legacy variable"
-        )
     return checkouts
 
 

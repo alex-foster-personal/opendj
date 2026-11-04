@@ -47,9 +47,8 @@ METADATA_NAMES = (MANIFEST_NAME, SUMS_NAME, ID_NAME)
 # DESCRIPTION, is carried forward from the staged directory, and is part of the
 # bundle identity. See `semantic_manifest`.
 VOLATILE_KEYS = frozenset({"built_at", "built_from"})
-SEALED_KEYS = frozenset(
-    {"schema", "bundle_id", "sealed_at", "payload", "payload_count", "payload_bytes"}
-)
+SEALED_KEYS = frozenset({"schema", "bundle_id", "sealed_at", "payload", "payload_count", "payload_bytes"})
+
 
 class BundleError(RuntimeError):
     """A bundle could not be sealed, verified, pushed or pulled. Never caught here."""
@@ -174,9 +173,7 @@ def payload_references(description: dict[str, Any]) -> list[str]:
     return found
 
 
-def require_references_inside(
-    bundle: Path, description: dict[str, Any], entries: list[tuple[str, str]]
-) -> None:
+def require_references_inside(bundle: Path, description: dict[str, Any], entries: list[tuple[str, str]]) -> None:
     """Refuse a manifest that points a consumer at bytes the checksums do not cover.
 
     A staged manifest carrying `reads.truth: ../truth.json`, or a fixture whose
@@ -200,8 +197,7 @@ def require_references_inside(
             continue
         if rel not in listed:
             problems.append(
-                f"{rel!r} is referenced by the manifest but is not one of the "
-                f"{len(listed)} checksummed payload files"
+                f"{rel!r} is referenced by the manifest but is not one of the {len(listed)} checksummed payload files"
             )
     if problems:
         raise BundleError(
@@ -234,9 +230,7 @@ def seal_bundle(
         try:
             description = semantic_manifest(json.loads(staged.read_text(encoding="utf-8")))
         except json.JSONDecodeError as exc:
-            raise BundleError(
-                f"{staged} is not readable JSON, so it cannot be sealed: {exc}"
-            ) from exc
+            raise BundleError(f"{staged} is not readable JSON, so it cannot be sealed: {exc}") from exc
     description.update(manifest_extra or {})
     description["lane"] = lane
     description["version"] = version
@@ -288,16 +282,13 @@ def _check_bytes_against_sums(bundle: Path, listed: dict[str, str]) -> None:
             problems.append(f"{rel}: on disk it hashes differently from {SUMS_NAME}")
     on_disk = set(payload_paths(bundle)) | {MANIFEST_NAME, ID_NAME}
     problems.extend(
-        f"{rel}: present in the bundle but not listed in {SUMS_NAME}"
-        for rel in sorted(on_disk - set(listed))
+        f"{rel}: present in the bundle but not listed in {SUMS_NAME}" for rel in sorted(on_disk - set(listed))
     )
     if problems:
         raise BundleError(f"{bundle} failed verification:\n  " + "\n  ".join(problems))
 
 
-def _bound_entries(
-    bundle: Path, manifest: dict[str, Any], listed: dict[str, str]
-) -> list[tuple[str, str]]:
+def _bound_entries(bundle: Path, manifest: dict[str, Any], listed: dict[str, str]) -> list[tuple[str, str]]:
     """The payload entries, proved to be the same list in SHA256SUMS and the manifest.
 
     `_check_bytes_against_sums` proves every file matches SHA256SUMS, and the id
@@ -329,14 +320,10 @@ def verify_bundle(bundle: Path, *, expect_bundle_id: str | None = None) -> dict[
 
     manifest = json.loads((bundle / MANIFEST_NAME).read_text(encoding="utf-8"))
     if manifest.get("schema") != BUNDLE_SCHEMA:
-        raise BundleError(
-            f"{bundle} is bundle schema {manifest.get('schema')!r}, this reader is {BUNDLE_SCHEMA}"
-        )
+        raise BundleError(f"{bundle} is bundle schema {manifest.get('schema')!r}, this reader is {BUNDLE_SCHEMA}")
     entries = _bound_entries(bundle, manifest, listed)
     require_references_inside(bundle, manifest, entries)
-    recomputed = compute_bundle_id(
-        manifest["lane"], manifest["version"], entries, identity_manifest(manifest)
-    )
+    recomputed = compute_bundle_id(manifest["lane"], manifest["version"], entries, identity_manifest(manifest))
     on_file = (bundle / ID_NAME).read_text(encoding="utf-8").strip()
     if recomputed != manifest["bundle_id"] or recomputed != on_file:
         raise BundleError(
@@ -367,13 +354,10 @@ def safe_target(dest: Path, rel: str) -> Path:
     parts = PurePosixPath(rel).parts
     if not rel or rel.startswith("/") or PurePosixPath(rel).is_absolute() or ".." in parts:
         raise BundleError(
-            f"store key suffix {rel!r} is absolute or climbs out of the bundle; "
-            f"refusing to write it under {dest}"
+            f"store key suffix {rel!r} is absolute or climbs out of the bundle; refusing to write it under {dest}"
         )
     target = (dest / rel).resolve()
     root = dest.resolve()
     if root != target and root not in target.parents:
-        raise BundleError(
-            f"store key suffix {rel!r} resolves to {target}, outside {root}; refusing to write it"
-        )
+        raise BundleError(f"store key suffix {rel!r} resolves to {target}, outside {root}; refusing to write it")
     return target

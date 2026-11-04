@@ -36,15 +36,16 @@ TABLES: dict[str, str] = {
     ),
     "path_availability": (
         "One rekordbox library path's last stat on THIS machine (materialized "
-        "size, or NULL for not on disk) and when it was taken, keyed by a "
+        "size, mtime_ns, or NULL for not on disk) and when it was taken, keyed by a "
         "resolver namespace so a changed path map or another machine never "
         "reads it. A cache for listing hydration (issue #1037): rows older "
         "than the TTL are stale, and a path with no row is unprobed, not absent."
     ),
     "track_fields": (
-        "One field value for one track from one adapter, so rekordbox, djay "
-        "and serato can each hold a different opinion about the same track "
-        "without overwriting each other."
+        "Current analysed value for one (stable_id, field_name). A later write "
+        "replaces the current row regardless of source or confidence; the previous "
+        "envelope moves to track_field_history. confidence is reported provenance, "
+        "not an arbitration input."
     ),
     "track_field_history": (
         "One prior value of a track field, appended when a field changes. The "

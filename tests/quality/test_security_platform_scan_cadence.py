@@ -34,6 +34,10 @@ WEEKLY_DISPATCH = (
     "(github.event_name == 'workflow_dispatch' && inputs.cadence == 'weekly' "
     "&& github.ref == 'refs/heads/main')"
 )
+# The job is wrapped in the private-source guard so the public mirror (no Semgrep app,
+# no SEMGREP_APP_TOKEN) skips it: `<guard> && ( <disjuncts> )`. The cadence policy below
+# is about the disjuncts inside the parentheses.
+PRIVATE_SOURCE_GUARD = "endsWith(github.repository, '/music-dj-tools')"
 PR_CONJUNCTION_PREFIX = (
     "(vars.CI_HOSTED_SECURITY_JOBS == 'true' && github.event_name == 'pull_request' &&"
 )
@@ -49,7 +53,19 @@ def _workflow() -> dict:
 def _semgrep_disjuncts(workflow: dict) -> list[str]:
     job = workflow["jobs"]["semgrep"]
     assert "if" in job, "semgrep job has no if field, so every trigger reaches it"
-    return top_level_disjuncts(str(job["if"]))
+    condition = " ".join(str(job["if"]).split())
+    head = f"{PRIVATE_SOURCE_GUARD} && ("
+    assert condition.startswith(head) and condition.endswith(")"), (
+        f"semgrep job is not wrapped in the private-source guard: {condition!r}"
+    )
+    inner = condition[len(head) : -1]
+    # The guard must wrap the WHOLE disjunction: a `)` closing the wrapper early would
+    # leave a trailing `|| ...` outside it, which top_level_disjuncts on the full
+    # condition would expose as a second top-level disjunct.
+    assert top_level_disjuncts(condition) == [condition], (
+        f"the private-source guard does not wrap the whole condition: {condition!r}"
+    )
+    return top_level_disjuncts(inner)
 
 
 def test_workflow_still_declares_both_crons() -> None:

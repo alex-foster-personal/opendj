@@ -1,4 +1,4 @@
-"""Content-addressed asset tier on R2 (ADR 06, ``specs/design_decision_06.md``).
+"""Content-addressed asset tier on R2 (ADR 06, ``(private path)``).
 
 R2 is the CANONICAL home of every large derived artifact: stem bundles, HQ
 audio copies, listening evidence. Objects are content-addressed::
@@ -383,6 +383,9 @@ def _read_presigned_body(
         ) from exc
     except urllib.error.URLError as exc:
         raise AssetStoreError(f"presigned GET unreachable for {digest}: {exc.reason}") from exc
+    except OSError as exc:
+        # Mid-read socket timeout is TimeoutError, an OSError, not URLError.
+        raise AssetStoreError(f"presigned GET unreachable for {digest}: {exc}") from exc
     actual = hashlib.sha256(body).hexdigest()
     if actual != digest:
         raise AssetStoreError(

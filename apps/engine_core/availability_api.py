@@ -1,4 +1,5 @@
 """HTTP surface for engine-owned availability probing."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -31,20 +32,12 @@ class AvailabilityStatusOut(BaseModel):
     phase: Literal["idle", "queued", "running", "complete", "refused", "failed"]
     pending: int = Field(description="Tracks still needing a probe pass")
     unknown: int = Field(description="Live tracks with no availability row")
-    stale: int = Field(
-        description="Rows whose tracks.updated_at is newer than checked_at"
-    )
-    awaiting_volume: int = Field(
-        description="Rows under an unmounted /Volumes path to re-check"
-    )
-    processed_total: int = Field(
-        description="Rows classified across this worker lifetime"
-    )
+    stale: int = Field(description="Rows whose tracks.updated_at is newer than checked_at")
+    awaiting_volume: int = Field(description="Rows under an unmounted /Volumes path to re-check")
+    processed_total: int = Field(description="Rows classified across this worker lifetime")
     present: int = Field(description="Current present count in track_availability")
     last_error: str | None = None
-    complete: bool = Field(
-        description="True when no unknown/stale/awaiting_volume rows remain"
-    )
+    complete: bool = Field(description="True when no unknown/stale/awaiting_volume rows remain")
 
 
 def _status_out(status: AvailabilityWorkerStatus) -> AvailabilityStatusOut:

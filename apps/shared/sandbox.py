@@ -29,7 +29,7 @@ sentence, :data:`STORE_BUILD_REFUSAL_TITLE`, for the same reason the third one
 did: telling a user a feature is "not implemented" when the truth is "Apple's
 sandbox forbids it" is a lie about why the control is dead.  The four are
 pinned apart by
-``apps/webui/frontend/tests/unit/store-build-refusal.test.mjs``.
+``(private path)``.
 
 WHAT A REFUSAL MUST NOT SAY.  It must not send the user to a download outside
 the store.  App Store Review Guideline 3.2.2(vi) bars an app from requiring a
@@ -38,7 +38,7 @@ user to download something else to access functionality, and Apple reads
 sounding "use the direct download instead" in a tooltip is a rejection risk
 shipped in a string.  Shipping a store build that simply does not have the
 feature is fine; ADVERTISING the way around it from inside that build is not.
-See section 3, option B of ``specs/appstore-sandbox-remediation.md``.
+See section 3, option B of ``(private path)``.
 """
 
 from __future__ import annotations
@@ -62,10 +62,7 @@ STORE_BUILD_REFUSAL_CODE: str = "capability_not_in_store_build"
 #: PARITY-TODO wording, not a capability refusal, not the plan refusal. It
 #: names the BUILD and the reason, and deliberately points nowhere outside
 #: the store.
-STORE_BUILD_REFUSAL_TITLE: str = (
-    "not available in the App Store build - the macOS App Sandbox does not "
-    "permit it"
-)
+STORE_BUILD_REFUSAL_TITLE: str = "not available in the App Store build - the macOS App Sandbox does not permit it"
 
 
 class SandboxRefusal(RuntimeError):
@@ -77,9 +74,7 @@ class SandboxRefusal(RuntimeError):
     """
 
 
-def is_sandboxed(
-    environ: dict[str, str] | None = None, platform: str | None = None
-) -> bool:
+def is_sandboxed(environ: dict[str, str] | None = None, platform: str | None = None) -> bool:
     """True when this process is inside an App Sandbox container.
 
     Two independent signals, because either alone can be defeated: the env var
@@ -103,9 +98,7 @@ def is_sandboxed(
     return _CONTAINER_MARKER in str(Path(env.get("HOME", "")))
 
 
-def store_build_refusal_message(
-    capability: str, *, because: str, instead: str | None = None
-) -> str:
+def store_build_refusal_message(capability: str, *, because: str, instead: str | None = None) -> str:
     """The human sentence a store-build refusal carries.
 
     Spelled once here so the exception a caller raises, the HTTP body a route
@@ -125,19 +118,15 @@ def store_build_refusal_message(
     return (
         f"{capability} is not available in the App Store build of Open DJ. "
         f"{because} {onward}"
-        "See specs/appstore-sandbox-remediation.md."
+        "See (private path)."
     )
 
 
-def refuse_if_sandboxed(
-    capability: str, *, because: str, instead: str | None = None
-) -> None:
+def refuse_if_sandboxed(capability: str, *, because: str, instead: str | None = None) -> None:
     """Raise :class:`SandboxRefusal` when sandboxed, saying why."""
     if not is_sandboxed():
         return
-    raise SandboxRefusal(
-        store_build_refusal_message(capability, because=because, instead=instead)
-    )
+    raise SandboxRefusal(store_build_refusal_message(capability, because=because, instead=instead))
 
 
 __all__ = [

@@ -86,7 +86,9 @@ def test_a_blocked_listing_answers_unknown_within_the_deadline(blocked: dict) ->
     probes = fs_access.probe_all(
         [blocked["fine"], blocked["stuck"]],
         deadline_s=0.3,
-        give_up=_give_up_after(blocked["done_for"](blocked["fine"])),
+        # Wait for the stuck listing to have started too: under load its thread can
+        # miss the 0.3 s deadline before it runs, and that reads "not checked".
+        give_up=_give_up_after(blocked["done_for"](blocked["fine"]), blocked["entered_for"](blocked["stuck"])),
     )
     elapsed = time.monotonic() - started
 
@@ -187,7 +189,9 @@ def test_a_no_answer_probe_stays_pending_after_its_listing_finishes(blocked: dic
     probes = fs_access.probe_all(
         [blocked["fine"], blocked["stuck"]],
         deadline_s=0.2,
-        give_up=_give_up_after(blocked["done_for"](blocked["fine"])),
+        # Wait for the stuck listing to have started too: under load its thread can
+        # miss registration before give_up fires, and _IN_FLIGHT[stuck] KeyErrors.
+        give_up=_give_up_after(blocked["done_for"](blocked["fine"]), blocked["entered_for"](blocked["stuck"])),
     )
     with fs_access._IN_FLIGHT_LOCK:
         job = fs_access._IN_FLIGHT[blocked["stuck"]]

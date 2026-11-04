@@ -25,6 +25,7 @@ Requirements (mini-PRD):
     [if] a row already has a duration [then] it is not a candidate
     [if] the tags read but no duration does [then] what read lands and the row is reported failed
 """
+
 from __future__ import annotations
 
 import json
@@ -65,9 +66,15 @@ def blank_rows(conn: sqlite3.Connection, stable_ids: list[str] | None = None) ->
         params = list(stable_ids)
     return [
         BlankRow(
-            stable_id=row[0], stable_id_tier=row[1], file_path=row[2], title=row[3],
-            artists=list(json.loads(row[4] or "[]")), album=row[5], isrc=row[6],
-            content_hash=row[7], audio_hash=row[8],
+            stable_id=row[0],
+            stable_id_tier=row[1],
+            file_path=row[2],
+            title=row[3],
+            artists=list(json.loads(row[4] or "[]")),
+            album=row[5],
+            isrc=row[6],
+            content_hash=row[7],
+            audio_hash=row[8],
         )
         for row in conn.execute(sql, params).fetchall()
     ]

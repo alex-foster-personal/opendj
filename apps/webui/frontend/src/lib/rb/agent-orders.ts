@@ -19,6 +19,8 @@ import type { AgentPlanMirror, PlanRunner, PlanStateView } from './agent-plan';
 import { autoPlayHandoffInFlight, registerAgentPlanStatus } from './auto-play-plan-gate';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { setPlanOverlay } from './plan-overlay-store.svelte';
+import { deckPlayingRefusal, playingDeckReplaced, type DeckPlayingRefusal } from './agent-load-refusal';
+import { LEASE_HEADER } from './leased-mirror-publisher';
 
 type ClockDeck = 1 | 2 | 3 | 4;
 
@@ -51,6 +53,10 @@ export interface AgentOrder {
 interface AgentStepResult {
 	status: 'succeeded' | 'failed' | 'skipped';
 	error?: string;
+	/** AGENT-8332: a known refusal names itself, so the CLI and MCP can say why
+	 * and what to send instead (`deck_playing`: the deck, its track, the override). */
+	code?: DeckPlayingRefusal['code'];
+	detail?: DeckPlayingRefusal['detail'];
 	/** browser_select_playlist answers at first rows (`complete` false means more
 	 * are coming); a plan answers with its id, status and current bar (AGENT-24);
 	 * remote_speaker_answer answers with the speaker's SDP (I18). */
@@ -272,14 +278,20 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 			);
 			return result === null ? { status: 'succeeded' } : { status: 'succeeded', result };
 		} else {
+			// AGENT-8332b: read what a replace_playing load is about to stop BEFORE it runs.
+			const replaced = playingDeckReplaced(order, queryPerformanceState());
 			const after = await dispatchPerformanceCommand(_command(command), undefined, 'agent-command');
 			if (order.type === 'browser_select_playlist' && after.browser.load !== null) {
 				return { status: 'succeeded', result: { ...after.browser.load } };
 			}
+			if (replaced !== null) return { status: 'succeeded', result: { replaced_playing: replaced } };
 		}
 		return { status: 'succeeded' };
 	} catch (error) {
-		return { status: 'failed', error: _message(error) };
+		const refusal = deckPlayingRefusal(error, command, queryPerformanceState());
+		return refusal === null
+			? { status: 'failed', error: _message(error) }
+			: { status: 'failed', error: _message(error), ...refusal };
 	}
 }
 
@@ -450,7 +462,9 @@ function _sleep(ms: number): Promise<void> {
 export async function pollAgentOrders(
 	page: PerformancePageRegistration,
 	republish: () => void,
-	isRunning: () => boolean
+	isRunning: () => boolean,
+	leaseId?: string,
+	signal?: AbortSignal
 ): Promise<void> {
 	let reportedUnheld = false;
 	let reportedClaimFailure = false;
@@ -463,8 +477,17 @@ export async function pollAgentOrders(
 		}
 		let response: Response;
 		try {
-			response = await fetch(NEXT_ORDER_URL);
+			const headers: Record<string, string> = {};
+			if (leaseId !== undefined) {
+				headers[LEASE_HEADER] = leaseId;
+			}
+			const init: RequestInit = { headers };
+			if (signal !== undefined) {
+				init.signal = signal;
+			}
+			response = await fetch(NEXT_ORDER_URL, init);
 		} catch {
+			if (!isRunning()) return;
 			// Unreachable engine (Safari TypeError `Load failed`) must not
 			// kill the loop or become an unhandledrejection.
 			await _sleep(IDLE_POLL_MS);
@@ -561,9 +584,11 @@ export async function pollAgentOrders(
 /** Run the order poll for the life of the performance route. */
 export function installAgentOrderPoll(
 	page: PerformancePageRegistration,
-	republish: () => void
+	republish: () => void,
+	leaseId?: string
 ): () => Promise<void> {
 	let running = true;
+	const controller = new AbortController();
 	// A mount starts with no runner: one left by an earlier mount is that page's.
 	const priorDisposal = _planRunner?.dispose() ?? Promise.resolve();
 	_planRunner = null;
@@ -573,9 +598,12 @@ export function installAgentOrderPoll(
 	_planEpoch += 1;
 	const epoch = _planEpoch;
 	_planOpenEpoch = epoch;
-	void settled.then(() => pollAgentOrders(page, republish, () => running));
+	void settled.then(() =>
+		pollAgentOrders(page, republish, () => running, leaseId, controller.signal)
+	);
 	return () => {
 		running = false;
+		controller.abort();
 		if (_planOpenEpoch !== epoch) return Promise.resolve(); // a newer mount owns the runner now
 		// The plan runner is page-scoped: a scheduled or running plan must not keep
 		// dispatching into an audio engine the route is disposing, and its status

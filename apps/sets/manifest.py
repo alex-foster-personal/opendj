@@ -3,6 +3,7 @@
 Written by :mod:`apps.sets.record` at stop-time; consumed by
 :mod:`apps.sets.sessions` and :mod:`apps.sets.api` for session discovery.
 """
+
 from __future__ import annotations
 
 import json

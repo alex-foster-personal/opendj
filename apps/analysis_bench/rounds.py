@@ -39,11 +39,7 @@ class RoundError(RuntimeError):
 
 def next_round_number(text: str, lane: str, *, floor: int) -> int:
     """One past the highest round this lane has posted here, never below its floor."""
-    posted = [
-        int(match.group("number"))
-        for match in _HEADING_RE.finditer(text)
-        if match.group("lane") == lane
-    ]
+    posted = [int(match.group("number")) for match in _HEADING_RE.finditer(text) if match.group("lane") == lane]
     return max([floor, *[n + 1 for n in posted]])
 
 
@@ -82,9 +78,7 @@ def render_round(lane: str, number: int, report: dict[str, Any], *, host: str) -
         )
 
     bundle = report.get("bundle") or {}
-    named = ", ".join(
-        f"{name} ({arm.get('role', 'candidate')})" for name, arm in sorted(arms.items())
-    )
+    named = ", ".join(f"{name} ({arm.get('role', 'candidate')})" for name, arm in sorted(arms.items()))
     lines = [
         HEADING.format(lane=lane, number=number),
         "",
@@ -100,9 +94,7 @@ def render_round(lane: str, number: int, report: dict[str, Any], *, host: str) -
     return "\n".join(lines)
 
 
-def append_round(
-    log_path: Path, lane: str, report: dict[str, Any], *, floor: int, host: str
-) -> int:
+def append_round(log_path: Path, lane: str, report: dict[str, Any], *, floor: int, host: str) -> int:
     """Append the next numbered round for `lane`, returning the number written."""
     log_path = Path(log_path)
     if not log_path.exists():

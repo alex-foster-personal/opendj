@@ -1,7 +1,7 @@
 """Hot-cue modelling and validation -- pure, owns no connection.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C10 (source lines
-1613-1766 and 1807-1876) per ``.planning/t3b-decomposition-map.md`` section 2
+1613-1766 and 1807-1876) per ``(private path)`` section 2
 row 10. Everything here either transforms a row/dict or reads through a
 caller-supplied connection; nothing opens, commits, or closes one.
 
@@ -33,26 +33,17 @@ from typing import Any
 
 from fastapi import HTTPException
 
-# Writes stop at Kind 8 (slot H) on purpose -- Kind 9-11 rows are observed in
-# the wild (RECON-DATA.md section 4, 24 rows) but their slot mapping is
-# unverified, so this surface never guesses at it (PARITY-TODO.md "Hot-cue
-# SAVE"). Canonical home: this is cue-domain vocabulary, not a path constant,
-# so it lives with the cue model rather than in the path/config cluster.
-HOT_CUE_SLOTS: str = "ABCDEFGH"
+# Kind ↔ slot integers: canonical home is ``cue_kind.py`` (issue #4069).
+from .cue_kind import HOT_CUE_SLOTS, HotCueSlotError, slot_to_kind
 
-
-class HotCueSlotError(ValueError):
-    """Unknown/unsupported hot-cue slot letter."""
+__all__ = [
+    "HOT_CUE_SLOTS",
+    "HotCueSlotError",
+]
 
 
 def _slot_to_kind(slot: str) -> int:
-    if len(slot) != 1 or slot not in HOT_CUE_SLOTS:
-        raise HotCueSlotError(
-            f"unsupported hot-cue slot {slot!r}; only {HOT_CUE_SLOTS} are "
-            "write-supported (Kind 9-11 slot mapping unverified, see "
-            "PARITY-TODO.md 'Hot-cue SAVE')"
-        )
-    return HOT_CUE_SLOTS.index(slot) + 1
+    return slot_to_kind(slot)
 
 
 def _rb_timestamp() -> str:

@@ -1,4 +1,5 @@
 """Durable one-shot markers for post-migration repairs (#3171, #3165)."""
+
 from __future__ import annotations
 
 import sqlite3

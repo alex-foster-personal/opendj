@@ -1,4 +1,5 @@
 """Tiny loader for ``apps/analysis/config.yaml``.  Cached by path."""
+
 from __future__ import annotations
 
 from functools import lru_cache

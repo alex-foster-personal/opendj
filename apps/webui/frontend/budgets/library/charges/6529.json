@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 300897,
+  "measured_with_pr": 301921,
+  "sha": "13d77240b0",
+  "date": "Tue 3 Nov 2026",
+  "reason": "PR #6529 Backstage shell: the root layout reads the shell.backstage flag (default OFF) to pick the sidebar; the flag reader is first-paint weight",
+  "payback": "once Backstage is the default, drop the flat sidebar list from the layout"
+}

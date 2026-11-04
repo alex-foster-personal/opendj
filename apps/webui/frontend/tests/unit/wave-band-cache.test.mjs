@@ -54,9 +54,9 @@ before(async () => {
 			const canvas = { width: 0, height: 0, rects: [] };
 			const ctx = context(calls);
 			ctx.fill = (path) => canvas.rects.push(...path.rects);
-			// Block bars paint with fillRect (render.ts _drawBands; WebKit
-			// antialiases a Path2D fill of 2px bars), not Path2D. Record them too
-			// so paintedEdges() sees the real layout. Only full-alpha fills are
+			// Block bars paint with fillRect since #7692 (render.ts _drawBands; WebKit
+			// antialiases a Path2D fill of 2px bars), not Path2D. Record them too so
+			// paintedEdges() sees the real painted layout. Only full-alpha fills are
 			// bars; the upper band and beat lines paint at other alphas.
 			ctx.fillRect = (x, y, w, h) => {
 				if (ctx.globalAlpha === 1) canvas.rects.push({ x, y, w, h });
@@ -293,4 +293,30 @@ test('a snapped row under a Beat Sync nudge keeps each beat edge within 1.52 px 
 	}
 	assert.ok(worst > 0.5, `CONTROL: the sweep reaches the rounding error (worst ${worst})`);
 	assert.ok(worst < bound, `worst ${worst.toFixed(3)} px against ${bound.toFixed(3)} px`);
+});
+
+test('a pitch nudge that crosses the 10 px thinning threshold rebuilds the band image', () => {
+	const windowS = 24;
+	const widthCss = 480;
+	const pitch198 = 20 / 19.8;
+	const pitch201 = 20 / 20.1;
+	render.resetWaveBandCacheForTest();
+	createdCanvases = 0;
+	tiles = [];
+	const { ctx: ctx1 } = recordingContext();
+	render.drawWaveRow(ctx1, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: pitch198 });
+	const afterFirst = createdCanvases;
+	tiles = [];
+	const rec2 = recordingContext();
+	render.drawWaveRow(rec2.ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: pitch201 });
+	assert.ok(createdCanvases > afterFirst, 'stride change inside PITCH_TOLERANCE must rebuild');
+	const dx = rec2.blits.at(-1)[1];
+	const edges = new Set(tiles[0].rects.map((r) => r.x));
+	for (const x of rec2.lines) assert.ok(edges.has(x - dx), `rebuilt layout snaps line at ${x} px`);
+	render.resetWaveBandCacheForTest();
+	createdCanvases = 0;
+	tiles = [];
+	render.drawWaveRow(recordingContext().ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: 20 / 19.7 });
+	render.drawWaveRow(recordingContext().ctx, { ...gridFrame(30_000, 'blocks'), widthCss, windowS, pitch: 20 / 19.9 });
+	assert.equal(createdCanvases, 1, 'two nudges in the same stride band still build once');
 });

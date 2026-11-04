@@ -13,7 +13,7 @@
  * give the same answer in the same words, rather than one path being mute.
  */
 
-import { libraryAudioLoadRefusal } from '$lib/components/rb/browser/browser-row-wire';
+import { libraryAudioLoadRefusal, rowIsOffloaded } from '$lib/components/rb/browser/browser-row-wire';
 import type { FileAvailabilityStatus } from './file-availability';
 
 export interface DraggableRow {
@@ -25,6 +25,8 @@ export interface DraggableRow {
 	is_streaming?: boolean | null;
 	file_path?: string | null;
 	streaming_provider?: string | null;
+	/** OFFLOAD: an offloaded row drags; the shared load path downloads it first. */
+	offload?: { state: string } | null | undefined;
 }
 
 /**
@@ -40,5 +42,6 @@ export function trackDragRefusal(row: DraggableRow): string | null {
 	// Pending (file_exists null) is refused too. An unchecked row outside the
 	// stat budget must not reach the deck, where a missing file becomes
 	// CLOUD_ASSET_UNAVAILABLE. Present audio still drags.
+	if (rowIsOffloaded(row)) return null;
 	return libraryAudioLoadRefusal(row);
 }

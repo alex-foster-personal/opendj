@@ -20,6 +20,20 @@ import { afterEach, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+/** GB-6846: the COMPLETE device DTO. The browser producer and the HTTP mirror
+ * (`HeadphoneOutputDeviceOut`) carry the same five keys; the Mac-shell topology
+ * fields are `null` in a browser listing. Assertions compare against this, never
+ * against a two-key object, so a dropped key fails here rather than at the
+ * parity route. */
+const completeDevice = (id, label) => ({
+	id,
+	label,
+	physical_id: null,
+	muted_by_jack: null,
+	transport: null
+});
+const DEFAULT_OUTPUT = completeDevice('default', 'System default output');
+
 let access;
 let headphones;
 let playerState;
@@ -94,7 +108,7 @@ afterEach(() => {
 
 test('if the browser returns empty-id placeholders then no blank row is listed and the system default is named', () => {
 	const listing = access.listIoDevices(CHROMIUM_WITHHELD);
-	assert.deepEqual(listing.outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(listing.outputs, [DEFAULT_OUTPUT]);
 	assert.deepEqual(listing.inputs, []);
 	assert.equal(listing.names_withheld, true);
 	for (const device of [...listing.outputs, ...listing.inputs]) {
@@ -115,7 +129,7 @@ test('if the browser names its devices then they are listed as given, default in
 
 test('if the engine enumerates no outputs at all then the system default output is still listed', () => {
 	const listing = access.listIoDevices(WEBKIT_GRANTED);
-	assert.deepEqual(listing.outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(listing.outputs, [DEFAULT_OUTPUT]);
 	assert.equal(listing.inputs.length, 1);
 	assert.equal(listing.names_withheld, false);
 });
@@ -126,10 +140,35 @@ test('if a device has an id but no name then it is listed with a stand-in name a
 		{ kind: 'audiooutput', deviceId: 'abc', label: '' }
 	]);
 	assert.deepEqual(listing.outputs, [
-		{ id: 'default', label: 'System default output' },
-		{ id: 'abc', label: 'Output device 2 (name hidden)' }
+		DEFAULT_OUTPUT,
+		completeDevice('abc', 'Output device 2 (name hidden)')
 	]);
 	assert.equal(listing.names_withheld, true);
+});
+
+test('GB-6846: every listed output carries the complete five-key DTO the HTTP mirror returns', () => {
+	const KEY_SET = ['id', 'label', 'muted_by_jack', 'physical_id', 'transport'];
+	for (const devices of [CHROMIUM_WITHHELD, CHROMIUM_GRANTED, WEBKIT_GRANTED]) {
+		const listing = access.listIoDevices(devices);
+		assert.ok(listing.outputs.length > 0, 'every listing carries at least the system default');
+		for (const output of listing.outputs) {
+			assert.deepEqual(
+				Object.keys(output).sort(),
+				KEY_SET,
+				`output ${output.id} must carry the complete DTO, not a subset`
+			);
+		}
+	}
+	// A topology field the browser CAN name survives as a value; the rest are null.
+	const pinned = access.listIoDevices([
+		{ kind: 'audiooutput', deviceId: 'default', label: 'Default', groupId: 'g1' },
+		{ kind: 'audiooutput', deviceId: 'usb', label: 'USB Interface', groupId: 'g1' }
+	]);
+	const alias = pinned.outputs.find((output) => output.id === 'default');
+	assert.equal(alias.physical_id, 'usb', 'the CUEOUT-26 alias still names its physical device');
+	assert.equal(alias.muted_by_jack, null);
+	assert.equal(alias.transport, null);
+	assert.deepEqual(access.systemDefaultOutputOnly(), [DEFAULT_OUTPUT]);
 });
 
 // ---------------------------------------------------------- access states
@@ -193,7 +232,7 @@ test('if the permission reads granted but names are still withheld then the gran
 test('if Chromium withholds names then refresh lists the system default and names the permission state', async () => {
 	installNavigator({ enumerateDevices: async () => CHROMIUM_WITHHELD, permission: 'prompt' });
 	await headphones.refreshHeadphoneOutputs();
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 	assert.equal(hp().device_access.status, 'permission_needed');
 	assert.equal(hp().device_access.action, 'grant');
 });
@@ -248,7 +287,7 @@ test('if Electron withholds Chromium labels then refresh stays grant and defers 
 	assert.deepEqual(coreAudioCalls, [], 'withheld pass must not list CoreAudio');
 	assert.equal(hp().device_access.status, 'permission_needed');
 	assert.equal(hp().device_access.action, 'grant');
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 
 	await headphones.refreshHeadphoneOutputs();
 	assert.deepEqual(coreAudioCalls, ['list']);
@@ -285,7 +324,7 @@ test('if the device API is missing then the state is api_missing and the system 
 	assert.equal(hp().device_access.status, 'api_missing');
 	assert.equal(hp().device_access.action, 'retry');
 	assert.match(hp().device_access.detail, /mediaDevices is unavailable/);
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 });
 
 test('if enumeration rejects then the state is enumeration_failed with the cause, and hotplug is still watched', async () => {
@@ -297,7 +336,7 @@ test('if enumeration rejects then the state is enumeration_failed with the cause
 	await assert.rejects(() => headphones.refreshHeadphoneOutputs(), /enumeration failed: device hub offline/);
 	assert.equal(hp().device_access.status, 'enumeration_failed');
 	assert.equal(hp().device_access.detail, 'device hub offline');
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 	assert.deepEqual(
 		listeners.map((listener) => listener.type),
 		['devicechange'],
@@ -313,7 +352,7 @@ test('if enumeration hangs then the state is timeout, distinct from a rejection'
 	await pending;
 	assert.equal(hp().device_access.status, 'timeout');
 	assert.equal(hp().device_access.action, 'retry');
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 });
 
 test('if a later listing fails then the devices read earlier stay listed', async () => {
@@ -550,7 +589,7 @@ test('request build: if the operator refuses then the state is permission_denied
 	assert.equal(hp().device_access.status, 'permission_denied');
 	assert.match(hp().device_access.message, /Allow microphone access/);
 	assert.equal(hp().error, null, 'a refusal is a state, not an error');
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 	await refresh.listIoDevicesOnOpen('request', openDeps());
 	assert.equal(browser.streamsOpened, 1, 'a denied origin must not be asked again on open');
 });
@@ -570,7 +609,7 @@ test('request build: if the request itself faults then the panel says why and th
 	await refresh.listIoDevicesOnOpen('request', openDeps());
 	assert.equal(hp().device_access.status, 'permission_needed');
 	assert.match(hp().error, /audio device access request failed: Could not start audio source/);
-	assert.deepEqual(hp().outputs, [{ id: 'default', label: 'System default output' }]);
+	assert.deepEqual(hp().outputs, [DEFAULT_OUTPUT]);
 });
 
 test('button build: if the browser has never been asked then opening I/O opens no stream and offers the grant button', async () => {

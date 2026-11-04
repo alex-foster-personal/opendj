@@ -4,6 +4,7 @@ out to keep that module under the file-size review threshold
 in ``equivalence.py`` still calls ``_verdict_map``/``_parse_entry``/
 ``_mismatched_sources`` exactly as before.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,9 +29,7 @@ from .equivalence_types import (
 # --------------------------------------------------------------- parsing
 
 
-def _mismatched_sources(
-    payload: Any, sources: dict[str, Path]
-) -> list[str]:
+def _mismatched_sources(payload: Any, sources: dict[str, Path]) -> list[str]:
     """Names in ``sources`` whose declared fingerprint does not match the
     live file at that path right now. Empty if the verdict file carries no
     ``meta.sources`` at all (an old-format or hand-written verdict file --
@@ -56,17 +55,11 @@ def _mismatched_sources(
 
 def _verdict_map(payload: Any, path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
-        raise EquivalenceGateError(
-            f"{path}: expected a JSON object at the top level, got "
-            f"{type(payload).__name__}"
-        )
+        raise EquivalenceGateError(f"{path}: expected a JSON object at the top level, got {type(payload).__name__}")
     if "fields" in payload:
         fields = payload["fields"]
         if not isinstance(fields, dict):
-            raise EquivalenceGateError(
-                f"{path}: top-level 'fields' must be an object, got "
-                f"{type(fields).__name__}"
-            )
+            raise EquivalenceGateError(f"{path}: top-level 'fields' must be an object, got {type(fields).__name__}")
         return fields
     return payload
 
@@ -77,28 +70,22 @@ def _optional_str_field(field: str, raw: dict[str, Any], key: str, path: Path) -
     value = raw.get(key)
     if value is not None and not isinstance(value, str):
         raise EquivalenceGateError(
-            f"{path}: {key!r} for field {field!r} must be a string or "
-            f"null, got {type(value).__name__}"
+            f"{path}: {key!r} for field {field!r} must be a string or null, got {type(value).__name__}"
         )
     return value
 
 
 def _parse_entry(field: str, raw: Any, path: Path) -> Verdict:
     if not isinstance(raw, dict):
-        raise EquivalenceGateError(
-            f"{path}: verdict for field {field!r} must be an object, got "
-            f"{type(raw).__name__}"
-        )
+        raise EquivalenceGateError(f"{path}: verdict for field {field!r} must be an object, got {type(raw).__name__}")
     if "status" not in raw:
         raise EquivalenceGateError(
-            f"{path}: verdict for field {field!r} has no 'status' key; a "
-            f"verdict without a status is not a verdict"
+            f"{path}: verdict for field {field!r} has no 'status' key; a verdict without a status is not a verdict"
         )
     status = raw["status"]
     if status not in STATUSES:
         raise EquivalenceGateError(
-            f"{path}: verdict for field {field!r} has status {status!r}; "
-            f"expected one of {sorted(STATUSES)}"
+            f"{path}: verdict for field {field!r} has status {status!r}; expected one of {sorted(STATUSES)}"
         )
     normaliser = _optional_str_field(field, raw, "normaliser", path)
     checked_at = _optional_str_field(field, raw, "checked_at", path)
@@ -123,20 +110,16 @@ def _parse_entry(field: str, raw: Any, path: Path) -> Verdict:
     )
 
 
-def _validate_declared_basis(
-    field: str, declared: str | None, path: Path
-) -> None:
+def _validate_declared_basis(field: str, declared: str | None, path: Path) -> None:
     """The shape-check half of ``_resolve_basis``, split out to keep it under
     the complexity ceiling."""
     if declared is not None and not isinstance(declared, str):
         raise EquivalenceGateError(
-            f"{path}: 'basis' for field {field!r} must be a string or null, "
-            f"got {type(declared).__name__}"
+            f"{path}: 'basis' for field {field!r} must be a string or null, got {type(declared).__name__}"
         )
     if declared is not None and declared not in BASES:
         raise EquivalenceGateError(
-            f"{path}: field {field!r} declares basis {declared!r}; expected "
-            f"one of {sorted(BASES)}"
+            f"{path}: field {field!r} declares basis {declared!r}; expected one of {sorted(BASES)}"
         )
 
 
@@ -172,12 +155,8 @@ def _resolve_passed_basis(
 ) -> str:
     """The ``status in WRITABLE_STATUSES`` half of ``_resolve_basis``, split
     out to keep it under the complexity ceiling."""
-    implied_by_suite = (
-        BASIS_SINGLE_SOURCE if suite_status == SUITE_STATUS_SINGLE_SOURCE else None
-    )
-    implied_by_status = (
-        BASIS_SINGLE_SOURCE if status == PASSED_SINGLE_SOURCE else None
-    )
+    implied_by_suite = BASIS_SINGLE_SOURCE if suite_status == SUITE_STATUS_SINGLE_SOURCE else None
+    implied_by_status = BASIS_SINGLE_SOURCE if status == PASSED_SINGLE_SOURCE else None
     if declared == BASIS_NONE:
         raise EquivalenceGateError(
             f"{path}: field {field!r} passed but declares basis {declared!r}; a "
@@ -204,5 +183,3 @@ def _resolve_passed_basis(
                 f"verdict"
             )
     return basis
-
-

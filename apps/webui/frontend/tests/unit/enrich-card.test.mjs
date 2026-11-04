@@ -112,6 +112,14 @@ test('a question, a failure, a lane that cannot run or an unknown status flags t
 	assert.equal(card.needsAttention(summary(), null, 'PUT failed'), true);
 });
 
+test('the needs-you hover names what a person has to act on', () => {
+	const asked = card.attentionTitle(summary({}, { stems: { state: 'ask', pending: 50, reason: null } }));
+	assert.match(asked, /Stems still need a yes or no/);
+	const failed = card.attentionTitle(summary({ strip: { done: 1271, failed: 3 } }));
+	assert.match(failed, /Click to see it\.$/);
+	assert.doesNotMatch(failed, /Stems still need/);
+});
+
 test('a declined or impossible stems lane does not by itself flag the pill', () => {
 	const declined = summary({ key: { done: 44, missing: 1230 } }, { stems: { state: 'user_declined', pending: 9, reason: null } });
 	const noSource = summary({}, { stems: { state: 'no_source', pending: 9, reason: 'no farm' } });
@@ -526,4 +534,40 @@ test('a stored never whose summary carries no count says the count is unknown', 
 		decisions: { stems: 'never' }
 	});
 	assert.equal(card.stemsDeclinedText(none), 'Stems: you chose never for this library. A deck can still separate one track.');
+});
+
+// ENRICH-08: a lane that cannot run is said, with where to set what is missing.
+const blocking = {
+	lane: 'artwork',
+	code: 'ARTWORK_ONLINE_OFF',
+	message: 'Missing covers are not looked up online: online lookup is off.',
+	fix: 'Remove ODJ_ARTWORK_ONLINE=0, then restart.',
+	severity: 'blocking'
+};
+const info = {
+	lane: 'genre',
+	code: 'AI_GENRE_KEYS_MISSING',
+	message: 'AI genre tagging cannot run: OPENROUTER_API_KEY not set.',
+	fix: 'Set it in the environment.',
+	severity: 'info'
+};
+
+test('a blocking capability warning is an unavailable line naming the fix, and the pill needs you', () => {
+	const s = summary({}, { warnings: [blocking] });
+	const lines = card.warningLines(s);
+	assert.equal(lines.length, 1);
+	assert.equal(lines[0].tone, 'unavailable');
+	assert.ok(lines[0].text.includes('ODJ_ARTWORK_ONLINE=0'), 'the fix is in the line, not only on hover');
+	assert.equal(lines[0].title, blocking.fix);
+	assert.equal(card.needsAttention(s, null, null), true);
+});
+
+test('an info warning (opt-in AI genre) is a note and never flags the pill', () => {
+	const s = summary({}, { warnings: [info] });
+	assert.equal(card.warningLines(s)[0].tone, 'note');
+	assert.equal(card.needsAttention(s, null, null), false);
+});
+
+test('a summary with no warnings field renders no warning lines', () => {
+	assert.deepEqual(card.warningLines(summary()), []);
 });

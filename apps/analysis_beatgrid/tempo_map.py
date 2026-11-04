@@ -6,6 +6,7 @@ multi-anchor tempo maps ``{at_s, beat_index, bpm}`` that a later consumer can
 apply to rebuild beat times. Served on ``/anlz`` as per-beat local bpm on
 existing beats, not as a new field.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -37,16 +38,11 @@ class TempoMap:
     anchors: tuple[TempoAnchor, ...]
 
 
-def _fit_segment_anchor(
-    beat_times: Sequence[float], lo: int, hi: int
-) -> TempoAnchor:
+def _fit_segment_anchor(beat_times: Sequence[float], lo: int, hi: int) -> TempoAnchor:
     segment_times = list(beat_times[lo : hi + 1])
     fit = least_squares_bpm(segment_times)
     if fit is None:
-        raise ValueError(
-            f"tempo map fit refused: segment [{lo}, {hi}] has too few beats "
-            "or a non-positive period"
-        )
+        raise ValueError(f"tempo map fit refused: segment [{lo}, {hi}] has too few beats or a non-positive period")
     bpm, residual_rms_s = fit
     n = len(segment_times)
     at_s = linear_fit_intercept(n, sum(segment_times) / n, 60.0 / bpm)
@@ -96,9 +92,7 @@ def _beat_times_from_record(record_or_ref: Any) -> list[float]:
                 beats = payload.get("beats")
 
     if beats is None:
-        raise ValueError(
-            "dynamic grid fit refused: record carries no beat time series"
-        )
+        raise ValueError("dynamic grid fit refused: record carries no beat time series")
 
     times: list[float] = []
     for entry in beats:
@@ -120,15 +114,11 @@ def fit_tempo_map(record_or_ref: Any, beat_times: Sequence[float]) -> TempoMap:
         anchor = _fit_segment_anchor(beats, 0, len(beats) - 1)
         return TempoMap(anchors=(anchor,))
 
-    anchors = tuple(
-        _fit_segment_anchor(beats, lo, hi) for lo, hi, _ in analysis.segments
-    )
+    anchors = tuple(_fit_segment_anchor(beats, lo, hi) for lo, hi, _ in analysis.segments)
     return TempoMap(anchors=anchors)
 
 
-def fit_dynamic_grid(
-    record_or_ref: Any, beat_times: Sequence[float] | None = None
-) -> TempoMap:
+def fit_dynamic_grid(record_or_ref: Any, beat_times: Sequence[float] | None = None) -> TempoMap:
     """Entry for the v2 fitter; requires retained activations and beat times."""
     require_activations_for_fit(record_or_ref)
     if beat_times is None:

@@ -1,4 +1,5 @@
 """SYNC-05 CSV resolution live apply (rb-vs-djay), split from apply_analysis."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -36,11 +37,7 @@ _SUPPORTED_DJAY_WRITE_FIELDS = frozenset({"manual_bpm", "key_camelot", "tags"})
 
 
 def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
-    collection = (
-        "mediaItemAnalyzedData"
-        if field in ("manual_bpm", "key_camelot", "bpm")
-        else "mediaItemUserData"
-    )
+    collection = "mediaItemAnalyzedData" if field in ("manual_bpm", "key_camelot", "bpm") else "mediaItemUserData"
     with sqlite3.connect(str(db_path)) as con:
         row = con.execute(
             "SELECT data FROM database2 WHERE collection = ? AND key = ?",
@@ -72,16 +69,11 @@ def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
 
 
 def _verify_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
-    collection = (
-        "mediaItemAnalyzedData"
-        if field in ("manual_bpm", "key_camelot", "bpm")
-        else "mediaItemUserData"
-    )
+    collection = "mediaItemAnalyzedData" if field in ("manual_bpm", "key_camelot", "bpm") else "mediaItemUserData"
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
             row = con.execute(
-                "SELECT data FROM database2 "
-                "WHERE collection = ? AND key = ?",
+                "SELECT data FROM database2 WHERE collection = ? AND key = ?",
                 (collection, uuid),
             ).fetchone()
     except Exception:
@@ -126,10 +118,7 @@ def live_run(
         elif res == "accept_djay" and rb_id:
             rb_plan.append((rb_id, field, r.get("djay_value", "")))
 
-    unsupported_rb = sorted({
-        fld for _cid, fld, _val in rb_plan
-        if fld not in SUPPORTED_RB_WRITE_FIELDS
-    })
+    unsupported_rb = sorted({fld for _cid, fld, _val in rb_plan if fld not in SUPPORTED_RB_WRITE_FIELDS})
     if unsupported_rb:
         raise UnsupportedRbFieldError(
             "Refusing to apply: RB-side writes not implemented for "
@@ -138,10 +127,7 @@ def live_run(
             "rows on the djay side first."
         )
 
-    unsupported_djay = sorted({
-        fld for _uuid, fld, _val in djay_plan
-        if fld not in _SUPPORTED_DJAY_WRITE_FIELDS
-    })
+    unsupported_djay = sorted({fld for _uuid, fld, _val in djay_plan if fld not in _SUPPORTED_DJAY_WRITE_FIELDS})
     if unsupported_djay:
         raise UnsupportedDjayFieldError(
             "Refusing to apply: djay-side writes not implemented for "
@@ -152,9 +138,7 @@ def live_run(
     if rb_plan:
         db = open_rb_db(rb_db_path)
         try:
-            rb_expected: dict[str, tuple[str, object]] = {
-                f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan
-            }
+            rb_expected: dict[str, tuple[str, object]] = {f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan}
 
             def rb_verifier(tag: str, _unused: object = None) -> bool:
                 fld, val = rb_expected[tag]
@@ -173,9 +157,7 @@ def live_run(
                         ok = _write_rb_field(db, content_id, field, value)
                         w.write((field, value))
                         if ok and w.verify_readback():
-                            w.append_reverse(
-                                f"# revert RB {field} for ContentID={content_id}"
-                            )
+                            w.append_reverse(f"# revert RB {field} for ContentID={content_id}")
                             written += 1
         finally:
             try:
@@ -184,9 +166,7 @@ def live_run(
                 pass
 
     if djay_plan:
-        djay_expected: dict[str, tuple[str, object]] = {
-            f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan
-        }
+        djay_expected: dict[str, tuple[str, object]] = {f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan}
 
         def djay_verifier(tag: str, _unused: object = None) -> bool:
             fld, val = djay_expected[tag]
@@ -208,10 +188,7 @@ def live_run(
                         w.append_reverse(f"# revert djay {field} for uuid={uuid}")
                         written += 1
 
-    print(
-        f"[apply_analysis] wrote {written} fields of "
-        f"{len(rb_plan) + len(djay_plan)} planned"
-    )
+    print(f"[apply_analysis] wrote {written} fields of {len(rb_plan) + len(djay_plan)} planned")
     return 0
 
 

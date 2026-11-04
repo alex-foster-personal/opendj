@@ -21,6 +21,7 @@ payload serves.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -35,9 +36,7 @@ DURATION_TOLERANCE_S = 1.5
 RECOVERY_SOURCE = "anlz-cache"
 
 
-def cached_pssi_phrases(
-    stable_id: str, duration_ms: int | None
-) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+def cached_pssi_phrases(stable_id: str, duration_ms: int | None) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
     """The cached rekordbox phrases on rekordbox's timeline, or None, plus the stated outcome."""
     path = _cache_path(stable_id)
     if not path.is_file():
@@ -112,7 +111,7 @@ def apply_cached_pssi(payload: dict[str, Any], stable_id: str, *, share: bool) -
         return {**payload, "phrases_recovery": outcome}
     from .lead_in_shift import on_our_timeline
 
-    shifted = on_our_timeline(
-        {"beatgrid": {"beats": []}, "phrases": phrases}, _served_lead_in_s(stable_id, share)
-    )["phrases"]
+    shifted = on_our_timeline({"beatgrid": {"beats": []}, "phrases": phrases}, _served_lead_in_s(stable_id, share))[
+        "phrases"
+    ]
     return {**payload, "phrases": shifted, "phrases_recovery": outcome}

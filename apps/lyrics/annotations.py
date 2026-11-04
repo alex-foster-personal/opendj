@@ -20,7 +20,7 @@ import yaml
 
 DEFAULT_ANNOTATIONS_PATH = Path(__file__).resolve().parent / "annotations" / "jamendolyrics.yaml"
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ def load_annotations(path: Path = DEFAULT_ANNOTATIONS_PATH) -> dict[str, list[Sp
     return annotations
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _song_tags(path: Path, song_name: str, entries: object) -> list[SpanTag]:
@@ -68,9 +68,7 @@ def _song_tags(path: Path, song_name: str, entries: object) -> list[SpanTag]:
     return tags
 
 
-def _span_word_indices(
-    path: Path, song_name: str, entry: dict
-) -> tuple[int | None, int | None]:
+def _span_word_indices(path: Path, song_name: str, entry: dict) -> tuple[int | None, int | None]:
     """(start, end) 0-based inclusive word indices, or (None, None) for whole-song."""
     if "words" not in entry:
         return None, None
@@ -82,16 +80,11 @@ def _span_word_indices(
         or words[0] < 0
         or words[1] < words[0]
     ):
-        raise ValueError(
-            f"{path}: {song_name}: 'words' must be [start, end], "
-            f"0 <= start <= end (got {words!r})"
-        )
+        raise ValueError(f"{path}: {song_name}: 'words' must be [start, end], 0 <= start <= end (got {words!r})")
     return words[0], words[1]
 
 
-def validate_against_songs(
-    annotations: dict[str, list[SpanTag]], song_word_counts: dict[str, int]
-) -> None:
+def validate_against_songs(annotations: dict[str, list[SpanTag]], song_word_counts: dict[str, int]) -> None:
     """Fail fast if a tag names an unknown song or an out-of-range word index."""
     unknown = sorted(set(annotations) - set(song_word_counts))
     if unknown:
@@ -101,6 +94,5 @@ def validate_against_songs(
         for span in tags:
             if span.end_idx is not None and span.end_idx >= n_words:
                 raise ValueError(
-                    f"{song_name}: tag {span.tag!r} ends at word {span.end_idx} "
-                    f"but the song has {n_words} words"
+                    f"{song_name}: tag {span.tag!r} ends at word {span.end_idx} but the song has {n_words} words"
                 )

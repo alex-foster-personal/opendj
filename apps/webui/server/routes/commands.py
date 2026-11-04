@@ -17,18 +17,20 @@ AGENT-21: ``POST /commands`` never waits forever. An order no leader page has
 claimed within ``ORDER_CLAIM_DEADLINE_S`` is withdrawn and answered ``503``
 ``{"reason": "no_leader"}``: the page on record has stopped claiming (a hidden
 tab that lost the mirror lease, a frozen tab), and an agent must learn that
-rather than hang. A claimed order still waits for the page's result.
+rather than hang. A claimed order waits for the page's result up to
+``ORDER_RESULT_DEADLINE_S``, then answers ``503`` ``{"reason": "page_gone"}``.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from apps.webui.server.routes.ui_prefs import persist_master_muted
@@ -51,6 +53,13 @@ ORDER_WAIT_HEADER = "x-opendj-order-wait-ms"
 #: re-claim the lease and resume claiming. Per app, `app.state` may carry
 #: `agent_order_claim_deadline_s` instead (tests use a short one).
 ORDER_CLAIM_DEADLINE_S = 15.0
+#: AGENT-21: how long a claimed order may wait for the page's result before POST
+#: answers 503 page_gone. Overridable via ``app.state.agent_order_result_deadline_s``.
+ORDER_RESULT_DEADLINE_S = 120.0
+#: AGENT-21: the 503 body's reason when the claiming page never answered in time.
+PAGE_GONE_REASON = "page_gone"
+#: A leased claim must match a mirror lease renewed within this many seconds.
+CLAIM_LEASE_MAX_AGE_S = 3.0
 #: AGENT-21: the 503 body's reason when no leader claimed an order in time.
 NO_LEADER_REASON = "no_leader"
 #: Body reason of the 503 an order gets when the engine quits before a page
@@ -149,14 +158,28 @@ class _OrderBroker:
         return True
 
     async def claim_within(
-        self, wait_s: float, asker_is_gone: Callable[[], Awaitable[bool]]
+        self,
+        wait_s: float,
+        asker_is_gone: Callable[[], Awaitable[bool]],
+        may_claim: Callable[[], bool] | None = None,
     ) -> tuple[str, dict[str, Any]] | None:
         """AGENT-19: claim now, or hold until an order is submitted or ``wait_s`` passes.
 
         ``asker_is_gone`` is checked before a held claim is taken: a page that
         closed mid-hold must not swallow an order it can never execute.
+        ``may_claim``, when set, is checked immediately before every ``claim()``.
         """
-        claimed = self.claim()
+        if may_claim is not None and not may_claim():
+            return None
+
+        async def _try_claim() -> tuple[str, dict[str, Any]] | None:
+            if may_claim is not None and not may_claim():
+                return None
+            if await asker_is_gone():
+                return None
+            return self.claim()
+
+        claimed = await _try_claim()
         if claimed is not None or wait_s <= 0 or self.closed:
             return claimed
         waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -167,9 +190,7 @@ class _OrderBroker:
             pass
         finally:
             self._waiters.discard(waiter)
-        if await asker_is_gone():
-            return None
-        return self.claim()
+        return await _try_claim()
 
     def complete(self, order_id: str, result: dict[str, Any]) -> None:
         pending = self.pending.get(order_id)
@@ -272,6 +293,62 @@ def _page_is_open(request: Request) -> bool:
     return page_is_open(request)
 
 
+def _claim_lease_refusal(request: Request, lease_id: str | None) -> dict[str, Any] | None:
+    """None if this asker may claim; else a 409 body.
+
+    Header absent: previous behaviour (CLI, harness, tests that PUT without
+    a lease). Header present: live_mirror_lease must match AND have been
+    renewed within CLAIM_LEASE_MAX_AGE_S.
+    """
+    if lease_id is None:
+        return None
+    from apps.webui.server.routes.state import LEASE_TTL_S, live_mirror_lease
+
+    current = live_mirror_lease(request)
+    if current is None:
+        return {
+            "ok": False,
+            "reason": "lease_lapsed",
+            "holder": None,
+        }
+    if current.holder != lease_id:
+        return {
+            "ok": False,
+            "reason": "lease_held",
+            "holder": current.holder,
+        }
+    age_s = LEASE_TTL_S - (current.expires_monotonic - time.monotonic())
+    if age_s > CLAIM_LEASE_MAX_AGE_S:
+        return {
+            "ok": False,
+            "reason": "lease_stale",
+            "holder": current.holder,
+        }
+    return None
+
+
+def _page_gone_detail(deadline_s: float) -> dict[str, Any]:
+    return {
+        "reason": PAGE_GONE_REASON,
+        "detail": (
+            f"the claiming page did not answer within {deadline_s:g} s; "
+            "the page is gone or stuck"
+        ),
+        "result_deadline_s": deadline_s,
+    }
+
+
+def _page_gone_response(deadline_s: float) -> JSONResponse:
+    return JSONResponse(status_code=503, content=_page_gone_detail(deadline_s))
+
+
+async def _await_order_result(result: asyncio.Future[dict[str, Any]], deadline_s: float) -> dict[str, Any]:
+    try:
+        return await asyncio.wait_for(result, deadline_s)
+    except TimeoutError as error:
+        raise TimeoutError from error
+
+
 async def submit_single_command(request: Request, command: dict[str, Any]) -> dict[str, Any]:
     """Hold ``{kind: "single", payload: command}`` until the open page completes it.
 
@@ -286,8 +363,11 @@ async def submit_single_command_to_app(app: Any, command: dict[str, Any]) -> dic
     order = {"kind": "single", "payload": command}
     broker = _app_broker(app)
     order_id, result = broker.submit(order)
+    deadline_s = _result_deadline_s_on_app(app)
     try:
-        return await result
+        return await _await_order_result(result, deadline_s)
+    except TimeoutError:
+        raise HTTPException(status_code=503, detail=_page_gone_detail(deadline_s)) from None
     except OrderBrokerClosed as error:
         raise HTTPException(
             status_code=503,
@@ -429,9 +509,10 @@ def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
             "description": (
                 "The order got no result. Body reason no_leader (AGENT-21): no "
                 "performance page claimed it within the claim deadline "
-                "(ORDER_CLAIM_DEADLINE_S). Body reason engine_quitting "
-                "(INSTALL-36): the engine began quitting while the order was "
-                "still waiting for a page."
+                "(ORDER_CLAIM_DEADLINE_S). Body reason page_gone (AGENT-21): the "
+                "claiming page did not answer within ORDER_RESULT_DEADLINE_S. Body "
+                "reason engine_quitting (INSTALL-36): the engine began quitting "
+                "while the order was still waiting for a page."
             )
         }
     },
@@ -465,7 +546,11 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
                     "claim_deadline_s": deadline_s,
                 },
             )
-        return await result
+        result_deadline_s = _result_deadline_s(request)
+        try:
+            return await _await_order_result(result, result_deadline_s)
+        except TimeoutError:
+            return _page_gone_response(result_deadline_s)
     except OrderBrokerClosed:
         return _engine_quitting()
     finally:
@@ -482,10 +567,32 @@ def _claim_deadline_s(request: Request) -> float:
     return float(configured)
 
 
+def _result_deadline_s(request: Request) -> float:
+    """AGENT-21: the app's result deadline, else ORDER_RESULT_DEADLINE_S."""
+    return _result_deadline_s_on_app(request.app)
+
+
+def _result_deadline_s_on_app(app: Any) -> float:
+    configured = getattr(app.state, "agent_order_result_deadline_s", None)
+    if configured is None:
+        return ORDER_RESULT_DEADLINE_S
+    if not isinstance(configured, int | float) or isinstance(configured, bool) or configured <= 0:
+        raise TypeError(f"app.state.agent_order_result_deadline_s must be a positive number, got {configured!r}")
+    return float(configured)
+
+
 @router.get("/next", response_model=None)
 async def next_command(
     request: Request,
     response: Response,
+    lease_id: str | None = Header(
+        default=None,
+        alias="x-opendj-lease",
+        description=(
+            "AGENT-18: the claiming page's client id; refused when another page "
+            "holds the mirror lease or the lease is stale."
+        ),
+    ),
     consumer: str = Query(
         default="performance",
         description=(
@@ -522,14 +629,25 @@ async def next_command(
         )
     if not _page_is_open(request):
         return JSONResponse(status_code=409, content={"client_open": False})
+    refusal = _claim_lease_refusal(request, lease_id)
+    if refusal is not None:
+        return JSONResponse(status_code=409, content=refusal)
     liveness = order_poll_liveness(request)
     liveness.last_at = datetime.now(UTC)
     liveness.waiting += 1
     try:
-        claimed = await _broker(request).claim_within(wait_ms / 1000, request.is_disconnected)
+        claimed = await _broker(request).claim_within(
+            wait_ms / 1000,
+            request.is_disconnected,
+            may_claim=lambda: _claim_lease_refusal(request, lease_id) is None,
+        )
     finally:
         liveness.waiting -= 1
         liveness.last_at = datetime.now(UTC)
+    if claimed is None:
+        refusal = _claim_lease_refusal(request, lease_id)
+        if refusal is not None:
+            return JSONResponse(status_code=409, content=refusal)
     if claimed is None and not _page_is_open(request):
         # The mirror was closed while the request was held.
         return JSONResponse(status_code=409, content={"client_open": False})

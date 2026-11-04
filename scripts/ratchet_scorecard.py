@@ -111,6 +111,7 @@ WORKFLOW_GATE_JOBS = {
             "reqs-check + native wheel + contract drift",
             "production frontend build",
             "frontend unit + check + build",
+            "import contracts",
             QUALITY_JOB,
         }
     ),

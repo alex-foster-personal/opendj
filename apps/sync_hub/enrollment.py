@@ -1,4 +1,4 @@
-"""The one place a machine becomes owned. Contract: ``specs/design_decision_12.md``.
+"""The one place a machine becomes owned. Contract: ``(private path)``.
 
 the maintainer's requirement has two paths and one mechanism:
 
@@ -46,6 +46,7 @@ nothing: the per-machine sync credential (:mod:`apps.sync_hub.machine_credential
 plan X5) is what the sync endpoints check, and only under
 ``MDT_SYNC_CREDENTIAL_MODE=enforce``.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -225,11 +226,7 @@ def enroll_machine(
     # caller could persist a naive or offset stamp into the ownership ledger
     # -- the same class of defect the sync set's naive-stamp quarantine
     # exists for. parse_canonical raises on anything it cannot order.
-    stamp = (
-        sync_stamp.canonical_from(sync_stamp.parse_canonical(now))
-        if now
-        else sync_stamp.canonical_now()
-    )
+    stamp = sync_stamp.canonical_from(sync_stamp.parse_canonical(now)) if now else sync_stamp.canonical_now()
     # No ``revoked_at`` in the UPDATE list, deliberately: this statement must
     # not be able to lift a revocation even if the guard above is ever
     # loosened. Reaching here with a revoked row is impossible today.
@@ -304,14 +301,9 @@ def revoke_owner(
         )
     if existing.revoked_at is not None:
         return RevocationResult(machine_id, existing.google_sub, existing.revoked_at, False)
-    stamp = (
-        sync_stamp.canonical_from(sync_stamp.parse_canonical(now))
-        if now
-        else sync_stamp.canonical_now()
-    )
+    stamp = sync_stamp.canonical_from(sync_stamp.parse_canonical(now)) if now else sync_stamp.canonical_now()
     conn.execute(
-        f"UPDATE {OWNERSHIP_TABLE} SET revoked_at = ? "
-        f"WHERE machine_id = ? AND revoked_at IS NULL",
+        f"UPDATE {OWNERSHIP_TABLE} SET revoked_at = ? WHERE machine_id = ? AND revoked_at IS NULL",
         (stamp, machine_id),
     )
     return RevocationResult(machine_id, existing.google_sub, stamp, True)
@@ -378,9 +370,7 @@ def _refuse_unless_re_enrollable(
     )
 
 
-def owner_for(
-    conn: sqlite3.Connection, machine_id: str, *, hub_machine_id: str
-) -> OwnerIdentity | None:
+def owner_for(conn: sqlite3.Connection, machine_id: str, *, hub_machine_id: str) -> OwnerIdentity | None:
     """The owner this hub believes, or None. Applies the hub-binding guard.
 
     None covers three genuinely different states -- never enrolled, revoked,
@@ -400,9 +390,7 @@ def owner_for(
     return OwnerIdentity(google_sub=str(row[0]), email=str(row[1]))
 
 
-def ownership_state(
-    conn: sqlite3.Connection, machine_id: str, *, hub_machine_id: str
-) -> OwnershipState:
+def ownership_state(conn: sqlite3.Connection, machine_id: str, *, hub_machine_id: str) -> OwnershipState:
     """``owned`` / ``unowned`` / ``foreign`` for one machine on this hub.
 
     A revoked row reads ``unowned``: the machine is not owned, and the row is
@@ -414,9 +402,7 @@ def ownership_state(
     return "owned" if existing.hub_machine_id == hub_machine_id else "foreign"
 
 
-def fleet_ownership(
-    conn: sqlite3.Connection, *, hub_machine_id: str
-) -> list[MachineOwnership]:
+def fleet_ownership(conn: sqlite3.Connection, *, hub_machine_id: str) -> list[MachineOwnership]:
     """Every known machine with the ownership this hub reads for it.
 
     Every machine, not only the owned ones: the readout has to be able to

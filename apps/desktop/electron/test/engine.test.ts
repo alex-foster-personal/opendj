@@ -32,7 +32,7 @@ import {
 } from '../src/engine';
 import { stopHolderPid } from '../src/launch';
 import { appendShellLog, installShellLogging, verifyLogWritable } from '../src/shell-log';
-import { FAKE_ENGINE, fakePayload, pidGone, scratchDir, statusServer, waitFor } from './helpers';
+import { FAKE_ENGINE, fakePayload, pidGone, POSIX_ONLY, scratchDir, sleeperArgs, statusServer, waitFor } from './helpers';
 
 // Port-picker decisions go to the shell log, as in the Tauri shell.
 const portPickerLog = path.join(scratchDir('port-picker'), 'engine.log');
@@ -104,7 +104,7 @@ test('an unwritable log is refused before the engine exists, and a pump into it 
 
 // ----- process group -------------------------------------------------------
 test('stopping the group terminates the engine', async () => {
-	const child = spawn('/bin/sleep', ['30'], { detached: true, stdio: 'ignore' });
+	const child = spawn(...sleeperArgs(30), { detached: true, stdio: 'ignore' });
 	const exited = new Promise((resolve) => child.once('exit', resolve));
 	stopProcessGroup(child.pid as number);
 	const outcome = await Promise.race([exited.then(() => 'exited'), new Promise((r) => setTimeout(() => r('timeout'), 5_000))]);
@@ -112,7 +112,7 @@ test('stopping the group terminates the engine', async () => {
 	assert.equal(outcome, 'exited');
 });
 
-test('shutdown waits out the SIGTERM grace, then escalates to SIGKILL', async () => {
+test('shutdown waits out the SIGTERM grace, then escalates to SIGKILL', { skip: POSIX_ONLY('SIGTERM grace and SIGKILL escalation') }, async () => {
 	const dir = scratchDir('shutdown-escalate');
 	const port = await freeLoopbackPort();
 	const engine = spawnEngine(fakePayload(dir, 'ignore-term'), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
@@ -131,7 +131,7 @@ test('the default stop grace is the Tauri shell\'s 25 s', () => {
 	assert.equal(SHUTDOWN_GRACE_MS, 25_000);
 });
 
-test('an engine that honors SIGTERM is not escalated (the opposite direction)', async () => {
+test('an engine that honors SIGTERM is not escalated (the opposite direction)', { skip: POSIX_ONLY('SIGTERM grace and SIGKILL escalation') }, async () => {
 	const dir = scratchDir('shutdown-graceful');
 	const port = await freeLoopbackPort();
 	const engine = spawnEngine(fakePayload(dir), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
@@ -144,7 +144,7 @@ test('an engine that honors SIGTERM is not escalated (the opposite direction)', 
 
 test('a lost log fails the launch instead of reporting healthy', async () => {
 	const dir = scratchDir('lost-log');
-	const child = spawn('/bin/sleep', ['30'], { detached: true, stdio: 'ignore' });
+	const child = spawn(...sleeperArgs(30), { detached: true, stdio: 'ignore' });
 	const sink = new LogSink(path.join(dir, 'engine.log'));
 	sink.recordFailure('could not write engine stdout: disk full');
 	// Port 1: nothing listens, so a healthy verdict could only come from skipping the check.
@@ -260,10 +260,10 @@ test('spawn passes the launch contract and strips inherited env', async () => {
 		await engine.waitUntilHealthy(10_000);
 		await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
 		const text = fs.readFileSync(log, 'utf8');
-		assert.match(text, new RegExp(`"--data-dir","${data.replace(/[/\\]/g, '\\$&')}","--host","127.0.0.1","--port","${engine.port}"`));
+		assert.ok(text.includes(`"--data-dir",${JSON.stringify(data)},"--host","127.0.0.1","--port","${engine.port}"`), 'the launch contract reached the engine');
 		for (const name of STRIPPED_ENV) assert.match(text, new RegExp(`env ${name}=<unset>`));
 		assert.match(text, new RegExp(`env OPENDJ_PARENT_PID=${process.pid}\\n`));
-		assert.match(text, /env OPENDJ_ENGINE_WARN_LOG=.*logs\/engine-warn\.log/);
+		assert.match(text, /env OPENDJ_ENGINE_WARN_LOG=.*logs[\\/]engine-warn\.log/);
 		assert.match(text, /env OPENDJ_ENGINE_LOG_BOOT_ID=shell-\d+-\d+/);
 		assert.match(text, /fake-engine stderr line/, 'stderr is pumped into the same log');
 	} finally {
@@ -276,7 +276,7 @@ test('spawn passes the launch contract and strips inherited env', async () => {
 test('a bundled audio engine is handed to the engine as ODJ_AUDIO_BIN', async () => {
 	const dir = scratchDir('spawn-audio-bin');
 	const payload = fakePayload(dir);
-	const binary = path.join(payload, AUDIO_ENGINE_BIN);
+	const binary = path.join(payload, AUDIO_ENGINE_BIN + (process.platform === 'win32' ? '.exe' : ''));
 	fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
 	const data = path.join(dir, 'data');
 	const log = path.join(data, 'logs/engine.log');
@@ -290,7 +290,7 @@ test('a bundled audio engine is handed to the engine as ODJ_AUDIO_BIN', async ()
 	try {
 		await engine.waitUntilHealthy(10_000);
 		await waitFor(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('fake-engine stderr line'));
-		assert.match(fs.readFileSync(log, 'utf8'), new RegExp(`env ODJ_AUDIO_BIN=${binary.replace(/[/\\.]/g, '\\$&')}\\n`));
+		assert.match(fs.readFileSync(log, 'utf8'), new RegExp(`env ODJ_AUDIO_BIN=${binary.replace(/[/\\.]/g, '\\$&')}\\r?\\n`));
 	} finally {
 		await engine.shutdown();
 	}
@@ -316,7 +316,7 @@ test('no bundled audio engine: ODJ_AUDIO_BIN is unset, even when the terminal se
 	}
 });
 
-test('a non-executable audio engine file is not handed over', () => {
+test('a non-executable audio engine file is not handed over', { skip: POSIX_ONLY('the executable permission bit') }, () => {
 	const dir = scratchDir('audio-bin-mode');
 	fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
 	fs.writeFileSync(path.join(dir, AUDIO_ENGINE_BIN), 'not a program', { mode: 0o644 });

@@ -39,12 +39,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GATE = REPO_ROOT / ".github" / "workflows" / "adr-check.yml"
 GATE_MODULE = "scripts.adr_check"
 PR_NUMBER_EXPR = "${{ github.event.pull_request.number }}"
-ADR_DIR = "docs/decisions"
+BASE_REF_EXPR = "${{ github.base_ref }}"
+ADR_DIR = "(private path)"
 GATED_PATH = "apps/cloud/service.py"
 
 
 # -----------------------------------------------------------------------------
-def _gate_argvs_for(event: PrEvent) -> list[list[str]]:
+def _gate_argvs_for(event: PrEvent, base_ref: str = "main") -> list[list[str]]:
     """The scripts.adr_check argument lists the workflow would run for this PR event."""
     job = yaml.safe_load(GATE.read_text())["jobs"]["gate"]
     if not condition_holds(job.get("if"), event):
@@ -54,7 +55,16 @@ def _gate_argvs_for(event: PrEvent) -> list[list[str]]:
         run = str(step.get("run", ""))
         if GATE_MODULE not in run or not condition_holds(step.get("if"), event):
             continue
-        tokens = shlex.split(run.replace(PR_NUMBER_EXPR, "4227"))
+        # The step passes the PR number and base ref through env (zizmor template-injection
+        # fix): resolve each env value, then substitute the shell variables into the run line.
+        resolved = {
+            key: str(value).replace(PR_NUMBER_EXPR, "4227").replace(BASE_REF_EXPR, base_ref)
+            for key, value in (step.get("env") or {}).items()
+        }
+        for key, value in resolved.items():
+            run = run.replace(f"${key}", value)
+        assert "$" not in run, f"unresolved shell variable in the gate step: {run!r}"
+        tokens = shlex.split(run.replace(PR_NUMBER_EXPR, "4227").replace(BASE_REF_EXPR, base_ref))
         argvs.append(tokens[tokens.index(GATE_MODULE) + 1 :])
     return argvs
 
@@ -176,3 +186,12 @@ def test_ordinary_pr_body_validation_still_bites(
     repo = _repo_with_batch(tmp_path, _adr("0003", "feature"))
     rc = _run_gate(argv, repo, fetch=lambda _pr: {"body": body}, changed=[GATED_PATH])
     assert rc == expected_rc
+
+
+# -----------------------------------------------------------------------------
+@pytest.mark.parametrize("base_ref", ["main", "main-electron-rust"])
+def test_body_validation_judges_freshness_against_the_prs_own_base(base_ref: str) -> None:
+    """A PR into an integration branch is checked against that branch, not origin/main,
+    so it does not fail "merge ref is stale" every time main moves."""
+    (argv,) = [a for a in _gate_argvs_for(ORDINARY_PR, base_ref) if "--pr" in a]
+    assert argv[argv.index("--base") + 1] == f"origin/{base_ref}", argv

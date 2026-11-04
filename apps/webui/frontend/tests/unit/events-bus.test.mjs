@@ -334,6 +334,21 @@ test('midi_maps is a known kind, matching what routes/midi_maps.py publishes on 
 	assert.deepEqual(errors, []);
 });
 
+test('INFRA-8304: plays, transition_in and the cloudsync kinds are known, so a play logs no drift', () => {
+	const playIds = [];
+	bus.subscribeKind('plays', (ids) => playIds.push(...ids));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	// routes/track_plays.py publishes kind 'plays' on every recorded play.
+	socket.deliver('library.changed', 1, { kind: 'plays', ids: ['s1'] });
+	socket.deliver('library.changed', 2, { kind: 'transition_in', ids: ['s1'] });
+	socket.deliver('library.changed', 3, { kind: 'cloudsync_policy', ids: ['m:k'] });
+	socket.deliver('library.changed', 4, { kind: 'cloudsync_playlist_pin', ids: ['m:k'] });
+
+	assert.deepEqual(playIds, ['s1']);
+	assert.deepEqual(errors, [], 'no published kind is reported as unknown');
+});
+
 test('a kind subscriber also sees the envelope, and its handle detaches it', () => {
 	const seen = [];
 	const unsubscribe = bus.subscribeKind('tracks', (ids, envelope) =>

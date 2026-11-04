@@ -4,6 +4,7 @@ Written from the public specification (https://xiph.org/vorbis/doc/v-comment.htm
 FLAC carries this structure in its VORBIS_COMMENT block, Ogg Vorbis and Ogg Opus
 in their second header packet.
 """
+
 from __future__ import annotations
 
 import struct

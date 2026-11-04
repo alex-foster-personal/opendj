@@ -29,6 +29,7 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+import { killProcessTree } from './fixture-process.mjs';
 import { startMidiMapsTestServer } from './midi-maps-test-server.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -160,7 +161,9 @@ after(async () => {
 	uiState?.detachMidiGlueForRouteUnmount();
 	await vite?.close();
 	if (realFetch) globalThis.fetch = realFetch;
-	backendProc?.kill();
+	// Tree kill, not `kill()`: on Windows that ends uv.exe only and the
+	// orphaned python server holds this file's stdout pipe open forever.
+	killProcessTree(backendProc);
 });
 
 const DOC_A = {

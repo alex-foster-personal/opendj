@@ -2,7 +2,7 @@
 
 On the agentbox host this is local. On a Mac, ``just run-agentbox``
 BatchMode-SSHs to the agentbox ssh alias and runs ``--local`` there. Both are
-the one name ``MDT_AGENTBOX_HOST`` (default ``agentbox``, issue #5639).
+the one name ``MDT_AGENTBOX_HOST`` (required, issue #5639).
 It does not bind, serve, or rewrite Tailscale config on the caller.
 """
 
@@ -27,12 +27,12 @@ from pathlib import Path
 from apps.shared.last_match import require_last_match
 from apps.webui.port_config import (
     PROJECT_ROOT,
-    WEBUI_ENV_FILE,
     PortConfigError,
     WebuiPorts,
     _read_dotenv,
     _resolved_raw_value,
     claim_ports,
+    default_dotenv_path,
     resolve_ports,
 )
 
@@ -53,10 +53,8 @@ EPHEMERAL_LOG_DIR = Path(tempfile.gettempdir()) / "music-dj-tools"
 FRONTEND_DIR = PROJECT_ROOT / "apps" / "webui" / "frontend"
 #: The one variable naming the agentbox machine (issue #5639, .env.sample): its
 #: hostname, its bare ssh alias and its short MagicDNS name, which this
-#: deployment keeps identical. Unset or blank keeps the stage-1 default; a later
-#: stage removes the default once every machine sets it (ADR-0317).
+#: deployment keeps identical. Required: unset, blank, or whitespace is an error.
 AGENTBOX_HOST_ENV = "MDT_AGENTBOX_HOST"
-DEFAULT_AGENTBOX_HOST = "agentbox"
 #: One DNS label. The name is compared with ``hostname`` output, used as an ssh
 #: destination and interpolated into the constant remote command, so nothing
 #: else is accepted.
@@ -64,20 +62,19 @@ _HOST_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 
 
 def agentbox_host(*, environ: Mapping[str, str] | None = None) -> str:
-    """MDT_AGENTBOX_HOST, else the stage-1 default; a value that is not one DNS
-    label is refused, naming the variable."""
+    """MDT_AGENTBOX_HOST; a value that is not one DNS label is refused, naming the variable."""
     effective = os.environ if environ is None else environ
     value = (effective.get(AGENTBOX_HOST_ENV) or "").strip()
     if not value:
-        return DEFAULT_AGENTBOX_HOST
+        raise PortConfigError(
+            f"{AGENTBOX_HOST_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
     if not _HOST_LABEL_RE.fullmatch(value):
         raise PortConfigError(
             f"{AGENTBOX_HOST_ENV}={value!r} is not a bare hostname (one DNS label)"
         )
     return value
 
-
-AGENTBOX_HOSTNAME = agentbox_host()
 #: Env naming this deployment's agentbox SSH destinations, comma separated, in
 #: addition to the bare ssh alias. The MagicDNS name embeds a TAILNET label,
 #: which is deployment-specific, so it is CONFIGURED rather than spelled in the
@@ -91,7 +88,6 @@ AGENTBOX_HOSTNAME = agentbox_host()
 #: membership of this allowlist stands between a typo and a library copied to
 #: somebody else's machine.
 AGENTBOX_SSH_HOSTS_ENV = "MDT_AGENTBOX_SSH_HOSTS"
-SSH_HOST = AGENTBOX_HOSTNAME
 REMOTE_REPO = "/root/music-dj-tools"
 SSH_CONNECT_TIMEOUT = "8"
 CLIENT_LOG_NAMES = frozenset({"webui-client-errors", "webui-visitors"})
@@ -100,12 +96,12 @@ CLIENT_LOG_NAMES = frozenset({"webui-client-errors", "webui-visitors"})
 def resolve_allowed_hosts(
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path = WEBUI_ENV_FILE,
+    dotenv_path: Path | None = None,
 ) -> list[str]:
     """Bare hostnames from shell or root ``.env``. Empty is a hard fail here."""
     effective = os.environ if environ is None else environ
     raw = _resolved_raw_value(
-        ALLOWED_HOSTS_ENV, effective, _read_dotenv(dotenv_path)
+        ALLOWED_HOSTS_ENV, effective, _read_dotenv(default_dotenv_path(dotenv_path))
     )
     if raw is None or raw.strip() == "":
         raise PortConfigError(
@@ -508,7 +504,7 @@ def log_home(*, hostname: str | None = None) -> Path:
     Cursor symlink, not the cleanup boundary.
     """
     host = socket.gethostname() if hostname is None else hostname
-    if host == AGENTBOX_HOSTNAME:
+    if host == agentbox_host():
         return LOG_DIR
     return EPHEMERAL_LOG_DIR
 
@@ -731,7 +727,8 @@ def ensure_serve(
 
 def is_agentbox(*, hostname: str | None = None) -> bool:
     host = socket.gethostname() if hostname is None else hostname
-    return host == AGENTBOX_HOSTNAME or host.startswith(f"{AGENTBOX_HOSTNAME}.")
+    configured = agentbox_host()
+    return host == configured or host.startswith(f"{configured}.")
 
 
 def allowed_ssh_hosts(*, environ: Mapping[str, str] | None = None) -> frozenset[str]:
@@ -758,7 +755,9 @@ def allowed_ssh_hosts_description(*, environ: Mapping[str, str] | None = None) -
     return f"{sorted(allowed_ssh_hosts(environ=environ))} ({AGENTBOX_SSH_HOSTS_ENV})"
 
 
-def ssh_agentbox_argv(remote_command: str, *, ssh_host: str = SSH_HOST) -> list[str]:
+def ssh_agentbox_argv(remote_command: str, *, ssh_host: str | None = None) -> list[str]:
+    if ssh_host is None:
+        ssh_host = agentbox_host()
     """Fixed argv for a BatchMode hop. Caller must pass a constant command."""
     if not allowed_ssh_host(ssh_host):
         raise PortConfigError(
@@ -779,8 +778,9 @@ def ssh_agentbox_argv(remote_command: str, *, ssh_host: str = SSH_HOST) -> list[
 
 def remote_run_command() -> str:
     """Constant remote payload. --local prevents a second hop."""
+    configured = agentbox_host()
     return (
-        f"test \"$(hostname)\" = {AGENTBOX_HOSTNAME} && "
+        f"test \"$(hostname)\" = {configured} && "
         f"cd {REMOTE_REPO} && "
         "exec uv run --no-sync python -m apps.webui.run_agentbox --local"
     )
@@ -794,8 +794,9 @@ def _validated_stem_track(stable_id: str) -> str:
 
 def remote_check_command(stem_track: str | None = None) -> str:
     """Constant remote browser-check payload. --local prevents a second hop."""
+    configured = agentbox_host()
     command = (
-        f"test \"$(hostname)\" = {AGENTBOX_HOSTNAME} && "
+        f"test \"$(hostname)\" = {configured} && "
         f"cd {REMOTE_REPO} && "
         "exec uv run --no-sync python -m apps.webui.run_agentbox --local --check"
     )
@@ -805,9 +806,12 @@ def remote_check_command(stem_track: str | None = None) -> str:
 
 
 def run_via_ssh(
-    *, ssh_host: str = SSH_HOST, remote_command: str | None = None
+    *, ssh_host: str | None = None, remote_command: str | None = None
 ) -> int:
     """Start the box from a Mac. Does not bind or serve on the caller."""
+    if ssh_host is None:
+        ssh_host = agentbox_host()
+    configured = agentbox_host()
     check = subprocess.run(
         ssh_agentbox_argv("hostname", ssh_host=ssh_host),
         check=False,
@@ -815,10 +819,10 @@ def run_via_ssh(
         text=True,
     )
     remote_name = check.stdout.strip()
-    if check.returncode != 0 or remote_name != AGENTBOX_HOSTNAME:
+    if check.returncode != 0 or remote_name != configured:
         detail = check.stderr.strip() or remote_name or f"exit {check.returncode}"
         raise PortConfigError(
-            f"ssh {ssh_host} did not reach {AGENTBOX_HOSTNAME} ({detail})"
+            f"ssh {ssh_host} did not reach {configured} ({detail})"
         )
     print(f"[OK] hop ssh {ssh_host} -> {remote_name}")
     command = remote_run_command() if remote_command is None else remote_command
@@ -845,7 +849,7 @@ def agentbox_check_command(
         "--ip",
         serve_ip,
         "--short-host",
-        AGENTBOX_HOSTNAME,
+        agentbox_host(),
     ]
     if stem_track is not None:
         command.extend(["--stem-track", _validated_stem_track(stem_track)])
@@ -954,7 +958,7 @@ def run_agentbox() -> int:
     expected_redirect = f"{secure_origin}/performance"
     _wait_redirect(
         f"http://127.0.0.1:{HTTP_REDIRECT_PORT}/performance",
-        host=AGENTBOX_HOSTNAME,
+        host=agentbox_host(),
         expected_location=expected_redirect,
         seconds=10.0,
         label="loopback HTTP redirect",
@@ -974,12 +978,13 @@ def run_agentbox() -> int:
     print(f"[OK] serve {serve_target} -> {serve_url} via {serve_ip}")
     _wait_redirect(
         f"http://{serve_ip}/performance",
-        host=AGENTBOX_HOSTNAME,
+        host=agentbox_host(),
         expected_location=expected_redirect,
         seconds=10.0,
         label="tailscale short-host HTTP redirect",
     )
-    print(f"[OK] http://{AGENTBOX_HOSTNAME}/performance -> {expected_redirect}")
+    configured = agentbox_host()
+    print(f"[OK] http://{configured}/performance -> {expected_redirect}")
     check_agentbox()
     return 0
 

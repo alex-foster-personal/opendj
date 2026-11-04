@@ -4,6 +4,7 @@ This module loads activations and refuses when they are missing. The piecewise-
 constant tempo map fit lives in ``tempo_map.py``; this module does not fit a
 grid or synthesize tempo from beat times alone.
 """
+
 from __future__ import annotations
 
 import base64
@@ -44,9 +45,7 @@ def default_activations_dir(*, create: bool = True) -> Path:
                     "does not fall back when an explicit override is unusable"
                 )
             if not create:
-                raise ActivationsMissing(
-                    f"{ACTIVATIONS_DIR_ENV}={path} does not exist and create=False"
-                )
+                raise ActivationsMissing(f"{ACTIVATIONS_DIR_ENV}={path} does not exist and create=False")
             path.mkdir(parents=True, exist_ok=True)
         return path
     from apps.shared.platform_paths import DATA_DIR
@@ -73,9 +72,7 @@ def load_activations(
 
     path = Path(npz)
     if not path.is_file():
-        raise ActivationsMissing(
-            f"dynamic grid fit refused: activations npz not found at {npz!r}"
-        )
+        raise ActivationsMissing(f"dynamic grid fit refused: activations npz not found at {npz!r}")
     with np.load(path, allow_pickle=False) as archive:
         return _arrays_from_archive(archive)
 
@@ -83,14 +80,10 @@ def load_activations(
 def _arrays_from_archive(archive: np.lib.npyio.NpzFile) -> dict[str, Any]:
     for key in ("beat", "downbeat", "fps"):
         if key not in archive:
-            raise ActivationsMissing(
-                f"dynamic grid fit refused: activations npz missing required key {key!r}"
-            )
+            raise ActivationsMissing(f"dynamic grid fit refused: activations npz missing required key {key!r}")
     fps = int(archive["fps"])
     if fps <= 0:
-        raise ActivationsMissing(
-            f"dynamic grid fit refused: activations fps {fps!r} is not a positive rate"
-        )
+        raise ActivationsMissing(f"dynamic grid fit refused: activations fps {fps!r} is not a positive rate")
     return {
         "beat": np.asarray(archive["beat"]),
         "downbeat": np.asarray(archive["downbeat"]),
@@ -125,18 +118,14 @@ def require_activations_for_fit(record_or_ref: Any) -> dict[str, Any]:
     """Load retained activations or raise ``ActivationsMissing``; never invent a grid."""
     ref = activations_ref(record_or_ref)
     if ref is None:
-        raise ActivationsMissing(
-            "dynamic grid fit refused: record carries no activations pointer"
-        )
+        raise ActivationsMissing("dynamic grid fit refused: record carries no activations pointer")
     npz_path = ref.get("npz")
     blob = ref.get("blob")
     if npz_path is not None:
         return load_activations(npz=str(npz_path))
     if blob is not None:
         return load_activations(blob=blob)
-    raise ActivationsMissing(
-        "dynamic grid fit refused: activations pointer has neither npz nor blob"
-    )
+    raise ActivationsMissing("dynamic grid fit refused: activations pointer has neither npz nor blob")
 
 
 def fit_dynamic_grid(record_or_ref: Any, beat_times: Sequence[float] | None = None):

@@ -1,55 +1,10 @@
 #!/usr/bin/env bash
-# Demucs-fill vocal-cache for the fillable top-played-playlist gap tracks.
-# Reads .tmp/vocal_gap_fillable.json, runs the vocal worker per stable_id,
-# logs N/total + resulting status. Self-contained; safe to re-run (valid
-# cache is skipped unless --force).
+# Supersedes: the JSON one-loop overnight runner (issue #165).
+# Loud tombstone so bookmarks and old cron entries fail closed.
 set -uo pipefail
-# This repo's own checkout location, not a machine-specific value (#910): no
-# personal home should ever be hardcoded here.
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# No -e in this script (per-track failures are counted, not fatal), so the cd
-# is guarded explicitly: every path below is relative to the repo root.
-cd "$REPO" || { echo "FATAL: no checkout at $REPO" >&2; exit 1; }
-LOG="$REPO/.tmp/vocal_fill.log"
-# htdemucs hits a hard MPS limit (Output channels > 65536) that
-# PYTORCH_ENABLE_MPS_FALLBACK cannot rescue (it's a dimension cap, not a
-# missing-op), so MPS always bails to CPU with a per-track exception. Force
-# CPU up front: no wasted MPS attempt, no confusing WARN spam, same speed.
-export MDT_VOCAL_WORKER_DEVICE="${MDT_VOCAL_WORKER_DEVICE:-cpu}"
-
-# stable_ids are hex (no spaces) -> safe to word-split (bash 3.2 has no mapfile)
-# A missing or malformed input file used to leave IDS empty and the run then
-# reported "DONE: ok=0 fail=0 of 0" -- a confident answer to a question it never
-# asked. The status is read explicitly so an unreadable input is announced.
-if ! IDS=$(python3 -c "import json;[print(g['stable_id']) for g in json.load(open('.tmp/vocal_gap_fillable.json'))]"); then
-  echo "FATAL: cannot read .tmp/vocal_gap_fillable.json" >&2; exit 1
-fi
-# grep -c exits 1 on a zero count, which here means "nothing to do", not an
-# error: tolerated explicitly so the floor check below is what decides.
-N=$(printf '%s\n' "$IDS" | grep -c . || true)
-if [ "$N" -eq 0 ]; then
-  echo "FATAL: input listed 0 fillable tracks; nothing to do" >&2; exit 1
-fi
-echo "[$(date '+%H:%M:%S')] START vocal fill: $N tracks, device=$MDT_VOCAL_WORKER_DEVICE" | tee "$LOG"
-
-i=0; ok=0; fail=0
-for sid in $IDS; do
-  i=$((i+1))
-  title=$(sqlite3 data/state/state.db "select title from tracks where stable_id='$sid';" 2>/dev/null)
-  echo "[$(date '+%H:%M:%S')] ($i/$N) $sid  $title" >> "$LOG"
-  if .venv/bin/python -m apps.vocals one --stable-id "$sid" \
-        --data-dir "$REPO/data" --worker-timeout-s 1500 >> "$LOG" 2>&1; then
-    st=$(.venv/bin/python - "$sid" <<'PY' 2>/dev/null
-import sys,json,glob,os
-sid=sys.argv[1]; p=f"data/state/vocal-cache/{sid}.json"
-if os.path.exists(p):
-    d=json.load(open(p)); print(d.get("status") or ("regions:"+str(len(d.get("regions",[])))))
-else: print("NO-CACHE")
-PY
-)
-    echo "[$(date '+%H:%M:%S')] ($i/$N) OK -> $st" >> "$LOG"; ok=$((ok+1))
-  else
-    echo "[$(date '+%H:%M:%S')] ($i/$N) FAILED" >> "$LOG"; fail=$((fail+1))
-  fi
-done
-echo "[$(date '+%H:%M:%S')] DONE: ok=$ok fail=$fail of $N" | tee -a "$LOG"
+cat >&2 <<'EOF'
+FATAL: scripts/fill_vocal_gap.sh is superseded by:
+  MDT_VOCAL_WORKER_DEVICE=cpu python -m apps.vocals trickle --live --max-minutes N --data-dir <data>
+Keep MDT_VOCAL_WORKER_DEVICE=cpu (htdemucs hits a hard MPS channel cap).
+EOF
+exit 2

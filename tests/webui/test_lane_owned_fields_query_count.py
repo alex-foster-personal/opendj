@@ -49,6 +49,7 @@ pytestmark = [pytest.mark.requirement("LIBM-135")]
 
 SMALL, LARGE = 4, 20
 BPM = 121.0
+RBX_BPM = 124.0
 FINGERPRINT = "sha256:" + "cd" * 32
 
 
@@ -105,7 +106,7 @@ def _reset_toggles() -> Iterator[None]:
 
 @pytest.fixture
 def state_path(tmp_path: Path) -> Path:
-    """LARGE tracks; every second one has an own beatgrid record."""
+    """LARGE tracks; every second one has an own beatgrid record and a rekordbox bpm."""
     path = tmp_path / "state.db"
     conn = state_db.open_rw(path)
     writer = StateWriter(conn, bus=FakeEventBus(), actor="test")
@@ -123,6 +124,20 @@ def state_path(tmp_path: Path) -> Path:
             )
     finally:
         writer.close()
+        conn.close()
+    # Every track with an own beatgrid also carries a real rekordbox bpm, so
+    # the own value beside it stays available-not-selected: a missing
+    # rekordbox bpm would fall through to the own value instead (PGCL-7693).
+    conn = state_db.open_rw(path)
+    try:
+        stamp = datetime.now(UTC).isoformat()
+        conn.executemany(
+            "INSERT INTO track_fields (stable_id, field_name, value_json, source, "
+            "confidence, modified_at) VALUES (?, 'bpm', ?, 'rekordbox', 1.0, ?)",
+            [(_sid(i), str(RBX_BPM), stamp) for i in range(0, LARGE, 2)],
+        )
+        conn.commit()
+    finally:
         conn.close()
     for i in range(0, LARGE, 2):
         upsert_record(_beatgrid_record(_sid(i)), db_path=path)

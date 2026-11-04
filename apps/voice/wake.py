@@ -84,8 +84,7 @@ class OpenWakeWordBackend:
             from openwakeword.model import Model  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - env-specific
             raise RuntimeError(
-                "openwakeword not importable; `pip install openwakeword` "
-                "or switch WAKE_BACKEND=stub"
+                "openwakeword not importable; `pip install openwakeword` or switch WAKE_BACKEND=stub"
             ) from exc
 
         self._openwakeword = openwakeword
@@ -153,9 +152,7 @@ class PorcupineBackend:
         try:
             import pvporcupine  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - env-specific
-            raise RuntimeError(
-                "pvporcupine not importable; `pip install pvporcupine`"
-            ) from exc
+            raise RuntimeError("pvporcupine not importable; `pip install pvporcupine`") from exc
 
         kp = keyword_path or os.environ.get("VOICE_WAKE_KEYWORD_PATH")
         if kp:
@@ -206,9 +203,7 @@ def make_backend(env: dict[str, str] | None = None) -> WakeWord:
             model_path=env.get("VOICE_WAKE_MODEL_PATH"),
             threshold=threshold,
         )
-    raise ValueError(
-        f"Unknown WAKE_BACKEND={backend!r}; expected one of openwakeword/porcupine/stub"
-    )
+    raise ValueError(f"Unknown WAKE_BACKEND={backend!r}; expected one of openwakeword/porcupine/stub")
 
 
 def triggered(backend: WakeWord, frames: list[bytes]) -> bool:

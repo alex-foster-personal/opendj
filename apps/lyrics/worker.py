@@ -1,7 +1,7 @@
 """Jobs runner loop - operational-plan section 12, R3/R4.
 
 The UI's right-click already records intent in the queue (POST
-/api/v1/lyrics/jobs -> data/state/lyrics-jobs.json). This module is the
+/api/v1/lyrics/jobs -> (private path)). This module is the
 consumer: it takes the OLDEST queued job, invokes the R1 batch driver
 (apps/lyrics/batch.py) for the job's stable_ids, writes stage progress into
 the job's note as it goes (R4's honest progress - the admin jobs panel reads
@@ -31,8 +31,9 @@ NOTE_MAX_CHARS: int = 2000  # the queue file is UI-facing state, not a log
 
 
 class Driver(Protocol):
-    def __call__(self, *, corpus: str, stable_ids: list[str], live: bool,
-                 progress: Callable[[str], None]) -> BatchReport: ...
+    def __call__(
+        self, *, corpus: str, stable_ids: list[str], live: bool, progress: Callable[[str], None]
+    ) -> BatchReport: ...
 
 
 def work_once(state_dir: Path, *, driver: Driver | None = None) -> bool:
@@ -43,8 +44,7 @@ def work_once(state_dir: Path, *, driver: Driver | None = None) -> bool:
         return False
     job = queued[0]
     corpus = f"job-{job.id}"
-    print(f"[..] job {job.id} ({job.kind}, {len(job.stable_ids)} track(s)) "
-          f"-> corpus {corpus}")
+    print(f"[..] job {job.id} ({job.kind}, {len(job.stable_ids)} track(s)) -> corpus {corpus}")
     progress_lines: list[str] = []
 
     def progress(msg: str) -> None:
@@ -56,8 +56,7 @@ def work_once(state_dir: Path, *, driver: Driver | None = None) -> bool:
     if driver is None:
         paths = batch_paths_for(state_dir)
 
-        def driver(*, corpus: str, stable_ids: list[str], live: bool,
-                   progress: Callable[[str], None]) -> BatchReport:
+        def driver(*, corpus: str, stable_ids: list[str], live: bool, progress: Callable[[str], None]) -> BatchReport:
             return run_batch(
                 corpus=corpus,
                 stable_ids=stable_ids,
@@ -68,29 +67,26 @@ def work_once(state_dir: Path, *, driver: Driver | None = None) -> bool:
             )
 
     try:
-        report = driver(corpus=corpus, stable_ids=list(job.stable_ids),
-                        live=True, progress=progress)
+        report = driver(corpus=corpus, stable_ids=list(job.stable_ids), live=True, progress=progress)
     except (StageBlocked, CommandFailed) as exc:
         jobs_mod.complete(state_dir, job.id, "failed", f"blocked: {exc}")
         print(f"[ERROR] job {job.id} failed: {exc}")
         return True
     except Exception as exc:
-        jobs_mod.complete(state_dir, job.id, "failed",
-                          f"{type(exc).__name__}: {exc}")
+        jobs_mod.complete(state_dir, job.id, "failed", f"{type(exc).__name__}: {exc}")
         raise
-    jobs_mod.complete(state_dir, job.id, "done",
-                      report.summary()[:NOTE_MAX_CHARS])
-    print(f"[OK] job {job.id} done: aligned {len(report.aligned)}, "
-          f"ingested {report.ingested}, excluded {len(report.excluded)}")
+    jobs_mod.complete(state_dir, job.id, "done", report.summary()[:NOTE_MAX_CHARS])
+    print(
+        f"[OK] job {job.id} done: aligned {len(report.aligned)}, "
+        f"ingested {report.ingested}, excluded {len(report.excluded)}"
+    )
     return True
 
 
-def work_loop(state_dir: Path, *, driver: Driver | None = None,
-              poll_sleep_s: float = POLL_SLEEP_S) -> None:
+def work_loop(state_dir: Path, *, driver: Driver | None = None, poll_sleep_s: float = POLL_SLEEP_S) -> None:
     """Consume forever with a modest poll sleep (R3's runner-up guarantee:
     a queued job never sits unconsumed while this loop is alive)."""
-    print(f"[..] lyrics jobs worker up (poll {poll_sleep_s:.0f}s, "
-          f"queue {jobs_mod.jobs_path(state_dir)})")
+    print(f"[..] lyrics jobs worker up (poll {poll_sleep_s:.0f}s, queue {jobs_mod.jobs_path(state_dir)})")
     while True:
         worked = work_once(state_dir, driver=driver)
         if not worked:

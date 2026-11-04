@@ -3,6 +3,7 @@
 Hand-rolled validator (no ``jsonschema`` dep); small surface, explicit
 errors with a dotted path to the offending node.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -65,11 +66,7 @@ def _err(path: str, msg: str) -> SmartlistRuleError:
 
 
 def _is_relative_date(value: Any) -> bool:
-    return (
-        isinstance(value, dict)
-        and set(value.keys()) == {"$relative"}
-        and isinstance(value["$relative"], str)
-    )
+    return isinstance(value, dict) and set(value.keys()) == {"$relative"} and isinstance(value["$relative"], str)
 
 
 def _is_real_number(value: Any) -> bool:
@@ -81,17 +78,13 @@ def _validate_typed_list(field: str, value: list, path: str, *, op: str) -> None
     ftype = FIELD_TYPES[field]
     for i, elt in enumerate(value):
         if ftype == "number" and not _is_real_number(elt):
-            raise _err(f"{path}.value[{i}]",
-                       f"{op} on {field!r} expects numbers")
+            raise _err(f"{path}.value[{i}]", f"{op} on {field!r} expects numbers")
         if ftype == "string" and not isinstance(elt, str):
-            raise _err(f"{path}.value[{i}]",
-                       f"{op} on {field!r} expects strings")
-        if ftype == "date" and not (
-            isinstance(elt, str) or _is_relative_date(elt)
-        ):
-            raise _err(f"{path}.value[{i}]",
-                       f"{op} on {field!r} expects date strings "
-                       "or {'$relative': '-Nd'} objects")
+            raise _err(f"{path}.value[{i}]", f"{op} on {field!r} expects strings")
+        if ftype == "date" and not (isinstance(elt, str) or _is_relative_date(elt)):
+            raise _err(
+                f"{path}.value[{i}]", f"{op} on {field!r} expects date strings or {{'$relative': '-Nd'}} objects"
+            )
 
 
 def _validate_list_op(field: str, op: str, value: Any, path: str) -> None:
@@ -108,17 +101,11 @@ def _validate_list_op(field: str, op: str, value: Any, path: str) -> None:
 def _validate_scalar_operand(field: str, value: Any, path: str) -> None:
     ftype = FIELD_TYPES[field]
     if ftype == "number" and not _is_real_number(value):
-        raise _err(f"{path}.value",
-                   f"field {field!r} expects a number")
+        raise _err(f"{path}.value", f"field {field!r} expects a number")
     if ftype == "string" and not isinstance(value, str):
-        raise _err(f"{path}.value",
-                   f"field {field!r} expects a string")
-    if ftype == "date" and not (
-        isinstance(value, str) or _is_relative_date(value)
-    ):
-        raise _err(f"{path}.value",
-                   "date fields accept an ISO-8601 string or a "
-                   "{'$relative': '-Nd'} object")
+        raise _err(f"{path}.value", f"field {field!r} expects a string")
+    if ftype == "date" and not (isinstance(value, str) or _is_relative_date(value)):
+        raise _err(f"{path}.value", "date fields accept an ISO-8601 string or a {'$relative': '-Nd'} object")
 
 
 def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
@@ -127,13 +114,11 @@ def _validate_operand(field: str, op: str, value: Any, path: str) -> None:
         return
     if op == "contains":
         if not isinstance(value, str):
-            raise _err(f"{path}.value",
-                       "contains op expects a string value")
+            raise _err(f"{path}.value", "contains op expects a string value")
         return
     if op == "missing":
         if value is not None:
-            raise _err(f"{path}.value",
-                       "missing op requires value null")
+            raise _err(f"{path}.value", "missing op requires value null")
         return
     _validate_scalar_operand(field, value, path)
 
@@ -145,13 +130,10 @@ def _validate_predicate(node: dict, path: str) -> None:
         raise _err(path, "predicate missing 'value'")
     value = node["value"]
     if field not in ALLOWED_FIELDS:
-        raise _err(f"{path}.field",
-                   f"unknown field {field!r}; expected one of {ALLOWED_FIELDS}")
+        raise _err(f"{path}.field", f"unknown field {field!r}; expected one of {ALLOWED_FIELDS}")
     allowed_ops = ALLOWED_OPS_BY_FIELD[field]
     if op not in allowed_ops:
-        raise _err(f"{path}.op",
-                   f"op {op!r} not allowed for field {field!r}; "
-                   f"expected one of {allowed_ops}")
+        raise _err(f"{path}.op", f"op {op!r} not allowed for field {field!r}; expected one of {allowed_ops}")
     _validate_operand(field, op, value, path)
 
 
@@ -171,18 +153,16 @@ def _validate_node(node: Any, path: str, depth: int = 0) -> None:
         op = node["op"]
         children = node.get("children")
         if not isinstance(children, list) or not children:
-            raise _err(f"{path}.children",
-                       f"logical op {op!r} requires a non-empty 'children' list")
+            raise _err(f"{path}.children", f"logical op {op!r} requires a non-empty 'children' list")
         if op == "not" and len(children) != 1:
-            raise _err(f"{path}.children",
-                       "'not' requires exactly one child")
+            raise _err(f"{path}.children", "'not' requires exactly one child")
         for i, child in enumerate(children):
             _validate_node(child, f"{path}.children[{i}]", depth + 1)
         return
     if "field" not in node or "op" not in node:
-        raise _err(path,
-                   "node is neither a logical op ({and,or,not} with children) "
-                   "nor a predicate ({field, op, value})")
+        raise _err(
+            path, "node is neither a logical op ({and,or,not} with children) nor a predicate ({field, op, value})"
+        )
     _validate_predicate(node, path)
 
 

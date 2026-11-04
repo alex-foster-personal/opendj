@@ -14,6 +14,7 @@ template, through our own SQLCipher handle (``onelibrary.py``).
 
 Requirement: CAT-06.
 """
+
 from __future__ import annotations
 
 __all__ = ["read_usb_export"]

@@ -8,7 +8,7 @@ through :func:`apps.shared.state.sync_stamp.stamp_and_log` inside one
 the same proposals. There is no SQL editing path for these tables.
 
 Gate semantics (clean-as-you-code ratchet; a deviation from "refuse on any
-error", pending the maintainer's sign-off, recorded in ``specs/cloudsync-spec.md`` D5a).
+error", pending the maintainer's sign-off, recorded in ``(private path)`` D5a).
 :func:`evaluate` runs :func:`apps.sync_hub.policy_rules.validate_fleet_policy`
 twice: on the stored fleet, and on the fleet with the proposal applied. A
 violation is ``introduced`` when the second run has it and the first does not.
@@ -127,9 +127,7 @@ def empty_proposal(author_machine_id: str) -> ProposedPolicy:
     return ProposedPolicy(author_machine_id, (), (), (), (), (), ())
 
 
-def seed_proposal(
-    author_machine_id: str, machine_id: str, machine_class: MachineClass
-) -> ProposedPolicy:
+def seed_proposal(author_machine_id: str, machine_id: str, machine_class: MachineClass) -> ProposedPolicy:
     """One cell per asset kind from the ``apps/cloud/policy.py`` class defaults.
 
     Seed input only: the synced ``sync_policies`` table stays the authority,
@@ -163,8 +161,7 @@ def _live_policy(conn: sqlite3.Connection, machine_id: str, kind: str) -> Row | 
 
 def _live_pin(conn: sqlite3.Connection, machine_id: str, playlist_id: str) -> Row | None:
     row = conn.execute(
-        "SELECT mode FROM playlist_pins "
-        "WHERE machine_id = ? AND playlist_id = ? AND deleted_at IS NULL",
+        "SELECT mode FROM playlist_pins WHERE machine_id = ? AND playlist_id = ? AND deleted_at IS NULL",
         (machine_id, playlist_id),
     ).fetchone()
     return None if row is None else {"mode": row[0]}
@@ -180,14 +177,12 @@ def list_live(conn: sqlite3.Connection, machine_id: str | None) -> dict[str, lis
         params,
     ).fetchall()
     pins = conn.execute(
-        f"SELECT machine_id, playlist_id, mode FROM playlist_pins {where} "
-        "ORDER BY machine_id, playlist_id",
+        f"SELECT machine_id, playlist_id, mode FROM playlist_pins {where} ORDER BY machine_id, playlist_id",
         params,
     ).fetchall()
     return {
         "policies": [
-            {"machine_id": m, "asset_kind": k, "mode": mode, "cache_budget_mb": b}
-            for m, k, mode, b in policies
+            {"machine_id": m, "asset_kind": k, "mode": mode, "cache_budget_mb": b} for m, k, mode, b in policies
         ],
         "pins": [{"machine_id": m, "playlist_id": p, "mode": mode} for m, p, mode in pins],
     }
@@ -221,21 +216,13 @@ def plan(conn: sqlite3.Connection, proposed: ProposedPolicy) -> tuple[PlanEntry,
     for pin in proposed.pins:
         before = _live_pin(conn, pin.machine_id, pin.playlist_id)
         after = {"mode": pin.mode}
-        entries.append(
-            PlanEntry(
-                PINS_TABLE, pin.machine_id, pin.playlist_id, _action(before, after), before, after
-            )
-        )
+        entries.append(PlanEntry(PINS_TABLE, pin.machine_id, pin.playlist_id, _action(before, after), before, after))
     for key in proposed.removed_policies:
         before = _live_policy(conn, key.machine_id, key.asset_kind)
-        entries.append(
-            PlanEntry(POLICIES_TABLE, key.machine_id, key.asset_kind, "delete", before, None)
-        )
+        entries.append(PlanEntry(POLICIES_TABLE, key.machine_id, key.asset_kind, "delete", before, None))
     for pin_key in proposed.removed_pins:
         before = _live_pin(conn, pin_key.machine_id, pin_key.playlist_id)
-        entries.append(
-            PlanEntry(PINS_TABLE, pin_key.machine_id, pin_key.playlist_id, "delete", before, None)
-        )
+        entries.append(PlanEntry(PINS_TABLE, pin_key.machine_id, pin_key.playlist_id, "delete", before, None))
     return tuple(entries)
 
 
@@ -249,9 +236,7 @@ class _GateContext:
 def _check(violation: Violation, gate: _GateContext) -> CheckedViolation:
     introduced = (violation.rule_id, violation.subject) not in gate.before_keys
     own_target = violation.subject in gate.own_subjects
-    expected_by_unset = (
-        violation.rule_id == "completeness" and violation.subject in gate.removed_subjects
-    )
+    expected_by_unset = violation.rule_id == "completeness" and violation.subject in gate.removed_subjects
     return CheckedViolation(
         violation.rule_id,
         violation.severity,
@@ -275,8 +260,7 @@ def _require_distinct_keys(proposed: ProposedPolicy) -> None:
             raise PolicyInputError(
                 "PROPOSAL_INVALID",
                 422,
-                f"{table}: {repeated} named more than once (set twice, or set and "
-                "removed); name each cell once",
+                f"{table}: {repeated} named more than once (set twice, or set and removed); name each cell once",
             )
 
 
@@ -295,15 +279,11 @@ def evaluate(
     """
     _require_distinct_keys(proposed)
     before = validate_fleet_policy(conn, empty_proposal(proposed.author_machine_id))
-    after = validate_fleet_policy(
-        conn, proposed, extra_live_playlists=extra_live_playlists
-    )
+    after = validate_fleet_policy(conn, proposed, extra_live_playlists=extra_live_playlists)
     gate = _GateContext(
         before_keys=frozenset((v.rule_id, v.subject) for v in before),
         own_subjects=frozenset(subject for _, subject in proposal_targets(proposed)),
-        removed_subjects=frozenset(
-            f"{k.machine_id}/{k.asset_kind}" for k in proposed.removed_policies
-        ),
+        removed_subjects=frozenset(f"{k.machine_id}/{k.asset_kind}" for k in proposed.removed_policies),
     )
     checked = tuple(_check(v, gate) for v in after)
     machines = conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0]
@@ -353,9 +333,7 @@ def _require_playlists(conn: sqlite3.Connection, proposed: ProposedPolicy) -> No
             (pin.playlist_id,),
         ).fetchone()
         if live is None:
-            raise PolicyInputError(
-                "PLAYLIST_NOT_FOUND", 404, f"unknown playlist_id {pin.playlist_id!r}"
-            )
+            raise PolicyInputError("PLAYLIST_NOT_FOUND", 404, f"unknown playlist_id {pin.playlist_id!r}")
 
 
 def _require_live_rows(conn: sqlite3.Connection, proposed: ProposedPolicy) -> None:
@@ -377,9 +355,7 @@ def _require_live_rows(conn: sqlite3.Connection, proposed: ProposedPolicy) -> No
 
 
 def _upsert_policy(conn: sqlite3.Connection, cell: PolicyCell, origin: str) -> None:
-    stamp = sync_stamp.stamp_and_log(
-        conn, POLICIES_TABLE, (cell.machine_id, cell.asset_kind), origin
-    )
+    stamp = sync_stamp.stamp_and_log(conn, POLICIES_TABLE, (cell.machine_id, cell.asset_kind), origin)
     conn.execute(
         """
         INSERT INTO sync_policies(
@@ -438,14 +414,11 @@ def _tombstone(
     )
     if cursor.rowcount != 1:
         raise RuntimeError(
-            f"tombstone of {table} {key.machine_id!r}/{key_value!r} touched "
-            f"{cursor.rowcount} rows, expected 1"
+            f"tombstone of {table} {key.machine_id!r}/{key_value!r} touched {cursor.rowcount} rows, expected 1"
         )
 
 
-def _write(
-    conn: sqlite3.Connection, proposed: ProposedPolicy, entries: tuple[PlanEntry, ...]
-) -> int:
+def _write(conn: sqlite3.Connection, proposed: ProposedPolicy, entries: tuple[PlanEntry, ...]) -> int:
     """Write every changed row; returns how many rows were written."""
     origin = sync_stamp.ensure_local_machine(conn)
     unchanged = {(e.table, e.machine_id, e.key) for e in entries if e.action == "unchanged"}
@@ -467,9 +440,7 @@ def _write(
     return written
 
 
-def apply_proposal(
-    conn: sqlite3.Connection, proposed: ProposedPolicy, *, live: bool
-) -> PolicyOutcome:
+def apply_proposal(conn: sqlite3.Connection, proposed: ProposedPolicy, *, live: bool) -> PolicyOutcome:
     """Gate ``proposed`` and, when ``live``, measurable and nothing blocks, write
     it atomically.
 

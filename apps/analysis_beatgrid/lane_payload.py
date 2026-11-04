@@ -62,7 +62,9 @@ from apps.analysis_beatgrid.grid_fit import (
     GRID_FIT_LINE,
     GRID_FIT_MODES,
     GRID_FIT_RAW,
+    UNTRUSTED_GRID_AGREEMENT,
     fit_grid,
+    grid_agreement,
 )
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 from apps.analysis_beatgrid.tempo_family import (
@@ -439,17 +441,21 @@ def _build_line_lane(
     line_bpm = [round(line.bpm, 2) for line in fit.lines]
     first_downbeat = fit.beats[fit.beat_numbers.index(1)]
     multi = len(line_bpm) > 1
+    # BEATMAP-8327: confidence describes the grid served, not a line through every
+    # raw beat (that read 0 on any track with one messy breakdown), and a grid
+    # that misses most beats is published untrusted so the deck guards Sync.
+    confidence = grid_agreement(beats, fit.beats, offset_s=fit.offset_s)
     payload: dict[str, Any] = {
         "beats": [
             {"t": round(t, 5), "n": n, "bpm": line_bpm[owner]}
             for t, n, owner in zip(fit.beats, fit.beat_numbers, fit.beat_lines, strict=True)
         ],
         "bpm": round(tempo.bpm, 2) if multi else line_bpm[0],
-        "bpm_confidence": tempo.confidence,
+        "bpm_confidence": confidence,
         "octave_reason": tempo.octave_reason,
         "first_downbeat_s": round(first_downbeat, 5),
-        "tempo_changes": _line_markers(fit, line_bpm, tempo.confidence),
-        "static_grid_untrusted": False,
+        "tempo_changes": _line_markers(fit, line_bpm, confidence),
+        "static_grid_untrusted": confidence < UNTRUSTED_GRID_AGREEMENT,
         "grid_fit": {
             **_line_diagnostics(fit, line_bpm, multiple, mode),
             "n_half_time_filled": n_filled,
@@ -464,7 +470,7 @@ def _build_line_lane(
     if fit.bar_phase_untrusted:
         payload["bar_phase_untrusted"] = True
     _stamp_activations(result, payload)
-    return BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
+    return BeatgridLane(status="ok", reason=None, confidence=confidence, payload=payload)
 
 
 __all__ = [

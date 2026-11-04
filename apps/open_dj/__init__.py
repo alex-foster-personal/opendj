@@ -19,6 +19,7 @@ Typed dataclass layer (Phase 15 + Phase 16 adapters):
 
 Adapters live under ``apps.open_dj.adapters.*``.
 """
+
 from __future__ import annotations
 
 from apps.open_dj.schema import (

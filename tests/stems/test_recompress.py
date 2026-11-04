@@ -158,8 +158,81 @@ def test_live_pass_rewrites_as_mp3_under_the_source_and_keeps_a_backup(tmp_path:
     assert manifest["size_policy"]["violations"] == []
     assert not list(bundle.glob("*.flac"))
     assert _snapshot(backup / "stems" / "mp3src") == old
-    # A second pass finds nothing left to do.
-    assert _verdicts(data) == {"mp3src": rc.SKIP_ALREADY_LOSSY}
+    # A second pass finds nothing left to do: the new parts are at STEM-8231.
+    assert _verdicts(data) == {"mp3src": rc.SKIP_AT_POLICY}
+
+
+# ----- STEM-8231: shrink MP3 bundles made under the old per-part rule ----------
+def _mp3_bundle(data: Path, stable_id: str, source: Path, kbps: dict[str, int], *, schema: int = 3) -> Path:
+    """A schema v3 MP3 bundle with each part CBR at ``kbps[part]``; ``schema=1``
+    writes the old shape with no ``audio`` block (length derived from a header)."""
+    bundle = data / "state" / "stems" / stable_id
+    bundle.mkdir()
+    for i, part in enumerate(PARTS):
+        encode_mp3(_noise(i), RATE, bundle / f"{part}.mp3", cbr_kbps=kbps[part])
+    manifest = {
+        "schema_version": 3,
+        "stable_id": stable_id,
+        "layout": "demucs4",
+        "model": {"name": "hdemucs_mmi", "version": "4.0.1"},
+        "source": {"path": str(source), "sha256": "0" * 64},
+        "files": {part: f"{part}.mp3" for part in PARTS},
+        "preset": {"tag": "hdemucs_mmi-ov0.25"},
+        "audio": {"sample_rate": RATE, "frame_count": FRAMES, "channels": 2},
+        "codec": "mp3",
+    }
+    if schema == 1:
+        manifest = {k: manifest[k] for k in ("stable_id", "model", "source", "files", "layout")} | {"schema_version": 1}
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    return bundle
+
+
+OLD_RULE = {part: 320 for part in PARTS}  # STEM-57: each part at 320 CBR
+AT_RULE_192 = {"vocals": 64, "other": 64, "drums": 96, "bass": 96}  # STEM-8231 for a 192 kbps source
+
+
+@pytest.mark.requirement("STEM-8231")
+def test_an_old_rule_mp3_bundle_is_eligible_and_a_compliant_one_is_not(tmp_path: Path) -> None:
+    """[if] a 320-per-part MP3 bundle is skipped, or a STEM-8231 one re-encoded [then] broken."""
+    data = _data_dir(tmp_path)
+    _mp3_bundle(data, "oldrule", _source(tmp_path, "a"), OLD_RULE)
+    _mp3_bundle(data, "atrule", _source(tmp_path, "b"), AT_RULE_192)
+
+    assert _verdicts(data) == {"oldrule": rc.ELIGIBLE, "atrule": rc.SKIP_AT_POLICY}
+
+
+@pytest.mark.requirement("STEM-8231")
+@pytest.mark.parametrize("schema", [3, 1])
+def test_live_pass_shrinks_an_old_rule_mp3_bundle_to_the_whole_set_rule(tmp_path: Path, schema: int) -> None:
+    """[if] the shrink leaves a part over its STEM-8231 rate, puts bass/drums under
+    96, or changes the frame count [then] broken."""
+    data = _data_dir(tmp_path)
+    source = _source(tmp_path, "a")  # 192 kbps
+    bundle = _mp3_bundle(data, "oldrule", source, OLD_RULE, schema=schema)
+    old = _snapshot(bundle)
+    backup = tmp_path / "backup"
+
+    assert rc.main(["--data-dir", str(data), "--live", "--backup-dir", str(backup)]) == 0
+
+    loaded = load_stem_bundle("oldrule", roots=[data / "state" / "stems"])
+    assert loaded.media_type == "audio/mpeg"
+    assert loaded.alignment.frame_count == FRAMES
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    assert manifest["size_policy"]["mp3_settings"] == {p: f"lame_{k}kbps_cbr" for p, k in AT_RULE_192.items()}
+    assert manifest["recompressed_from"]["media_type"] == "audio/mpeg"
+    mpeg1_l3_kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+    for part in PARTS:
+        data_bytes = (bundle / f"{part}.mp3").read_bytes()
+        assert mpeg1_l3_kbps[data_bytes[2] >> 4] == AT_RULE_192[part], part
+        decoded = len(sf.read(str(bundle / f"{part}.mp3"), dtype="float32")[0])
+        assert FRAMES <= decoded <= FRAMES + rc.MP3_MAX_EXTRA_FRAMES, part
+    assert _dir_bytes_of(bundle) < sum(len(b) for b in old.values()) / 2
+    assert _snapshot(backup / "stems" / "oldrule") == old
+    assert _verdicts(data) == {"oldrule": rc.SKIP_AT_POLICY}
+
+
+def _dir_bytes_of(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.iterdir())
 
 
 @pytest.mark.parametrize("status", ["queued", "running", "cancelling"])
@@ -305,7 +378,7 @@ def test_with_no_job_appearing_every_bundle_is_swapped(tmp_path: Path) -> None:
 
     assert rc.main(["--data-dir", str(data), "--live", "--json", str(report)]) == 0
 
-    assert _verdicts(data) == {"a-first": rc.SKIP_ALREADY_LOSSY, "b-second": rc.SKIP_ALREADY_LOSSY}
+    assert _verdicts(data) == {"a-first": rc.SKIP_AT_POLICY, "b-second": rc.SKIP_AT_POLICY}
     assert json.loads(report.read_text())["stopped"] is None
 
 

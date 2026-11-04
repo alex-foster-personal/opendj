@@ -47,8 +47,9 @@ from .migrations_v23 import _V23
 from .migrations_v24 import _V24
 from .migrations_v25 import _V25
 from .migrations_v26 import _V26
+from .migrations_v27 import _V27
 
-SCHEMA_VERSION: int = 26
+SCHEMA_VERSION: int = 27
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -80,6 +81,7 @@ MIGRATIONS: list[list[str]] = [
     _V24,
     _V25,
     _V26,
+    _V27,
 ]
 
 
@@ -105,8 +107,9 @@ _ADD_COLUMN_RE = re.compile(r"^\s*ALTER TABLE (\w+) ADD COLUMN (\w+)", re.IGNORE
 def _column_already_added(conn: sqlite3.Connection, stmt: str) -> bool:
     """True for an ``ADD COLUMN`` whose column exists: the one DDL with no IF NOT EXISTS.
 
-    Only v26 relies on it, for a data dir the reverted #7886 already stamped
-    (see :mod:`apps.shared.state.migrations_v26`). Any other statement runs.
+    v26 and v27 rely on it, for ADD COLUMN steps on databases that already
+    picked up the column (see :mod:`apps.shared.state.migrations_v26` and
+    :mod:`apps.shared.state.migrations_v27`). Any other statement runs.
     """
     match = _ADD_COLUMN_RE.match(stmt)
     if match is None:

@@ -127,6 +127,33 @@ export const UnavailableOnThisComputer: Story = {
 	}
 };
 
+/** ENRICH-08: a lane that cannot run is named with where to fix it; AI genre is a note. */
+export const CapabilityWarnings: Story = {
+	args: {
+		summary: summary(
+			{},
+			{
+				warnings: [
+					{
+						lane: 'artwork',
+						code: 'ARTWORK_ONLINE_OFF',
+						message: 'Missing covers are not looked up online (MusicBrainz / Cover Art Archive): online lookup is off.',
+						fix: 'Remove ODJ_ARTWORK_ONLINE=0 from the environment Open DJ starts with, then restart it.',
+						severity: 'blocking'
+					},
+					{
+						lane: 'genre',
+						code: 'AI_GENRE_KEYS_MISSING',
+						message: 'AI genre tagging cannot run: OPENROUTER_API_KEY, SERPER_API_KEY not set.',
+						fix: 'Set them in the environment Open DJ starts with; Settings > Genre inference lists them.',
+						severity: 'info'
+					}
+				]
+			}
+		)
+	}
+};
+
 /** Lyrics are automatic: found, none available, and still to look up. */
 export const LyricsInProgress: Story = {
 	args: { summary: summary({}, { coverage: lyrics(243, 603, 428) }) }

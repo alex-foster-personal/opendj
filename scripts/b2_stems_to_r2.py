@@ -103,7 +103,7 @@ from scripts.b2_journal import (
     legacy_key,
     swapped_during_upload,
 )
-from scripts.b2store import SSH_HOST, SSH_OPTS, STORE_ROOT
+from scripts.b2store import SSH_OPTS, STORE_ROOT, store_ssh_host
 
 R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_ACCOUNT_ID",
@@ -119,7 +119,7 @@ MANIFEST: str = "manifest.json"
 # enough that a leaked URL is near-worthless.
 URL_TTL_SECONDS: int = 3600
 UPLOAD_PARALLELISM: int = 8
-JOURNAL: Path = REPO_ROOT / "data/state/stem-r2-migration.jsonl"
+JOURNAL: Path = REPO_ROOT / "(private path)"
 # Windows CreateProcess (bifrost2's OpenSSH/MSYS2 shell, see scripts/b2store.py)
 # has a practical argv limit around 8191 chars; the default all-preset run
 # feeds ~895 paths into one sha256sum command, which can exceed it before
@@ -158,8 +158,9 @@ def key_for_digest(content_sha256: str) -> str:
 
 def _ssh(remote_cmd: str, timeout: int = 120) -> str:
     """Run a POSIX one-liner on bifrost2, return stdout, raise on failure."""
+    ssh_host = store_ssh_host()
     done = subprocess.run(
-        ["ssh", *SSH_OPTS, SSH_HOST, remote_cmd],
+        ["ssh", *SSH_OPTS, ssh_host, remote_cmd],
         text=True, capture_output=True, timeout=timeout, check=False,
     )
     if done.returncode != 0:
@@ -207,7 +208,9 @@ def parse_remote_digests(output: str) -> dict[str, str]:
     for line in output.splitlines():
         digest, separator, path = line.partition("  ")
         if not separator or not path:
-            raise RuntimeError(f"invalid sha256sum output from {SSH_HOST}: {line!r}")
+            raise RuntimeError(
+                f"invalid sha256sum output from {store_ssh_host()}: {line!r}"
+            )
         key_for_digest(digest)
         digests[path] = digest
     return digests
@@ -338,7 +341,7 @@ def _assert_no_secrets(payload: str) -> None:
         value = os.environ.get(key)
         if value and value in payload:
             raise RuntimeError(
-                f"refusing to send {key} to {SSH_HOST}: this job keeps R2 "
+                f"refusing to send {key} to {store_ssh_host()}: this job keeps R2 "
                 "credentials on the Mac and hands bifrost2 presigned URLs only"
             )
 
@@ -385,8 +388,9 @@ def upload_batch(
         "code=$(curl -sS -o /dev/null -w \"%{http_code}\" -X PUT "
         "-T \"$p\" -H \"Expect:\" \"$u\"); echo \"$code $p\"'"
     )
+    ssh_host = store_ssh_host()
     done = subprocess.run(
-        ["ssh", *SSH_OPTS, SSH_HOST, remote_cmd],
+        ["ssh", *SSH_OPTS, ssh_host, remote_cmd],
         input=payload, text=True, capture_output=True, timeout=3600, check=False,
     )
     if done.returncode != 0:
@@ -447,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     every = list_bifrost2_bundles(args.preset)
     if not every:
         root = f"{STEMS_REMOTE_ROOT}/{args.preset}" if args.preset else STEMS_REMOTE_ROOT
-        print(f"nothing under {root} on {SSH_HOST}")
+        print(f"nothing under {root} on {store_ssh_host()}")
         return 0
 
     skipped = [] if args.include_incomplete else [b for b in every if not b.is_complete]

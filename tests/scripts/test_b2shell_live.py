@@ -39,13 +39,25 @@ from scripts.b2shell import (
     parse_sizes,
     ssh,
 )
+from scripts.b2store import store_ssh_host
 
-HOST = "bifrost2"
 SSH_OPTS = ["-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=15"]
 # Never the real store: this suite creates and removes directories.
 SCRATCH_ROOT = "D:/asset-store/_b2shell-live-test"
 
 LIVE = os.environ.get("MDT_LIVE_BIFROST2") == "1"
+
+
+def _live_store_host() -> str:
+    if not LIVE:
+        return "bifrost2"
+    try:
+        return store_ssh_host()
+    except ValueError as exc:
+        pytest.fail(str(exc))
+
+
+HOST = _live_store_host() if LIVE else "bifrost2"
 UNAVAILABLE = (
     "UNAVAILABLE: bifrost2 live checks not run. This is a capability report, "
     "not a pass. Enable with MDT_LIVE_BIFROST2=1 and the tailnet up "

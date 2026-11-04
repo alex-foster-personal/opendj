@@ -14,6 +14,7 @@ Also offers two tiny convenience wrappers:
 * :func:`stable_id_for` -- legacy alias equivalent to :func:`stable_id`.
   Kept for the Plan 07-01 Step 3 spec surface.
 """
+
 from __future__ import annotations
 
 import re

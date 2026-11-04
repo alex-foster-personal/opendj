@@ -213,12 +213,9 @@ def _read_raw_until(lock_path: Path, stop: threading.Event, seen: list[str]) -> 
         except FileNotFoundError:
             continue
         try:
-            if os.fstat(fd).st_size != lock_module.RECORD_BYTES:
-                continue
-            raw = os.read(fd, lock_module.RECORD_BYTES)
-            if len(raw) != lock_module.RECORD_BYTES:
-                continue
-            seen.append(raw.decode("utf-8"))
+            raw = os.read(fd, 4096)
+            if raw:
+                seen.append(raw.decode("utf-8"))
         finally:
             os.close(fd)
 
@@ -229,7 +226,7 @@ def _unparsable(reads: list[str]) -> list[str]:
         try:
             json.loads(raw)
         except ValueError:
-            bad.append(raw[:80])
+            bad.append(f"{raw[:40]!r}...{raw[-40:]!r}")
     return bad
 
 
@@ -261,44 +258,152 @@ def test_a_reader_mid_heartbeat_always_sees_a_whole_record(tmp_path: Path) -> No
     for raw in seen:
         holder = json.loads(raw)
         assert holder["boot_id"] == "boot-a" and holder["port"] == 8585, holder
+        datetime.fromisoformat(holder["heartbeat_at"])
 
 
 def _place_leftover(lock_path: Path) -> None:
     # An older writer's longer record, swapped in by rename so the reader never
     # catches the fixture itself half-written.
     staging = lock_path.with_suffix(".staging")
-    staging.write_text(json.dumps({"pid": 1, "pad": "x" * 3000}), encoding="utf-8")
+    staging.write_text(
+        json.dumps(
+            {
+                "pid": 1,
+                "role": "opendj-engine",
+                "host": "127.0.0.1",
+                "port": 8585,
+                "boot_id": "boot-old",
+                "pad": "x" * 3000,
+            }
+        ),
+        encoding="utf-8",
+    )
     os.replace(staging, lock_path)
 
 
-# QUARANTINED Tue 3 Nov 2026 on red main (#8406): torn read under load on agbox3-7.
-# Remove by Thu 5 Nov 12:00Z once the write is proven atomic or the reader fixed.
-@pytest.mark.skip(reason="quarantined on red main Tue 3 Nov 2026, see #8406")
+@pytest.mark.requirement("ENGLOCK-6443")
+def test_read_holder_retries_an_unparsable_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    [if] read_holder sees spaces once [then] it retries and parses, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    valid = json.dumps({"pid": 1, "port": 8585, "boot_id": "boot-a"}).encode("utf-8")
+    reads = iter([b"   ", valid])
+
+    def _read(fd: int, count: int) -> bytes:
+        chunk = next(reads, valid)
+        return chunk[:count] if len(chunk) > count else chunk
+
+    lock_path.write_bytes(valid)
+    monkeypatch.setattr(os, "read", _read)
+    monkeypatch.setattr(lock_module.time, "sleep", lambda _s: None)
+    holder = read_holder(lock_path)
+    assert holder is not None
+    assert holder.port == 8585
+
+
+@pytest.mark.requirement("ENGLOCK-6443")
+def test_read_holder_accepts_unpadded_longer_record(tmp_path: Path) -> None:
+    """
+    [if] the lock is valid but st_size != RECORD_BYTES [then] read_holder parses, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    blob = json.dumps({"pid": 1, "port": 8585, "boot_id": "boot-a", "pad": "x" * 200})
+    lock_path.write_text(blob, encoding="utf-8")
+    assert lock_path.stat().st_size != lock_module.RECORD_BYTES
+    holder = read_holder(lock_path)
+    assert holder is not None
+    assert holder.port == 8585
+
+
+@pytest.mark.requirement("ENGLOCK-6443")
+def test_inspect_lock_retries_before_naming_no_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    [if] inspect_lock reads spaces then the real holder [then] it names boot-a not pid=None, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, boot_id="boot-a", host="127.0.0.1", port=8585):
+        good_record = lock_path.read_text(encoding="utf-8")
+        sleep_calls = 0
+
+        def _sleep(_s: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 1:
+                _overwrite_without_unlinking(lock_path, good_record)
+
+        monkeypatch.setattr(lock_module.time, "sleep", _sleep)
+        _overwrite_without_unlinking(lock_path, " " * lock_module.RECORD_BYTES)
+        inspected = inspect_lock(lock_path)
+        assert inspected != "free"
+        assert inspected.boot_id == "boot-a"
+        assert inspected.pid == os.getpid()
+
+        with pytest.raises(EngineLockError) as refusal:
+            EngineLock(lock_path, boot_id="boot-b").acquire()
+        message = str(refusal.value)
+        assert "boot-a" in message
+        assert "pid=None" not in message
+
+
 @pytest.mark.requirement("ENGLOCK-6443")
 @UNLINKS_AN_OPEN_FILE
 def test_the_record_is_fixed_size_and_trims_a_longer_leftover(tmp_path: Path) -> None:
     """
     [if] a longer leftover lock is taken over [then] reads parse and it ends RECORD_BYTES, [else stop].
     """
+    from apps.shared.engine_origin import EngineNotRunning, resolve_origin
+
     lock_path = tmp_path / ".engine.lock"
-    seen: list[str] = []
+    invalid_json_reads: list[str] = []
+    origins: list[str] = []
     stop = threading.Event()
-    reader = threading.Thread(target=_read_raw_until, args=(lock_path, stop, seen))
+
+    def _origin_reader() -> None:
+        while not stop.is_set():
+            try:
+                origin = resolve_origin(lock_path)
+            except EngineNotRunning as error:
+                if "is not valid JSON" in str(error):
+                    invalid_json_reads.append(str(error))
+                continue
+            except FileNotFoundError:
+                continue
+            origins.append(origin.boot_id or "")
+            assert origin.port == 8585
+            assert origin.boot_id in {"boot-old", "boot-a"}
+
+    reader = threading.Thread(target=_origin_reader)
     reader.start()
+    takeovers = 0
+    deadline = time.monotonic() + 20
+    recorded: dict[str, object] = {}
     try:
-        for _ in range(300):
+        while time.monotonic() < deadline and (
+            takeovers < 30 or len(origins) < 100
+        ):
             _place_leftover(lock_path)
-            with EngineLock(lock_path, boot_id="boot-a") as lock:
+            with EngineLock(
+                lock_path, boot_id="boot-a", host="127.0.0.1", port=8585
+            ) as lock:
                 assert lock_path.stat().st_size == lock_module.RECORD_BYTES
                 lock.heartbeat()
                 assert lock_path.stat().st_size == lock_module.RECORD_BYTES
                 recorded = json.loads(lock_path.read_text(encoding="utf-8"))
+            takeovers += 1
     finally:
         stop.set()
         reader.join()
+
+    assert invalid_json_reads == [], invalid_json_reads
     assert recorded["boot_id"] == "boot-a"
     assert "pad" not in recorded
-    assert _unparsable(seen) == [], "a reader saw the new record followed by the old tail"
+    assert lock_path.stat().st_size == lock_module.RECORD_BYTES
+    assert takeovers >= 30 or len(origins) >= 100
 
 
 @pytest.mark.requirement("ENGLOCK-6443")

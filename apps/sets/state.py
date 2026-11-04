@@ -26,6 +26,7 @@ sqlite file.
 Every write goes through :class:`SetsState`. Tests use the
 ``SETS_DB`` path override or the ``backend=`` hook for hermetic runs.
 """
+
 from __future__ import annotations
 
 import json
@@ -92,8 +93,7 @@ _PHASE5_SCHEMA_SQL: tuple[str, ...] = (
         source          TEXT NOT NULL
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_set_events_session "
-    "ON set_events(session_id, timestamp_s)",
+    "CREATE INDEX IF NOT EXISTS idx_set_events_session ON set_events(session_id, timestamp_s)",
 )
 
 
@@ -328,10 +328,7 @@ class SetsState:
                 (_value_json(value), event_id),
             )
             if cur.rowcount != 1:
-                raise KeyError(
-                    f"{tbl} row {event_id} not found; refusing to silently "
-                    "discard a dwell update"
-                )
+                raise KeyError(f"{tbl} row {event_id} not found; refusing to silently discard a dwell update")
 
     def fetch_events(
         self,
@@ -372,8 +369,7 @@ class SetsState:
 
 
 def _row_to_event(row: tuple[Any, ...]) -> Event:
-    (session_id, timestamp_s, wall_clock, deck, track_stable_id,
-     action, value_json, source) = row
+    (session_id, timestamp_s, wall_clock, deck, track_stable_id, action, value_json, source) = row
     return Event(
         session_id=session_id,
         timestamp_s=float(timestamp_s),

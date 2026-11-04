@@ -1,8 +1,8 @@
 """CloudSync config surface: fleet machines, per-machine asset policy,
 playlist pins, and a per-machine hydration overview.
 
-Contract: ``specs/cloudsync-spec.md`` section D5, ``specs/design_decision_06.md``
-(policy semantics), schema ``specs/design_decision_05.md`` (migration v6 --
+Contract: ``(private path)`` section D5, ``(private path)``
+(policy semantics), schema ``(private path)`` (migration v6 --
 ``machines``, ``sync_policies``, ``playlist_pins``, ``sync_state`` tables in
 ``apps/shared/state/schema.py``). Self-contained router: it does not use the
 ``StateBackend`` abstraction (CAT-05 hotspot) -- these tables are new and not
@@ -76,9 +76,11 @@ from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import (
     MachineIdentityError,
+    MachineNameConflictError,
     register_machine,
 )
 from apps.sync_hub import config as sync_config
+from apps.sync_hub import policy_bootstrap
 from apps.sync_hub.policy_rules import PinCell, PolicyCell
 from apps.sync_hub.policy_store import empty_proposal
 from apps.webui.server.cloudsync_policy_http import (
@@ -104,7 +106,7 @@ SyncMode = Literal["pinned", "cached", "stream", "excluded"]
 
 def _db_path(request: Request) -> Path:
     return Path(
-        getattr(request.app.state, "state_db_path", "data/state/state.db")
+        getattr(request.app.state, "state_db_path", "(private path)")
     )
 
 
@@ -287,10 +289,16 @@ def _row_to_pin(row: tuple) -> PlaylistPinOut:
 # output), so a config change belongs to whichever lane owns pyproject.toml's
 # ruff block, not this one.
 
-@router.get("/machines", response_model=list[MachineOut], responses={500: {
-    "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
-    "(cloudsync-config.json is malformed, so the configured name is unknown)",
-}})
+@router.get("/machines", response_model=list[MachineOut], responses={
+    409: {
+        "description": "CLOUDSYNC_MACHINE_NAME_CONFLICT (the configured name "
+        "belongs to another machine id; nothing was changed)",
+    },
+    500: {
+        "description": "CLOUDSYNC_IDENTITY_ERROR or CLOUDSYNC_CONFIG_INVALID "
+        "(cloudsync-config.json is malformed, so the configured name is unknown)",
+    },
+})
 def list_machines(
     conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
@@ -302,9 +310,19 @@ def list_machines(
         register_machine(
             conn, data_dir=data_dir, name=sync_config.configured_machine_name(data_dir)
         )
+        try:
+            effective = sync_config.resolve_config(data_dir)
+        except sync_config.CloudSyncConfigError:
+            effective = None
+        if effective is not None and effective.configured:
+            policy_bootstrap.ensure_self_class_seeded(conn)
     except sync_config.CloudSyncConfigError as exc:
         raise HTTPException(status_code=500, detail={
             "code": "CLOUDSYNC_CONFIG_INVALID", "message": str(exc),
+        }) from exc
+    except MachineNameConflictError as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "CLOUDSYNC_MACHINE_NAME_CONFLICT", "message": str(exc),
         }) from exc
     except MachineIdentityError as exc:
         raise HTTPException(status_code=500, detail={

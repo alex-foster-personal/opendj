@@ -68,5 +68,7 @@ test('an upgrade started on a replaced context is stale', () => {
 	const start = engine.indexOf('async function _upgradeDeckStems(');
 	assert.ok(start > 0, '_upgradeDeckStems not found in the engine');
 	const body = engine.slice(start, engine.indexOf('let built', start));
-	assert.match(body, /const stale = \(\): boolean => token !== rt\.loadToken \|\| ctx !== _ctx \|\| _stemDecodeBlocked\(\);/);
+	// The context term, wherever it sits among the other reasons an upgrade is
+	// stale (STEM-4806 added one: the deck no longer holds the processor it began with).
+	assert.match(body, /const stale = \(\): boolean => [^;\n]*\bctx !== _ctx( \|\| [^;\n]*)?;/);
 });

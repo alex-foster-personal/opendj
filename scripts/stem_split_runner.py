@@ -230,7 +230,7 @@ def record_assignments(
 DESTS: tuple[str, ...] = ("asset-store", "local", "r2", "none")
 DEFAULT_DEST: str = "asset-store"
 #: Deprecated --dest spellings and the dest each means. Accepted with a warning;
-#: a later stage of #5639 drops them.
+#: kept as a CLI deprecation alias (issue #5639 AC3). Env host defaults are gone.
 DEPRECATED_DEST_ALIASES: dict[str, str] = {"bifrost2": "asset-store"}
 
 

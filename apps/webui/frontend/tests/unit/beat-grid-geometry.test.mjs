@@ -17,9 +17,10 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 3.442 }
 ];
 let visibleBeatLines;
+let beatLineStrideForWindow;
 
 before(async () => {
-	({ visibleBeatLines } = await loadTypeScriptModule(
+	({ visibleBeatLines, beatLineStrideForWindow } = await loadTypeScriptModule(
 		'src/lib/components/rb/wave/wave-math.ts'
 	));
 });
@@ -60,4 +61,5 @@ test('a tempo jump just past the right edge does not thin the visible grid', () 
 		lines.map((line) => line.x),
 		[0, 50, 100]
 	);
+	assert.equal(beatLineStrideForWindow(beats, 0, 100, 100), 1);
 });

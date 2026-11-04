@@ -577,7 +577,15 @@
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
 	<AnalysisSourceToggle />
 
-	<PerfMeters />
+	<!-- The meters are a dev readout off the initial load: their component and
+	     its own helpers load in a chunk of their own, after the shell paints. -->
+	{#await import('./PerfMeters.svelte') then loaded}
+		{@const PerfMeters = loaded.default}
+		<PerfMeters />
+	{:catch}
+		<!-- A failed chunk load (stale deploy, transient asset error) costs the meters only, never the header. -->
+		<span class="perf-meters-unavailable" title="The performance meters did not load. Reload the app to try again.">meters off</span>
+	{/await}
 
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
 	     while no stems job is active, so it costs no space the rest of the
@@ -1549,6 +1557,17 @@
 		.rb-topbar :global(.cloudsync-status),
 		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
 	}
+	@media (max-width: 1310px) {
+		/* READ-ONLY status, at every height: the pinned waveform quick-settings
+		   glyph (#8348, ~28px that no tier evicts) crushed the command input
+		   across [1265px, 1285px] (5px sweep at 800px high,
+		   tests/e2e/topbar-source-toggle.spec.ts, Tue 3 Nov 2026), so 1310px is
+		   that last failing width plus the same 25px margin. Only the perf
+		   meters readout goes here; CloudSync still yields in the 1257px tier
+		   above and in the short-window 1375 (max-height: 799px) tier below.
+		   Posture and refresh-analysis controls keep the 1257px tier. */
+		.rb-topbar :global(.perf-meters-root) { display: none; }
+	}
 	@media (max-width: 1023px) {
 		/* The command entry yields LAST of the narrow tier's set: it is the
 		   agent-facing door to the same typed dispatcher every control here uses,
@@ -1647,7 +1666,10 @@
 	   button are controls, and a short window is Playwright's default 1280x720
 	   as well as many real laptops: hiding them there removed controls people
 	   and seven e2e specs use (run 37427746065). They keep #5564's width tier. */
-	@media (max-height: 799px) and (max-width: 1321px) {
+	/* Was 1321px until Tue 3 Nov 2026: the pinned waveform quick-settings glyph
+	   (#8348) crushed the command input across [1322px, 1350px] at 720px high
+	   (1px sweep), so 1375px is 1350px plus the same 25px margin. */
+	@media (max-height: 799px) and (max-width: 1375px) {
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.cloudsync-status) { display: none; }
 	}
@@ -2114,6 +2136,8 @@
 	}
 
 	.free-badge {
+		/* Pin 4dec889975f8: hide the Free badge until paid tiers exist. */
+		display: none;
 		background: var(--rb-yellow);
 		color: #14171d;
 		font-size: var(--rb-fs-label);

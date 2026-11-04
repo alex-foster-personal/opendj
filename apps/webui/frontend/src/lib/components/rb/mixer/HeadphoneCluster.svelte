@@ -10,8 +10,8 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
-	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, type IoTestBus } from '$lib/player/io-device-test';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, nativeCueSinkAvailable, twoOutputsWarning } from '$lib/player/headphones';
+	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, passiveInputMeterBlockedReason, type IoTestBus } from '$lib/player/io-device-test';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { recordPerfEvent } from '$lib/rb/perf-event-log';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
@@ -362,6 +362,8 @@
 	/** Why the passive live input meter could not open, shown under the pickers
 	 * and in the meter's title rather than leaving it looking merely idle. */
 	let inputMeterError = $state<string | null>(null);
+	/** CUEOUT-8393: why the passive AUDIO IN meter is closed, shown, never hidden. */
+	let inputMeterNote = $state<string | null>(null);
 	// Bumped after an AUDIO IN Test opened the microphone, so the passive live
 	// meter re-checks access (now granted) and stays live once the Test ends.
 	let inputRecheck = $state(0);
@@ -413,6 +415,10 @@
 		if (!ioSurface.open || cueAlignModal.open || testBus === 'input') return;
 		const deviceId = headphoneState.selected_input_device_id;
 		const label = headphoneState.inputs.find((input) => input.id === deviceId)?.label ?? '';
+		// CUEOUT-8393: in the Mac app an open microphone turns MAIN down, so the
+		// passive meter stays closed there and says why.
+		inputMeterNote = passiveInputMeterBlockedReason(nativeCueSinkAvailable());
+		if (inputMeterNote !== null) return;
 		void inputRecheck;
 		let cancelled = false;
 		let stop = (): void => {};
@@ -804,6 +810,7 @@
 			<p class="hp-warn" role="status">AUDIO IN has no microphones yet. Allow microphone access, then pick one. The menu stays empty until that grant.</p>
 		{/if}
 		{#if testNote !== null}<p class="hp-context" role="status">{testNote}</p>{/if}
+		{#if inputMeterNote !== null}<p class="hp-context" role="status" data-input-meter-note>{inputMeterNote}</p>{/if}
 		{#if inputMeterError !== null}<p class="hp-context" role="status" data-input-meter-error>Live input meter unavailable: {inputMeterError}</p>{/if}
 		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
 		<ControlExplainer title="MIDI" showDelayMs={40} placement="right"

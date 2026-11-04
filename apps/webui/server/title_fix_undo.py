@@ -76,14 +76,21 @@ def undo_batch(ctx: Ctx, batch_id: str, *, skip_conflicts: bool = False) -> Outc
 
 
 def _start_undo(ctx: Ctx, batch_id: str, undone: list[str]) -> str:
-    token = _when_store_free(ctx.store.mark_undo_started, batch_id, undone)  # intent first: a death after the restore is then recoverable
+    token = _when_store_free(
+        ctx.store.mark_undo_started, batch_id, undone
+    )  # intent first: a death after the restore is then recoverable
     if token is None:
         raise TitleFixError("title_fix_undo_in_progress", f"batch {batch_id} is already being undone", 409)
     return token
 
 
 def _restore_replanning(
-    ctx: Ctx, batch_id: str, rows: list[ProposalRow], updates: list[TrackUpdate], undone: list[str], outcome: Outcome,
+    ctx: Ctx,
+    batch_id: str,
+    rows: list[ProposalRow],
+    updates: list[TrackUpdate],
+    undone: list[str],
+    outcome: Outcome,
     skip_conflicts: bool,
 ) -> tuple[str, list[str], CommittedReadbackError | FenceExitError | None]:
     """The restore. A track that changed between the plan and the compare-and-swap is the documented undo conflict:
@@ -103,11 +110,17 @@ def _restore_replanning(
     if not updates:  # the last round dropped every remaining row: report them skipped instead of a bare 409
         return token, undone, None
     _when_store_free(ctx.store.finish_undo, batch_id, complete=False, token=token)  # no writer behind the last intent
-    raise TitleFixError("title_fix_undo_conflict", "tracks kept changing while the undo was written; nothing was undone", 409)
+    raise TitleFixError(
+        "title_fix_undo_conflict", "tracks kept changing while the undo was written; nothing was undone", 409
+    )
 
 
 def _drop_undo_losers(
-    rows: list[ProposalRow], updates: list[TrackUpdate], undone: list[str], outcome: Outcome, exc: BatchConflictError,
+    rows: list[ProposalRow],
+    updates: list[TrackUpdate],
+    undone: list[str],
+    outcome: Outcome,
+    exc: BatchConflictError,
     skip_conflicts: bool,
 ) -> tuple[list[TrackUpdate], list[str]]:
     """The undo conflict contract for a CAS loser: refuse whole, or skip it and keep the unaffected rows."""
@@ -126,13 +139,18 @@ def _drop_undo_losers(
 
 
 def _restore_tracks_or_release(
-    ctx: Ctx, batch_id: str, token: str, updates: list[TrackUpdate],
+    ctx: Ctx,
+    batch_id: str,
+    token: str,
+    updates: list[TrackUpdate],
 ) -> CommittedReadbackError | FenceExitError | None:
     """The restore, with the undo intent held as this writer's through the track commit; a failure releases it.
     Returns the error of a restore that COMMITTED but whose result could not be re-read: the undo is recorded."""
     try:
-        _write_in_fence(lambda: ctx.store.undo_fence(batch_id, token), lambda: ctx.backend.update_tracks(
-            updates, source=CFG.WRITE_SOURCE, mutation_guard=ctx.write_gate))
+        _write_in_fence(
+            lambda: ctx.store.undo_fence(batch_id, token),
+            lambda: ctx.backend.update_tracks(updates, source=CFG.WRITE_SOURCE, mutation_guard=ctx.write_gate),
+        )
     except (CommittedReadbackError, FenceExitError) as exc:  # the write committed: keep the record of it
         return exc
     except UndoIntentLostError as exc:  # a reconcile cleared it and another undo took over: not ours to clear
@@ -146,8 +164,15 @@ def _restore_tracks_or_release(
 def _originals_of(ctx: Ctx, batch_id: str) -> list[dict[str, Any]]:
     """What a person needs to revert a refused batch by hand: each track with the title and artist it had before."""
     rows, _ = ctx.store.list_proposals(ProposalFilter(state="applied", batch_id=batch_id, limit=_ALL_ROWS))
-    return [{"stable_id": r.stable_id, "original_title": r.original_title, "original_artist": r.original_artist,
-             "original_artists": r.original_artists} for r in rows]
+    return [
+        {
+            "stable_id": r.stable_id,
+            "original_title": r.original_title,
+            "original_artist": r.original_artist,
+            "original_artists": r.original_artists,
+        }
+        for r in rows
+    ]
 
 
 def _check_undoable(ctx: Ctx, batch_id: str) -> None:
@@ -237,7 +262,9 @@ def _reconcile_stalled_undo(ctx: Ctx, batch: BatchRow) -> None:
     with _exclusive(ctx, "title_fix_undo_in_progress", in_progress) as conn:
         fresh = ctx.store.get_batch(batch.batch_id)
         if fresh.undone_at is not None:
-            raise TitleFixError("title_fix_batch_already_undone", f"batch {batch.batch_id} was undone at {fresh.undone_at}")
+            raise TitleFixError(
+                "title_fix_batch_already_undone", f"batch {batch.batch_id} was undone at {fresh.undone_at}"
+            )
         if fresh.undo_started_at != batch.undo_started_at:  # finished, cleared or taken over while we waited
             if fresh.undo_started_at is not None:
                 raise TitleFixError("title_fix_undo_in_progress", in_progress, 409)
@@ -277,20 +304,28 @@ def _batch_landed(ctx: Ctx, batch_id: str, rows: list[ProposalRow], tracks: list
         raise TitleFixError(
             "title_fix_batch_unverifiable",
             f"batch {batch_id} cannot be told landed from never-landed: one track shows the proposed values and "
-            "another its originals, which an atomic write cannot leave. It is left as it is rather than guessed.", 409)
+            "another its originals, which an atomic write cannot leave. It is left as it is rather than guessed.",
+            409,
+        )
     if "applied" in verdicts:
         return True
     if verdicts == {"original"}:
         return False
-    if "original" in verdicts:  # the rest are "unknown": an atomic apply may have landed on rows edited or removed since
+    if (
+        "original" in verdicts
+    ):  # the rest are "unknown": an atomic apply may have landed on rows edited or removed since
         raise TitleFixError(
             "title_fix_batch_unverifiable",
             f"batch {batch_id} cannot be told landed from never-landed: some tracks still show their originals and the "
-            "rest were edited or removed since, so the write may have landed on them. It is left as it is rather than guessed.", 409)
+            "rest were edited or removed since, so the write may have landed on them. It is left as it is rather than guessed.",
+            409,
+        )
     raise TitleFixError(
         "title_fix_batch_unverifiable",
         f"batch {batch_id} cannot be told landed from never-landed: no track shows the proposed or the original "
-        "values (edited or missing since). It is left as it is rather than guessed.", 409)
+        "values (edited or missing since). It is left as it is rather than guessed.",
+        409,
+    )
 
 
 def _landing_evidence(ctx: Ctx, row: ProposalRow, track: LibraryTrack | None) -> str:
@@ -335,7 +370,10 @@ def _moved_since(track: LibraryTrack, applied: dict[str, Any]) -> bool:
 
 
 def _changed_since_apply(
-    ctx: Ctx, row: ProposalRow, track: LibraryTrack, applied: dict[str, Any] | None = None,
+    ctx: Ctx,
+    row: ProposalRow,
+    track: LibraryTrack,
+    applied: dict[str, Any] | None = None,
 ) -> bool:
     """The track was removed, its ETag or complete tag set moved since the apply wrote it (any row or tag edit,
     whatever field), or a field this proposal wrote no longer holds the proposed value. The artists are compared as
@@ -353,18 +391,22 @@ def _changed_since_apply(
     return row.changes_artist and stored.artists != _written_artists(row)
 
 
-
-
 def _undo_update(
-    row: ProposalRow, track: LibraryTrack, patch: dict[str, object], applied: dict[str, Any] | None = None,
+    row: ProposalRow,
+    track: LibraryTrack,
+    patch: dict[str, object],
+    applied: dict[str, Any] | None = None,
 ) -> TrackUpdate:
     """The CAS update that restores one row; only an undo may write back a title that was blank when scanned.
     With a recorded baseline the write also pins the COMPLETE applied tag set, so any tag edit that leaves the ETag
     alone still conflicts inside the write transaction."""
     etag = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
     return TrackUpdate(
-        row.stable_id, patch, etag,
-        allow_blank_title=row.changes_title and not row.original_title.strip(), tags_present=tuple(row.tags_added),
+        row.stable_id,
+        patch,
+        etag,
+        allow_blank_title=row.changes_title and not row.original_title.strip(),
+        tags_present=tuple(row.tags_added),
         allow_blank_artist_members=row.changes_artist and "" in row.original_artists,
         tags_exact=None if applied is None or applied["tags"] is None else tuple(applied["tags"]),
     )

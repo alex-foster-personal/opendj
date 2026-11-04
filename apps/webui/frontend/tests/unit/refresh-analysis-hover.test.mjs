@@ -99,7 +99,8 @@ test('a real running status still renders its progress bar alongside any click r
 // (the pre-start idle one after the POST, or a running one after its run's
 // end) must not replace a newer one. Codex P2 4132045411: a no-job snapshot
 // asked for after the shown one arrived is a restarted backend, and applies.
-// Driven end to end in tests/e2e/refresh-analysis-keyboard-409.spec.ts.
+// End-to-end cover in tests/e2e/refresh-analysis-keyboard-409.spec.ts is quarantined under #7968;
+// this file's snapshot-order tests below are the live cover.
 test('a polled snapshot older than the one shown is dropped before it is applied', () => {
 	const poll = refresh.slice(refresh.indexOf('async function _poll()'), refresh.indexOf('function _syncTimer()'));
 	assert.match(poll, /const asked = status;\s*try \{/);

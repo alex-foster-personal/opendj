@@ -50,17 +50,6 @@ test('CUEOUT-28 the hover tooltip keeps the full sentence and the fix', () => {
 	assert.match(markup, /aria-label=\{sameDeviceSplitTooltip\(label\)\}/);
 });
 
-test('CUEOUT-28 behavior is unchanged: the toast and perf event keep the full sentence', () => {
-	assert.equal(
-		collision.sameDeviceSplitText('External Headphones'),
-		'Split cue: master L / cue R (same device: External Headphones)'
-	);
-	const source = readFileSync(HEADPHONES, 'utf8');
-	const split = source.slice(source.indexOf('async function _enterSameDeviceSplit('));
-	assert.match(split, /const message = sameDeviceSplitText\(label\);/);
-	assert.match(split, /pushToast\(message, 'info'\)/);
-});
-
 test('CUEOUT-28 the badge mounts beside the master column, not inside it, so the top bar does not clip it', () => {
 	const topbar = readFileSync(`${FRONTEND}/src/lib/components/rb/TopBar.svelte`, 'utf8');
 	const start = topbar.indexOf('<div class="master-slider-wrap">');

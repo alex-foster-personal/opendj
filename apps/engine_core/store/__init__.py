@@ -4,6 +4,7 @@ Additive during the rebuild -- nothing imports this yet. Integration
 (pointing the daemon's connection factory at :func:`apply_migrations` and
 deleting the ~17 scattered bootstraps) is a separate, later step.
 """
+
 from __future__ import annotations
 
 from .schema import (

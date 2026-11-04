@@ -127,7 +127,11 @@ test('with device access granted, every output the browser names is listed', asy
 	for (const device of named) {
 		expect(state.outputs, `output ${device.label} missing from the panel state`).toContainEqual({
 			id: device.deviceId,
-			label: device.label
+			label: device.label,
+			// GB-6846: one complete five-key DTO on both sides of the parity check.
+			physical_id: null,
+			muted_by_jack: null,
+			transport: null
 		});
 	}
 	const options = await selectableOptions(page, 'master output device');
@@ -200,7 +204,13 @@ test.describe('fault injection: a device API that cannot be asked', () => {
 			await expect(panel.locator('[data-io-device-access-message]')).not.toBeEmpty();
 			await expect(panel.locator('[data-io-device-access-action]')).toHaveAttribute('data-io-device-access-action', 'retry');
 			const state = await headphones(page);
-			expect(state.outputs).toContainEqual({ id: 'default', label: 'System default output' });
+			expect(state.outputs).toContainEqual({
+				id: 'default',
+				label: 'System default output',
+				physical_id: null,
+				muted_by_jack: null,
+				transport: null
+			});
 		});
 	}
 });

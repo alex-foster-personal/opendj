@@ -108,10 +108,7 @@ class IdentityLoserVerdicts:
         instead of deciding the first rows one component at a time: a
         10,042-member bundle asks for every one of its tracks at once.
         """
-        if (
-            self._library_losers is None
-            and len(self._verdicts) + count >= CFG.ELECT_LIBRARY_AFTER_VERDICTS
-        ):
+        if self._library_losers is None and len(self._verdicts) + count >= CFG.ELECT_LIBRARY_AFTER_VERDICTS:
             self._library_losers = frozenset(effective_identity_remap(self._conn))
 
     # ----- component --------------------------------------------------------
@@ -130,9 +127,7 @@ class IdentityLoserVerdicts:
             component = seed
         self._record(component, identity_remap_from_rows(component), also=stable_id)
 
-    def _record(
-        self, component: list[IdentityRow], local: dict[str, str], *, also: str
-    ) -> None:
+    def _record(self, component: list[IdentityRow], local: dict[str, str], *, also: str) -> None:
         decided = {str(row[0]) for row in component} | {also}
         losers = self._persisted_remap().effective_losers(local, decided)
         for pk in decided:
@@ -160,15 +155,9 @@ class IdentityLoserVerdicts:
         candidates = list(self._odd_rows().get(key, ()))
         for column in self._hash_column_names():
             candidates.extend(
-                self._rows_with_rowid(
-                    f" AND {column} >= ? AND {column} < ?", (key, key + CFG.PREFIX_END)
-                )
+                self._rows_with_rowid(f" AND {column} >= ? AND {column} < ?", (key, key + CFG.PREFIX_END))
             )
-        return [
-            (rowid, row)
-            for rowid, row in candidates
-            if key in identity_keys(row[1], row[2], row[3]).hashes
-        ]
+        return [(rowid, row) for rowid, row in candidates if key in identity_keys(row[1], row[2], row[3]).hashes]
 
     def _odd_rows(self) -> dict[str, list[tuple[int, IdentityRow]]]:
         """Rows with a hash no prefix range can find, by the keys they strip to.
@@ -188,11 +177,7 @@ class IdentityLoserVerdicts:
                     ("> ?", (CFG.PRINTABLE_HIGH,)),
                 )
             ]
-            rows = {
-                rowid: row
-                for where, params in bounds
-                for rowid, row in self._rows_with_rowid(where, params)
-            }
+            rows = {rowid: row for where, params in bounds for rowid, row in self._rows_with_rowid(where, params)}
             by_key: dict[str, list[tuple[int, IdentityRow]]] = {}
             for rowid in sorted(rows):
                 row = rows[rowid]
@@ -208,16 +193,11 @@ class IdentityLoserVerdicts:
         may still strip to empty); :func:`identity_keys` decides.
         """
         no_hash = " AND ".join(
-            f"({column} IS NULL OR typeof({column}) != 'text' "
-            f"OR {column} NOT GLOB '*[0-9A-Za-z]*')"
+            f"({column} IS NULL OR typeof({column}) != 'text' OR {column} NOT GLOB '*[0-9A-Za-z]*')"
             for column in self._hash_column_names()
         )
         rows = self._rows_with_rowid(f" AND isrc IS NOT NULL AND {no_hash}", ())
-        return [
-            row
-            for _, row in rows
-            if (keys := identity_keys(row[1], row[2], row[3])).isrc and not keys.hashes
-        ]
+        return [row for _, row in rows if (keys := identity_keys(row[1], row[2], row[3])).isrc and not keys.hashes]
 
     # ----- reads ------------------------------------------------------------
 
@@ -229,25 +209,16 @@ class IdentityLoserVerdicts:
     def _hash_column_names(self) -> tuple[str, ...]:
         if self._hash_columns is None:
             columns = table_columns(self._conn, "tracks")
-            self._hash_columns = tuple(
-                column for column in ("content_hash", "audio_hash") if column in columns
-            )
+            self._hash_columns = tuple(column for column in ("content_hash", "audio_hash") if column in columns)
         return self._hash_columns
 
     def _rows(self, where: str, params: tuple[object, ...]) -> list[IdentityRow]:
         return [row for _, row in self._rows_with_rowid(where, params)]
 
-    def _rows_with_rowid(
-        self, where: str, params: tuple[object, ...]
-    ) -> list[tuple[int, IdentityRow]]:
+    def _rows_with_rowid(self, where: str, params: tuple[object, ...]) -> list[tuple[int, IdentityRow]]:
         if self._select is None:
-            self._select = identity_row_select(self._conn).replace(
-                "SELECT ", "SELECT rowid, ", 1
-            )
-        return [
-            (int(row[0]), tuple(row[1:]))
-            for row in self._conn.execute(f"{self._select}{where}", params)
-        ]
+            self._select = identity_row_select(self._conn).replace("SELECT ", "SELECT rowid, ", 1)
+        return [(int(row[0]), tuple(row[1:])) for row in self._conn.execute(f"{self._select}{where}", params)]
 
 
 __all__ = ["CFG", "IdentityLoserVerdicts"]

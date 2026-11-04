@@ -6,6 +6,7 @@ adapters won't need to re-map.
 
 See ``(private path)`` §9.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

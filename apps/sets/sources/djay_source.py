@@ -11,6 +11,7 @@ kinds per CONTEXT D3::
 Poll cadence matches the CONTEXT D2 budget (500 ms); the caller
 drives the loop.
 """
+
 from __future__ import annotations
 
 import logging
@@ -101,11 +102,7 @@ class DjaySource:
             )
             self._emit(loaded)
             # track_change when the active deck differs from the last one.
-            if (
-                self._last_deck is not None
-                and deck is not None
-                and deck != self._last_deck
-            ):
+            if self._last_deck is not None and deck is not None and deck != self._last_deck:
                 change = Event(
                     session_id=self.session_id,
                     timestamp_s=ts,
@@ -141,9 +138,7 @@ class DjaySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(UTC).isoformat(
-                        timespec="milliseconds"
-                    ),
+                    wall_clock=datetime.now(UTC).isoformat(timespec="milliseconds"),
                     action="source_error",
                     source=SOURCE_NAME,
                     value={"kind": "FileNotFoundError", "detail": str(exc)},
@@ -154,9 +149,7 @@ class DjaySource:
                 Event(
                     session_id=self.session_id,
                     timestamp_s=self._rel_ts(),
-                    wall_clock=datetime.now(UTC).isoformat(
-                        timespec="milliseconds"
-                    ),
+                    wall_clock=datetime.now(UTC).isoformat(timespec="milliseconds"),
                     action="source_error",
                     source=SOURCE_NAME,
                     value={"kind": type(exc).__name__, "detail": str(exc)},

@@ -14,13 +14,12 @@ rolling segmenter writes fresh MP3s without ID3v2 by default.
 
 Spec references: ID3v2.4.0-structure, ID3v2.4.0-frames (id3.org).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
-PRIVACY_NOTE_DEFAULT = (
-    "personal-review-only; contains copyrighted audio; do not distribute"
-)
+PRIVACY_NOTE_DEFAULT = "personal-review-only; contains copyrighted audio; do not distribute"
 
 _ID3_HEADER_SIZE = 10
 _SYNC_SAFE_MAX = 0x0FFFFFFF  # 28-bit synchsafe ceiling

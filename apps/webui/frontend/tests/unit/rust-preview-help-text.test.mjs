@@ -30,6 +30,7 @@ const CLAIMABLE = {
 	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel', 'auto_play_decide_now'],
 	'the headphone cue bus': ['channel_cue', 'headphone_mix', 'headphone_level', 'head_delay_ms'],
 	'grid edits': ['grid_edit'],
+	'color fx': ['color_fx'],
 	'headphone devices': [
 		'headphone_outputs_refresh',
 		'headphone_output_acquire',

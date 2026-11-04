@@ -147,11 +147,14 @@
 		onfocusin={() => setCommentPinPeek('performance-comment', true)}
 		onfocusout={(event) => endCommentPinPeek('performance-comment', event)}
 	>
+		<!-- Closed while placement is armed, so the hover card never takes the
+		     placement press (PGCL-7693g, as in FeedbackPinShellButton). -->
 		<ControlExplainer
 			title={FEEDBACK_EXPLAINER_TITLE}
 			bullets={commentPinBullets}
 			action={pinVisibilityActions}
 			placement="right"
+			disabled={feedbackState.placementArmed}
 		>
 			<button
 				type="button"

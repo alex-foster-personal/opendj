@@ -24,20 +24,46 @@ SERATO_CAPABILITIES = Capabilities(
         CapabilityField(field="track_id", supports="lossless", rationale="computed from file path + tsng"),
         CapabilityField(field="file_path", supports="lossless"),
         CapabilityField(field="title", supports="lossless"),
-        CapabilityField(field="artists", supports="lossy", rationale="Serato stores a single artist string; artists joined on ' & '."),
+        CapabilityField(
+            field="artists",
+            supports="lossy",
+            rationale="Serato stores a single artist string; artists joined on ' & '.",
+        ),
         CapabilityField(field="album", supports="lossless"),
         CapabilityField(field="bpm", supports="lossless"),
-        CapabilityField(field="key_camelot", supports="lossless", rationale="Serato key string round-trips through the Camelot map."),
-        CapabilityField(field="rating", supports="unsupported", rationale="Serato has no native rating field; drop-with-warning (D6)."),
-        CapabilityField(field="cue_points.hot", supports="lossless", rationale="Written to the MP3 Serato Markers2 GEOB ID3 frame; FLAC/AIFF/WAV cue writing is v2 scope (different Serato tagging) -- non-MP3 drop-with-warning."),
-        CapabilityField(field="cue_points.memory", supports="unsupported", rationale="Serato has no memory cues; drop-with-warning (D6)."),
-        CapabilityField(field="cue_points.loop", supports="lossless", rationale="Written to the MP3 Serato Markers2 GEOB frame; FLAC/AIFF/WAV loop writing is v2 scope."),
+        CapabilityField(
+            field="key_camelot", supports="lossless", rationale="Serato key string round-trips through the Camelot map."
+        ),
+        CapabilityField(
+            field="rating",
+            supports="unsupported",
+            rationale="Serato has no native rating field; drop-with-warning (D6).",
+        ),
+        CapabilityField(
+            field="cue_points.hot",
+            supports="lossless",
+            rationale="Written to the MP3 Serato Markers2 GEOB ID3 frame; FLAC/AIFF/WAV cue writing is v2 scope (different Serato tagging) -- non-MP3 drop-with-warning.",
+        ),
+        CapabilityField(
+            field="cue_points.memory",
+            supports="unsupported",
+            rationale="Serato has no memory cues; drop-with-warning (D6).",
+        ),
+        CapabilityField(
+            field="cue_points.loop",
+            supports="lossless",
+            rationale="Written to the MP3 Serato Markers2 GEOB frame; FLAC/AIFF/WAV loop writing is v2 scope.",
+        ),
         CapabilityField(field="cue_points.color", supports="lossless", rationale="24-bit RGB round-trips."),
         CapabilityField(field="beats", supports="lossless"),
         CapabilityField(field="color_rgb", supports="lossless"),
         CapabilityField(field="play_count", supports="lossless"),
-        CapabilityField(field="isrc", supports="lossy", rationale="Stored in a custom Serato column; use x_serato_isrc extension."),
-        CapabilityField(field="smart_crates", supports="unsupported", rationale="Treated as opaque x_serato_smart_crate extension."),
+        CapabilityField(
+            field="isrc", supports="lossy", rationale="Stored in a custom Serato column; use x_serato_isrc extension."
+        ),
+        CapabilityField(
+            field="smart_crates", supports="unsupported", rationale="Treated as opaque x_serato_smart_crate extension."
+        ),
     ),
 )
 

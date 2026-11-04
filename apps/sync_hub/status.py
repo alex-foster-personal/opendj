@@ -46,7 +46,7 @@ MAX_RECENT_RESULTS: int = 5
 #: ``inconclusive`` means the run COMPLETED but its post-sync digest compare
 #: could not be made: one side held rows out of the comparison (a stored stamp
 #: it cannot order), so the tables that differ differ for a reason nobody
-#: measured. Recording that as ``ok`` is the defect ``.claude/rules/
+#: measured. Recording that as ``ok`` is the defect ``(private path)/
 #: verification.md`` names -- an unmeasured subject rendered as a clean
 #: result -- and recording it as ``error`` would be the opposite lie, since
 #: rows really did move. A caller that treats non-``ok`` as failure keeps
@@ -79,9 +79,7 @@ class SyncResult:
             raise CloudSyncStatusError(f"{source} result is not an object")
         expected = {"finished_at", "status", "message", "pushed", "pulled"}
         if set(payload) != expected:
-            raise CloudSyncStatusError(
-                f"{source} result fields are {sorted(payload)}, expected {sorted(expected)}"
-            )
+            raise CloudSyncStatusError(f"{source} result fields are {sorted(payload)}, expected {sorted(expected)}")
         if payload["status"] not in RESULT_STATUSES:
             raise CloudSyncStatusError(f"{source} result status is invalid")
         text_keys = ("finished_at", "message")
@@ -145,9 +143,7 @@ class CloudSyncStatus:
             wire["update_required"] = asdict(self.update_required)
         else:
             wire["update_required"] = None
-        wire["digest_diff"] = (
-            None if self.digest_diff is None else [dict(row) for row in self.digest_diff]
-        )
+        wire["digest_diff"] = None if self.digest_diff is None else [dict(row) for row in self.digest_diff]
         wire["credential_notice"] = self.credential_notice
         return wire
 
@@ -168,9 +164,7 @@ _UNREADABLE_CONFIG = sync_config.EffectiveConfig(
 )
 
 
-def _effective_config(
-    data_dir: Path, env: Mapping[str, str]
-) -> tuple[sync_config.EffectiveConfig, str | None]:
+def _effective_config(data_dir: Path, env: Mapping[str, str]) -> tuple[sync_config.EffectiveConfig, str | None]:
     """The effective config plus the reason it is not configured, if it is not.
 
     A malformed file or override is SHOWN as the reason, not raised: the
@@ -265,9 +259,7 @@ def _read_heartbeat(data_dir: Path) -> sync_heartbeat.Heartbeat | None:
         raise CloudSyncStatusError(str(exc)) from exc
 
 
-def _loop_evidence(
-    data_dir: Path, now: datetime | None
-) -> tuple[sync_heartbeat.Heartbeat | None, bool]:
+def _loop_evidence(data_dir: Path, now: datetime | None) -> tuple[sync_heartbeat.Heartbeat | None, bool]:
     """The last heartbeat on file and whether it is fresh enough to prove a live loop."""
     beat = _read_heartbeat(data_dir)
     running = beat is not None and beat.is_fresh(datetime.now(UTC) if now is None else now)
@@ -295,11 +287,7 @@ def read_status(
     if reason is None:
         # Configured AND beating: an unreachable hub is a wait, not a fault.
         reason = waiting_for_hub_reason(latest)
-    update_required = (
-        None
-        if latest is None or latest.status != "error"
-        else parse_update_required(latest.message)
-    )
+    update_required = None if latest is None or latest.status != "error" else parse_update_required(latest.message)
     digest_samples = None
     if latest is not None and latest.status == "error":
         parsed = digest_diff.parse_digest_samples(latest.message)

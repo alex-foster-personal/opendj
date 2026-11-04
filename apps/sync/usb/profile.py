@@ -21,6 +21,7 @@ No third-party validation library is used -- ``pydantic`` is not yet in
 The loader does its own strict checking: unknown keys fail loudly,
 enums are validated, ``playlists`` must be non-empty.
 """
+
 from __future__ import annotations
 
 import sys
@@ -32,13 +33,9 @@ import yaml
 
 # Enums (kept as literal sets -- simpler to grep than Enum classes here).
 FORMATS: frozenset[str] = frozenset({"copy-as-is", "mp3@320"})
-LAYOUTS: frozenset[str] = frozenset(
-    {"Artist/Album/Track", "Playlist/NN - Artist - Track", "flat"}
-)
+LAYOUTS: frozenset[str] = frozenset({"Artist/Album/Track", "Playlist/NN - Artist - Track", "flat"})
 PLAYLIST_FILES: frozenset[str] = frozenset({"m3u8", "none"})
-CONFLICT_POLICIES: frozenset[str] = frozenset(
-    {"canonical-wins", "skip", "backup-then-overwrite"}
-)
+CONFLICT_POLICIES: frozenset[str] = frozenset({"canonical-wins", "skip", "backup-then-overwrite"})
 
 _ALLOWED_KEYS: frozenset[str] = frozenset(
     {
@@ -76,8 +73,7 @@ def default_mount_point(drive_label: str, *, platform: str | None = None) -> Pat
     current_platform = sys.platform if platform is None else platform
     if current_platform != "darwin":
         raise ProfileError(
-            f"--drive-root is required on {current_platform}; "
-            "automatic drive-label lookup is only available on macOS"
+            f"--drive-root is required on {current_platform}; automatic drive-label lookup is only available on macOS"
         )
     return Path("/Volumes") / drive_label
 
@@ -119,10 +115,7 @@ def _validate(raw: dict[str, Any]) -> Profile:
 
     unknown = set(raw) - _ALLOWED_KEYS
     if unknown:
-        raise ProfileError(
-            f"unknown keys in profile: {sorted(unknown)} "
-            f"(allowed: {sorted(_ALLOWED_KEYS)})"
-        )
+        raise ProfileError(f"unknown keys in profile: {sorted(unknown)} (allowed: {sorted(_ALLOWED_KEYS)})")
 
     missing = _REQUIRED_KEYS - set(raw)
     if missing:

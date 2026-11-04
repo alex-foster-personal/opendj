@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS. Deck-load timing rows in the browser's perf ring record what
 happened and never the conditions it happened under, and
-``docs/perf/performance-register.md`` is a list of numbers that cost the
+``(private path)`` is a list of numbers that cost the
 program because of it: a waveform decode measured 0.73 s and 7.53 s in one
 evening on nothing but the machine's load average, a beatgrid lane whose whole
 runtime budget is documented as untested because it was taken at load average
@@ -28,7 +28,7 @@ checkout, and the desktop payload stages ``apps`` only (see APP_SOURCE_ROOTS
 in scripts/build_engine_payload.py), so ``scripts`` is absent inside a
 packaged Open DJ.app. There, this reports ``available: false`` with the reason.
 It never reports zeros. An unmeasured condition that renders as a real reading
-is precisely the defect .claude/rules/verification.md exists to forbid.
+is precisely the defect (private path) exists to forbid.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -48,7 +48,7 @@ from apps.shared.machine_pressure_signal import (
     pressure_is_elevated,
 )
 
-# Locked signals (specs/perf-latency-program.md Pressure cluster, PERFMODE-05).
+# Locked signals ((private path) Pressure cluster, PERFMODE-05).
 PRESSURE_CHURN_WEIGHT_SWAP = 10
 PRESSURE_CHURN_WINDOW_S = 1
 PRESSURE_SAMPLE_IDLE_MS = 1000
@@ -307,58 +307,375 @@ def _descendant_pids(rows: Iterable[ProcessInfo], root_pid: int) -> set[int]:
     return found
 
 
+# What a process RUNS AS, not what its command line merely mentions: the
+# packaged desktop shell is the bundle's main executable. A shell or ``uv``
+# command that only passes an ``opendj-*`` path as an argument (a ``--data-dir``
+# made by ``mkdtemp(prefix="opendj-...")``, a log path) is NOT a launcher.
+# The desktop shell's install path can hold spaces ("Open DJ.app",
+# "Program Files"), so its executable is matched up to the first option.
+_OWN_DESKTOP_SHELL_RE = re.compile(
+    r'^"?(?:[A-Za-z]:)?[/\\](?:(?! -)[^"])*?[/\\]opendj-desktop(?:\.exe)?(?=[\s"]|$)'
+)
+
+
+# The launch identity every platform shows: an interpreter run with
+# ``-m apps.webui.server`` or ``-m apps.engine_core``. On Windows it is the
+# ONLY identity a Python Open DJ process has, because setproctitle there does
+# not change the command line other processes read, so a ``--reload``
+# supervisor reads as ``python.exe -m apps.webui.server --reload``. On POSIX the
+# title above replaces it once the process has started. Interpreter options
+# may precede ``-m`` (``-u``, ``-X utf8``, ``-W ignore``), but nothing else: a
+# script path or ``-c`` before it makes the module name only text.
+# The backend supervisor the app starts (setproctitle title ``opendj-backend``),
+# whose --reload worker is the engine.
+_OWN_BACKEND_SUPERVISOR_RE = re.compile(r'^"?(?:[^\s"]*[/\\])?opendj-backend(?=[\s"]|$)')
+_OPENDJ_MODULE_LAUNCH_RE = re.compile(
+    r'^"?(?:[^"]*[/\\])?python[0-9.]*(?:w)?(?:\.exe)?"?'
+    r"(?:\s+(?:-[WX]\s*[^\s-]\S*|-(?![mcWX])[A-Za-z]+))*"
+    r"\s+-m\s+apps\.(?:webui\.server|engine_core)(?=\s|$)",
+    re.IGNORECASE,
+)
+
+
+def _runs_as_app_launcher(command: str) -> bool:
+    """True when a parent process is one of the app's own launchers.
+
+    The family climbs only through the packaged desktop shell and the ``--reload``
+    server launch. Any other ``opendj-*`` program (the native performance probe,
+    a hub, a lease tool) is a neighbor that happens to share the name, not the
+    engine's launcher, so climbing through it would pull in everything it
+    spawned.
+    """
+
+    text = command.lstrip()
+    return bool(
+        _OWN_DESKTOP_SHELL_RE.match(text)
+        or _OWN_BACKEND_SUPERVISOR_RE.match(text)
+        or _OPENDJ_MODULE_LAUNCH_RE.match(text)
+    )
+
+
+# The engine's launch identity from its desktop shell: every shell that
+# spawns the engine (the Electron main process in ``apps/desktop/electron/
+# src/engine.ts`` ``spawnEngine``, the Tauri shell in ``engine.rs``) puts its
+# OWN pid in the engine's environment under this name, and
+# ``apps/engine_core/parent_watch.py`` reads the same variable to exit when
+# that shell dies. It is the trustworthy way to find the Electron shell, whose
+# executable is ``Open DJ`` when packaged and ``electron`` when not, so no
+# name pattern can say it is Open DJ's.
+LAUNCHING_SHELL_PID_ENV = "OPENDJ_PARENT_PID"
+
+
+def launching_shell_pid(environ: Mapping[str, str] | None = None) -> int | None:
+    """The pid this engine's shell stamped into its environment, or None.
+
+    Unset, empty, non-numeric or non-positive means no shell launched this
+    engine (a CLI engine, pytest, a dev server), the same reading as
+    ``parent_watch``.
+    """
+
+    raw = (os.environ if environ is None else environ).get(LAUNCHING_SHELL_PID_ENV)
+    if raw is None:
+        return None
+    try:
+        pid = int(raw.strip())
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+# The shell's REGISTRATION with an engine it did not necessarily launch. Every
+# desktop shell writes its own pid to this owner-only file in the engine's data
+# dir on every path by which it comes to share an engine: before it spawns one
+# (``apps/desktop/electron/src/boot.ts`` ``spawnFreshEngine``, Tauri
+# ``main.rs`` ``spawn_fresh_engine``), when it ADOPTS a healthy engine that
+# already holds the lock (``boot.ts`` ``adopt``, ``main.rs`` ``start_engine``),
+# and when it restarts one (``supervisor.ts``, ``supervisor.rs``
+# ``restart_engine``). ``apps/engine_core/parent_watch.py`` already trusts the
+# same file to decide when this engine must exit. An adopted engine was not
+# launched by this shell, so the shell is neither its ancestor nor stamped in
+# its environment; this file is then the only thing that names it. Keep the
+# name in sync with ``parent_watch.PARENT_FILE_NAME`` (a test pins it).
+SHELL_REGISTRATION_FILE_NAME = ".engine.parent"
+# Allowance before a registration reads as future-dated: a slewing clock, not a reason to trust it.
+_REGISTRATION_CLOCK_SKEW_S = 5.0
+
+
+@dataclass(frozen=True)
+class ShellRegistration:
+    """What the engine's data dir says about the shell sharing it.
+
+    ``status`` is ``absent`` (no file: no shell registered), ``accepted`` (the
+    named pid is this user's running process that existed when the file was
+    written) or ``rejected`` with a ``reason``. A rejected registration is
+    never guessed at: its pid is not used, and the route reports why.
+    """
+
+    status: str
+    pid: int | None = None
+    reason: str | None = None
+
+    def report(self) -> dict[str, Any]:
+        """The privacy-reduced form the route returns: no pid."""
+        out: dict[str, Any] = {"status": self.status}
+        if self.reason is not None:
+            out["reason"] = self.reason
+        return out
+
+
+def _rejected(reason: str) -> ShellRegistration:
+    return ShellRegistration(status="rejected", reason=reason)
+
+
+def _registration_file_trusted(stat: os.stat_result) -> str | None:
+    """Why the file cannot be trusted as this user's own, or None.
+
+    POSIX only (the platform seam): Windows has no uid on ``os.stat`` and the
+    data dir's own ACL is what protects it there.
+    """
+
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        return None
+    if stat.st_uid != getuid():
+        return "the registration file is not owned by this user"
+    if stat.st_mode & 0o022:
+        return "the registration file is writable by other users"
+    return None
+
+
+def _registered_pid(path: str) -> tuple[int, float] | ShellRegistration:
+    """The pid the file holds and the time it was written, or why not."""
+
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return ShellRegistration(status="absent")
+    except OSError as err:
+        return _rejected(f"the registration file is unreadable: {err.strerror}")
+    untrusted = _registration_file_trusted(stat)
+    if untrusted is not None:
+        return _rejected(untrusted)
+    # A write dated ahead of now means the clock moved back since it was made. Then the
+    # create-time check below would accept any later process given the same pid (Codex on #6785).
+    if stat.st_mtime > time.time() + _REGISTRATION_CLOCK_SKEW_S:
+        return _rejected(
+            "the registration is dated in the future (the clock moved back after it was written)"
+        )
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = handle.read(64)
+    except OSError as err:
+        return _rejected(f"the registration file is unreadable: {err.strerror}")
+    try:
+        pid = int(raw.strip())
+    except ValueError:
+        return _rejected("the registration file does not hold a pid")
+    if pid <= 0:
+        return _rejected("the registration file does not hold a positive pid")
+    return pid, stat.st_mtime
+
+
+def _live_registration(pid: int, written_at: float) -> ShellRegistration:
+    """Accept ``pid`` only if it is running and existed when it was registered."""
+
+    import psutil
+
+    try:
+        process = psutil.Process(pid)
+        created = process.create_time()
+        status = process.status()
+    except psutil.NoSuchProcess:
+        return _rejected("the registered shell is not running")
+    except psutil.Error as err:
+        return _rejected(f"the registered shell could not be read: {type(err).__name__}")
+    if status == psutil.STATUS_ZOMBIE:
+        return _rejected("the registered shell has exited (zombie)")
+    if created > written_at:
+        return _rejected(
+            "the registered pid started after the registration was written (a reused pid)"
+        )
+    return ShellRegistration(status="accepted", pid=pid)
+
+
+def read_shell_registration(data_dir: os.PathLike[str] | str | None) -> ShellRegistration:
+    """The shell registered in ``data_dir``, validated against the live process.
+
+    Accepted only when the file is this user's and not writable by others,
+    is not dated in the future, names a positive pid, that pid is running (not
+    a zombie), and the process STARTED NO LATER than the file was written. The last check is the
+    create-time proof against a reused pid: a shell that died leaves its file
+    behind, and a later process given the same pid started after the file's
+    write, so it is rejected rather than counted as the shell.
+    """
+
+    if data_dir is None:
+        return ShellRegistration(status="absent")
+    found = _registered_pid(os.path.join(os.fspath(data_dir), SHELL_REGISTRATION_FILE_NAME))
+    if isinstance(found, ShellRegistration):
+        return found
+    return _live_registration(*found)
+
+
+def _ancestor_chain(by_pid: dict[int, ProcessInfo], pid: int) -> list[int]:
+    """``pid`` and its running ancestors, nearest first."""
+
+    chain = [pid]
+    seen = {pid}
+    while True:
+        row = by_pid.get(chain[-1])
+        if row is None or row.ppid in seen or row.ppid not in by_pid:
+            return chain
+        seen.add(row.ppid)
+        chain.append(row.ppid)
+
+
+def _family_root_pid(
+    by_pid: dict[int, ProcessInfo], engine_pid: int, shell_pid: int | None = None
+) -> int:
+    """The topmost Open DJ ancestor of ``engine_pid``, or the engine itself.
+
+    Climbs while the parent runs as an Open DJ program: the packaged desktop
+    shell above the engine, or the ``--reload`` supervisor above a dev
+    backend worker. It stops at the first parent that is not one (``uv``, a
+    shell, launchd, a test runner), so a second engine, a vite dev server or
+    any other ``opendj-*`` process elsewhere on the machine is never reached:
+    the family is this engine's own tree, not every process that shares a
+    name with it.
+
+    ``shell_pid`` is the pid the launching shell stamped into the engine's
+    environment (``launching_shell_pid``). It roots the family at that shell
+    when, and only when, it is a running ANCESTOR of the engine: a stale or
+    recycled pid naming any other process is ignored, so it can never pull a
+    foreign tree in.
+    """
+
+    chain = _ancestor_chain(by_pid, engine_pid)
+    depth = 0
+    while depth + 1 < len(chain) and _runs_as_app_launcher(by_pid[chain[depth + 1]].command):
+        depth += 1
+    if shell_pid is not None and shell_pid in chain[1:]:
+        depth = max(depth, chain.index(shell_pid))
+    return chain[depth]
+
+
+# The Electron renderer that draws this page. Chromium starts every renderer
+# with a ``--type=renderer`` argument, so the argument alone would match any
+# Chromium-based browser on the machine; it is trusted only inside a family
+# rooted at the shell that stamped its pid into this engine's environment
+# (``launching_shell_pid``), whose renderers are this app's window. The page
+# heap is then inside that process, so the page term is not added again.
+ELECTRON_RENDERER_ROLE = "electron-renderer"
+_CHROMIUM_RENDERER_ARGV_RE = re.compile(r"(?:^|\s)--type=renderer(?=\s|$)")
+
+
 def _collect_live_process_family(
     rows: list[ProcessInfo],
     *,
     engine_pid: int,
+    shell_pid: int | None = None,
+    registered_shell_pid: int | None = None,
 ) -> tuple[list[dict[str, Any]], set[int]]:
+    """This engine's family: its Open DJ root plus every descendant of that root.
+
+    The odj-audio sidecar and job workers are the engine's own children, and
+    the packaged desktop shell is the root above it, so all of them are in
+    the tree. Nothing is added by name: an ``opendj-*`` process outside the
+    tree belongs to another engine, a dev server or a test run.
+
+    ``registered_shell_pid`` is an ACCEPTED shell registration
+    (``read_shell_registration``): a shell that adopted or attached to this
+    engine and so is not above it. Its own tree (the shell, its renderer and
+    GPU helpers) is added beside the engine's, and is trusted for the
+    renderer role exactly like a stamped shell's.
+    """
+
     by_pid = {row.pid: row for row in rows}
-    seeds: set[int] = {engine_pid}
-    for row in rows:
-        if opendj_process_name(row.command) != "unnamed":
-            seeds.add(row.pid)
-    family_pids: set[int] = set(seeds)
-    for seed in sorted(seeds):
-        family_pids.update(_descendant_pids(rows, seed))
+    root_pid = _family_root_pid(by_pid, engine_pid, shell_pid)
+    family_pids: set[int] = {root_pid, engine_pid}
+    family_pids.update(_descendant_pids(rows, root_pid))
+    shell_tree: set[int] = set()
+    if shell_pid is not None and root_pid == shell_pid:
+        shell_tree |= family_pids
+    if registered_shell_pid is not None and registered_shell_pid in by_pid:
+        shell_tree |= {registered_shell_pid} | _descendant_pids(rows, registered_shell_pid)
+        family_pids |= shell_tree
+    # Only processes that are running: an engine pid that has exited is no
+    # family, so it cannot make a probe record look like this app's.
+    family_pids &= by_pid.keys()
     members: list[dict[str, Any]] = []
     for pid in sorted(family_pids):
         row = by_pid.get(pid)
         if row is None:
             continue
-        member: dict[str, Any] = {"name": opendj_process_name(row.command)}
+        member: dict[str, Any] = {"pid": pid, "name": opendj_process_name(row.command)}
+        if pid in shell_tree and _CHROMIUM_RENDERER_ARGV_RE.search(row.command):
+            member["role"] = ELECTRON_RENDERER_ROLE
         if isinstance(row.rss_bytes, int) and row.rss_bytes >= 0:
             member["rss_mb"] = round(row.rss_bytes / 1_048_576, 1)
         members.append(member)
     return members, family_pids
 
 
+def _walk_identity(
+    engine_pid: int | None, shell_pid: int | None, registered_shell_pid: int | None
+) -> dict[str, Any]:
+    """Who the walk is for: this engine and the shell its environment names by
+    default, or exactly the pids a caller passes (a test rooting the walk at a
+    real process of its own, whose environment is not this one). The
+    registered shell is always the caller's: only it knows the data dir."""
+
+    if engine_pid is None:
+        return {
+            "engine_pid": os.getpid(),
+            "shell_pid": launching_shell_pid(),
+            "registered_shell_pid": registered_shell_pid,
+        }
+    return {
+        "engine_pid": engine_pid,
+        "shell_pid": shell_pid,
+        "registered_shell_pid": registered_shell_pid,
+    }
+
+
 def live_process_family_members(
     *,
     engine_pid: int | None = None,
+    shell_pid: int | None = None,
+    registered_shell_pid: int | None = None,
     process_iter: Callable[[], list[ProcessInfo]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Walk the live opendj-* family via psutil. Members omit command and pid."""
+    """Walk this engine's live process family via psutil. Members omit command and pid."""
 
     rows = _read_process_rows(process_iter)
     if not rows:
         return []
-    root_pid = engine_pid if engine_pid is not None else os.getpid()
-    members, _family_pids = _collect_live_process_family(rows, engine_pid=root_pid)
-    return members
+    members, _family_pids = _collect_live_process_family(
+        rows, **_walk_identity(engine_pid, shell_pid, registered_shell_pid)
+    )
+    return [{key: value for key, value in member.items() if key != "pid"} for member in members]
 
 
 def live_process_family_state(
     *,
     engine_pid: int | None = None,
+    shell_pid: int | None = None,
+    registered_shell_pid: int | None = None,
     process_iter: Callable[[], list[ProcessInfo]] | None = None,
 ) -> tuple[list[dict[str, Any]], set[int]]:
-    """Like ``live_process_family_members`` but also returns family PIDs for merge."""
+    """Like ``live_process_family_members``, plus family PIDs, for the route's merge.
+
+    Here each member also carries its ``pid`` so the route can attach the
+    native probe's row for the same process; the route strips it before any
+    member leaves the engine.
+    """
 
     rows = _read_process_rows(process_iter)
     if not rows:
         return [], set()
-    root_pid = engine_pid if engine_pid is not None else os.getpid()
-    return _collect_live_process_family(rows, engine_pid=root_pid)
+    return _collect_live_process_family(
+        rows, **_walk_identity(engine_pid, shell_pid, registered_shell_pid)
+    )
 
 
 class MachinePressureCache:

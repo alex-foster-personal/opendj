@@ -197,6 +197,13 @@ export async function putIngestConfig(enabled: Record<string, boolean>): Promise
 	return cfg;
 }
 
+/** The engine did not answer a coverage read in time: it is busy counting,
+ * which the health lights show as amber "still counting" (HEALTH-8304c), not as
+ * a failed measurement. */
+export class CoverageTimeoutError extends Error {
+	override name = 'CoverageTimeoutError';
+}
+
 /**
  * `cached: true` accepts the engine's last measurement, returned at once with
  * its `age_s` while a newer one is taken behind it: for the health lights,
@@ -215,7 +222,7 @@ export async function getIngestCoverage(
 		return (await r.json()) as IngestCoverage;
 	} catch (error: unknown) {
 		if (signal.aborted) {
-			throw new Error(`coverage request timed out after ${timeoutMs / 1000} s`, { cause: error });
+			throw new CoverageTimeoutError(`coverage request timed out after ${timeoutMs / 1000} s`, { cause: error });
 		}
 		throw error;
 	} finally {

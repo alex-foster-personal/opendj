@@ -1,12 +1,14 @@
 """Rekordbox adapter -- the vendor package ``apps/adapters/__init__`` reserved.
 
-T3b wave 4 (``.planning/t3b-decomposition-map.md`` section 2) gives the
+T3b wave 4 (``(private path)`` section 2) gives the
 hot-cue write surface its final home here, out of ``apps/webui``. The three
 modules are verbatim moves of the map's targets 10-12:
 
   cues -- pure hot-cue modelling and validation, owns no connection.
   reversal -- reversal-token lifecycle and slot generations.
   writer -- the only read-write surface into rekordbox's master.plain.db.
+
+``cue_kind`` re-exports the Kind ↔ slot-letter map from ``apps.shared.rekordbox_cue_kind`` (issue #4069).
 
 Leaving ``apps.webui`` is what closes the ``engine_core <-> webui`` package
 cycle recorded in ``ops/quality/baseline.json``: :mod:`.reversal` provisions
@@ -24,7 +26,7 @@ map's target #3 (``adapters/rekordbox/errors.py``, a domain error type with
 one mapping table in the HTTP layer) belongs to slice S0 and was never built,
 so the decomposition's "no fastapi under adapters/" clause is not yet met.
 Swapping the type here would change every asserted status code in
-``tests/webui/test_rb_hot_cue_write.py``, so it stays a named debt rather than
+``(private path)``, so it stays a named debt rather than
 a drive-by rewrite.
 """
 from __future__ import annotations

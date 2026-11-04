@@ -33,6 +33,7 @@ Requirements (mini-PRD):
     [if] a GET against a blocked audio path takes longer than the bound
     [then ⛔️]
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Request

@@ -14,6 +14,7 @@ history playlists ``hist-<pdb id>``, unique within one stick's library.
 Display strings from the pdb are trimmed (titles carry trailing spaces);
 paths never are (the SSK stick's own mount path ends in a space).
 """
+
 from __future__ import annotations
 
 import re

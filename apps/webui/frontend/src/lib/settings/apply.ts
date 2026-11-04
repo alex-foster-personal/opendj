@@ -37,6 +37,7 @@ import {
 	setDragSensitivity,
 	setJogRadialWaveform,
 	setShowDevUi,
+	setPinVisibleDays,
 	setShowStems,
 	setDeckHoverLink,
 	setShowSections,
@@ -166,6 +167,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'lyrics_deck_line',
 	'hide_todo_settings',
 	'show_dev_ui',
+	'pin_visible_days',
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
@@ -272,6 +274,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.hide_todo_settings;
 		case 'show_dev_ui':
 			return uiPrefs.show_dev_ui;
+		case 'pin_visible_days':
+			return String(uiPrefs.pin_visible_days);
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
@@ -460,6 +464,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_dev_ui':
 			setShowDevUi(_asBool(value, key));
+			return;
+		case 'pin_visible_days':
+			setPinVisibleDays(_asFactor(value, key));
 			return;
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));

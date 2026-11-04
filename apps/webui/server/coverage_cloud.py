@@ -34,6 +34,7 @@ Requirements (mini-PRD):
     [if] no hydration source is armed [then] state off, holds() False
     [if] the index lists a bundle without a manifest [then] holds() False
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -65,9 +66,7 @@ class StemCloud:
 OFF: StemCloud = StemCloud("off")
 
 
-def read_stem_cloud(
-    data_dir: Path, *, fetchable: bool, unarmed_reason: str | None
-) -> StemCloud:
+def read_stem_cloud(data_dir: Path, *, fetchable: bool, unarmed_reason: str | None) -> StemCloud:
     if unarmed_reason is not None:
         return StemCloud("unknown", f"stem hydration is not armed: {unarmed_reason}")
     if not fetchable:

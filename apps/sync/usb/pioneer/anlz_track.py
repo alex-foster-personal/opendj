@@ -122,9 +122,7 @@ class StickTrackAnalysis:
     memory_cues: list[StickMemoryCue]
 
 
-def read_stick_track_analysis(
-    *, volume_root: Path, analyze_path: str, points: int
-) -> StickTrackAnalysis:
+def read_stick_track_analysis(*, volume_root: Path, analyze_path: str, points: int) -> StickTrackAnalysis:
     """Decode one stick track's grid, cues, waveform and phrases.
 
     Raises :class:`StickAnlzPathRefused`, :class:`StickAnlzFileMissing` or
@@ -162,10 +160,7 @@ def read_stick_track_analysis(
             )
             for cue in hot
         ],
-        memory_cues=[
-            StickMemoryCue(position_ms=cue.in_ms, color=cue.color, label=cue.comment)
-            for cue in memory
-        ],
+        memory_cues=[StickMemoryCue(position_ms=cue.in_ms, color=cue.color, label=cue.comment) for cue in memory],
     )
 
 
@@ -195,9 +190,7 @@ def _resolve_anlz_files(volume_root: Path, analyze_path: str) -> dict[str, Path]
     for suffix in ANLZ_SUFFIXES:
         candidate = (dat if suffix == ".DAT" else dat.with_suffix(suffix)).resolve()
         if not candidate.is_relative_to(anlz_root):
-            raise StickAnlzPathRefused(
-                f"{analyze_path!r} ({suffix}) resolves outside {anlz_root}: {candidate}"
-            )
+            raise StickAnlzPathRefused(f"{analyze_path!r} ({suffix}) resolves outside {anlz_root}: {candidate}")
         files[suffix] = candidate
     return files
 
@@ -258,9 +251,7 @@ class _TrackTags:
             for tag in _walk_pmai(path.name, buf, unreadable):
                 raw.setdefault((suffix, tag.fourcc), []).append(tag)
         if not raw:
-            raise StickAnlzUnreadable(
-                f"no ANLZ tag could be read for {files['.DAT']}: {unreadable}"
-            )
+            raise StickAnlzUnreadable(f"no ANLZ tag could be read for {files['.DAT']}: {unreadable}")
         return cls(raw, unreadable)
 
     def decode_all(self, suffix: str, fourcc: str, decode: Callable[[_RawTag], T]) -> list[T]:
@@ -281,8 +272,7 @@ class _TrackTags:
     def note_undecoded_vocals(self) -> None:
         for tag in self.raw.get((".2EX", "PVDI"), ()):
             self.unreadable.append(
-                f"{tag.file_name}:PVDI: vocal regions are not decoded for stick "
-                "tracks; vocals report not_analyzed"
+                f"{tag.file_name}:PVDI: vocal regions are not decoded for stick tracks; vocals report not_analyzed"
             )
 
     def _decode(self, tag: _RawTag, decode: Callable[[_RawTag], T]) -> T | None:
@@ -368,9 +358,7 @@ def _phrases(tags: _TrackTags, times: list[float]) -> list[dict[str, Any]]:
         return [
             {
                 "start_s": time_of_beat(int(entry.beat)),
-                "end_s": time_of_beat(
-                    int(entries[i + 1].beat) if i + 1 < len(entries) else int(pssi.end_beat)
-                ),
+                "end_s": time_of_beat(int(entries[i + 1].beat) if i + 1 < len(entries) else int(pssi.end_beat)),
                 "kind": int(entry.kind),
                 "mood": mood,
             }
@@ -412,14 +400,10 @@ def _waveform(tags: _TrackTags, points: int) -> dict[str, Any]:
     kind = "tri"
     if preview is None or detail is None:
         kind = "mono"
-        preview = tags.decode_first(
-            ".DAT", "PWAV", lambda tag: _mono_bands(structs["PWAV"](tag.data))
-        )
+        preview = tags.decode_first(".DAT", "PWAV", lambda tag: _mono_bands(structs["PWAV"](tag.data)))
         detail = tags.decode_first(".EXT", "PWV5", _pwv5_mono_bands)
         if detail is None:
-            detail = tags.decode_first(
-                ".EXT", "PWV3", lambda tag: _mono_bands(structs["PWV3"](tag.data))
-            )
+            detail = tags.decode_first(".EXT", "PWV3", lambda tag: _mono_bands(structs["PWV3"](tag.data)))
     return {
         "kind": kind,
         "preview": _bands_payload(preview, points) if preview else dict(_EMPTY_BANDS),
@@ -525,9 +509,7 @@ def _select_cues(tags: _TrackTags) -> list[_Cue]:
     return chosen
 
 
-def _merge_pcob(
-    kept: list[_Cue], candidates: list[_Cue], file_name: str, unreadable: list[str]
-) -> list[_Cue]:
+def _merge_pcob(kept: list[_Cue], candidates: list[_Cue], file_name: str, unreadable: list[str]) -> list[_Cue]:
     """PCOB cues not already kept; a hot slot claimed twice keeps the first (.DAT)."""
     added: list[_Cue] = []
     for cue in candidates:

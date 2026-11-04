@@ -13,6 +13,7 @@ Per-field hooks:
 Cue-array conflicts are handled separately in Plan 3's
 ``resolve_cue_array``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -54,9 +55,7 @@ def _equal(a: Any, b: Any) -> bool:
     return a == b
 
 
-def _within_window(
-    a: datetime | None, b: datetime | None, window_days: int
-) -> bool:
+def _within_window(a: datetime | None, b: datetime | None, window_days: int) -> bool:
     if a is None or b is None:
         return False
     delta = abs((a - b).total_seconds())
@@ -138,9 +137,7 @@ def resolve_conflict_input(inp: ConflictInput) -> ConflictResolution:
             return "conflict"
         return "accept_djay"
 
-    if _within_window(
-        inp.rb_modified_at, inp.djay_modified_at, inp.newest_window_days
-    ):
+    if _within_window(inp.rb_modified_at, inp.djay_modified_at, inp.newest_window_days):
         side = _newer(inp.rb_modified_at, inp.djay_modified_at)
         if side == "rb":
             return "accept_rb"

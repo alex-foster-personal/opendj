@@ -1,6 +1,6 @@
 """Stage-3 text matching: ASR word stream vs a reference lyric sheet, NO time.
 
-The version check runs on text alone (specs/lyrics-version-check.md): difflib
+The version check runs on text alone ((private path)): difflib
 sequence alignment over normalized tokens. Round 0 uses it with the TRUE sheet
 to measure the ASR leg's ceiling per language; later rounds feed perturbed
 sheets and read the diff shape as the version verdict.
@@ -20,7 +20,7 @@ from difflib import SequenceMatcher
 
 _EDGE_PUNCT = re.compile(r"^\W+|\W+$", re.UNICODE)
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def normalize_word(word: str) -> str:
@@ -76,7 +76,7 @@ def format_match_report(label: str, r: MatchReport) -> str:
     )
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _longest_false_run(flags: list[bool]) -> int:

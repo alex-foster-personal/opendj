@@ -61,13 +61,74 @@ impl TauriHostBridge {
     }
 }
 
+// ------------------------------------------------------- drag platform seam
+
+/// Platform seam over `drag::start_drag` (GB-6863 / F04).
+///
+/// `drag` 2.1.1 is generic over its first argument on macOS and Windows
+/// (`W: HasWindowHandle`, which `tauri::WebviewWindow` implements) but **not**
+/// on Linux: its GTK backend takes a concrete `&gtk::ApplicationWindow`
+/// (`drag-2.1.1/src/platform_impl/gtk/mod.rs:21`), because it drives the drag
+/// through GTK's own drag-source API rather than a raw window handle. Handing
+/// the Tauri window to that backend is what failed to compile:
+///
+/// ```text
+/// error[E0308]: mismatched types
+///   --> src/commands/drag.rs:71:13
+///    |   expected `&ApplicationWindow`, found `&WebviewWindow`
+/// ```
+///
+/// The seam keeps the real native window on every platform: on Linux it asks
+/// Tauri for the GTK window that backs the webview, elsewhere it passes the
+/// webview window itself. It does not disable or bypass the drag path, and it
+/// changes no dependency policy — the resolved `drag 2.1.1` signature stays as
+/// the crate ships it.
+///
+/// A failure to obtain the GTK window means the webview has no native window
+/// to drag from, which `drag::Error::UnsupportedWindowHandle` already models;
+/// `drag::Error` carries no string variant, so the underlying `tauri::Error`
+/// cannot be forwarded through this type and is reported as that variant.
+#[cfg(target_os = "linux")]
+fn start_platform_drag<F>(
+    window: &WebviewWindow,
+    item: drag::DragItem,
+    image: drag::Image,
+    on_drop: F,
+    options: drag::Options,
+) -> drag::Result<()>
+where
+    F: Fn(drag::DragResult, drag::CursorPosition) + Send + 'static,
+{
+    let gtk_window = window
+        .gtk_window()
+        .map_err(|_native_window| drag::Error::UnsupportedWindowHandle)?;
+    drag::start_drag(&gtk_window, item, image, on_drop, options)
+}
+
+/// macOS/Windows arm of the seam: `drag` takes any `HasWindowHandle`, and
+/// `tauri::WebviewWindow` is one. Behaviour here is byte-for-byte the call
+/// `TauriHostBridge::start_finder_drag` made before the seam existed.
+#[cfg(not(target_os = "linux"))]
+fn start_platform_drag<F>(
+    window: &WebviewWindow,
+    item: drag::DragItem,
+    image: drag::Image,
+    on_drop: F,
+    options: drag::Options,
+) -> drag::Result<()>
+where
+    F: Fn(drag::DragResult, drag::CursorPosition) + Send + 'static,
+{
+    drag::start_drag(window, item, image, on_drop, options)
+}
+
 impl HostBridge for TauriHostBridge {
     fn start_finder_drag(&self, file_path: &Path) -> Result<(), DragError> {
         // Tiny grey placeholder icon so start_drag has a non-empty Image.
         // Real branded thumbnail is a Phase 17 open question (see README).
         let icon_bytes = include_bytes!("../../icons/128x128.png");
 
-        drag::start_drag(
+        start_platform_drag(
             &self.window,
             drag::DragItem::Files(vec![file_path.to_path_buf()]),
             drag::Image::Raw(icon_bytes.to_vec()),
@@ -353,12 +414,12 @@ mod tests {
     fn launcher_data_dir_is_absolute_and_under_data() {
         // Guard against regressing REVIEW [I2]: sidecar paths must resolve to
         // an absolute path under `<repo>/data/launcher`, never a CWD-relative
-        // `data/launcher`.
+        // `(private path)`.
         let d = launcher_data_dir();
         assert!(d.is_absolute(), "expected absolute path, got {d:?}");
         let s = d.to_string_lossy();
         assert!(
-            s.ends_with("data/launcher") || s.ends_with("data\\launcher"),
+            s.ends_with("(private path)") || s.ends_with("data\\launcher"),
             "unexpected data dir tail: {s}"
         );
     }

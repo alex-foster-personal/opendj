@@ -51,7 +51,7 @@ class Upstream:
             "Authorization": f"Bearer {self.bearer}",
             # OpenRouter's app-attribution headers; the Worker forwards them.
             "X-Title": "Open DJ",
-            "HTTP-Referer": "https://github.com/private_owner/music-dj-tools",
+            "HTTP-Referer": "https://github.com/alex-foster-personal/opendj",
         }
 
 

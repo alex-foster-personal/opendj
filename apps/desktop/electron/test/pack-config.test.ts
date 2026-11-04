@@ -8,15 +8,26 @@ import { scratchDir } from './helpers';
 
 const packageRoot = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
-	scripts: { 'pack:dir': string };
+	scripts: { 'pack:dir': string; 'pack:dir:win': string };
 	version: string;
 	build: {
+		appId: string;
 		files: string[];
 		extraResources: { from: string; to: string }[];
 		electronFuses?: Record<string, boolean>;
-		mac: { icon?: unknown; minimumSystemVersion?: string; category?: string; bundleShortVersion?: string; bundleVersion?: string };
+		mac: {
+			icon?: unknown;
+			minimumSystemVersion?: string;
+			category?: string;
+			bundleShortVersion?: string;
+			bundleVersion?: string;
+		};
+		win: { appId?: string; icon?: unknown; target: { target: string; arch: string[] }[] };
 	};
 };
+
+/** electron-builder converts a PNG to .ico only from this edge up. */
+const MIN_WIN_ICON_EDGE_PX = 256;
 
 /** electron-builder refuses a mac icon below this edge, and would otherwise ship its stock one. */
 const MIN_ICON_EDGE_PX = 512;
@@ -47,6 +58,10 @@ test('the packaged app ships the bootstrap setup directory', () => {
 	assert.ok(pkg.build.extraResources.some((entry) => entry.from === '../setup' && entry.to === 'setup'));
 });
 
+test('pack:dir still ships the payload placeholder as extraResources', () => {
+	assert.ok(pkg.build.extraResources.some((entry) => entry.from === 'payload' && entry.to === 'payload'));
+});
+
 test('the packaged bundle icon is the Open DJ mark, not the stock Electron one', () => {
 	const icon = pkg.build.mac.icon;
 	assert.ok(typeof icon === 'string' && icon !== '', 'build.mac.icon is missing, so the bundle would carry electron.icns');
@@ -61,6 +76,37 @@ test('the packaged app ships the assets the runtime dock icon reads', () => {
 	const icon = pkg.build.mac.icon as string;
 	const dir = path.dirname(icon);
 	assert.ok(pkg.build.files.includes(`${dir}/**/*`), `build.files does not pack ${dir}/, so main.ts cannot load ${icon}`);
+});
+
+test('pack:dir:win stamps build-identity, then builds an unsigned Windows dir', () => {
+	const script = pkg.scripts['pack:dir:win'];
+	assert.ok(script.indexOf('stamp-build') !== -1 && script.indexOf('stamp-build') < script.indexOf('electron-builder'));
+	assert.match(script, /--dir --win --x64/);
+	// Without a certificate electron-builder waits on signtool; signing is the owner's input.
+	assert.match(script, /-c\.win\.signExecutable=false/);
+});
+
+test('pack:dir:win uses no POSIX-only env prefix, because pnpm runs it through cmd.exe on Windows', () => {
+	assert.doesNotMatch(pkg.scripts['pack:dir:win'], /(^|&&)\s*[A-Z_]+=\S+\s/);
+});
+
+test('the Windows build targets an x64 dir and carries the Open DJ icon, not the stock one', () => {
+	assert.deepEqual(pkg.build.win.target, [{ target: 'dir', arch: ['x64'] }]);
+	const icon = pkg.build.win.icon;
+	assert.ok(typeof icon === 'string' && icon !== '', 'build.win.icon is missing, so Open DJ.exe would carry the Electron icon');
+	const file = path.join(packageRoot, icon);
+	assert.ok(fs.existsSync(file), `build.win.icon points at ${icon}, which does not exist`);
+	const { width, height } = pngSize(file);
+	assert.equal(width, height, `${icon} is ${width}x${height}, not square`);
+	assert.ok(width >= MIN_WIN_ICON_EDGE_PX, `${icon} is ${width}px wide; electron-builder needs ${MIN_WIN_ICON_EDGE_PX}px or more`);
+});
+
+test('the Windows target has its own appId, distinct from the Tauri app and the mac identity', () => {
+	const tauriIdentifier = (JSON.parse(fs.readFileSync(path.join(packageRoot, '..', 'src-tauri', 'tauri.conf.json'), 'utf8')) as { identifier: string }).identifier;
+	assert.equal(pkg.build.appId, tauriIdentifier, 'the mac appId must stay the Tauri identifier (library identity)');
+	const winAppId = pkg.build.win?.appId;
+	assert.equal(winAppId, 'com.opendj.desktop.electron');
+	assert.notEqual(winAppId, tauriIdentifier, 'Windows appId equals the Tauri identifier');
 });
 
 // ----- parity rows 63, 64: fuses and Info.plist ---------------------------------------

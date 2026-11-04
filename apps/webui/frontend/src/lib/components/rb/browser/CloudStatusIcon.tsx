@@ -43,6 +43,18 @@ export default function CloudStatusIcon({ view }: CloudStatusIconProps) {
 						<path className="tidal" d="M.5 5.5l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm-5 5l2.5-2.5 2.5 2.5-2.5 2.5z" />
 					) : null}
 				</svg>
+			) : view.kind === 'temporary' ? (
+				// Spotify's "downloaded" mark: a filled disk with a down arrow.
+				<svg className="offload-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+					<circle cx="8" cy="8" r="7" fill="currentColor" />
+					<path d="M8 4.5v6M5.4 8.2 8 10.8l2.6-2.6" fill="none" stroke="var(--rb-bg, #111)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+				</svg>
+			) : view.kind === 'offloaded' ? (
+				// Apple Music's "download" mark: a hollow cloud with a down arrow.
+				<svg className="offload-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+					<path d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z" fill="none" stroke="currentColor" strokeWidth="1.25" />
+					<path d="M8 6.5v4M6.5 9.2 8 10.7l1.5-1.5" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+				</svg>
 			) : (
 				<svg className="cloud-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 					<path

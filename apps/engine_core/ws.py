@@ -44,6 +44,38 @@ TOPICS: tuple[str, ...] = (
     TOPIC_ANALYSIS_CHANGED,
 )
 
+# Every ``kind`` a ``library.changed`` payload may carry (INFRA-8304). The
+# browser's allowlist (``LIBRARY_KINDS`` in
+# apps/webui/frontend/src/lib/api/events-bus.ts) logs any other kind as
+# contract drift, so a new publish site adds its kind here AND there;
+# tests/engine_core/test_library_changed_kinds.py fails when either side or a
+# publish site drifts.
+LIBRARY_CHANGED_KINDS: tuple[str, ...] = (
+    "tracks",
+    "playlists",
+    "mytags",
+    "hot_cues",
+    "transition_in",
+    "beatgrid_edit",
+    "smartlists",
+    "dedup",
+    "reconcile",
+    "ui_prefs",
+    "pairings",
+    "library_jobs",
+    "playlist_sets",
+    "playlist_components",
+    "midi_maps",
+    "set_notes",
+    "sections",
+    "plays",
+    "cloudsync_policy",
+    "cloudsync_playlist_pin",
+    "tags",
+    "works",
+    "undo",
+)
+
 
 # RFC 6455 1008 (policy violation): the shell broke the ack wire contract.
 SHELL_ACK_PROTOCOL_ERROR_CODE: int = 1008

@@ -70,9 +70,7 @@ def _entry_line(entry: Mapping[str, Any], *, actual: Path | None = None) -> str:
     return f"{entry['kind']}\0{path}\0{size}\0{mtime_s}\0{stable_ids}\n"
 
 
-def ledger_digest(
-    entries: list[Mapping[str, Any]], *, actual: Mapping[str, Path] | None = None
-) -> str:
+def ledger_digest(entries: list[Mapping[str, Any]], *, actual: Mapping[str, Path] | None = None) -> str:
     """Digest the same logical entries on owner and replica."""
 
     digest = hashlib.sha256()
@@ -102,9 +100,7 @@ class _Discrepancies:
     mtime: list[str] = field(default_factory=list)
 
 
-def _stat_against_entry(
-    entry: Mapping[str, Any], destination: Path, found: _Discrepancies
-) -> int:
+def _stat_against_entry(entry: Mapping[str, Any], destination: Path, found: _Discrepancies) -> int:
     """Compare one materialised destination to its declared size and mtime."""
 
     stat = destination.stat()
@@ -142,9 +138,7 @@ def audit_manifest(manifest: Mapping[str, Any], *, crate_root: Path) -> CrateAud
     expected_digest = str(manifest.get("ledger_digest") or ledger_digest(entries))
     actual_digest = ledger_digest(entries, actual=actual) if not missing else ""
     expected_bytes = sum(int(entry["bytes"]) for entry in entries)
-    ok = not (missing or size_mismatches or mtime_mismatches) and (
-        actual_digest == expected_digest
-    )
+    ok = not (missing or size_mismatches or mtime_mismatches) and (actual_digest == expected_digest)
     return CrateAudit(
         ok=ok,
         expected_count=len(entries),
@@ -166,11 +160,7 @@ def _read_track_files(manifest_path: str, mtime_ns: int, size: int) -> dict[str,
     track_files = raw.get("track_files")
     if not isinstance(track_files, dict):
         return {}
-    return {
-        str(stable_id): str(path)
-        for stable_id, path in track_files.items()
-        if isinstance(path, str)
-    }
+    return {str(stable_id): str(path) for stable_id, path in track_files.items() if isinstance(path, str)}
 
 
 def resolve_crate_audio(
@@ -188,9 +178,7 @@ def resolve_crate_audio(
     if not path.is_file():
         return None
     stat = path.stat()
-    indexed = _read_track_files(str(path), stat.st_mtime_ns, stat.st_size).get(
-        stable_id
-    )
+    indexed = _read_track_files(str(path), stat.st_mtime_ns, stat.st_size).get(stable_id)
     if indexed is None:
         return None
     candidate = _contained(root, indexed)

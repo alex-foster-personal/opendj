@@ -18,7 +18,7 @@ safety harness on every mutation:
      underlying writer (if it exposes ``verify_playlist``) to read back
      the playlist membership; mismatches abort the session.
   6. Reversal script: each op appends a reverse snippet to
-     ``data/sync/reversal/<ts>/reverse.sh``.
+     ``(private path)/<ts>/reverse.sh``.
 
 Rails 1-3, 5 and 6 are delegated to
 :class:`apps.sync.safety.LiveWriteSession`. Rail 4 (dry-run default) is
@@ -26,6 +26,7 @@ enforced at this layer so the materialiser can keep its existing
 ``dry_run=True`` default without plumbing the safety session through
 every call site.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
@@ -46,7 +47,10 @@ class PlaylistWriter(Protocol):
     def playlist_exists(self, name: str) -> bool: ...
     def create_playlist(self, name: str, track_ids: list[str]) -> None: ...
     def apply_diff(
-        self, name: str, added: list[str], removed: list[str],
+        self,
+        name: str,
+        added: list[str],
+        removed: list[str],
     ) -> None: ...
 
 
@@ -70,7 +74,10 @@ class FakeWriter:
         self.playlists[name] = list(track_ids)
 
     def apply_diff(
-        self, name: str, added: list[str], removed: list[str],
+        self,
+        name: str,
+        added: list[str],
+        removed: list[str],
     ) -> None:
         self.calls.append(("diff", name, list(added), list(removed)))
         if self.raise_on_apply:
@@ -154,8 +161,7 @@ class SafePlaylistWriter:
             )
         if self._session is None:
             raise RuntimeError(
-                "SafePlaylistWriter: no active LiveWriteSession; wrap "
-                "calls in safe_writer_session(...) before writing"
+                "SafePlaylistWriter: no active LiveWriteSession; wrap calls in safe_writer_session(...) before writing"
             )
 
     def _verify(self, name: str, expected: list[str]) -> bool:
@@ -188,18 +194,18 @@ class SafePlaylistWriter:
         try:
             with sess.per_track(f"create:{name}") as w:
                 self.inner.create_playlist(name, track_ids)
-                w.write({"op": "create", "name": name,
-                         "n": len(track_ids)})
+                w.write({"op": "create", "name": name, "n": len(track_ids)})
                 if not w.verify_readback():
                     return
-                w.append_reverse(
-                    f"# revert smartlist create: delete playlist {name!r}"
-                )
+                w.append_reverse(f"# revert smartlist create: delete playlist {name!r}")
         finally:
             sess.verifier = prev_verifier
 
     def apply_diff(
-        self, name: str, added: list[str], removed: list[str],
+        self,
+        name: str,
+        added: list[str],
+        removed: list[str],
     ) -> None:
         if self.dry_run:
             return
@@ -229,14 +235,10 @@ class SafePlaylistWriter:
         try:
             with sess.per_track(f"diff:{name}") as w:
                 self.inner.apply_diff(name, added, removed)
-                w.write({"op": "diff", "name": name,
-                         "added": len(added), "removed": len(removed)})
+                w.write({"op": "diff", "name": name, "added": len(added), "removed": len(removed)})
                 if not w.verify_readback():
                     return
-                w.append_reverse(
-                    f"# revert smartlist diff on {name!r}: "
-                    f"added={added!r} removed={removed!r}"
-                )
+                w.append_reverse(f"# revert smartlist diff on {name!r}: added={added!r} removed={removed!r}")
         finally:
             sess.verifier = prev_verifier
 
@@ -269,8 +271,7 @@ def safe_writer_session(
 
     target = writer.target
     if target not in ("rekordbox", "djay"):
-        raise ValueError(f"SafePlaylistWriter.target must be "
-                         f"'rekordbox' or 'djay', got {target!r}")
+        raise ValueError(f"SafePlaylistWriter.target must be 'rekordbox' or 'djay', got {target!r}")
 
     with LiveWriteSession(
         target=target,  # type: ignore[arg-type]

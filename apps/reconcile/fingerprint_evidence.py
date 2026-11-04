@@ -18,6 +18,7 @@ files are only decoded, and the only writes go to the dedup database's own
 fingerprint cache. A track the scan never fingerprinted has no recorded
 fingerprint, and then neither signal fires: no evidence, not a verdict.
 """
+
 from __future__ import annotations
 
 import sqlite3

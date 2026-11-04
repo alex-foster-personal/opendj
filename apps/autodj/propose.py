@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from apps.autodj.notation import print_score
 from apps.autodj.plan import (
     SHAPE_STYLES,
     TransitionPlan,
@@ -160,6 +161,8 @@ class Proposal:
             "bars": self.plan.bars,
             "rationale": self.rationale,
             "plan": self.plan.to_json(),
+            # AGENT-5858: the same plan as a mix score, for people and for agents.
+            "notation": print_score(self.plan),
             "validation": self.validation.to_json(),
             "pair": self.pair.summary(),
         }

@@ -1,6 +1,6 @@
 """Per-user hubs on one host: ``hub_deploy provision-user`` and ``remove-user``.
 
-Issue #3870. One hub holds one library (``specs/cloudsync-multi-user.md``
+Issue #3870. One hub holds one library (``(private path)``
 section 1), so every test user gets their own hub PROCESS and DATA DIR on
 the shared host (section 2). This module is the one place that says what a
 per-user hub is:
@@ -102,8 +102,7 @@ class UserHubPlan:
 def validate_user(user: str) -> str:
     if not USER_RE.fullmatch(user):
         raise hub_deploy.HubDeployError(
-            f"user {user!r} is not a slug: lowercase letters, digits and '-', 2-32 chars, "
-            "starting with a letter"
+            f"user {user!r} is not a slug: lowercase letters, digits and '-', 2-32 chars, starting with a letter"
         )
     return user
 
@@ -152,16 +151,12 @@ def read_registry(root: Path) -> dict[str, UserHub]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         hubs = payload.get("hubs") if payload.get("schema") == UCFG.REGISTRY_SCHEMA else None
-        rows = (
-            {user: UserHub(**row) for user, row in hubs.items()}
-            if isinstance(hubs, dict) else None
-        )
+        rows = {user: UserHub(**row) for user, row in hubs.items()} if isinstance(hubs, dict) else None
     except (OSError, ValueError, TypeError) as exc:
         raise hub_deploy.HubDeployError(f"{path} is not a usable hub registry: {exc}") from exc
     if rows is None:
         raise hub_deploy.HubDeployError(
-            f"{path} is not a usable hub registry: expected schema {UCFG.REGISTRY_SCHEMA} "
-            "with a hubs object"
+            f"{path} is not a usable hub registry: expected schema {UCFG.REGISTRY_SCHEMA} with a hubs object"
         )
     return rows
 
@@ -183,8 +178,7 @@ def allocate_port(hubs: Mapping[str, UserHub], user: str, requested: int | None)
     if existing is not None:
         if requested is not None and requested != existing.port:
             raise hub_deploy.HubDeployError(
-                f"{user} is already registered on port {existing.port}; remove-user first "
-                f"to move it to {requested}"
+                f"{user} is already registered on port {existing.port}; remove-user first to move it to {requested}"
             )
         return existing.port
     if requested is not None:
@@ -238,7 +232,8 @@ def plan_user_hub(
         },
     )
     first_host = (
-        None if allowed_hosts is None or not allowed_hosts.strip()
+        None
+        if allowed_hosts is None or not allowed_hosts.strip()
         else hub_deploy._validated_allowed_hosts(allowed_hosts).split(",", 1)[0]
     )
     tailnet_url = None if first_host is None else f"https://{first_host}:{chosen}"
@@ -287,9 +282,7 @@ def provision_user_hub(
     backup_dir = Path(plan.hub.backup_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    identity = hub_deploy.init_hub_data_dir(
-        data_dir, env={machine_identity.IS_HUB_ENV: "1"}, name=plan.machine_name
-    )
+    identity = hub_deploy.init_hub_data_dir(data_dir, env={machine_identity.IS_HUB_ENV: "1"}, name=plan.machine_name)
     rendered = hub_deploy.render_units(
         "systemd",
         hub_deploy.RenderInputs(
@@ -369,9 +362,7 @@ def remove_user_hub(
 
 
 def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    provision = sub.add_parser(
-        "provision-user", help="create one test user's hub: data dir, port, units, enforce"
-    )
+    provision = sub.add_parser("provision-user", help="create one test user's hub: data dir, port, units, enforce")
     provision.add_argument("--user", required=True, help="user slug, e.g. ben")
     provision.add_argument("--uv", required=True, help="absolute path to uv")
     provision.add_argument("--repo-root", required=True, type=Path)
@@ -379,9 +370,7 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
     provision.add_argument("--port", type=int, default=None, help="default: next free in window")
     provision.add_argument("--unit-dir", type=Path, default=None)
     provision.add_argument("--keep", type=int, default=hub_deploy.CFG.BACKUP_KEEP)
-    provision.add_argument(
-        "--allowed-hosts", default=None, help="MagicDNS host(s) for tailscale serve"
-    )
+    provision.add_argument("--allowed-hosts", default=None, help="MagicDNS host(s) for tailscale serve")
     provision.add_argument("--systemctl", default="systemctl")
     provision.add_argument("--enable", action="store_true", help="run systemctl enable --now")
     provision.add_argument("--dry-run", action="store_true", help="print the plan, write nothing")

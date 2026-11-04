@@ -35,6 +35,7 @@ R4. Lives in ``apps.shared`` because it is a gate every write path may call,
 Read-only: never mutates any DB. ``live_report`` refreshes the working copy
 via ``paths.copy_live_dbs`` then reads through ``rekordbox_db.open_db``.
 """
+
 from __future__ import annotations
 
 import os
@@ -92,9 +93,7 @@ def rehome_path(folder_path: str, home: str | None = None) -> str | None:
     # ``\\server\share\...`` both do), so require both.
     if windows_home.is_absolute() and windows_home.root:
         return str(windows_home / PureWindowsPath(m.group(1)))
-    raise ValueError(
-        f"home must be an absolute POSIX or Windows path, got {home!r}."
-    )
+    raise ValueError(f"home must be an absolute POSIX or Windows path, got {home!r}.")
 
 
 @dataclass(slots=True)
@@ -166,9 +165,7 @@ def check_integrity(
     return rep
 
 
-def assert_healthy(
-    report: IntegrityReport, *, threshold: float = DEFAULT_THRESHOLD
-) -> None:
+def assert_healthy(report: IntegrityReport, *, threshold: float = DEFAULT_THRESHOLD) -> None:
     """Raise :class:`LibraryIntegrityError` if too many tracks fail to resolve.
 
     ``threshold`` is the maximum allowed fraction of broken tracks and must be
@@ -177,15 +174,11 @@ def assert_healthy(
     silently disabling the guard.
     """
     if not 0.0 <= threshold <= 1.0:
-        raise ValueError(
-            f"Invalid threshold {threshold!r}; expected a fraction in [0.0, 1.0]."
-        )
+        raise ValueError(f"Invalid threshold {threshold!r}; expected a fraction in [0.0, 1.0].")
     if report.with_path == 0:
         return
     if report.broken_ratio > threshold:
-        top = sorted(
-            report.stale_home_prefixes.items(), key=lambda kv: kv[1], reverse=True
-        )[:3]
+        top = sorted(report.stale_home_prefixes.items(), key=lambda kv: kv[1], reverse=True)[:3]
         hint = ", ".join(f"{p} (x{n})" for p, n in top) or "n/a"
         raise LibraryIntegrityError(
             f"Library integrity FAILED: {report.broken}/{report.with_path} tracks "
@@ -216,8 +209,7 @@ def live_report() -> IntegrityReport:
     snapshot = copied.get("rekordbox")
     if snapshot is None:
         raise FileNotFoundError(
-            "Unable to create a fresh Rekordbox snapshot: "
-            f"live DB is missing at {paths.REKORDBOX_LIVE_DB}."
+            f"Unable to create a fresh Rekordbox snapshot: live DB is missing at {paths.REKORDBOX_LIVE_DB}."
         )
     db = rekordbox_db.open_db(snapshot)
     try:

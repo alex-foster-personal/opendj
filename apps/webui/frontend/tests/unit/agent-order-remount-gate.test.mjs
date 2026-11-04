@@ -15,7 +15,10 @@ const source = await readFile(new URL('../../src/lib/rb/agent-orders.ts', import
 test('a remounted order poll starts only after the retiring plan runner has settled', () => {
 	assert.match(source, /_retiringPlanDisposal = disposal;/);
 	assert.match(source, /Promise\.all\(\[priorDisposal, _retiringPlanDisposal\]\)/);
-	assert.match(source, /void settled\.then\(\(\) => pollAgentOrders\(page, republish, \(\) => running\)\);/);
+	assert.match(
+		source,
+		/void settled\.then\(\(\) =>[\s\S]*?pollAgentOrders\(page, republish, \(\) => running, leaseId, controller\.signal\)/
+	);
 	assert.doesNotMatch(source, /void pollAgentOrders\(page, republish, \(\) => running\);/);
 });
 

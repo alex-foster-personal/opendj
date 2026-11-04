@@ -33,6 +33,7 @@ only restore while the slot still holds the state their mutation produced.
 This module owns no connection and opens no transaction. The caller holds
 ``BEGIN IMMEDIATE`` around a read-modify-write, exactly as the routes do.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -168,17 +169,14 @@ def _slot_to_index(slot: str) -> int:
 def read_row(conn: sqlite3.Connection, stable_id: str) -> tuple[dict[str, Any], str] | None:
     """The stored blob and its source, or ``None`` when the track has no row."""
     row = conn.execute(
-        "SELECT value_json, source FROM track_fields "
-        "WHERE stable_id = ? AND field_name = ?",
+        "SELECT value_json, source FROM track_fields WHERE stable_id = ? AND field_name = ?",
         (stable_id, CUE_FIELD),
     ).fetchone()
     if row is None:
         return None
     value = json.loads(row[0])
     if not isinstance(value, dict) or value.get("v") != BLOB_VERSION:
-        raise ValueError(
-            f"cue_points for {stable_id} is not a v{BLOB_VERSION} cue set: {row[0][:80]!r}"
-        )
+        raise ValueError(f"cue_points for {stable_id} is not a v{BLOB_VERSION} cue set: {row[0][:80]!r}")
     return value, str(row[1])
 
 
@@ -236,9 +234,7 @@ def stored_cues_view(conn: sqlite3.Connection, stable_id: str) -> list[dict[str,
 def _slot_cue(cues: list[dict[str, Any]], slot: str) -> dict[str, Any] | None:
     found = [c for c in cues if c["kind"] == "hot_cue" and c["slot"] == slot]
     if len(found) > 1:
-        raise CueStoreError(
-            500, "HOT_CUE_SLOT_CORRUPT", f"slot {slot} holds {len(found)} cues"
-        )
+        raise CueStoreError(500, "HOT_CUE_SLOT_CORRUPT", f"slot {slot} holds {len(found)} cues")
     return found[0] if found else None
 
 
@@ -253,9 +249,7 @@ def revision(stable_id: str, slot: str, generation: int, cue: Mapping[str, Any] 
 
 
 def _slot_revision(state: StoredCues, slot: str) -> str:
-    return revision(
-        state.stable_id, slot, state.generations.get(slot, 0), _slot_cue(state.cues, slot)
-    )
+    return revision(state.stable_id, slot, state.generations.get(slot, 0), _slot_cue(state.cues, slot))
 
 
 def hot_cue_slots(state: StoredCues) -> list[dict[str, Any]]:
@@ -288,9 +282,7 @@ def _blob(state: StoredCues) -> dict[str, Any]:
 
 def _require_revision(expected: str, current: str) -> None:
     if not expected:
-        raise CueStoreError(
-            428, "HOT_CUE_REVISION_REQUIRED", "hot-cue mutation requires an If-Match revision"
-        )
+        raise CueStoreError(428, "HOT_CUE_REVISION_REQUIRED", "hot-cue mutation requires an If-Match revision")
     if expected != current:
         raise CueStoreError(
             409,
@@ -448,8 +440,7 @@ def restore_hot_cue(
     restored = normalize_cue(preimage) if preimage is not None else None
     new_state, rev, _ = _mutate_slot(state, slot, restored, record_reversal=False)
     new_state.reversals[slot] = [
-        {**r, "consumed": True} if r["id"] == reversal_id else r
-        for r in new_state.reversals.get(slot, [])
+        {**r, "consumed": True} if r["id"] == reversal_id else r for r in new_state.reversals.get(slot, [])
     ]
     write(_blob(new_state))
     return {
@@ -465,9 +456,7 @@ def transition_in_cue(state: StoredCues) -> dict[str, Any] | None:
     """The track's transition-in cue in wire shape, or ``None``."""
     found = [c for c in state.cues if c["kind"] == TRANSITION_IN_KIND]
     if len(found) > 1:
-        raise CueStoreError(
-            500, "TRANSITION_IN_CORRUPT", f"track holds {len(found)} transition-in cues"
-        )
+        raise CueStoreError(500, "TRANSITION_IN_CORRUPT", f"track holds {len(found)} transition-in cues")
     return cue_view(found[0]) if found else None
 
 
@@ -529,9 +518,7 @@ def import_vendor_cues(
         if current_source != source:
             return False
         blob = {**current, "cues": normalized}
-    return bool(
-        set_field(stable_id, CUE_FIELD, blob, source=source, modified_at=modified_at)
-    )
+    return bool(set_field(stable_id, CUE_FIELD, blob, source=source, modified_at=modified_at))
 
 
 __all__ = [

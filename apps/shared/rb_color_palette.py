@@ -5,18 +5,19 @@ fixed 8-slot palette (0 means "no colour"). pyrekordbox does not expose
 the palette directly, so we hardcode it here with the standard Rekordbox
 XML RGB values.
 """
+
 from __future__ import annotations
 
 RB_COLOR_PALETTE: dict[int, tuple[int, int, int] | None] = {
     0: None,
-    1: (255, 0, 0),        # red
-    2: (255, 140, 0),      # orange
-    3: (255, 255, 0),      # yellow
-    4: (0, 255, 0),        # green
-    5: (0, 200, 255),      # cyan
-    6: (0, 0, 255),        # blue
-    7: (255, 0, 255),      # magenta
-    8: (255, 255, 255),    # white
+    1: (255, 0, 0),  # red
+    2: (255, 140, 0),  # orange
+    3: (255, 255, 0),  # yellow
+    4: (0, 255, 0),  # green
+    5: (0, 200, 255),  # cyan
+    6: (0, 0, 255),  # blue
+    7: (255, 0, 255),  # magenta
+    8: (255, 255, 255),  # white
 }
 
 

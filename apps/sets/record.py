@@ -68,7 +68,7 @@ def resolve_session_id(
     ISO stamp and append ``_N`` if a dir already exists (CONTEXT open
     question on clock rollback).
     """
-    base = Path(root) if root is not None else sets_paths.SETS_DIR
+    base = sets_paths.resolve_sets_root(root)
     if requested is not None:
         if not _SESSION_ID_PATTERN.match(requested):
             raise ValueError(
@@ -433,7 +433,7 @@ def start(
     copies of djay / rekordbox DBs.
     """
     cfg = config or RecorderConfig()
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     started = now or datetime.now(UTC)
     sid = resolve_session_id(session_id, root=root, now=started)
     state_obj = state or SetsState()
@@ -542,7 +542,7 @@ def finalize(
     DB row ended and unlinked the pid, leaving ``manifest.json`` absent
     and the recording in a broken state for downstream tools.
     """
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     state_obj = state or SetsState()
     row = state_obj.get_session(session_id)
     if row is None:
@@ -602,7 +602,7 @@ def resume(
     timeline.jsonl.
     """
     cfg = config or RecorderConfig()
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     state_obj = state or SetsState()
     row = state_obj.get_session(session_id)
     if row is None:
@@ -695,7 +695,7 @@ def status(
     since the performance page polls that route, it failed every e2e browser
     test in the repo.
     """
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     if not root.exists():
         return {"active": False}
     for session_dir in sorted(root.iterdir()):

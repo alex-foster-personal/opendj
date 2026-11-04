@@ -94,9 +94,7 @@ _ABSENT: bytes = bytes(_WITNESS.size)
 def file_witness(st: os.stat_result) -> bytes:
     """All six identity fields of a file, packed."""
     mode, ino, dev, size, mtime_ns, ctime_ns = identity_of(st)
-    return _WITNESS.pack(
-        mode, ino & _U64, dev & _U64, size & _U64, mtime_ns & _U64, ctime_ns & _U64
-    )
+    return _WITNESS.pack(mode, ino & _U64, dev & _U64, size & _U64, mtime_ns & _U64, ctime_ns & _U64)
 
 
 def directory_witness(st: os.stat_result) -> bytes:
@@ -121,7 +119,6 @@ def lstat_below(root_fd: int, relative: str) -> os.stat_result | OSError | None:
         # entry cannot be confirmed, so it must not be served (and the page
         # must not fail). The row goes back through the walk.
         return exc
-
 
 
 #: (preview_b64, preview_max, artwork_available, artwork_status, vocals JSON).

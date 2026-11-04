@@ -1,7 +1,8 @@
 /**
  * Spotify source-panel pin/recent setters (#315). Split out of
  * prefs.svelte.ts the same way level-calibration-prefs.ts splits R/M
- * capture: localStorage only, no disk PUT.
+ * capture. Pins and recents stay in localStorage; the shrink choice is also
+ * written to ui-prefs, so PUT /api/v1/ui-prefs reads and changes it too.
  */
 import type { SpotifyLibraryPref } from './prefs-types';
 import { prependRecentId, togglePinnedId } from './spotify-playlist-rank';
@@ -12,10 +13,12 @@ export interface SpotifyLibraryPrefsState {
 
 export function makeSpotifyLibrarySetters(
 	state: SpotifyLibraryPrefsState,
-	persist: () => void
+	persist: () => void,
+	sync: (patch: { spotify_shrink_main_for_player: boolean }) => void
 ): {
 	toggleSpotifyPinned(playlistId: string): void;
 	rememberSpotifyRecent(playlistId: string): void;
+	setSpotifyShrinkMain(shrink: boolean): void;
 } {
 	function toggleSpotifyPinned(playlistId: string): void {
 		const next = togglePinnedId(state.spotify_library.pinned_ids, playlistId);
@@ -31,5 +34,12 @@ export function makeSpotifyLibrarySetters(
 		persist();
 	}
 
-	return { toggleSpotifyPinned, rememberSpotifyRecent };
+	function setSpotifyShrinkMain(shrink: boolean): void {
+		if (state.spotify_library.shrink_main_for_player === shrink) return;
+		state.spotify_library = { ...state.spotify_library, shrink_main_for_player: shrink };
+		persist();
+		sync({ spotify_shrink_main_for_player: shrink });
+	}
+
+	return { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain };
 }

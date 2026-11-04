@@ -26,6 +26,7 @@ Lock JSON shape::
       "version": 1
     }
 """
+
 from __future__ import annotations
 
 import atexit
@@ -134,18 +135,14 @@ class S3Client(Protocol):
     def get_object(self, bucket: str, key: str) -> tuple[bytes, str] | None:
         """Return ``(body, etag)`` or ``None`` if the object does not exist."""
 
-    def put_object_if_none_match(
-        self, bucket: str, key: str, body: bytes
-    ) -> tuple[bool, str | None]:
+    def put_object_if_none_match(self, bucket: str, key: str, body: bytes) -> tuple[bool, str | None]:
         """Create if absent. Returns ``(created, new_etag)``.
 
         ``created=False`` means the key already existed; in that case the
         caller should re-read to learn the holder.
         """
 
-    def put_object_if_match(
-        self, bucket: str, key: str, body: bytes, etag: str
-    ) -> tuple[bool, str | None]:
+    def put_object_if_match(self, bucket: str, key: str, body: bytes, etag: str) -> tuple[bool, str | None]:
         """CAS write. Returns ``(ok, new_etag)``. ``ok=False`` on mismatch.
 
         ``etag="*"`` is the S3 wildcard meaning "match any existing
@@ -153,9 +150,7 @@ class S3Client(Protocol):
         current etag). Any other string is a strict etag match.
         """
 
-    def delete_object_if_match(
-        self, bucket: str, key: str, etag: str
-    ) -> bool:
+    def delete_object_if_match(self, bucket: str, key: str, etag: str) -> bool:
         """CAS delete. Returns ``True`` on success, ``False`` on mismatch."""
 
 
@@ -181,9 +176,7 @@ class FakeS3Client:
             got = self._store.get((bucket, key))
             return (got[0], got[1]) if got else None
 
-    def put_object_if_none_match(
-        self, bucket: str, key: str, body: bytes
-    ) -> tuple[bool, str | None]:
+    def put_object_if_none_match(self, bucket: str, key: str, body: bytes) -> tuple[bool, str | None]:
         with self._lock:
             if (bucket, key) in self._store:
                 return False, None
@@ -191,9 +184,7 @@ class FakeS3Client:
             self._store[(bucket, key)] = (body, etag)
             return True, etag
 
-    def put_object_if_match(
-        self, bucket: str, key: str, body: bytes, etag: str
-    ) -> tuple[bool, str | None]:
+    def put_object_if_match(self, bucket: str, key: str, body: bytes, etag: str) -> tuple[bool, str | None]:
         with self._lock:
             existing = self._store.get((bucket, key))
             if existing is None:
@@ -206,9 +197,7 @@ class FakeS3Client:
             self._store[(bucket, key)] = (body, new_etag)
             return True, new_etag
 
-    def delete_object_if_match(
-        self, bucket: str, key: str, etag: str
-    ) -> bool:
+    def delete_object_if_match(self, bucket: str, key: str, etag: str) -> bool:
         with self._lock:
             existing = self._store.get((bucket, key))
             if existing is None or existing[1] != etag:
@@ -289,9 +278,7 @@ class Lock:
         with self._mutex:
             candidate = self._build_holder()
             body = candidate.to_json().encode("utf-8")
-            created, etag = self.s3.put_object_if_none_match(
-                self.cfg.state_bucket, LOCK_KEY, body
-            )
+            created, etag = self.s3.put_object_if_none_match(self.cfg.state_bucket, LOCK_KEY, body)
             if created and etag is not None:
                 self._held = (candidate, etag)
                 return AcquireResult(success=True, holder=candidate, etag=etag)
@@ -300,44 +287,30 @@ class Lock:
             got = self.s3.get_object(self.cfg.state_bucket, LOCK_KEY)
             if got is None:
                 # Raced: gone between PUT rejection and GET. One retry.
-                created, etag = self.s3.put_object_if_none_match(
-                    self.cfg.state_bucket, LOCK_KEY, body
-                )
+                created, etag = self.s3.put_object_if_none_match(self.cfg.state_bucket, LOCK_KEY, body)
                 if created and etag is not None:
                     self._held = (candidate, etag)
-                    return AcquireResult(
-                        success=True, holder=candidate, etag=etag
-                    )
-                return AcquireResult(
-                    success=False, error="race on acquire; retry later"
-                )
+                    return AcquireResult(success=True, holder=candidate, etag=etag)
+                return AcquireResult(success=False, error="race on acquire; retry later")
             existing_body, existing_etag = got
             try:
                 existing_holder = LockHolder.from_json(existing_body)
             except Exception:
                 # Corrupt lock. Overwrite by etag.
-                ok, new_etag = self.s3.put_object_if_match(
-                    self.cfg.state_bucket, LOCK_KEY, body, existing_etag
-                )
+                ok, new_etag = self.s3.put_object_if_match(self.cfg.state_bucket, LOCK_KEY, body, existing_etag)
                 if ok and new_etag is not None:
                     self._held = (candidate, new_etag)
-                    return AcquireResult(
-                        success=True, holder=candidate, etag=new_etag
-                    )
+                    return AcquireResult(success=True, holder=candidate, etag=new_etag)
                 return AcquireResult(
                     success=False,
                     error="corrupt lock object and CAS overwrite failed",
                 )
 
             if existing_holder.is_expired(self._now()):
-                ok, new_etag = self.s3.put_object_if_match(
-                    self.cfg.state_bucket, LOCK_KEY, body, existing_etag
-                )
+                ok, new_etag = self.s3.put_object_if_match(self.cfg.state_bucket, LOCK_KEY, body, existing_etag)
                 if ok and new_etag is not None:
                     self._held = (candidate, new_etag)
-                    return AcquireResult(
-                        success=True, holder=candidate, etag=new_etag
-                    )
+                    return AcquireResult(success=True, holder=candidate, etag=new_etag)
                 return AcquireResult(
                     success=False,
                     holder=existing_holder,
@@ -357,14 +330,10 @@ class Lock:
             holder, etag = self._held
             refreshed = self._refresh_holder(holder)
             body = refreshed.to_json().encode("utf-8")
-            ok, new_etag = self.s3.put_object_if_match(
-                self.cfg.state_bucket, LOCK_KEY, body, etag
-            )
+            ok, new_etag = self.s3.put_object_if_match(self.cfg.state_bucket, LOCK_KEY, body, etag)
             if not ok or new_etag is None:
                 self._held = None
-                raise LockLostError(
-                    "heartbeat CAS failed; another host has the lock"
-                )
+                raise LockLostError("heartbeat CAS failed; another host has the lock")
             self._held = (refreshed, new_etag)
 
     def release(self) -> bool:
@@ -378,9 +347,7 @@ class Lock:
                 return False
             _, etag = self._held
             self._held = None
-            return self.s3.delete_object_if_match(
-                self.cfg.state_bucket, LOCK_KEY, etag
-            )
+            return self.s3.delete_object_if_match(self.cfg.state_bucket, LOCK_KEY, etag)
 
     def install_signal_handlers(self) -> None:
         """Wire SIGTERM / SIGINT / atexit to :meth:`release`.
@@ -410,6 +377,7 @@ class Lock:
                 prior(signum, frame)
             elif prior in (signal.SIG_DFL, signal.SIG_IGN, None):
                 raise SystemExit(128 + signum)
+
         return handler
 
 

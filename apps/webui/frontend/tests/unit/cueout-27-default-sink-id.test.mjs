@@ -88,21 +88,24 @@ test('the default alias names the device it follows as its physical output', asy
 	const access = await loadTypeScriptModule('src/lib/player/io-device-access.ts');
 	const outputs = access.listIoDevices(CHROME_LISTING).outputs;
 	assert.equal(outputs.find((output) => output.id === 'default').physical_id, 'spk-1');
-	assert.equal(outputs.find((output) => output.id === 'spk-1').physical_id, undefined);
+	// GB-6846: the complete DTO carries the key always; the browser's answer is null, not absent.
+	assert.equal(outputs.find((output) => output.id === 'spk-1').physical_id, null);
 	const noGroup = access.listIoDevices(CHROME_LISTING.map(({ groupId, ...device }) => device)).outputs;
-	assert.equal(noGroup.find((output) => output.id === 'default').physical_id, undefined,
+	assert.equal(noGroup.find((output) => output.id === 'default').physical_id, null,
 		'without a groupId match the alias stays its own output');
 });
 
-test('CUE on the default alias of the MAIN device runs split cue, not two outputs on one speaker', async () => {
+test('CUE on the default alias of the MAIN device is refused, not two outputs on one speaker (AUDFID-01: never an automatic split)', async () => {
 	const access = await loadTypeScriptModule('src/lib/player/io-device-access.ts');
 	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	const outputs = access.listIoDevices(CHROME_LISTING).outputs;
-	const cueOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'default', selectedMasterId: 'spk-1', currentRoomId: null });
-	assert.equal(cueOnAlias.splitSameDevice, true,
+	const cueOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'default', selectedMasterId: 'spk-1' });
+	assert.equal(cueOnAlias.cueId, null,
 		'if "default" and the speakers read as two outputs then the cue mix plays in the room - broken');
-	const mainOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'spk-1', selectedMasterId: 'default', currentRoomId: null });
-	assert.equal(mainOnAlias.splitSameDevice, true);
-	const distinct = headphones.dualSinkAssignment({ outputs, selectedCueId: 'usb-1', selectedMasterId: 'default', currentRoomId: null });
-	assert.notEqual(distinct.splitSameDevice, true, 'a genuinely different device keeps two outputs');
+	assert.match(cueOnAlias.cueRefusal, /same output/);
+	const mainOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'spk-1', selectedMasterId: 'default' });
+	assert.equal(mainOnAlias.cueId, null);
+	const distinct = headphones.dualSinkAssignment({ outputs, selectedCueId: 'usb-1', selectedMasterId: 'default' });
+	assert.equal(distinct.cueId, 'usb-1', 'a genuinely different device keeps two outputs');
+	assert.equal(distinct.cueRefusal, undefined);
 });

@@ -5,6 +5,7 @@ this module so there is exactly one SQL path. ``StateWriter`` wraps it with
 durable events; callers that only need the table update (dry-run guards)
 import from here directly.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -65,7 +66,7 @@ def projected_present_count(
     """Present count after applying ``rows`` without writing them."""
     present = {
         stable_id
-        for stable_id, in conn.execute(
+        for (stable_id,) in conn.execute(
             "SELECT track_availability.stable_id FROM track_availability "
             "JOIN tracks ON tracks.stable_id = track_availability.stable_id "
             "WHERE tracks.deleted_at IS NULL AND track_availability.state = 'present'"
@@ -132,8 +133,7 @@ def _load_existing_availability(
         chunk = scope[start : start + ID_BIND_BATCH]
         placeholders = ",".join("?" * len(chunk))
         for stable_id, state, checked_path in conn.execute(
-            f"SELECT stable_id, state, checked_path FROM track_availability "
-            f"WHERE stable_id IN ({placeholders})",
+            f"SELECT stable_id, state, checked_path FROM track_availability WHERE stable_id IN ({placeholders})",
             chunk,
         ):
             existing[stable_id] = (state, checked_path)
@@ -174,9 +174,7 @@ def upsert_availability_rows(
     existing = _load_existing_availability(conn, existing_scope_stable_ids)
     for row in rows:
         if row.state not in AVAILABILITY_STATES:
-            raise ValueError(
-                f"state {row.state!r} not in {AVAILABILITY_STATES}"
-            )
+            raise ValueError(f"state {row.state!r} not in {AVAILABILITY_STATES}")
         report.total += 1
         report.bump(row.state)
         prior = existing.get(row.stable_id)

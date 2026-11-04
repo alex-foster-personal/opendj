@@ -3,11 +3,22 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from apps.shared.state.schema import apply_migrations
 from scripts.redteam_fixture_library import REKORDBOX_SCHEMA_PATH, REKORDBOX_TIMESTAMP
+
+
+def find_track_in_wheel(result: dict[str, Any], stable_id: str) -> dict[str, Any]:
+    """Locate one track dict inside a ``query_library_wheel`` payload."""
+    for family in result["families"]:
+        for genre in family["genres"]:
+            for track in genre["tracks"]:
+                if track["stable_id"] == stable_id:
+                    return track
+    raise AssertionError(f"{stable_id} not found in result")
 
 # djmdGenre rows: (ID, Name)
 GENRES = {

@@ -37,16 +37,15 @@ BAD_ALIASES = ["-oProxyCommand=x", "two words", "host;id", "a,b=c"]
 
 
 @pytest.mark.parametrize("value", [None, "", " ", " , "], ids=["unset", "blank", "spaces", "commas"])
-def test_sink_triage_sources_default_to_the_house_names(value: str | None, tmp_path: Path) -> None:
-    """[if] unset or blank sink-triage names are not nucbox + silver, air [then] fail, [else stop]."""
+def test_sink_triage_sources_raise_when_unset_or_blank(value: str | None) -> None:
+    """[if] unset or blank sink-triage names do not raise [then] fail, [else stop]."""
     environ = (
         {}
         if value is None
         else {sink_triage.LOCAL_SOURCE_NAME_ENV: value.replace(",", ""), sink_triage.SSH_SOURCES_ENV: value}
     )
-    sources = sink_triage.default_sources(tmp_path, environ)
-    assert [(s.name, s.mode) for s in sources] == [("nucbox", "local"), ("silver", "ssh"), ("air", "ssh")]
-    assert sources[0].sink_path == str(tmp_path / "logs/opendj-error-sink.jsonl")
+    with pytest.raises(ValueError, match="MDT_SINK_TRIAGE"):
+        sink_triage.source_names(environ)
 
 
 def test_sink_triage_override_names_every_source(tmp_path: Path) -> None:
@@ -69,16 +68,21 @@ def test_sink_triage_refuses_a_name_that_is_not_an_ssh_alias(variable: str, bad:
     """[if] a non-alias reaches sink-triage's ssh argv [then] fail, [else stop]."""
     if variable == sink_triage.SSH_SOURCES_ENV and "," in bad:
         bad = bad.split(",")[1]
+    base = {
+        sink_triage.LOCAL_SOURCE_NAME_ENV: "nucbox",
+        sink_triage.SSH_SOURCES_ENV: "silver,air",
+    }
     with pytest.raises(ValueError, match=variable):
-        sink_triage.source_names({variable: bad})
+        sink_triage.source_names({**base, variable: bad})
 
 
 @pytest.mark.parametrize("value", [None, "", " "], ids=["unset", "blank", "spaces"])
-def test_sol_remote_seat_defaults_to_the_house_seat(value: str | None) -> None:
-    """[if] unset or blank seat config is not nucbox-wsl on NucBoxEVO-X2 [then] fail, [else stop]."""
+def test_sol_remote_seat_raises_when_unset_or_blank(value: str | None) -> None:
+    """[if] unset or blank seat config does not raise [then] fail, [else stop]."""
     environ = {} if value is None else {sol_review.REMOTE_SEAT_ENV: value, sol_review.REMOTE_SEAT_HOSTNAMES_ENV: value}
-    assert sol_review.remote_seat(environ) == "nucbox-wsl"
-    assert sol_review.remote_seat_hostnames(environ) == frozenset({"NucBoxEVO-X2"})
+    with pytest.raises(TriageError, match="MDT_SOL_REMOTE"):
+        sol_review.remote_seat(environ)
+        sol_review.remote_seat_hostnames(environ)
 
 
 def test_sol_remote_seat_override_names_the_seat_and_its_hosts() -> None:
@@ -101,44 +105,25 @@ def test_sol_seat_config_refuses_a_name_that_is_not_an_ssh_alias(variable: str, 
 
 
 _PROBE = """
-import json, tempfile
+import json, sys, tempfile
 from pathlib import Path
 from scripts import sink_triage, sol_review
-print(json.dumps({
-    "sink_sources": [s.name for s in sink_triage.default_sources(Path(tempfile.gettempdir()))],
-    "seats": list(sol_review.configured_seats()),
-    "local_seat_hosts": {k: sorted(v) for k, v in sol_review.local_seat_hosts().items()},
-}))
+try:
+    print(json.dumps({
+        "sink_sources": [s.name for s in sink_triage.default_sources(Path(tempfile.gettempdir()))],
+        "seats": list(sol_review.configured_seats()),
+        "local_seat_hosts": {k: sorted(v) for k, v in sol_review.local_seat_hosts().items()},
+    }))
+except (ValueError, Exception) as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
 """
 
 
-def _config_in_a_fresh_process(overrides: dict[str, str]) -> dict[str, object]:
-    env = {k: v for k, v in os.environ.items() if k not in ENV_NAMES}
-    env.update(overrides)
-    proc = subprocess.run(
-        [sys.executable, "-c", _PROBE],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stderr[-3000:]
-    return json.loads(proc.stdout.strip().splitlines()[-1])
-
-
 @pytest.mark.parametrize(
-    ("overrides", "expected"),
+    ("overrides", "expected", "expect_ok"),
     [
-        (
-            {},
-            {
-                "sink_sources": ["nucbox", "silver", "air"],
-                "seats": ["local", "nucbox-wsl"],
-                "local_seat_hosts": {"nucbox-wsl": ["NucBoxEVO-X2"]},
-            },
-        ),
+        ({}, {}, False),
         (
             {
                 "MDT_SINK_TRIAGE_LOCAL_NAME": "triage-host",
@@ -151,10 +136,29 @@ def _config_in_a_fresh_process(overrides: dict[str, str]) -> dict[str, object]:
                 "seats": ["local", "review-seat"],
                 "local_seat_hosts": {"review-seat": ["SeatHost"]},
             },
+            True,
         ),
     ],
     ids=["unset", "override"],
 )
-def test_the_scripts_read_the_process_environment(overrides: dict[str, str], expected: dict[str, object]) -> None:
+def test_the_scripts_read_the_process_environment(
+    overrides: dict[str, str], expected: dict[str, object], expect_ok: bool
+) -> None:
     """[if] the module-level config ignores the process env [then] fail, [else stop]."""
-    assert _config_in_a_fresh_process(overrides) == expected
+    env = {k: v for k, v in os.environ.items() if k not in ENV_NAMES}
+    env.update(overrides)
+    proc = subprocess.run(
+        [sys.executable, "-c", _PROBE],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if not expect_ok:
+        assert proc.returncode != 0
+        assert "MDT_" in (proc.stderr or proc.stdout)
+        return
+    assert proc.returncode == 0, proc.stderr[-3000:]
+    assert json.loads(proc.stdout.strip().splitlines()[-1]) == expected

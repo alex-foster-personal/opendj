@@ -1,6 +1,6 @@
 """Rekordbox frame arithmetic -- one home for the 44.1 kHz heuristic.
 
-T3b defect D3 (``.planning/t3b-decomposition-map.md`` section 3): the
+T3b defect D3 (``(private path)`` section 3): the
 millisecond-to-frame conversion existed twice, byte-identical, in
 ``apps/sync/rb_writer.py`` and in ``rb_vendor.py``'s hot-cue writer, whose
 docstring named the other copy without either ever being consolidated.
@@ -24,6 +24,7 @@ never built, and folding this primitive into a module that raises
 ``HTTPException`` would drag the web framework into ``apps.sync``. This module
 disappears into ``cues.py`` once that error type lands.
 """
+
 from __future__ import annotations
 
 #: Frames per millisecond at 44.1 kHz.

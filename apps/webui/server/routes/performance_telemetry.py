@@ -14,13 +14,17 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from apps.shared.machine_pressure import (
+    ShellRegistration,
     live_process_family_state,
     opendj_process_name,
     read_machine_pressure,
+    read_shell_registration,
     valid_kernel_pressure_level,
 )
 
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
+from ..shell_output_health import data_dir_from_state_db
+from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/performance/telemetry", tags=["performance-telemetry"])
 log = logging.getLogger(__name__)
@@ -31,6 +35,12 @@ DEFAULT_PROCESS_LOG_DIRS = (
 )
 MAX_PROCESS_RECORD_BYTES = 512 * 1024
 FRESH_PROCESS_SAMPLE_SECONDS = 45.0
+# How far in the FUTURE a probe timestamp may sit and still count as fresh:
+# the probe and the engine read the same wall clock, so only rounding and a
+# write in flight can put a sample ahead of now. Beyond this the clock moved
+# back after the write (or the record is wrong), so its age is unknown and it
+# is treated as stale, never as fresh.
+FUTURE_PROCESS_SAMPLE_SKEW_SECONDS = 5.0
 SAFE_TOTAL_KEYS = frozenset(
     {
         "physical_footprint_mb",
@@ -191,7 +201,8 @@ def _timestamp_age_seconds(value: object) -> float | None:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return max(0.0, (datetime.now(UTC) - parsed).total_seconds())
+    # Signed: a negative age is a future-dated sample, judged by the caller.
+    return (datetime.now(UTC) - parsed).total_seconds()
 
 
 def _footprint_by_role(processes: object) -> dict[str, float]:
@@ -231,21 +242,83 @@ def _jsonl_member(process: dict[str, object]) -> dict[str, object]:
     return member
 
 
+def _probe_record_is_this_app(live_pids: set[int], jsonl_processes: list[object]) -> bool:
+    """True when the probe record names at least one pid of this engine's family."""
+
+    return any(
+        isinstance(process, dict) and process.get("pid") in live_pids
+        for process in jsonl_processes
+    )
+
+
+# Probe-only fields a live member takes from the probe row for the same pid.
+# The live walk measures resident MB itself; the probe adds what only it knows:
+# the role (``webkit-webcontent`` tells the page its own process is measured)
+# and the macOS physical footprint.
+_PROBE_ONLY_FIELDS = ("role", "physical_footprint_mb")
+
+
+def _live_rows(
+    live_members: list[dict[str, Any]],
+) -> tuple[list[dict[str, object]], dict[int, dict[str, object]]]:
+    members: list[dict[str, object]] = []
+    live_by_pid: dict[int, dict[str, object]] = {}
+    for live in live_members:
+        member: dict[str, object] = {
+            key: value for key, value in live.items() if key != "pid"
+        }
+        member["source"] = MEMBER_SOURCE_LIVE
+        members.append(member)
+        pid = live.get("pid")
+        if isinstance(pid, int):
+            live_by_pid[pid] = member
+    return members, live_by_pid
+
+
+def _probe_applies(
+    live_pids: set[int], jsonl_processes: list[object], probe_fresh: bool
+) -> bool:
+    # A stale probe sample describes processes as they were, not as they are:
+    # none of its rows or fields enter the current figure.
+    # The native probe watches one installed app. When none of the pids it
+    # recorded is in this engine's own family (or there is no family to check
+    # against: ownership is never assumed), it measured another Open DJ (the
+    # installed app beside a dev checkout, say), and its members are not this
+    # app's memory.
+    return probe_fresh and _probe_record_is_this_app(live_pids, jsonl_processes)
+
+
+def _adopt_probe_fields(target: dict[str, object], process: dict[str, Any]) -> None:
+    probe = _jsonl_member(process)
+    taken = [key for key in _PROBE_ONLY_FIELDS if key in probe]
+    for key in taken:
+        target[key] = probe[key]
+    # Names what came from the probe, so a client that keeps this body past the
+    # probe sample's own lifetime can drop exactly those fields and keep the
+    # live reading.
+    target["probe_fields"] = taken
+
+
 def _merge_members(
     live_members: list[dict[str, Any]],
     live_pids: set[int],
     jsonl_processes: object,
+    *,
+    probe_fresh: bool,
 ) -> list[dict[str, object]]:
-    members: list[dict[str, object]] = [
-        {**member, "source": MEMBER_SOURCE_LIVE} for member in live_members
-    ]
-    if not isinstance(jsonl_processes, list):
+    members, live_by_pid = _live_rows(live_members)
+    if not isinstance(jsonl_processes, list) or not _probe_applies(
+        live_pids, jsonl_processes, probe_fresh
+    ):
         return members
     for process in jsonl_processes:
         if not isinstance(process, dict):
             continue
         pid = process.get("pid")
         if isinstance(pid, int) and pid in live_pids:
+            target = live_by_pid.get(pid)
+            if target is not None:
+                _adopt_probe_fields(target, process)
             continue
         members.append(_jsonl_member(process))
     return members
@@ -279,16 +352,91 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
     )
     log_dirs = tuple(Path(directory) for directory in configured)
     record = _latest_process_record(log_dirs)
-    live_members, live_pids = live_process_family_state()
-    pressure = read_machine_pressure()
+    # The walk's root is this engine's own pid unless app.state names another
+    # (``process_family_root_pid``, set like ``performance_process_log_dirs``
+    # after construction): the seam a test uses to root the walk at a real
+    # process of its own, including one that has exited.
+    root_pid = getattr(request.app.state, "process_family_root_pid", None)
+    registration = _shell_registration(request)
+    live_members, live_pids = live_process_family_state(
+        engine_pid=root_pid, registered_shell_pid=registration.pid
+    )
+    body = _process_body(live_members, live_pids, record, read_machine_pressure())
+    body["shell_registration"] = registration.report()
+    return body
 
-    if not live_members and record is None:
-        return {
-            "available": False,
-            "reason": (
-                "no live opendj-* processes and native process probe has not written a sample"
-            ),
-        }
+
+# The last rejection reason logged, so a 10 s poll logs each reason once.
+_rejection_logged: dict[str, str | None] = {"reason": None}
+
+
+def _shell_registration(request: Request) -> ShellRegistration:
+    """The shell registered with this engine (``.engine.parent`` in its data dir).
+
+    The directory is the engine's data dir, the one its shell writes to,
+    unless ``app.state.shell_registration_dir`` names another (set after
+    construction like ``performance_process_log_dirs``: the seam a test uses
+    to register a real process of its own). A rejected registration is
+    logged once per reason and reported in the body, never used.
+    """
+
+    state = request.app.state
+    directory = (
+        state.shell_registration_dir
+        if hasattr(state, "shell_registration_dir")
+        else data_dir_from_state_db(resolve_state_db_path(request))
+    )
+    registration = read_shell_registration(directory)
+    reason = registration.reason if registration.status == "rejected" else None
+    if reason is not None and reason != _rejection_logged["reason"]:
+        log.warning("shell registration in %s ignored: %s", directory, reason)
+    _rejection_logged["reason"] = reason
+    return registration
+
+
+def _sample_is_stale(record: dict[str, object] | None, age: float | None) -> bool:
+    return record is not None and (
+        age is None
+        or age > FRESH_PROCESS_SAMPLE_SECONDS
+        or age < -FUTURE_PROCESS_SAMPLE_SKEW_SECONDS
+    )
+
+
+def _process_body(
+    live_members: list[dict[str, Any]],
+    live_pids: set[int],
+    record: dict[str, object] | None,
+    pressure: dict[str, object],
+) -> dict[str, object]:
+    """The /processes body from one live walk, the latest probe record and pressure.
+
+    With no live member the body is ``available: false``, whatever the probe
+    wrote: the live family is the only thing that ties a probe record to THIS
+    engine (an overlapping pid), and freshness alone does not, so a record
+    read without it could be the installed app's beside a dev engine, and an
+    empty family would read as a measured zero. The body still carries
+    ``stale`` and ``age_seconds`` when there is a record: the frontend reads
+    them from an unavailable body too, so the hover can say a stale sample's
+    footprints were left out.
+    """
+
+    age = None if record is None else _timestamp_age_seconds(record.get("timestamp"))
+    stale = _sample_is_stale(record, age)
+    if not live_members:
+        if record is None:
+            reason = "no live opendj-* processes and native process probe has not written a sample"
+        elif stale:
+            reason = "no live opendj-* processes and the native process probe sample is stale"
+        else:
+            reason = (
+                "no live opendj-* processes, so the native process probe sample cannot be "
+                "attributed to this engine"
+            )
+        unavailable: dict[str, object] = {"available": False, "reason": reason}
+        if record is not None:
+            unavailable["stale"] = stale
+            unavailable["age_seconds"] = None if age is None else round(age, 3)
+        return unavailable
 
     body: dict[str, object] = {
         "available": True,
@@ -296,15 +444,15 @@ def latest_process_telemetry(request: Request) -> dict[str, object]:
             live_members,
             live_pids,
             record.get("processes") if record else None,
+            probe_fresh=record is not None and not stale,
         ),
     }
     body.update(_pressure_overlay_fields(pressure))
 
     if record is not None:
-        age = _timestamp_age_seconds(record.get("timestamp"))
         body["timestamp"] = record.get("timestamp")
         body["age_seconds"] = None if age is None else round(age, 3)
-        body["stale"] = age is None or age > FRESH_PROCESS_SAMPLE_SECONDS
+        body["stale"] = stale
         body["totals"] = _safe_totals(record.get("totals"))
         body["by_role_mb"] = _footprint_by_role(record.get("processes"))
 

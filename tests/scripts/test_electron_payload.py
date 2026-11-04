@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from scripts import build_engine_payload, build_ffmpeg_lgpl, electron_payload, payload_beatgrid
+from scripts.payload_output_probe import OUTPUT_PROBE_RELATIVE
 
 pytestmark = pytest.mark.requirement("OPS-63")
 
@@ -154,6 +155,9 @@ def test_darwin_install_needs_ditto_and_never_falls_back(tmp_path: Path) -> None
 
     resources = _placeholder(tmp_path)
     staged = _stage(tmp_path)
+    probe = staged / "bin" / "odj-output-probe"
+    probe.write_text("#!/bin/sh\n", encoding="utf-8")
+    probe.chmod(0o755)
     no_tools = tmp_path / "empty-path"
     no_tools.mkdir()
     code = (
@@ -182,6 +186,27 @@ def test_windows_needs_a_file_not_an_executable_bit(tmp_path: Path) -> None:
     assert electron_payload.missing_executables(staged, "win32") == []
     if sys.platform != "win32":
         assert electron_payload.missing_executables(staged, "linux") == list(electron_payload.REQUIRED_EXECUTABLES)
+
+
+def test_required_executables_adds_the_probe_only_on_darwin() -> None:
+    assert electron_payload.required_executables("darwin")[-1] == OUTPUT_PROBE_RELATIVE
+    assert electron_payload.required_executables("linux") == electron_payload.REQUIRED_EXECUTABLES
+    assert electron_payload.required_executables("win32") == electron_payload.REQUIRED_EXECUTABLES
+
+
+@POSIX_ONLY
+def test_darwin_stage_without_the_output_probe_is_refused(tmp_path: Path) -> None:
+    resources = _placeholder(tmp_path)
+    with pytest.raises(electron_payload.PayloadInstallError, match="odj-output-probe"):
+        electron_payload.install_payload(resources, _stage(tmp_path), "darwin")
+    assert sorted(p.name for p in (resources / "payload").iterdir()) == ["README.md"]
+
+
+@POSIX_ONLY
+def test_linux_stage_without_the_output_probe_still_installs(tmp_path: Path) -> None:
+    resources = _placeholder(tmp_path)
+    target = electron_payload.install_payload(resources, _stage(tmp_path), "linux")
+    assert (target / "bin" / "opendj-engine").is_file()
 
 
 @pytest.mark.parametrize(

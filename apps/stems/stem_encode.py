@@ -40,11 +40,6 @@ class Mp3EncoderUnavailableError(RuntimeError):
     """soundfile here cannot write MP3, so no lossy stem can be honest."""
 
 
-class StemPartOverSourceError(RuntimeError):
-    """An MP3 part is still larger than its source at the lowest usable CBR
-    rung, so it is not published (STEM-57)."""
-
-
 def require_mp3_encoder(subtype: str = MP3_SUBTYPE) -> None:
     """Raise before any work when soundfile cannot write MP3.
 
@@ -158,6 +153,7 @@ def encode_part(
     sample_rate: int,
     *,
     codec: str,
+    part: str,
     mp3_settings: str | None,
     source_bytes: int,
     source_kbps: float,
@@ -166,18 +162,16 @@ def encode_part(
     """Write one stem part at ``out_path`` in ``codec``; return (bytes,
     final mp3 CBR settings string, or None if rung 1 held / codec is flac).
 
-    An MP3 part larger than its source is never returned (STEM-57). When
-    rung 1 is over, the part is re-encoded at the nearest standard CBR at or
-    under the source rate (rung 2). LAME pads up to two frames and a source
-    can sit a hair above a standard rate, so rung 2 can still land a few
-    hundred bytes over: the encode then steps down ``MP3_CBR_LADDER`` one rate
-    at a time until the part fits. If the lowest rate is still over, the
-    oversized file is removed and ``StemPartOverSourceError`` names the part
-    and both sizes. Both callers write into a private work directory, so a
-    raise here happens before anything is published or swapped.
-
-    This is stricter than ``stem_size_policy``'s batch check, which records an
-    overage for routes that encode elsewhere; that check is unchanged.
+    STEM-8231 (whole set <= track, 64 kbps floor): ``mp3_settings`` is the
+    rung-1 whole-set CBR (``lame_<N>kbps_cbr``; None derives it with ``pol.
+    mp3_lame_settings_for_source_kbps``) and the part should fit its quarter
+    of the source (``pol.whole_set_part_budget_bytes``). LAME pads up to two
+    frames, so rung 1 can land a few hundred bytes over: the encode then steps
+    down the ladder one rate at a time (the safety rung), never under the
+    part's floor (``pol.mp3_part_floor_kbps``: 96 kbps for bass and drums, 64
+    for vocals and other; a rung 1 under it is lifted to it). If the part is
+    still over at that floor it is KEPT at the floor: the maintainer chose those floors
+    over the size rule. ``part`` is the stem name (vocals/drums/bass/other).
     """
     if codec == "flac":
         flac_bytes = encode_flac_bytes(arr, sample_rate)
@@ -186,21 +180,13 @@ def encode_part(
     if codec != "mp3":
         raise ValueError(f"stem codec must be flac or mp3, got {codec!r}")
 
-    cbr_kbps = pol.MP3_CBR_KBPS if mp3_settings == "lame_320kbps_cbr" else None
-    encoded = encode_mp3(arr, sample_rate, out_path, cbr_kbps=cbr_kbps)
-    if not pol.lossy_stem_exceeds_source(source_bytes=source_bytes, part_bytes=len(encoded), codec=codec):
-        return encoded, None
-
-    rung2_cbr = pol.mp3_rung2_cbr_kbps(source_kbps)
-    for cbr in pol.MP3_CBR_LADDER[pol.MP3_CBR_LADDER.index(rung2_cbr) :]:
+    budget = pol.whole_set_part_budget_bytes(source_bytes)
+    rung1_cbr = pol.mp3_cbr_kbps_from_settings(mp3_settings or pol.mp3_lame_settings_for_source_kbps(source_kbps))
+    for cbr in pol.mp3_whole_set_step_down_kbps(rung1_cbr, pol.mp3_part_floor_kbps(part)):
         encoded = encode_mp3(arr, sample_rate, out_path, cbr_kbps=cbr)
-        if not pol.lossy_stem_exceeds_source(source_bytes=source_bytes, part_bytes=len(encoded), codec=codec):
-            return encoded, f"lame_{cbr}kbps_cbr"
-    out_path.unlink()
-    raise StemPartOverSourceError(
-        f"stem part {out_path.name} is {len(encoded)} bytes at {pol.MP3_CBR_LADDER[-1]} kbps CBR, the lowest "
-        f"MP3 rate, which is still over its {source_bytes}-byte source ({source_kbps:.2f} kbps); not published"
-    )
+        if len(encoded) <= budget:
+            break
+    return encoded, (None if cbr == rung1_cbr else f"lame_{cbr}kbps_cbr")
 
 
 __all__ = [
@@ -208,7 +194,6 @@ __all__ = [
     "MP3_MPEG1_MIN_KBPS",
     "SNDFILE_MP3_MAX_COMPRESSION",
     "Mp3EncoderUnavailableError",
-    "StemPartOverSourceError",
     "encode_flac_bytes",
     "encode_mp3",
     "encode_part",

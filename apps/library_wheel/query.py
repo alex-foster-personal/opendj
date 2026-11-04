@@ -85,9 +85,7 @@ def _artist_of(artists_json: str | None) -> str | None:
 
 
 def _load_tracks(state: sqlite3.Connection) -> dict[str, dict[str, Any]]:
-    rows = state.execute(
-        "SELECT stable_id, title, artists_json FROM tracks WHERE deleted_at IS NULL"
-    ).fetchall()
+    rows = state.execute("SELECT stable_id, title, artists_json FROM tracks WHERE deleted_at IS NULL").fetchall()
     return {
         str(row["stable_id"]): {
             "stable_id": str(row["stable_id"]),
@@ -100,16 +98,14 @@ def _load_tracks(state: sqlite3.Connection) -> dict[str, dict[str, Any]]:
 
 def _load_vendor_ids(state: sqlite3.Connection) -> dict[str, str]:
     rows = state.execute(
-        "SELECT stable_id, vendor_id FROM track_vendor_ids "
-        "WHERE vendor = 'rekordbox' AND deleted_at IS NULL"
+        "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = 'rekordbox' AND deleted_at IS NULL"
     ).fetchall()
     return {str(row["stable_id"]): str(row["vendor_id"]) for row in rows}
 
 
 def _load_local_genres(state: sqlite3.Connection) -> dict[str, str]:
     rows = state.execute(
-        "SELECT stable_id, value_json FROM track_fields "
-        "WHERE field_name = 'genre' AND deleted_at IS NULL"
+        "SELECT stable_id, value_json FROM track_fields WHERE field_name = 'genre' AND deleted_at IS NULL"
     ).fetchall()
     out: dict[str, str] = {}
     for row in rows:
@@ -130,9 +126,7 @@ def _load_playlist_counts(state: sqlite3.Connection) -> dict[str, int]:
     return {str(row["stable_id"]): int(row["n"]) for row in rows}
 
 
-def _load_genre_and_play_count(
-    master: sqlite3.Connection, vendor_ids: list[str]
-) -> dict[str, tuple[str | None, int]]:
+def _load_genre_and_play_count(master: sqlite3.Connection, vendor_ids: list[str]) -> dict[str, tuple[str | None, int]]:
     """vendor_id -> (raw genre tag, DJPlayCount). Same join bulk_rb_meta uses,
     including the unary + that keeps the ID key in the plan (LIBM-130)."""
     out: dict[str, tuple[str | None, int]] = {}
@@ -170,9 +164,7 @@ def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
         vendor_id_by_stable_id = _load_vendor_ids(state)
         playlist_count_by_stable_id = _load_playlist_counts(state)
         local_genre_by_stable_id = _load_local_genres(state)
-        own_plays = {
-            sid: plays.count for sid, plays in play_log.bulk_own_plays(state, list(tracks)).items()
-        }
+        own_plays = {sid: plays.count for sid, plays in play_log.bulk_own_plays(state, list(tracks)).items()}
     except sqlite3.Error as exc:
         raise LibraryWheelError(f"state.db query failed: {exc}") from exc
     finally:
@@ -182,9 +174,7 @@ def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
     if vendor_id_by_stable_id:
         master = _open_readonly(master_db, "master.plain.db")
         try:
-            genre_and_plays = _load_genre_and_play_count(
-                master, list(vendor_id_by_stable_id.values())
-            )
+            genre_and_plays = _load_genre_and_play_count(master, list(vendor_id_by_stable_id.values()))
         except sqlite3.Error as exc:
             raise LibraryWheelError(f"master.plain.db query failed: {exc}") from exc
         finally:
@@ -285,15 +275,10 @@ def _popularity_percentiles(
         for position, (_stable_id, play_count) in enumerate(ordered):
             positions_by_play_count[play_count].append(position)
         percentile_by_play_count = {
-            play_count: 100.0
-            if n == 1
-            else round(100.0 * (positions[0] + positions[-1]) / 2 / (n - 1), 1)
+            play_count: 100.0 if n == 1 else round(100.0 * (positions[0] + positions[-1]) / 2 / (n - 1), 1)
             for play_count, positions in positions_by_play_count.items()
         }
-        ranks = {
-            stable_id: percentile_by_play_count[play_count]
-            for stable_id, play_count in ordered
-        }
+        ranks = {stable_id: percentile_by_play_count[play_count] for stable_id, play_count in ordered}
         percentile_by_family_and_track[family_name] = ranks
     return percentile_by_family_and_track
 
@@ -353,9 +338,7 @@ def _render_families(tree: _GenreTree, selected: AxisInfo) -> list[dict[str, Any
     return families_out
 
 
-def query_library_wheel(
-    state_db: Path, master_db: Path, *, axis: str = "play_count"
-) -> dict[str, Any]:
+def query_library_wheel(state_db: Path, master_db: Path, *, axis: str = "play_count") -> dict[str, Any]:
     """One deterministic, JSON-ready genre-wheel read model.
 
     ``axis`` selects the per-track numeric overlay (see :data:`AXES`).

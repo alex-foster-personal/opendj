@@ -13,6 +13,7 @@ This is the single write primitive used by :mod:`apps.sync.apply_ratings`.
 All writes are funnelled through here so the reverse-script can restore
 the original blob verbatim.
 """
+
 from __future__ import annotations
 
 from apps.shared.djay_db import extract_rating_from_tsaf

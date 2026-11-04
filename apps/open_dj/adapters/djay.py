@@ -14,6 +14,7 @@ The adapter takes plain dataclass inputs (:class:`DjayTrackInput`) so the
 hot path is testable in-memory. Live-DB export opens the TSAF reader via
 :mod:`apps.shared.djay_db`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -107,9 +108,7 @@ def build_library(
 
     for t in tracks:
         try:
-            track_dict, cues = _build_track(
-                t, include_cues=include_cues, modified_at=modified_at
-            )
+            track_dict, cues = _build_track(t, include_cues=include_cues, modified_at=modified_at)
         except ValueError as exc:
             warnings.append(f"track {t.uuid}: {exc}")
             continue
@@ -119,8 +118,7 @@ def build_library(
 
     playlists_out: list[dict] = []
     for p in playlists:
-        track_ids = [uuid_to_track_id[u] for u in p.track_uuids
-                     if u in uuid_to_track_id]
+        track_ids = [uuid_to_track_id[u] for u in p.track_uuids if u in uuid_to_track_id]
         pl: dict = {
             "playlist_id": f"djay_pl_{p.uuid}",
             "name": p.name,
@@ -147,18 +145,18 @@ def build_library(
     )
 
 
-def _build_track(
-    t: DjayTrackInput, *, include_cues: bool, modified_at: datetime | None
-) -> tuple[dict, int]:
+def _build_track(t: DjayTrackInput, *, include_cues: bool, modified_at: datetime | None) -> tuple[dict, int]:
     duration_ms = int((t.duration_s or 0) * 1000)
-    track_id, tier = compute_track_id_with_tier({
-        "isrc": t.isrc,
-        "fingerprint": t.fingerprint,
-        "duration_ms": duration_ms,
-        "size_bytes": t.size_bytes,
-        "absolute_path": t.file_path,
-        "mtime": t.mtime,
-    })
+    track_id, tier = compute_track_id_with_tier(
+        {
+            "isrc": t.isrc,
+            "fingerprint": t.fingerprint,
+            "duration_ms": duration_ms,
+            "size_bytes": t.size_bytes,
+            "absolute_path": t.file_path,
+            "mtime": t.mtime,
+        }
+    )
     content_hash, is_synthetic = _content_hash(t, duration_ms)
 
     # Split comma-joined artists similar to RB adapter. djay stores a single
@@ -178,6 +176,7 @@ def _build_track(
     }
     if t.isrc:
         from apps.shared.state.ids import normalise_isrc
+
         normalised = normalise_isrc(t.isrc) or t.isrc
         track["isrc"] = normalised
     if t.size_bytes is not None:
@@ -195,9 +194,7 @@ def _build_track(
     return track, cues
 
 
-def _apply_provenance_fields(
-    track: dict, t: DjayTrackInput, *, modified_at: datetime | None
-) -> None:
+def _apply_provenance_fields(track: dict, t: DjayTrackInput, *, modified_at: datetime | None) -> None:
     """Wrap ``bpm``/``key``/``rating`` in a ``ProvenanceValue`` stamped
     from the explicit ``modified_at`` clock -- see ``build_library``'s
     docstring for why djay has no per-track source timestamp to prefer.
@@ -255,7 +252,9 @@ def export_library(
     tracks = [from_djaytrack(t) for t in djay_db.iter_tracks(source_path)]
     playlists = [
         DjayPlaylistInput(
-            uuid=p.uuid, name=p.name, parent_uuid=p.parent_uuid,
+            uuid=p.uuid,
+            name=p.name,
+            parent_uuid=p.parent_uuid,
             track_uuids=list(p.track_uuids),
         )
         for p in djay_db.iter_playlists(source_path)
@@ -264,12 +263,11 @@ def export_library(
     # See build_library's docstring: djay has no per-track source
     # timestamp, so "now, once, at the live-export boundary" is the
     # explicit snapshot-time stamp for this run.
-    result = build_library(
-        tracks, playlists, include_cues=include_cues, modified_at=datetime.now(UTC)
-    )
+    result = build_library(tracks, playlists, include_cues=include_cues, modified_at=datetime.now(UTC))
 
     if out_path is not None:
         from apps.open_dj.canon import to_canonical_bytes
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(to_canonical_bytes(result.document))
 

@@ -37,6 +37,7 @@ import { _positionForSegment, safeTransportScheduleTime } from '$lib/player/tran
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { StretchScheduleChange } from '$lib/rb/stretch-adapter';
+import { scheduleStemEngageCrossfade, type CrossfadeParam } from '$lib/rb/stem-neutral-bypass';
 
 /** The transport segment the deck will be in at the handoff instant. */
 export interface StemHandoffSegment {
@@ -79,7 +80,7 @@ export interface StemHandoffDeps {
 	/** Connect the scheduled stems to the deck's output. Called only once the
 	 * acknowledgement is back and `when` is still ahead, so a late schedule is
 	 * never audible beside the mix. Synchronous. */
-	connectIncoming(): void;
+	connectIncoming(when: number): void;
 	/** Silence a stem schedule that will not be used: an inactive change at the
 	 * SAME instant, which the worklet's time map lets replace the start. */
 	cancelIncoming(when: number): Promise<void>;
@@ -152,7 +153,7 @@ export async function handOffStemsLive(
 	}
 	// From here to the end is synchronous: no command can interleave between
 	// the mix's stop being posted and the deck pointing at the stems.
-	deps.connectIncoming();
+	deps.connectIncoming(when);
 	void deps.stopOutgoing(when).catch((error: unknown) => deps.retireRefusedOutgoing(when, error));
 	deps.commit(when, segment);
 	deps.holdCommandsUntil(when);
@@ -185,6 +186,7 @@ export async function landStemUpgrade(deps: StemHandoffDeps): Promise<StemLandin
 /** The slice of a deck processor the landing drives. */
 export interface StemLandingProcessor {
 	connect(destination: AudioNode): void;
+	disconnect(): void;
 	schedule(outputTime: number, change: StretchScheduleChange): Promise<void>;
 	stop(outputTime: number): Promise<void>;
 }
@@ -235,6 +237,19 @@ export interface StemLandingPort {
 	replaceable(): boolean;
 	adoptStopped(): void;
 	setTimer?: (run: () => void, ms: number) => unknown;
+	/** AUDFID-02: the stems fade in and the mix fades out over this window
+	 * from the handoff instant, both on the context clock; the mix stops only
+	 * once its fade has ended. At least 10 ms (see stem-neutral-bypass.ts). */
+	crossfadeSec: number;
+	/** A gain node on the deck's context, for the two crossfade ramps. */
+	createGain(): StemCrossfadeGain;
+}
+
+/** The slice of a GainNode the crossfade drives. */
+export interface StemCrossfadeGain {
+	gain: CrossfadeParam;
+	connect(destination: AudioNode): unknown;
+	disconnect(): void;
 }
 
 /** How long after the handoff instant the stopped mix is retired: long enough
@@ -245,11 +260,14 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 	const setTimer = port.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
 	const rt = port.runtime;
 	let outgoing: StemLandingProcessor | null = null;
+	let outgoingFade: StemCrossfadeGain | null = null;
 	let outgoingRetired = false;
+	const fadeEnd = (when: number): number => when + port.crossfadeSec;
 	const retireOutgoingOnce = (): void => {
 		if (outgoing === null || outgoingRetired) return;
 		outgoingRetired = true;
 		port.retire(outgoing);
+		outgoingFade?.disconnect();
 	};
 	return {
 		now: () => port.clock.currentTime,
@@ -283,9 +301,22 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			// cancel lands. connectIncoming() joins them once the instant is safe.
 			await port.incoming.schedule(when, port.startChange(segment));
 		},
-		connectIncoming: () => {
+		connectIncoming: (when) => {
 			if (rt.nodes === null) throw new Error('stem handoff: the deck audio graph is missing');
-			port.incoming.connect(rt.nodes.analyser);
+			// AUDFID-02: one window, one clock. The mix is re-routed through its
+			// own fade in the same task, so the audio thread sees both at once.
+			const fadeIn = port.createGain();
+			const mix = rt.processor;
+			const fadeOut = mix === null ? null : port.createGain();
+			scheduleStemEngageCrossfade(fadeIn.gain, fadeOut?.gain ?? null, when, port.crossfadeSec);
+			port.incoming.connect(fadeIn as unknown as AudioNode);
+			fadeIn.connect(rt.nodes.analyser);
+			if (mix !== null && fadeOut !== null) {
+				mix.disconnect();
+				mix.connect(fadeOut as unknown as AudioNode);
+				fadeOut.connect(rt.nodes.analyser);
+				outgoingFade = fadeOut;
+			}
 		},
 		cancelIncoming: (when) => port.incoming.stop(when),
 		stopOutgoing: async (when) => {
@@ -293,7 +324,9 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			if (outgoing === null) return;
 			const retiring = outgoing;
 			// Retired once its stop has rendered, never while it is the audible tail.
-			const untilWhenSec = Math.max(0, when - port.clock.currentTime);
+			// AUDFID-02: it keeps playing under the stems until its fade ends.
+			const stopAt = fadeEnd(when);
+			const untilWhenSec = Math.max(0, stopAt - port.clock.currentTime);
 			// A stop still unacknowledged when the stems start (a slow or timed-out
 			// command) must not leave the mix under them: retire it then.
 			let stopAcknowledged = false;
@@ -301,12 +334,12 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 				if (!stopAcknowledged) retireOutgoingOnce();
 			}, untilWhenSec * 1000);
 			setTimer(retireOutgoingOnce, (untilWhenSec + STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000);
-			await retiring.stop(when);
+			await retiring.stop(stopAt);
 			stopAcknowledged = true;
 		},
 		retireRefusedOutgoing: (when, error) => {
 			console.error('stem handoff: the mix refused its stop; retiring it at the handoff instant', error);
-			setTimer(retireOutgoingOnce, Math.max(0, when - port.clock.currentTime) * 1000);
+			setTimer(retireOutgoingOnce, Math.max(0, fadeEnd(when) - port.clock.currentTime) * 1000);
 		},
 		commit: (when) => port.commit(when),
 		holdCommandsUntil: (when) => {

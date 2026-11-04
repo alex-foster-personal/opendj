@@ -14,6 +14,7 @@ Three-tier identifier:
 
 The output is always a 40-char lowercase hex SHA-1 string.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,15 +69,8 @@ def stable_id(
         digest = hashlib.sha1(normalised.encode("ascii")).hexdigest()
         return digest, "isrc"
 
-    if (
-        fingerprint is not None
-        and fingerprint != ""
-        and duration_ms is not None
-        and size_bytes is not None
-    ):
-        material = "|".join(
-            [fingerprint[:64], str(duration_ms), str(size_bytes)]
-        )
+    if fingerprint is not None and fingerprint != "" and duration_ms is not None and size_bytes is not None:
+        material = "|".join([fingerprint[:64], str(duration_ms), str(size_bytes)])
         digest = hashlib.sha1(material.encode("utf-8")).hexdigest()
         return digest, "fingerprint"
 

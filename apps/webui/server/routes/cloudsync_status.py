@@ -127,7 +127,7 @@ class IdentityBacklogOut(BaseModel):
         description=(
             "live 'tracks' rows offered to the hub with hash_pending=true while "
             "awaiting content_hash. Run "
-            "`python -m apps.shared.state.backfill_content_hash --for-hub --live` "
+            "`python -m apps.sync_hub.hash_pending_backfill --live` "
             "on a machine that holds the audio."
         )
     )

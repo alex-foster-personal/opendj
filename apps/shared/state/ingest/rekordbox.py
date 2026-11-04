@@ -36,6 +36,7 @@ from typing import Any
 from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
 from apps.shared.numeric_coerce import coerce_optional
+from apps.shared.rekordbox_cue_kind import is_mapped_kind, kind_to_slot
 from apps.shared.state import cue_store, deleted_tracks
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
@@ -136,8 +137,9 @@ def _rb_playlists(rb_db: Any) -> Iterator[tuple[str, str, list[str]]]:
 def _rb_cues_by_content(rb_db: Any) -> dict[str, list[dict[str, Any]]]:
     """Live djmdCue rows per ContentID, in the shape ``fetch_cues`` serves.
 
-    Kind 0 is a memory cue (a loop when it has an out point), Kind 1-8 the
-    hot-cue slots A-H. Kind 9-11 is skipped: its slot mapping is unverified
+    Kind 0 is a memory cue (a loop when it has an out point). Kind 1-8 map to
+    hot-cue slots A-H via ``cue_kind.KIND_BY_SLOT``; D-H integers are unproven
+    (issue #4069). Kind 9-11 is skipped: its slot mapping is unverified
     (PARITY-TODO "Hot-cue SAVE"), the same rule the read path applies.
     """
     out: dict[str, list[dict[str, Any]]] = {}
@@ -146,14 +148,18 @@ def _rb_cues_by_content(rb_db: Any) -> dict[str, list[dict[str, Any]]]:
             continue
         kind = coerce_optional(getattr(row, "Kind", None), int)
         in_ms = coerce_optional(getattr(row, "InMsec", None), int)
-        if kind is None or not 0 <= kind <= 8 or in_ms is None or in_ms < 0:
+        if kind is None or not is_mapped_kind(kind) or in_ms is None or in_ms < 0:
             continue
         out_ms = coerce_optional(getattr(row, "OutMsec", None), int)
         is_loop = out_ms is not None and out_ms > 0
         if kind == 0:
             cue_kind, slot = ("loop" if is_loop else "memory"), None
         else:
-            cue_kind, slot = "hot_cue", cue_store.HOT_CUE_SLOTS[kind - 1]
+            mapped_slot = kind_to_slot(kind)
+            if mapped_slot is None:
+                continue
+            cue_kind = "hot_cue"
+            slot = mapped_slot
         out.setdefault(str(row.ContentID), []).append(
             {
                 "kind": cue_kind,

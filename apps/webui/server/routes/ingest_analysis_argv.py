@@ -5,6 +5,7 @@ decidable from the chunk alone, so it is worth being able to assert on it
 without spawning a subprocess. Running the command stays in ``ingest``,
 which owns the job log and the process handling.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,37 +32,29 @@ class CliFailed(RuntimeError):
 
 
 def _files_argv(
-    head: list[str], chunk: Chunk,
+    head: list[str],
+    chunk: Chunk,
 ) -> tuple[list[str], None]:
-    files = [
-        path
-        for _, target in chunk
-        for path in (target if isinstance(target, tuple) else (target,))
-    ]
+    files = [path for _, target in chunk for path in (target if isinstance(target, tuple) else (target,))]
     return [*head, "--files", *files], None
 
 
 def _candidates_argv(
-    head: list[str], chunk: Chunk,
+    head: list[str],
+    chunk: Chunk,
 ) -> tuple[list[str], str]:
-    payload = [
-        [sid, list(target) if isinstance(target, tuple) else [target]]
-        for sid, target in chunk
-    ]
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".candidates.json", delete=False
-    ) as fh:
+    payload = [[sid, list(target) if isinstance(target, tuple) else [target]] for sid, target in chunk]
+    with tempfile.NamedTemporaryFile("w", suffix=".candidates.json", delete=False) as fh:
         json.dump(payload, fh)
         handoff_path = fh.name
     return [*head, "--candidates-json", handoff_path], handoff_path
 
 
 def _pairs_argv(
-    head: list[str], chunk: Chunk,
+    head: list[str],
+    chunk: Chunk,
 ) -> tuple[list[str], str]:
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".pairs.json", delete=False
-    ) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".pairs.json", delete=False) as fh:
         json.dump([[sid, target] for sid, target in chunk], fh)
         pairs_path = fh.name
     return [*head, "--pairs-json", pairs_path], pairs_path
@@ -84,9 +77,7 @@ def build_analysis_argv(chunk: Chunk, backend: str) -> tuple[list[str], str | No
     The second element is the temp path to unlink, or ``None`` when the
     ``--files`` form was used and there is nothing to clean up.
     """
-    head = [sys.executable, "-m", "apps.analysis.run",
-            "--backend", backend,
-            "--workers", str(min(2, len(chunk)))]
+    head = [sys.executable, "-m", "apps.analysis.run", "--backend", backend, "--workers", str(min(2, len(chunk)))]
     if not all(sid for sid, _ in chunk):
         return _files_argv(head, chunk)
     multi = any(isinstance(target, tuple) and len(target) > 1 for _, target in chunk)

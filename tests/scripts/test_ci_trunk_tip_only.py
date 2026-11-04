@@ -10,10 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
-import yaml
 
 from scripts import ci_trunk_tip_only as mod
 from scripts.ci_health_core import PreconditionError
@@ -407,16 +405,6 @@ def test_the_recheck_refuses_a_payload_that_is_not_a_list(monkeypatch: pytest.Mo
     monkeypatch.setattr(mod, "_gh_api_json", lambda path: {"message": "Not Found"})
     with pytest.raises(PreconditionError):
         mod._open_pr_count("maintainer", "af--thing")
-
-
-def test_the_trunk_tip_workflow_can_list_pull_requests() -> None:
-    """Unspecified workflow permissions are DISABLED, so without this the sweep reads
-    "Resource not accessible by integration" and cancels nothing, silently."""
-    workflow = (
-        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "trunk-tip-only.yml"
-    )
-    permissions = yaml.safe_load(workflow.read_text(encoding="utf-8"))["permissions"]
-    assert permissions.get("pull-requests") == "read", permissions
 
 
 # ----- a fork pull request is rechecked under its own owner -----

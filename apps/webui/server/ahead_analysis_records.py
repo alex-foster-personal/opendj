@@ -12,22 +12,66 @@ import json
 import sqlite3
 from collections.abc import Callable
 
+from apps.analysis.canonical import dependency_stale_row
+from apps.analysis.lanes import parse_own_backend
+from apps.analysis.queue import LANE_DEPENDENCIES
+from apps.shared.state import analysis_stale
+
 
 def done_ids(conn_factory: Callable[[], sqlite3.Connection], backend: str) -> set[str]:
+    """Ids with a record at the lane's current version that is still current.
+
+    A row the canonical pointer dropped because its dependency moved (a key
+    computed on a beatgrid that has since been re-analyzed) is NOT done: the
+    drain must re-run it (NATIVE-36). Only rows with no pointer for their
+    lane are re-checked, so a library whose keys are current pays one query.
+    """
     version = producer_version(backend)
+    lane = _lane_of(backend)
     conn = conn_factory()
     try:
         rows = conn.execute(
             "SELECT DISTINCT stable_id FROM analysis WHERE backend = ? AND backend_version = ?",
             (backend, version),
         ).fetchall()
+        done = {row[0] for row in rows}
+        if lane in LANE_DEPENDENCIES and done:
+            done -= _dependency_stale_ids(conn, lane, backend, version)
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc):
             return set()
         raise
     finally:
         conn.close()
-    return {row[0] for row in rows}
+    return done
+
+
+def _lane_of(backend: str) -> str:
+    parsed = parse_own_backend(backend)
+    if parsed is None:
+        raise ValueError(f"ahead analysis backend {backend!r} is not an own_<lane>.<producer> name")
+    return parsed.lane
+
+
+def _dependency_stale_ids(
+    conn: sqlite3.Connection, lane: str, backend: str, version: str
+) -> set[str]:
+    has_pointer_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_canonical'"
+    ).fetchone()
+    if has_pointer_table is None:
+        return set()
+    unpointed = conn.execute(
+        "SELECT a.stable_id, a.record_json FROM analysis AS a "
+        "LEFT JOIN analysis_canonical AS c ON c.stable_id = a.stable_id AND c.lane = ? "
+        "WHERE a.backend = ? AND a.backend_version = ? AND c.stable_id IS NULL",
+        (lane, backend, version),
+    ).fetchall()
+    return {
+        str(sid) for sid, record_json in unpointed
+        if dependency_stale_row(conn, str(sid), lane, record_json)
+        or (backend, version) in analysis_stale.stale_rows(conn, str(sid), lane)
+    }
 
 
 def declined_ids(

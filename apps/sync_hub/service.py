@@ -157,7 +157,11 @@ def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
 @contextmanager
 def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
-    conn.execute("BEGIN")
+    # IMMEDIATE, not a deferred BEGIN: these transactions read before they write
+    # (register_machine checks the name before its upsert, #8314), and a deferred
+    # read lock that must upgrade under a racing writer fails at once with
+    # "database is locked" instead of waiting on the busy timeout.
+    conn.execute("BEGIN IMMEDIATE")
     try:
         yield
     except Exception:
@@ -181,6 +185,11 @@ def _hub_identity(request: Request, conn: sqlite3.Connection) -> str:
         identity = machine_identity.register_machine(
             conn, data_dir=_data_dir(request), name=_machine_name(request)
         )
+    except machine_identity.MachineNameConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SYNC_MACHINE_NAME_TAKEN", "message": str(exc)},
+        ) from exc
     except machine_identity.MachineIdentityError as exc:
         raise HTTPException(
             status_code=500,

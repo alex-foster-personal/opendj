@@ -4,6 +4,7 @@ Each caller keeps its regex and error type (HTTP refusal, ``ValueError``, and
 so on). This module only centralizes the match-or-refuse shape so path and
 route layers do not duplicate it.
 """
+
 from __future__ import annotations
 
 import re

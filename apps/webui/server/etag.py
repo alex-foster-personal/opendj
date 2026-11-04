@@ -5,6 +5,7 @@ The ``modified_at`` field is the track's ``updated_at`` RFC3339 timestamp
 same row at the same instant will collide, but the race is resolved by
 the SQLite writer serialising all writes.
 """
+
 from __future__ import annotations
 
 import hashlib

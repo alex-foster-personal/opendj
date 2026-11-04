@@ -1,4 +1,5 @@
 """Shared ``order_by`` allowlist for repo validation and SQL evaluation."""
+
 from __future__ import annotations
 
 ORDER_BY_SQL: dict[str, str] = {

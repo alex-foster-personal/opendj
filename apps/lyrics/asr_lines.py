@@ -60,8 +60,7 @@ def group_asr_words_into_lines(words: tuple[AsrWord, ...]) -> tuple[LyricLine, .
             current.append(word)
     lines.append(tuple(current))
     return tuple(
-        LyricLine(start_ms=round(line[0].start_s * 1000), text=" ".join(w.word for w in line))
-        for line in lines
+        LyricLine(start_ms=round(line[0].start_s * 1000), text=" ".join(w.word for w in line)) for line in lines
     )
 
 

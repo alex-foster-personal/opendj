@@ -61,9 +61,7 @@ REPO_DEFAULT = "private_owner/music-dj-tools"
 LOCAL_SOURCE_NAME_ENV = "MDT_SINK_TRIAGE_LOCAL_NAME"
 #: Comma-separated ssh aliases of the Mac hosts whose sinks are tailed.
 SSH_SOURCES_ENV = "MDT_SINK_TRIAGE_SSH_HOSTS"
-#: Stage-1 defaults, kept until every triage host sets the variables (ADR-0317).
-DEFAULT_LOCAL_SOURCE_NAME = "nucbox"
-DEFAULT_SSH_SOURCES: tuple[str, ...] = ("silver", "air")
+#: Stage-1 defaults removed (#5639 stage 2): both variables are required.
 #: One ssh alias: no option-looking leading dash, no shell or list syntax.
 _SSH_ALIAS_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
 
@@ -516,18 +514,32 @@ def run_triage(
 
 
 def source_names(environ: Mapping[str, str] | None = None) -> tuple[str, tuple[str, ...]]:
-    """(local source name, ssh source aliases); unset or blank keeps the defaults.
+    """(local source name, ssh source aliases).
 
     A value that is not an ssh alias raises naming the variable: the names reach
     ``ssh`` argv and the per-host offset keys.
     """
     env = os.environ if environ is None else environ
-    local = (env.get(LOCAL_SOURCE_NAME_ENV) or "").strip() or DEFAULT_LOCAL_SOURCE_NAME
-    remote = tuple(h.strip() for h in (env.get(SSH_SOURCES_ENV) or "").split(",") if h.strip())
+    local_raw = (env.get(LOCAL_SOURCE_NAME_ENV) or "").strip()
+    if not local_raw:
+        raise ValueError(
+            f"{LOCAL_SOURCE_NAME_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
+    remote_raw = (env.get(SSH_SOURCES_ENV) or "").strip()
+    if not remote_raw:
+        raise ValueError(
+            f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
+    local = local_raw
+    remote = tuple(h.strip() for h in remote_raw.split(",") if h.strip())
+    if not remote:
+        raise ValueError(
+            f"{SSH_SOURCES_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
     for variable, name in [(LOCAL_SOURCE_NAME_ENV, local)] + [(SSH_SOURCES_ENV, h) for h in remote]:
         if not _SSH_ALIAS_RE.fullmatch(name):
             raise ValueError(f"{variable}: {name!r} is not an ssh host alias")
-    return local, remote or DEFAULT_SSH_SOURCES
+    return local, remote
 
 
 def default_sources(jobs_dir: Path, environ: Mapping[str, str] | None = None) -> list[HostSource]:

@@ -17,6 +17,9 @@ from httpx import ASGITransport, AsyncClient
 from apps.webui.server.routes.commands import (
     NO_LEADER_REASON,
     ORDER_CLAIM_DEADLINE_S,
+    ORDER_RESULT_DEADLINE_S,
+    PAGE_GONE_REASON,
+    _result_deadline_s_on_app,
     router,
 )
 from apps.webui.server.routes.state import router as state_router
@@ -27,12 +30,14 @@ PLAY = {"single": {"type": "play", "deck": 1, "playing": True}}
 DEADLINE_S = 0.5
 
 
-def _app(deadline_s: float | None = DEADLINE_S) -> FastAPI:
+def _app(deadline_s: float | None = DEADLINE_S, result_deadline_s: float | None = None) -> FastAPI:
     app = FastAPI()
     app.include_router(state_router, prefix="/api/v1")
     app.include_router(router, prefix="/api/v1")
     if deadline_s is not None:
         app.state.agent_order_claim_deadline_s = deadline_s
+    if result_deadline_s is not None:
+        app.state.agent_order_result_deadline_s = result_deadline_s
     return app
 
 
@@ -102,3 +107,41 @@ def test_a_bad_configured_deadline_fails_loudly() -> None:
                 await client.post("/api/v1/commands", json=PLAY)
 
     asyncio.run(run())
+
+
+@pytest.mark.requirement("AGENT-8408")
+def test_a_claimed_order_without_a_result_answers_503_page_gone() -> None:
+    """[if] a page claims but never posts a result within the result deadline [then] 503 page_gone, [else stop]."""
+    result_deadline = 0.5
+
+    async def run() -> None:
+        async with _client(_app(result_deadline_s=result_deadline)) as client:
+            await _open_page(client)
+            started = time.monotonic()
+            order = asyncio.create_task(client.post("/api/v1/commands", json=PLAY))
+            await asyncio.sleep(0.1)
+            claimed = await client.get("/api/v1/commands/next")
+            assert claimed.status_code == 200
+            answer = await asyncio.wait_for(order, 5.0)
+            elapsed = time.monotonic() - started
+            assert answer.status_code == 503
+            body = answer.json()
+            assert body["reason"] == PAGE_GONE_REASON
+            assert body["result_deadline_s"] == result_deadline
+            assert result_deadline <= elapsed < result_deadline + 1.0
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("AGENT-8408")
+def test_the_result_deadline_defaults_to_the_named_constant() -> None:
+    """[if] the app sets no result deadline [then] the documented 120 s constant applies, [else stop]."""
+    assert ORDER_RESULT_DEADLINE_S == 120.0
+
+
+@pytest.mark.requirement("AGENT-8408")
+def test_a_bad_configured_result_deadline_fails_loudly() -> None:
+    """[if] the result deadline is not a positive number [then] reading it raises TypeError, [else stop]."""
+    app = _app(deadline_s=15.0, result_deadline_s=0)
+    with pytest.raises(TypeError, match="agent_order_result_deadline_s"):
+        _result_deadline_s_on_app(app)

@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from apps.library_wheel.query import LibraryWheelError, query_library_wheel
+from tests.webui.library_wheel_fixtures import find_track_in_wheel
 
 pytest_plugins = ("tests.webui.library_wheel_fixtures",)
 
@@ -56,7 +57,7 @@ def test_play_count_axis_carries_real_value_and_title(wheel_dbs: tuple[Path, Pat
     assert result["selected_axis_enabled"] is True
     assert result["selected_axis_reason"] is None
 
-    track = _find_track(result, "t-techno-1")
+    track = find_track_in_wheel(result, "t-techno-1")
     assert track["axis_value"] == 40
     assert "40" in track["axis_title"]
 
@@ -66,8 +67,8 @@ def test_popularity_axis_ranks_within_family_not_globally(wheel_dbs: tuple[Path,
     result = query_library_wheel(state_db, master_db, axis="popularity")
     assert result["selected_axis_enabled"] is True
 
-    hi = _find_track(result, "t-techno-1")  # 40 plays, top of a 2-track family
-    lo = _find_track(result, "t-techno-2")  # 10 plays, bottom of the same family
+    hi = find_track_in_wheel(result, "t-techno-1")  # 40 plays, top of a 2-track family
+    lo = find_track_in_wheel(result, "t-techno-2")  # 10 plays, bottom of the same family
     assert hi["axis_value"] > lo["axis_value"]
     assert "techno" in hi["axis_title"]
     assert "2" in hi["axis_title"]  # denominator: 2 tracks with a resolved family
@@ -76,8 +77,8 @@ def test_popularity_axis_ranks_within_family_not_globally(wheel_dbs: tuple[Path,
 def test_playlist_axis_counts_real_memberships(wheel_dbs: tuple[Path, Path]) -> None:
     state_db, master_db = wheel_dbs
     result = query_library_wheel(state_db, master_db, axis="playlist")
-    in_playlist = _find_track(result, "t-techno-1")
-    not_in_playlist = _find_track(result, "t-techno-2")
+    in_playlist = find_track_in_wheel(result, "t-techno-1")
+    not_in_playlist = find_track_in_wheel(result, "t-techno-2")
     assert in_playlist["axis_value"] == 1
     assert not_in_playlist["axis_value"] == 0
 
@@ -97,7 +98,7 @@ def test_soft_deleted_track_is_absent_from_every_wheel_count(
     assert result["total_tracks"] == 4
     assert result["unclassified_track_count"] == 2
     with pytest.raises(AssertionError):
-        _find_track(result, "t-techno-1")
+        find_track_in_wheel(result, "t-techno-1")
 
 
 def test_popularity_axis_gives_tied_play_counts_the_same_percentile(
@@ -109,8 +110,8 @@ def test_popularity_axis_gives_tied_play_counts_the_same_percentile(
 
     result = query_library_wheel(state_db, master_db, axis="popularity")
 
-    assert _find_track(result, "t-techno-1")["axis_value"] == 50
-    assert _find_track(result, "t-techno-2")["axis_value"] == 50
+    assert find_track_in_wheel(result, "t-techno-1")["axis_value"] == 50
+    assert find_track_in_wheel(result, "t-techno-2")["axis_value"] == 50
 
 
 def test_playlist_axis_counts_distinct_playlists_not_membership_rows(
@@ -125,7 +126,7 @@ def test_playlist_axis_counts_distinct_playlists_not_membership_rows(
 
     result = query_library_wheel(state_db, master_db, axis="playlist")
 
-    assert _find_track(result, "t-techno-1")["axis_value"] == 1
+    assert find_track_in_wheel(result, "t-techno-1")["axis_value"] == 1
 
 
 @pytest.mark.parametrize(
@@ -145,7 +146,7 @@ def test_prerequisite_gapped_axes_report_disabled_not_faked(
     assert reason_substring in result["selected_axis_reason"]
     # The tree is still real (no demo nodes); only the per-track axis value is withheld.
     assert result["families"]
-    track = _find_track(result, "t-techno-1")
+    track = find_track_in_wheel(result, "t-techno-1")
     assert track["axis_value"] is None
     assert track["axis_title"] is None
 
@@ -163,12 +164,3 @@ def test_unsupported_axis_raises_value_error(wheel_dbs: tuple[Path, Path]) -> No
 def test_missing_state_db_fails_loudly(tmp_path: Path) -> None:
     with pytest.raises(LibraryWheelError):
         query_library_wheel(tmp_path / "missing.db", tmp_path / "missing-master.db")
-
-
-def _find_track(result: dict, stable_id: str) -> dict:
-    for family in result["families"]:
-        for genre in family["genres"]:
-            for track in genre["tracks"]:
-                if track["stable_id"] == stable_id:
-                    return track
-    raise AssertionError(f"{stable_id} not found in result")

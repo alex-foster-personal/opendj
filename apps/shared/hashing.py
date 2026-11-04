@@ -47,7 +47,7 @@ import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Literal
+from typing import Literal
 
 HASH_PREFIX = "sha256:"
 _CACHE_VERSION = 1
@@ -84,26 +84,6 @@ def sha256_file_hex(path: Path | str) -> str:
 def content_hash_bytes(data: bytes) -> str:
     """Small helper for tests / in-memory payloads."""
     return HASH_PREFIX + hashlib.sha256(data).hexdigest()
-
-
-def _id3v2_len(handle: BinaryIO) -> int:
-    """Byte length of a leading ID3v2 tag at the handle's current position, or 0.
-
-    ``handle`` is left at its original position; callers seek explicitly.
-    Synchsafe size per the ID3v2 spec (each of the 4 size bytes uses only its
-    low 7 bits), plus a 10-byte footer when the flags byte's bit 4 is set.
-    """
-    header = handle.read(10)
-    if len(header) < 10 or header[:3] != b"ID3":
-        return 0
-    size = (
-        ((header[6] & 0x7F) << 21)
-        | ((header[7] & 0x7F) << 14)
-        | ((header[8] & 0x7F) << 7)
-        | (header[9] & 0x7F)
-    )
-    footer = 10 if (header[5] & 0x10) else 0
-    return 10 + size + footer
 
 
 def sha256_audio_payload(path: Path | str) -> str:

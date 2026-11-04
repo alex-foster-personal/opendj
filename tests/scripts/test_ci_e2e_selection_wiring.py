@@ -38,7 +38,9 @@ REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / ".github" / "workflows" / "e2e.yml"
 LEDGER = REPO / ".github" / "workflows" / "durations-ledger.yml"
 FRONTEND = REPO / "apps" / "webui" / "frontend"
-PR_IN_SCOPE = "github.event_name == 'pull_request' && steps.decide.outputs.in_scope == 'true'"
+# The scope job resolves the event itself since Wed 4 Nov 2026 (ADR-NEW-e2e-after-ci-gate):
+# `scope_event` is `pull_request` only for a workflow_run of a green pull-request head.
+PR_IN_SCOPE = "steps.pr.outputs.scope_event == 'pull_request' && steps.decide.outputs.in_scope == 'true'"
 MAIN_PUSH = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
 
 

@@ -75,6 +75,10 @@ TIER_OUTPUT = "e2e_tier"
 E2E_WORKFLOW = Path(".github/workflows/e2e.yml")
 #: ci.yml only: the fixed jobs the scope decision skips by footprint, comma-separated.
 SKIP_OUTPUT = "skip_jobs"
+#: ci.yml only (CI-DYNSHARD): the JSON list of pytest shards the scope job launches; `[]` skips `test`.
+SHARDS_OUTPUT = "shards"
+#: The sharded pytest job the shard plan governs.
+SHARD_JOB = "test"
 #: The workflow whose scope job publishes `SKIP_OUTPUT`.
 SKIP_WORKFLOW = "ci.yml"
 LISTED_FILES_CAP = 10
@@ -205,15 +209,27 @@ def gate_verdict(needs: Mapping[str, Mapping[str, object]]) -> Verdict:
             expected, why = "skipped", "ran although out of scope"
         elif job in skipped_by_scope:
             expected, why = "skipped", "ran although the scope decision skipped it"
+        elif job == SHARD_JOB and _planned_zero_shards(outputs):
+            expected, why = "skipped", "ran although zero shards were planned"
         else:
             expected, why = "success", "in scope, so it must succeed"
         if result == expected:
             note = " (by the scope decision)" if expected == "skipped" and in_scope == "true" else ""
+            if expected == "skipped" and job == SHARD_JOB and _planned_zero_shards(outputs):
+                note = " (no test selected, zero shards planned)"
             lines.append(f"ok   {job}: {result}{note}")
             continue
         ok = False
         lines.append(f"FAIL {job}: {result} ({why})")
     return Verdict(ok, tuple(lines))
+
+
+def _planned_zero_shards(outputs: object) -> bool:
+    """CI-DYNSHARD: the scope job planned an empty shard matrix, so `test` is skipped by design.
+
+    Only the exact `[]` counts; a missing or unreadable plan keeps `test` required.
+    """
+    return isinstance(outputs, Mapping) and outputs.get(SHARDS_OUTPUT) == "[]"
 
 
 def _decided_skips(outputs: object) -> frozenset[str]:
@@ -236,11 +252,38 @@ def _required_env(name: str) -> str:
     return value
 
 
+#: e2e.yml's scope job resolves the event itself (ADR-NEW-e2e-after-ci-gate): a
+#: workflow_run for a pull request whose `ci gate` is green is scoped as
+#: `pull_request` (the checkout is that PR's merge ref); any other workflow_run
+#: carries a skip reason and is out of scope. Both are optional; unset, the
+#: GitHub event name decides as before.
+EVENT_OVERRIDE_ENV = "MDT_CI_SCOPE_EVENT_NAME"
+SKIP_REASON_ENV = "MDT_CI_SCOPE_SKIP"
+
+
+def resolved_event_name(environ: Mapping[str, str]) -> str:
+    """`MDT_CI_SCOPE_EVENT_NAME` when set, else `GITHUB_EVENT_NAME` (required)."""
+    override = environ.get(EVENT_OVERRIDE_ENV, "").strip()
+    if override:
+        return override
+    value = environ.get("GITHUB_EVENT_NAME")
+    if not value:
+        raise RuntimeError("$GITHUB_EVENT_NAME is unset; this runs inside a GitHub Actions job")
+    return value
+
+
 def _run_scope(workflow: str) -> int:
-    event_name = _required_env("GITHUB_EVENT_NAME")
-    changed = merge_commit_changed_files(Path.cwd()) if event_name == "pull_request" else []
+    event_name = resolved_event_name(os.environ)
+    skip_reason = os.environ.get(SKIP_REASON_ENV, "").strip()
     gate_scripts = e2e_gate_scripts(E2E_WORKFLOW.read_text(encoding="utf-8")) if workflow == "e2e.yml" else frozenset()
-    decision = decide_scope(workflow, event_name, changed, gate_scripts)
+    if skip_reason:
+        if workflow != "e2e.yml":
+            raise RuntimeError(f"${SKIP_REASON_ENV} is only read for e2e.yml, not {workflow}")
+        changed: list[str] = []
+        decision = ScopeDecision(False, f"skipped by the scope job: {skip_reason}")
+    else:
+        changed = merge_commit_changed_files(Path.cwd()) if event_name == "pull_request" else []
+        decision = decide_scope(workflow, event_name, changed, gate_scripts)
     value = "true" if decision.in_scope else "false"
     skipped = decide_skipped_jobs(workflow, event_name, changed, decision.in_scope)
     with Path(_required_env("GITHUB_OUTPUT")).open("a", encoding="utf-8") as output:

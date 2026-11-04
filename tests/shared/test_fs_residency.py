@@ -12,6 +12,7 @@ from apps.shared.fs_residency import (
     is_dataless_stub,
     is_materialised,
     materialised_size,
+    materialised_stat,
 )
 
 
@@ -20,12 +21,14 @@ def test_materialised_reports_real_file_and_size(tmp_path: Path) -> None:
     sample.write_bytes(b"x" * 4096)
     assert is_materialised(sample) is True
     assert materialised_size(sample) == 4096
+    assert materialised_stat(sample) == (4096, sample.stat().st_mtime_ns)
 
 
 def test_missing_path_is_not_materialised(tmp_path: Path) -> None:
     missing = tmp_path / "nope.mp3"
     assert is_materialised(missing) is False
     assert materialised_size(missing) is None
+    assert materialised_stat(missing) is None
 
 
 def test_empty_regular_file_is_materialised(tmp_path: Path) -> None:
@@ -46,12 +49,15 @@ def test_sparse_nonzero_zero_blocks_is_dataless_on_darwin(tmp_path: Path) -> Non
         assert is_dataless_stub(st) is True
         assert is_materialised(sparse) is False
         assert materialised_size(sparse) is None
+        assert materialised_stat(sparse) is None
     else:
         assert is_dataless_stub(st) is False
         assert is_materialised(sparse) is True
         assert materialised_size(sparse) == 8_240_691
+        assert materialised_stat(sparse) == (8_240_691, sparse.stat().st_mtime_ns)
 
 
 def test_directory_is_not_materialised(tmp_path: Path) -> None:
     assert is_materialised(tmp_path) is False
     assert materialised_size(tmp_path) is None
+    assert materialised_stat(tmp_path) is None

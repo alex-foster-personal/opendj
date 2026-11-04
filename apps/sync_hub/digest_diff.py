@@ -4,6 +4,7 @@ Compares sync-eligible canonical rows between a spoke and its hub so a
 :class:`~apps.sync_hub.client.SyncDigestMismatch` names at least one
 ``(table, stable_id)`` pair and which side holds the newer stamp.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -104,9 +105,7 @@ def canonical_hex(canonical: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(canonical)).hexdigest()
 
 
-def _pk_column_types(
-    conn: sqlite3.Connection, table: str, pk_columns: Sequence[str]
-) -> dict[str, str]:
+def _pk_column_types(conn: sqlite3.Connection, table: str, pk_columns: Sequence[str]) -> dict[str, str]:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     col_types = {str(row[1]): str(row[2]).upper() for row in rows}
     return {column: col_types[column] for column in pk_columns}
@@ -125,16 +124,12 @@ def _pk_after_predicate(
     cursor_pk: tuple[str | None, ...],
 ) -> tuple[str, tuple[Any, ...]]:
     if len(cursor_pk) != len(spec.pk):
-        raise SyncProtocolError(
-            f"cursor pk length {len(cursor_pk)} does not match "
-            f"{table} pk length {len(spec.pk)}"
-        )
+        raise SyncProtocolError(f"cursor pk length {len(cursor_pk)} does not match {table} pk length {len(spec.pk)}")
     pk_types = _pk_column_types(conn, table, spec.pk)
     pk_cols = ", ".join(spec.pk)
     placeholders = ", ".join("?" for _ in spec.pk)
     bound = tuple(
-        _coerce_pk_bind(str(value), pk_types[column])
-        for column, value in zip(spec.pk, cursor_pk, strict=True)
+        _coerce_pk_bind(str(value), pk_types[column]) for column, value in zip(spec.pk, cursor_pk, strict=True)
     )
     return f"({pk_cols}) > ({placeholders})", bound
 
@@ -148,9 +143,7 @@ def iter_eligible_local_rows(
     columns = table_columns(conn, table)
     order_by = ", ".join(spec.pk)
     pk_index = {column: index for index, column in enumerate(columns)}
-    cursor = conn.execute(
-        f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
-    )
+    cursor = conn.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}")
     for row in cursor:
         if sync_set.excluded_reason(conn, table, columns, row, spec, held) is not None:
             continue

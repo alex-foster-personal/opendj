@@ -21,9 +21,7 @@ def repo_venv_python() -> str:
     else:
         candidate = PROJECT_ROOT / ".venv" / "bin" / "python"
     if not candidate.is_file():
-        raise SystemExit(
-            f"repo venv python missing at {candidate}; run `uv sync` in {PROJECT_ROOT}"
-        )
+        raise SystemExit(f"repo venv python missing at {candidate}; run `uv sync` in {PROJECT_ROOT}")
     return str(candidate)
 
 

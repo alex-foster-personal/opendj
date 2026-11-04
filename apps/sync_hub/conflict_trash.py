@@ -82,9 +82,7 @@ def serialize_record(record: TrashRecord) -> bytes:
         "updated_at": record.updated_at,
         "values": record.values,
     }
-    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def trash_object_key(body: bytes) -> str:
@@ -101,9 +99,7 @@ def trash_object_key(body: bytes) -> str:
         }
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ConflictTrashError("cannot derive a trash key from invalid JSON") from exc
-    identity_body = json.dumps(
-        identity, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    identity_body = json.dumps(identity, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(identity_body).hexdigest()
     return f"{TRASH_PREFIX}/{digest[:2]}/{digest}.json"
 
@@ -115,9 +111,7 @@ def store_record(cfg: CloudConfig, s3: AssetS3Client, record: TrashRecord) -> St
     key = trash_object_key(body)
     created, _etag = s3.put_object_if_none_match(cfg.state_bucket, key, body)
     if not created and s3.head_object(cfg.state_bucket, key) is None:
-        raise ConflictTrashError(
-            f"trash upload was rejected and {cfg.state_bucket}/{key} is absent"
-        )
+        raise ConflictTrashError(f"trash upload was rejected and {cfg.state_bucket}/{key} is absent")
     return StoreResult(object_key=key, bucket=cfg.state_bucket, uploaded=created)
 
 
@@ -159,9 +153,7 @@ def restore_record(
         raise ConflictTrashError(f"trash object {cfg.state_bucket}/{object_key} does not exist")
     record = _record_from_body(stored[0], object_key)
     if _utc(now) >= record.expires_at:
-        raise ExpiredTrashError(
-            f"trash object {object_key} expired at {_timestamp(record.expires_at)}"
-        )
+        raise ExpiredTrashError(f"trash object {object_key} expired at {_timestamp(record.expires_at)}")
     return record
 
 

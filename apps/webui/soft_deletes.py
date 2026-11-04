@@ -1,4 +1,5 @@
 """Probe whether a shared-state table carries ``deleted_at`` on this connection."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -17,10 +18,7 @@ def has_soft_deletes(conn: sqlite3.Connection, table: str) -> bool:
     """
     if table not in _SOFT_DELETE_TABLES:
         raise ValueError(f"unsupported table for soft-delete probe: {table!r}")
-    return any(
-        row[1] == "deleted_at"
-        for row in conn.execute(f"PRAGMA table_info({table})")
-    )
+    return any(row[1] == "deleted_at" for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
 __all__ = ["has_soft_deletes"]

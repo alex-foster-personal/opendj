@@ -5,11 +5,12 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from .utc_timestamps import utc_now_iso_ms
 
 log = logging.getLogger(__name__)
 
@@ -25,10 +26,6 @@ class ShellHealthTimeout(RuntimeError):
     and never a guessed device state (silver, Tue 6 Oct 2026, HAL overload)."""
 
 
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
 def _unknown(reason: str) -> dict[str, Any]:
     return {
         "device_delivering": None,
@@ -39,7 +36,7 @@ def _unknown(reason: str) -> dict[str, Any]:
         "io_cycles_advanced": None,
         "hal_overload_recent": None,
         "probe_available": False,
-        "checked_at": _utc_now(),
+        "checked_at": utc_now_iso_ms(),
     }
 
 

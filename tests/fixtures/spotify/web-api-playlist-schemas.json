@@ -1,0 +1,296 @@
+{
+  "components": {
+    "schemas": {
+      "PagingObject": {
+        "type": "object",
+        "required": [
+          "href",
+          "items",
+          "limit",
+          "next",
+          "offset",
+          "previous",
+          "total"
+        ],
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "next": {
+            "type": "string",
+            "nullable": true
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "PagingPlaylistObject": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PagingObject"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SimplifiedPlaylistObject"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SimplifiedPlaylistObject": {
+        "type": "object",
+        "properties": {
+          "collaborative": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_urls": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExternalUrlObject"
+              }
+            ]
+          },
+          "href": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageObject"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistOwnerObject"
+              }
+            ]
+          },
+          "public": {
+            "type": "boolean"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistTracksRefObject"
+              }
+            ]
+          },
+          "tracks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistTracksRefObject"
+              }
+            ],
+            "deprecated": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "PlaylistTracksRefObject": {
+        "type": "object",
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "PlaylistUserObject": {
+        "type": "object",
+        "properties": {
+          "external_urls": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExternalUrlObject"
+              }
+            ]
+          },
+          "href": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "user"
+            ]
+          },
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "PlaylistOwnerObject": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PlaylistUserObject"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "display_name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "PrivateUserObject": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "country": {
+            "deprecated": true,
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "deprecated": true,
+            "type": "string"
+          },
+          "explicit_content": {
+            "deprecated": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExplicitContentSettingsObject"
+              }
+            ]
+          },
+          "external_urls": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExternalUrlObject"
+              }
+            ]
+          },
+          "followers": {
+            "deprecated": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FollowersObject"
+              }
+            ]
+          },
+          "href": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageObject"
+            }
+          },
+          "product": {
+            "deprecated": true,
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        }
+      },
+      "ExplicitContentSettingsObject": {
+        "type": "object",
+        "properties": {
+          "filter_enabled": {
+            "type": "boolean"
+          },
+          "filter_locked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ExternalUrlObject": {
+        "type": "object",
+        "properties": {
+          "spotify": {
+            "type": "string"
+          }
+        }
+      },
+      "FollowersObject": {
+        "type": "object",
+        "properties": {
+          "href": {
+            "type": "string",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "ImageObject": {
+        "type": "object",
+        "required": [
+          "url",
+          "height",
+          "width"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "height": {
+            "type": "integer",
+            "nullable": true
+          },
+          "width": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      }
+    }
+  }
+}

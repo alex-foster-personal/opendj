@@ -59,9 +59,7 @@ class CloudSyncConfigOut(BaseModel):
 
 def _payload(request: Request) -> CloudSyncConfigOut:
     try:
-        return CloudSyncConfigOut.model_validate(
-            sync_config.config_payload(cloudsync_data_dir(request))
-        )
+        return CloudSyncConfigOut.model_validate(sync_config.config_payload(cloudsync_data_dir(request)))
     except sync_config.CloudSyncConfigError as exc:
         raise HTTPException(
             status_code=500,

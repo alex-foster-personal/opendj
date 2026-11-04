@@ -12,11 +12,11 @@ index for an OR arm only when that arm itself implies the index's WHERE, and
 ``tests/cloudsync/test_track_identity_lookup_scale.py`` counts sqlite VM steps
 per applied row and fails when either lookup stops using its index.
 """
+
 from __future__ import annotations
 
 _V20: list[str] = [
-    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) "
-    "WHERE content_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) WHERE content_hash IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_tracks_isrc_upper ON tracks(upper(isrc))",
 ]
 

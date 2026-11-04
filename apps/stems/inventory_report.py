@@ -8,6 +8,7 @@ and the JSON count could disagree, and the printed one is the one people quote.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -55,9 +56,7 @@ def r2_state_for(bundle: Bundle, remote: dict[str, int]) -> str:
     if not bundle.is_publishable:
         return "not-publishable"
     wanted = {
-        r2_stems.content_addressed_key(
-            hashlib.sha256(path.read_bytes()).hexdigest()
-        ): path.stat().st_size
+        r2_stems.content_addressed_key(hashlib.sha256(path.read_bytes()).hexdigest()): path.stat().st_size
         for path in bundle.files.values()
     }
     matched = sum(1 for key, size in wanted.items() if remote.get(key) == size)
@@ -71,6 +70,7 @@ def r2_state_for(bundle: Bundle, remote: dict[str, int]) -> str:
 def _format_bytes(total: int) -> str:
     return f"{total / 1e9:.2f} GB" if total >= 1e9 else f"{total / 1e6:.0f} MB"
 
+
 def build_report(
     bundles: list[Bundle],
     scanned_roots: list[Path],
@@ -79,17 +79,23 @@ def build_report(
     remote: dict[str, int] | None,
 ) -> dict[str, Any]:
     """The whole inventory as data, so the CLI and the JSON agree by construction."""
+
     def _blank() -> dict[str, Any]:
-        return {"bundles": 0, "bytes": 0, "forms": Counter(), "layouts": Counter(),
-                "complete": 0, "publishable": 0, "identified": 0,
-                "needs_manifest": 0}
+        return {
+            "bundles": 0,
+            "bytes": 0,
+            "forms": Counter(),
+            "layouts": Counter(),
+            "complete": 0,
+            "publishable": 0,
+            "identified": 0,
+            "needs_manifest": 0,
+        }
 
     # Every scanned root is seeded, so a root that exists but holds nothing
     # still appears with a zero. A store that silently drops out of the report
     # the moment it empties is how a store gets forgotten.
-    per_root: dict[str, dict[str, Any]] = {
-        str(root): _blank() for root in scanned_roots
-    }
+    per_root: dict[str, dict[str, Any]] = {str(root): _blank() for root in scanned_roots}
     for bundle in bundles:
         entry = per_root.setdefault(str(bundle.root), _blank())
         entry["bundles"] += 1
@@ -117,13 +123,10 @@ def build_report(
             "identified": sum(1 for b in bundles if b.stable_id is not None),
             "ambiguous": sum(1 for b in bundles if len(b.candidate_ids) > 1),
             "loose": sum(1 for b in bundles if b.form == "loose"),
-            "publishable_bytes": sum(
-                b.total_bytes for b in bundles if b.is_publishable
-            ),
+            "publishable_bytes": sum(b.total_bytes for b in bundles if b.is_publishable),
         },
         "duplicate_stable_ids": {
-            sid: [f"{b.root}/{b.slug}" for b in items]
-            for sid, items in duplicate_ids(bundles).items()
+            sid: [f"{b.root}/{b.slug}" for b in items] for sid, items in duplicate_ids(bundles).items()
         },
     }
 
@@ -132,9 +135,9 @@ def build_report(
         present = buckets.get("present", 0)
         awaiting = buckets.get("awaiting_volume", 0)
         covered = {
-            b.stable_id for b in bundles
-            if b.stable_id is not None
-            and resolver.availability.get(b.stable_id) == "present"
+            b.stable_id
+            for b in bundles
+            if b.stable_id is not None and resolver.availability.get(b.stable_id) == "present"
         }
         report["coverage"] = {
             "availability_buckets": buckets,
@@ -183,14 +186,9 @@ def print_report(report: dict[str, Any], bundles: list[Bundle]) -> None:
         f"({_format_bytes(totals['publishable_bytes'])}), "
         f"{totals['needs_manifest']} blocked only on a missing manifest"
     )
-    print(
-        f"      {totals['loose']} are in LOOSE form, invisible to the stem loader"
-    )
+    print(f"      {totals['loose']} are in LOOSE form, invisible to the stem loader")
     if totals["ambiguous"]:
-        print(
-            f"      {totals['ambiguous']} have a source path that maps to "
-            "SEVERAL stable_ids; owner undecidable here"
-        )
+        print(f"      {totals['ambiguous']} have a source path that maps to SEVERAL stable_ids; owner undecidable here")
 
     coverage = report.get("coverage")
     if coverage is not None:
@@ -201,10 +199,7 @@ def print_report(report: dict[str, Any], bundles: list[Bundle]) -> None:
             f"{coverage['denominator_present']} PRESENT tracks have a bundle "
             f"= {coverage['pct_of_present']}%"
         )
-        print(
-            f"  {coverage['present_tracks_without_a_bundle']} present tracks "
-            "have no bundle"
-        )
+        print(f"  {coverage['present_tracks_without_a_bundle']} present tracks have no bundle")
         print(
             "  denominator is 'present'; present+awaiting_volume would be "
             f"{coverage['denominator_present_plus_awaiting']}"
@@ -232,4 +227,3 @@ def print_report(report: dict[str, Any], bundles: list[Bundle]) -> None:
         print("\nISSUES")
         for issue, count in counted.most_common():
             print(f"  {count:>4}  {issue}")
-

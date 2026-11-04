@@ -19,6 +19,7 @@ with its own test surface, not a relocation, so it stays a named debt: until
 it lands, the decomposition's "no fastapi import anywhere under adapters/"
 clause is unmet and this module is why.
 """
+
 from __future__ import annotations
 
 import sqlite3

@@ -62,7 +62,9 @@ test('a pinned card taller than the window scrolls inside itself', () => {
  * - if a row's value is not in the bordered first column, then the numbers are hard to spot again
  * - if the explainer starts in the value column, then that column is no longer blank below the value
  * - if the closed-card tick stops recording history, then hovering shows an empty chart
- * - if the closed-card tick fetches the process family, then a closed card pays the pinned cost
+ * - if the closed-card tick fetches the process family on every tick, then a closed card pays the
+ *   pinned cost (PERF-UI-6785 amends this: the closed bar refreshes it, throttled, so the memory
+ *   figure counts the engine's processes)
  */
 test('each value sits in a bordered left column and the text starts beside it', () => {
 	assert.match(ruleBody(PERF_METERS, '.perf-readout-row'), /grid-template-columns:\s*3\.6em 1fr auto/);
@@ -73,6 +75,16 @@ test('each value sits in a bordered left column and the text starts beside it', 
 	assert.match(ruleBody(PERF_METERS, '.perf-readout-detail'), /grid-column:\s*2 \/ -1/);
 });
 
+// PERF-UI-6785: the memory detail is one line per process; collapsed into one
+// paragraph it cannot be read. Only the card's detail keeps its breaks; the
+// closed bar's figure stays one line.
+test('the card detail keeps its line breaks and the closed bar does not', () => {
+	const style = PERF_METERS.slice(PERF_METERS.indexOf('<style'));
+	assert.match(style, /\.perf-readout-detail \{[^}]*white-space:\s*pre-line/);
+	assert.doesNotMatch(ruleBody(PERF_METERS, '.perf-meter.memory-mb'), /white-space/);
+	assert.match(PERF_METERS, /<dd class="perf-readout-detail">\{row\.detail\}<\/dd>/);
+});
+
 test('each charted row draws its own history, and the closed card records it cheaply', () => {
 	assert.match(PERF_METERS, /<PerfMeterSpark values=\{rowCharts\[row\.key\]\} \/>/);
 	for (const key of ['hz', 'cache', 'memory']) {
@@ -80,6 +92,13 @@ test('each charted row draws its own history, and the closed card records it che
 	}
 	const closed = PERF_METERS.slice(PERF_METERS.indexOf('if (monitorOpen) return;'));
 	const start = closed.slice(closed.indexOf('const start ='), closed.indexOf('const stop ='));
-	assert.match(start, /setInterval\(\(\) => untrack\(_sampleTick\), intervalMs\)/);
-	assert.doesNotMatch(start, /fetchProcessFamilySnapshot/);
+	const tick = closed.slice(closed.indexOf('const tick ='), closed.indexOf('const start ='));
+	assert.match(start, /setInterval\(tick, intervalMs\)/);
+	assert.match(tick, /untrack\(_sampleTick\)/);
+	// throttled refresh only, never the pinned sampler's forced fetch on every tick
+	assert.match(tick, /_refreshProcesses\(false\)/);
+	assert.doesNotMatch(tick, /fetchProcessFamilySnapshot|_refreshProcesses\(true\)/);
+	// throttled on the last ATTEMPT, so an unavailable or failing engine is not
+	// refetched on every tick (Codex review on #6785)
+	assert.match(PERF_METERS, /if \(!force && !processFamilyRefreshDue\(PROCESS_REFRESH_MS\)\) return;/);
 });

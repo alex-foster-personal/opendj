@@ -28,6 +28,9 @@ Bus verbs (``play``, ``open``, ``status``, ``state``, …):
 3    the engine is up and no performance page is open, so nothing can be claimed
 4    the page accepted the order but the mirror never confirmed it
 5    the engine did not answer before the deadline
+6    the page refused the order because the deck is still playing (verdict
+     ``blocked``, reason ``deck_playing``); nothing changed, and the output
+     names the track and the ``replace_playing=true`` override (AGENT-8332)
 ===  ==========================================================================
 
 ``opendj api`` (HTTP escape hatch, issue #3776):
@@ -50,6 +53,7 @@ EXIT_NO_ENGINE = 2
 EXIT_NO_PAGE = 3
 EXIT_UNCONFIRMED = 4
 EXIT_TIMEOUT = 5
+EXIT_BLOCKED = 6
 
 # ``opendj api`` aliases and HTTP-specific codes (numeric overlap with bus
 # codes 3/4 is intentional; subcommand disambiguates).

@@ -10,6 +10,7 @@ This is the D6 integration boundary from CONTEXT. A ``JsonlStubBus``
 fallback remains for the ``--dry-bus`` / test-without-state-db path,
 but Phase 5 is shipped and the real bus is now the default.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,9 +50,7 @@ class EventBus(Protocol):
 class JsonlStubBus:
     """Fallback event bus: append JSON lines to ``<data dir>/voice/events.jsonl``."""
 
-    path: Path = field(
-        default_factory=lambda: voice_data_dir() / "events.jsonl"
-    )
+    path: Path = field(default_factory=lambda: voice_data_dir() / "events.jsonl")
     _next_id: int = 1
     _cache: list[dict] = field(default_factory=list)
 
@@ -119,9 +118,7 @@ class StateBackedBus:
         from apps.shared.state.types import Event as _Event
 
         self._Event = _Event
-        self._conn = _state_db.open_rw(
-            Path(db_path) if db_path is not None else None
-        )
+        self._conn = _state_db.open_rw(Path(db_path) if db_path is not None else None)
         self._bus = _EventBus()
         self._lock = threading.Lock()
 
@@ -142,8 +139,7 @@ class StateBackedBus:
         # desync loudly rather than silently.
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO events (ts, kind, stable_id, payload_json, actor) VALUES (?, ?, ?, ?, ?)",
                 (
                     enriched["ts"],
                     kind,
@@ -170,13 +166,12 @@ class StateBackedBus:
                     "StateBackedBus fanout failed for kind=%s id=%s; "
                     "events row committed but in-process subscribers "
                     "did not receive this event",
-                    kind, new_id,
+                    kind,
+                    new_id,
                 )
         return new_id
 
-    def recent(
-        self, kind: str, limit: int = 10, *, actor: str | None = None
-    ) -> list[dict]:
+    def recent(self, kind: str, limit: int = 10, *, actor: str | None = None) -> list[dict]:
         # Phase 14 P14-F01: by default do NOT filter by actor so the voice
         # daemon can SEE events emitted by Phase 5/12 producers (READ_BPM,
         # RATE_TRACK, deck_state, etc.). Callers that explicitly want only
@@ -184,16 +179,12 @@ class StateBackedBus:
         with self._lock:
             if actor is None:
                 rows = self._conn.execute(
-                    "SELECT id, payload_json FROM events "
-                    "WHERE kind = ? "
-                    "ORDER BY id DESC LIMIT ?",
+                    "SELECT id, payload_json FROM events WHERE kind = ? ORDER BY id DESC LIMIT ?",
                     (kind, int(limit)),
                 ).fetchall()
             else:
                 rows = self._conn.execute(
-                    "SELECT id, payload_json FROM events "
-                    "WHERE kind = ? AND actor = ? "
-                    "ORDER BY id DESC LIMIT ?",
+                    "SELECT id, payload_json FROM events WHERE kind = ? AND actor = ? ORDER BY id DESC LIMIT ?",
                     (kind, actor, int(limit)),
                 ).fetchall()
         out: list[dict] = []

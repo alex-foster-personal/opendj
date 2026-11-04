@@ -92,6 +92,12 @@ pub fn decode_relative_centered(raw: u8) -> i32 {
     raw as i32 - 64
 }
 
+/// A relative delta with the binding's `invert`: the page negates it
+/// (`webmidi.svelte.ts` `_valueFor`).
+fn invert_delta(delta: i32, invert: bool) -> i32 {
+    if invert { -delta } else { delta }
+}
+
 /// `decode.ts` `combine14`.
 pub fn combine14(msb: u8, lsb: u8) -> u16 {
     ((msb as u16) << 7) | lsb as u16
@@ -625,8 +631,10 @@ impl Router {
             }
             Kind::Note => Input::Button { pressed: status & 0xf0 == 0x90 && d2 > 0, velocity: d2 },
             Kind::Cc if b.cc_button => Input::Button { pressed: d2 > 0, velocity: d2 },
-            Kind::Cc if b.relative && b.relative_centered => Input::Relative { delta: decode_relative_centered(d2) },
-            Kind::Cc if b.relative => Input::Relative { delta: decode_relative(d2) },
+            Kind::Cc if b.relative && b.relative_centered => {
+                Input::Relative { delta: invert_delta(decode_relative_centered(d2), b.invert) }
+            }
+            Kind::Cc if b.relative => Input::Relative { delta: invert_delta(decode_relative(d2), b.invert) },
             Kind::Cc => {
                 let v = d2 as f64 / 127.0;
                 Input::Continuous { value01: if b.invert { 1.0 - v } else { v }, raw: d2 }
@@ -1104,6 +1112,38 @@ mod tests {
             let got = feed(&mut r, FLX4, &[0xb0, 34, raw]);
             same(got, vec![Routed::Page { action: json!({"type": "deck_jog", "deck": 1}), value: Input::Relative { delta: want } }]);
         }
+    }
+
+    #[test]
+    fn invert_negates_relative_deltas_for_centered_and_plain() {
+        let mut r = custom(json!([
+            {"source": {"ch": 1, "kind": "cc", "id": 34}, "action": {"type": "deck_jog", "deck": 1}, "relative": true, "relativeCentered": true, "invert": true},
+            {"source": {"ch": 1, "kind": "cc", "id": 35}, "action": {"type": "deck_jog", "deck": 1}, "relative": true, "relativeCentered": true},
+            {"source": {"ch": 1, "kind": "cc", "id": 36}, "action": {"type": "browse_encoder"}, "relative": true, "invert": true},
+            {"source": {"ch": 1, "kind": "cc", "id": 37}, "action": {"type": "browse_encoder"}, "relative": true}
+        ]));
+        let jog = json!({"type": "deck_jog", "deck": 1});
+        let browse = json!({"type": "browse_encoder"});
+        same(feed(&mut r, FLX4, &[0xb0, 34, 0x41]), vec![Routed::Page { action: jog.clone(), value: Input::Relative { delta: -1 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 34, 0x3f]), vec![Routed::Page { action: jog.clone(), value: Input::Relative { delta: 1 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 34, 0x40]), vec![Routed::Page { action: jog.clone(), value: Input::Relative { delta: 0 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 35, 0x41]), vec![Routed::Page { action: jog, value: Input::Relative { delta: 1 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 36, 0x7f]), vec![Routed::Page { action: browse.clone(), value: Input::Relative { delta: 1 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 36, 0x01]), vec![Routed::Page { action: browse.clone(), value: Input::Relative { delta: -1 } }]);
+        same(feed(&mut r, FLX4, &[0xb0, 37, 0x7f]), vec![Routed::Page { action: browse, value: Input::Relative { delta: -1 } }]);
+    }
+
+    #[test]
+    fn the_mixtour_pro_browse_encoder_inverts_a_forward_tick() {
+        let mut r = router();
+        let got = feed(&mut r, "Reloop Mixtour Pro", &[0xbf, 0x00, 0x01]);
+        same(
+            got,
+            vec![Routed::Page {
+                action: json!({"type": "browse_encoder"}),
+                value: Input::Relative { delta: -1 },
+            }],
+        );
     }
 
     /// Dispatch cost per message, printed, for 20-VERIFICATION.md. Run with

@@ -9,6 +9,7 @@ these; ``verdict.py`` needs ``verdict_report``'s emission functions back).
 ``from apps.equivalence.verdict import PairVerdict`` (the existing import
 shape used throughout the codebase) is unaffected.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -64,24 +65,15 @@ class PairVerdict:
     @property
     def mapping_bugs(self) -> list[dict[str, Any]]:
         """Everything PROVEN to be OUR error rather than source disagreement."""
-        bugs: list[dict[str, Any]] = [
-            {"kind": "scale_mismatch", **m.as_dict()} for m in self.mismatches
-        ]
-        bugs += [
-            {"kind": "systematic_offset", **c.as_dict()}
-            for c in self.clusters
-            if c.is_mapping_bug
-        ]
+        bugs: list[dict[str, Any]] = [{"kind": "scale_mismatch", **m.as_dict()} for m in self.mismatches]
+        bugs += [{"kind": "systematic_offset", **c.as_dict()} for c in self.clusters if c.is_mapping_bug]
         for probe in (self.left, self.right):
             residual = probe.unmapped_count - probe.out_of_window_count
             if residual:
                 bugs.append(
                     {
                         "kind": "normaliser_not_total",
-                        "detail": (
-                            f"{probe.locator}: {residual} values have no rule "
-                            f"(examples {probe.unmapped[:5]})"
-                        ),
+                        "detail": (f"{probe.locator}: {residual} values have no rule (examples {probe.unmapped[:5]})"),
                     }
                 )
         return bugs

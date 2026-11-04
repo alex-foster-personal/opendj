@@ -70,9 +70,7 @@ def _mode_args(payload: dict[str, Any]) -> list[str]:
 
 
 def _reject(field: str, value: Any, requirement: str) -> SetupPayloadError:
-    return SetupPayloadError(
-        f"{SETUP_IMPORT_KIND} payload {field!r} {requirement}, got {value!r}"
-    )
+    return SetupPayloadError(f"{SETUP_IMPORT_KIND} payload {field!r} {requirement}, got {value!r}")
 
 
 def _data_dir(payload: dict[str, Any]) -> str:
@@ -99,9 +97,7 @@ def _limit_args(payload: dict[str, Any]) -> list[str]:
     if value is None:
         return []
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise _reject(
-            "limit", value, "must be a positive integer or absent"
-        )
+        raise _reject("limit", value, "must be a positive integer or absent")
     return ["--limit", str(value)]
 
 

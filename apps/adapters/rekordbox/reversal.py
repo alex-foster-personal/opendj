@@ -17,6 +17,7 @@ DDL then moved again, from ``apps.engine_core.store.schema`` to the sibling
 ``sidecar_schema`` module here (round 12 of the SMARTEST-CI counter), so an
 adapter no longer imports the engine. The body is unchanged.
 """
+
 from __future__ import annotations
 
 import json
@@ -79,8 +80,7 @@ def _read_slot_generations(
 def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
     ensure_vendor_sidecar_tables(conn)
     conn.execute(
-        f"INSERT OR IGNORE INTO {_SLOT_REVISION_TABLE} (ContentID, Kind, Generation) "
-        "VALUES (?, ?, 0)",
+        f"INSERT OR IGNORE INTO {_SLOT_REVISION_TABLE} (ContentID, Kind, Generation) VALUES (?, ?, 0)",
         (vendor_id, kind),
     )
     row = conn.execute(
@@ -95,14 +95,11 @@ def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int
 def _bump_slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
     generation = _slot_generation(conn, vendor_id, kind)
     result = conn.execute(
-        f"UPDATE {_SLOT_REVISION_TABLE} SET Generation = ? "
-        "WHERE ContentID = ? AND Kind = ? AND Generation = ?",
+        f"UPDATE {_SLOT_REVISION_TABLE} SET Generation = ? WHERE ContentID = ? AND Kind = ? AND Generation = ?",
         (generation + 1, vendor_id, kind, generation),
     )
     if result.rowcount != 1:
-        raise RuntimeError(
-            "hot-cue slot generation changed inside an exclusive transaction"
-        )
+        raise RuntimeError("hot-cue slot generation changed inside an exclusive transaction")
     return generation + 1
 
 
@@ -123,9 +120,7 @@ def _create_reversal(
             reversal_id,
             vendor_id,
             kind,
-            json.dumps(preimage, sort_keys=True, separators=(",", ":"))
-            if preimage
-            else None,
+            json.dumps(preimage, sort_keys=True, separators=(",", ":")) if preimage else None,
             post_revision,
             _rb_timestamp(),
         ),
@@ -141,8 +136,7 @@ def _load_reversal(
 ) -> dict[str, Any] | None:
     ensure_vendor_sidecar_tables(conn)
     row = conn.execute(
-        f"SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt "
-        f"FROM {_REVERSAL_TABLE} WHERE ID = ?",
+        f"SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt FROM {_REVERSAL_TABLE} WHERE ID = ?",
         (reversal_id,),
     ).fetchone()
     if row is None:

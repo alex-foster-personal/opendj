@@ -34,8 +34,7 @@ def resolve_restore_mode(*, age_ms: int, play: bool) -> RestoreMode:
     if play:
         if age_ms > RESCUE_PLAY_WINDOW_MS:
             raise RescueRestoreError(
-                f"play restore refused outside the 10 min play window ({age_ms} ms > "
-                f"{RESCUE_PLAY_WINDOW_MS} ms)",
+                f"play restore refused outside the 10 min play window ({age_ms} ms > {RESCUE_PLAY_WINDOW_MS} ms)",
                 status_code=422,
             )
         return "play"

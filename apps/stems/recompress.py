@@ -1,4 +1,12 @@
-"""Re-compress existing lossless stem bundles of lossy sources to MP3 (STEM-58).
+"""Re-compress existing lossless stem bundles of lossy sources to MP3 (STEM-58),
+and shrink MP3 bundles made under the old per-part rule to STEM-8231's.
+
+STEM-8231 (Mon 2 Nov / Tue 3 Nov 2026): an MP3 bundle whose parts are over the
+whole-set rule (each part at max(floor(source_kbps / 4) on the ladder, its
+floor: 96 kbps bass and drums, 64 vocals and other), measured as part bytes
+over the stems' duration, is decoded and re-encoded to that rule through the
+same encoder; a compliant one is skipped as SKIP_AT_POLICY. Everything below
+(locking, snapshot, verify, backup, journaled swap) applies to both.
 
 WHY. From Fri 2 Oct 2026 (STEM-51) until STEM-57, the installed app wrote every
 stem of an MP3/M4A source as lossless FLAC, and the Modal/relay routes have
@@ -114,6 +122,13 @@ MP3_MAX_EXTRA_FRAMES = 2 * MP3_FRAME_SAMPLES
 
 ELIGIBLE = "eligible"
 SKIP_ALREADY_LOSSY = "already lossy"
+SKIP_AT_POLICY = "mp3 already at the whole-set rule"
+MP3_MEDIA_TYPE = "audio/mpeg"
+# A part counts as at policy when its measured bitrate is within this factor
+# of its whole-set target: CBR container overhead (Info frame, LAME padding,
+# ID3) is well under 2% on a track, so 5% never mistakes an old 320 kbps or
+# V0 part for a compliant one, and never flags a fresh STEM-8231 part.
+AT_POLICY_KBPS_SLACK = 1.05
 SKIP_LOSSLESS_SOURCE = "lossless source keeps FLAC"
 SKIP_NO_SOURCE = "no source file on disk"
 SKIP_UNKNOWN_SOURCE = "source format has no policy"
@@ -317,24 +332,57 @@ def classify(root: Path, stable_id: str, library_path: str | None) -> Candidate:
         bundle = load_stem_bundle(stable_id, roots=[root])
     except (StemArtifactError, FileNotFoundError) as exc:
         return Candidate(root, stable_id, SKIP_INVALID, size, str(exc)[:200])
-    if bundle.media_type not in LOSSLESS_MEDIA_TYPES:
+    lossless = bundle.media_type in LOSSLESS_MEDIA_TYPES
+    if not lossless and bundle.media_type != MP3_MEDIA_TYPE:
         return Candidate(root, stable_id, SKIP_ALREADY_LOSSY, size, bundle.media_type)
     source = _source_for(bundle, library_path)
     if source is None:
         detail = f"library path {library_path} is not a file" if library_path else ""
         return Candidate(root, stable_id, SKIP_NO_SOURCE, size, detail)
     try:
-        codec = pol.stem_output_codec_for_source_ext(source.suffix)
+        pol.stem_output_codec_for_source_ext(source.suffix)
     except pol.UnknownSourceFormatError:
         return Candidate(root, stable_id, SKIP_UNKNOWN_SOURCE, size, source.suffix, source)
-    if codec != "mp3":
+    # STEM-58's scope for LOSSLESS bundles, unchanged by STEM-8231: only those of
+    # LOSSY sources are rewritten. An MP3 bundle of any known source is judged
+    # against the STEM-8231 whole-set rule instead.
+    if lossless and source.suffix.lower() not in pol.LOSSY_SOURCE_EXTS:
         return Candidate(root, stable_id, SKIP_LOSSLESS_SOURCE, size, source.suffix, source)
     try:
         raw = _raw_manifest(bundle_dir)
     except (OSError, ValueError, StemArtifactError) as exc:
         return Candidate(root, stable_id, SKIP_INVALID, size, str(exc)[:200])
-    verdict, detail = _verdict_for_source(bundle, raw, source)
+    verdict, detail = _verdict_for_source(bundle, raw, source) if lossless else _verdict_for_mp3_bundle(bundle, source)
     return Candidate(root, stable_id, verdict, size, detail, source)
+
+
+def mp3_part_targets_kbps(source: Path, parts: Sequence[str]) -> dict[str, int] | None:
+    """Each part's STEM-8231 CBR for ``source`` (the whole-set rate lifted to the
+    part's floor), or None when the source reports no duration."""
+    duration_s = _source_duration_s(source)
+    if duration_s is None:
+        return None
+    rung1 = pol.mp3_whole_set_cbr_kbps(pol.effective_bitrate_kbps(source.stat().st_size, duration_s))
+    return {part: max(rung1, pol.mp3_part_floor_kbps(part)) for part in parts}
+
+
+def _verdict_for_mp3_bundle(bundle: StemBundle, source: Path) -> tuple[str, str]:
+    """(verdict, detail) for an MP3 bundle: eligible when any part's measured
+    bitrate is over its STEM-8231 target (an old per-part-rule bundle: 320 CBR,
+    V0, or a rung-2 CBR), else already at policy."""
+    align = bundle.alignment
+    stems_s = align.frame_count / align.sample_rate
+    mismatch = _duration_mismatch(source, stems_s)
+    if mismatch is not None:
+        return SKIP_SOURCE_DURATION, mismatch
+    targets = mp3_part_targets_kbps(source, bundle.parts)
+    if targets is None:
+        return SKIP_SOURCE_DURATION, f"{source.name} reports no duration"
+    measured = {part: Path(bundle.files[part]).stat().st_size * 8 / stems_s / 1000 for part in bundle.parts}
+    over = {p: round(k) for p, k in measured.items() if k > targets[p] * AT_POLICY_KBPS_SLACK}
+    if not over:
+        return SKIP_AT_POLICY, ", ".join(f"{p}={targets[p]}" for p in bundle.parts)
+    return ELIGIBLE, "mp3 over the whole-set rule: " + ", ".join(f"{p} {k}>{targets[p]}" for p, k in over.items())
 
 
 def _verdict_for_source(bundle: StemBundle, raw: dict[str, Any], source: Path) -> tuple[str, str]:
@@ -510,9 +558,14 @@ def _require_recorded_source(stable_id: str, raw: dict[str, Any], source_path: P
 
 
 def _decoded_frames(path: Path) -> int:
+    """Frames the file really decodes to. Not ``sf.info().frames``: a low-rate
+    CBR part (STEM-8231's 32 to 80 kbps) carries no Info header, so libsndfile
+    estimates its length from the byte count (measured +3001 frames on 4 s
+    at 48 kbps, while the decode is within LAME's two-frame pad)."""
     import soundfile as sf
 
-    return int(sf.info(str(path)).frames)
+    with sf.SoundFile(str(path)) as audio:
+        return sum(len(block) for block in audio.blocks(blocksize=1 << 16, dtype="float32"))
 
 
 def _marks(path: Path | None) -> tuple[tuple[object, ...], ...] | None:
@@ -904,34 +957,69 @@ def _encode_part_to_mp3(
     rung1: str,
     source_bytes: int,
     source_kbps: float,
+    frame_count: int,
 ) -> tuple[int, str]:
-    """Decode one lossless part, encode it to ``out`` and check its frames.
+    """Decode one part (lossless, or an over-budget MP3), encode it to ``out``
+    and check its frames.
 
-    Returns the encoded size and the LAME settings that were used.
+    ``frame_count`` is the bundle's true length (``_true_frame_count``): an
+    MP3 part decoding up to ``MP3_MAX_EXTRA_FRAMES`` longer (LAME's end
+    padding) is trimmed to it, so the re-encode starts from exactly those
+    frames. Returns the encoded size and the LAME settings that were used.
     """
     import soundfile as sf
 
     align = bundle.alignment
     label = f"{stable_id}/{part}"
     data, rate = sf.read(str(bundle.files[part]), dtype="float32", always_2d=True)  # type: ignore[index]
-    if (int(rate), data.shape[0], data.shape[1]) != (align.sample_rate, align.frame_count, align.channels):
-        raise StemArtifactError(f"{label}: decoded {rate} Hz x {data.shape} does not match the manifest's {align}")
+    extra = data.shape[0] - frame_count
+    if bundle.media_type == MP3_MEDIA_TYPE and 0 < extra <= MP3_MAX_EXTRA_FRAMES:
+        data = data[:frame_count]
+    if (int(rate), data.shape[0], data.shape[1]) != (align.sample_rate, frame_count, align.channels):
+        raise StemArtifactError(
+            f"{label}: decoded {rate} Hz x {data.shape} does not match {frame_count} frames of the manifest's {align}"
+        )
     encoded, rung2 = encode_part(
         data,
         align.sample_rate,
         codec="mp3",
+        part=part,
         mp3_settings=rung1,
         source_bytes=source_bytes,
         source_kbps=source_kbps,
         out_path=out,
     )
     frames = _decoded_frames(out)
-    if not align.frame_count <= frames <= align.frame_count + MP3_MAX_EXTRA_FRAMES:
+    if not frame_count <= frames <= frame_count + MP3_MAX_EXTRA_FRAMES:
         raise StemArtifactError(
-            f"{label}: mp3 decodes to {frames} frames, expected "
-            f"{align.frame_count}..{align.frame_count + MP3_MAX_EXTRA_FRAMES}"
+            f"{label}: mp3 decodes to {frames} frames, expected {frame_count}..{frame_count + MP3_MAX_EXTRA_FRAMES}"
         )
     return len(encoded), rung2 or rung1
+
+
+def _true_frame_count(bundle: StemBundle, stable_id: str) -> int:
+    """The frames every part really carries.
+
+    A lossless bundle's alignment is exact. An MP3 bundle's may not be: a
+    schema v1 manifest records no ``audio`` block, so the reader derives the
+    length from the first part's header, which overestimates by up to two
+    MP3 frames (measured on silver, Tue 3 Nov 2026: three v1 bundles decode
+    1152 to 2176 frames short of it, yet line up with the source at offset
+    0). So an MP3 bundle's length is its shortest decoded part, and it must
+    lie within ``MP3_MAX_EXTRA_FRAMES`` of the alignment.
+    """
+    align = bundle.alignment
+    if bundle.media_type != MP3_MEDIA_TYPE:
+        return align.frame_count
+    decoded = {part: _decoded_frames(Path(bundle.files[part])) for part in bundle.parts}  # type: ignore[index]
+    shortest = min(min(decoded.values()), align.frame_count)
+    spread = {p: f - shortest for p, f in decoded.items()}
+    if align.frame_count - shortest > MP3_MAX_EXTRA_FRAMES or max(spread.values()) > MP3_MAX_EXTRA_FRAMES:
+        raise StemArtifactError(
+            f"{stable_id}: mp3 parts decode to {decoded} frames against an alignment of "
+            f"{align.frame_count}; more than {MP3_MAX_EXTRA_FRAMES} apart"
+        )
+    return shortest
 
 
 def _mp3_manifest(
@@ -941,6 +1029,7 @@ def _mp3_manifest(
     source_path: Path,
     source_sha256: str,
     size_policy: dict[str, Any],
+    frame_count: int,
 ) -> dict[str, Any]:
     """The schema v3 MP3 manifest that replaces ``bundle``'s.
 
@@ -962,7 +1051,7 @@ def _mp3_manifest(
         "files": {part: f"{part}.mp3" for part in bundle.parts},
         "audio": {
             "sample_rate": align.sample_rate,
-            "frame_count": align.frame_count,
+            "frame_count": frame_count,
             "channels": align.channels,
         },
         "codec": "mp3",
@@ -1092,9 +1181,10 @@ def recompress_bundle(
         new_dir.mkdir()
         part_bytes: dict[str, int] = {}
         settings: dict[str, str] = {}
+        frame_count = _true_frame_count(bundle, stable_id)
         for part in bundle.parts:
             part_bytes[part], settings[part] = _encode_part_to_mp3(
-                bundle, stable_id, part, new_dir / f"{part}.mp3", rung1, source_bytes, source_kbps
+                bundle, stable_id, part, new_dir / f"{part}.mp3", rung1, source_bytes, source_kbps, frame_count
             )
         violations = [
             dataclasses.asdict(v)
@@ -1115,6 +1205,7 @@ def recompress_bundle(
                 "part_bytes": part_bytes,
                 "violations": violations,
             },
+            frame_count,
         )
         # Every part's hash, as register-stems writes them: the lyrics stems
         # hydrate path fetches parts by these and refuses a manifest without
@@ -1124,7 +1215,7 @@ def recompress_bundle(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
         reread = load_stem_bundle(stable_id, roots=[work])
-        if reread.media_type != "audio/mpeg" or reread.alignment != align:
+        if reread.media_type != "audio/mpeg" or reread.alignment != dataclasses.replace(align, frame_count=frame_count):
             raise StemArtifactError(f"{stable_id}: re-read bundle is {reread.media_type} {reread.alignment}")
 
         def source_unchanged() -> None:

@@ -10,6 +10,7 @@
 	import { listTrackPlaylists, type TrackPlaylistHit } from '$lib/rb/track-playlists';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { summarizeSelection } from '$lib/library/inspector-summary';
+	import { shownKey } from '$lib/rb/key-notation';
 	import TrackInspectorView from './TrackInspectorView.svelte';
 
 	type Patch = { rating?: number; tags_add?: string[]; tags_remove?: string[]; notes?: string };
@@ -171,6 +172,7 @@
 	paneTitle={libraryWorkspace.pane_title}
 	{summary}
 	{single}
+	keyShown={single === null ? null : shownKey(single.key)}
 	{track}
 	{loadError}
 	{saveError}

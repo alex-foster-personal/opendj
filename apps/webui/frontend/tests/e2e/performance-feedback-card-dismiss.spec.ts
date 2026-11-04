@@ -36,16 +36,16 @@ test('reopened comment card accepts a follow-up that survives reload', async ({ 
 		await expect(card).toBeVisible();
 		await expect(card.locator('.fb-body-text')).toHaveText(REPLY_SEED_TEXT);
 		await expect(card.locator('.fb-note')).toContainText('queued as #905');
-		await card.getByLabel('Follow-up comment').fill(followUp);
+		await card.getByLabel('Follow-up comment', { exact: true }).fill(followUp);
 		await card.getByRole('button', { name: 'Add follow-up comment', exact: true }).click();
-		await expect(card.locator('.fb-note')).toContainText(followUp);
+		await expect(card.locator('.fb-note').filter({ hasText: followUp })).toHaveCount(1);
 		const listed = await page.request.get('/api/v1/feedback/comments');
 		const pins = (await listed.json()).comments as Array<{ id: string; replies?: Array<{ text: string }> }>;
 		expect(pins).toHaveLength(1);
 		expect(pins[0].replies?.some((r) => r.text === followUp)).toBe(true);
 		await page.reload({ waitUntil: 'domcontentloaded' });
 		await existingPin.click();
-		await expect(card.locator('.fb-note')).toContainText(followUp);
+		await expect(card.locator('.fb-note').filter({ hasText: followUp })).toHaveCount(1);
 	} finally {
 		const fixed = await page.request.patch(`/api/v1/feedback/comments/${seededId}`, {
 			data: { status: 'fixed' }
@@ -105,21 +105,38 @@ async function runScenario(page: import('@playwright/test').Page): Promise<void>
 
 	// Real resize handles stop propagation. Find an unobstructed handle rather
 	// than dispatching a synthetic event or forcing a click through the card.
-	const point = await page.locator('.col-resize').evaluateAll((handles) => {
-		for (const handle of handles) {
+	// Scroll the handle into view first (a real scroll a user would perform): on
+	// the 1280x800 project viewport the table's handle centres sit at y=801.75,
+	// 1.75 px below the bottom edge, so elementFromPoint returns null for an
+	// offscreen centre even though the rect ORIGIN is inside the viewport.
+	const handlesLocator = page.locator('.col-resize');
+	await handlesLocator.first().scrollIntoViewIfNeeded();
+	const point = await handlesLocator.evaluateAll((handles) => {
+		const viewportHeight = window.innerHeight;
+		const viewportWidth = window.innerWidth;
+		for (const [index, handle] of handles.entries()) {
 			const rect = handle.getBoundingClientRect();
 			const x = rect.x + rect.width / 2;
 			const y = rect.y + rect.height / 2;
-			if (rect.width > 0 && rect.height > 0 && handle.contains(document.elementFromPoint(x, y))) {
-				return { x, y };
+			const centreOnScreen = x >= 0 && x <= viewportWidth && y >= 0 && y <= viewportHeight;
+			if (rect.width > 0 && rect.height > 0 && centreOnScreen && handle.contains(document.elementFromPoint(x, y))) {
+				return { x, y, index, columnWidth: (handle.parentElement as HTMLElement).getBoundingClientRect().width };
 			}
 		}
 		return null;
 	});
 	if (point === null) throw new Error('No unobstructed real column resize handle is available');
+	// A dismissal alone would pass even if the handle were inert, so drag the real
+	// handle and require the owning column to widen: that is the "resizing still
+	// works" half of the acceptance, measured on the same physical pointer path.
 	await page.mouse.move(point.x, point.y);
 	await page.mouse.down();
+	await page.mouse.move(point.x + 40, point.y, { steps: 5 });
 	await page.mouse.up();
+	const widened = await handlesLocator.nth(point.index).evaluate((handle) => {
+		return (handle.parentElement as HTMLElement).getBoundingClientRect().width;
+	});
+	expect(widened - point.columnWidth).toBeGreaterThan(20);
 	await expect(card).toHaveCount(0);
 	await existingPin.click();
 	await expect(card).toBeVisible();

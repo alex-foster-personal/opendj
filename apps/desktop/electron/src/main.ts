@@ -4,7 +4,7 @@
 // owns no application logic: no product decisions, no data access, no HTTP
 // client for the API. It starts the engine that ships inside the app, keeps it
 // alive, opens a Chromium window onto it, and offers the page five native
-// features. Everything a user sees is served by the engine over HTTP.
+// features, plus the docked Spotify side player (side-player.ts). Everything a user sees is served by the engine over HTTP.
 //
 // Port of apps/desktop/src-tauri/src/main.rs. Behaviors are numbered P1-P19 in
 // (private path).
@@ -33,8 +33,11 @@ import {
 
 import { defaultBootDeps, startEngine } from './boot';
 import { installEditContextMenu } from './context-menu';
+import { resolveEngineDataDir } from './data-dir';
 import { PAYLOAD_DIR } from './engine';
 import { makeLockProbe, performancePageUrl } from './launch';
+import { isOpenerUrlAllowed } from './opener';
+import { payloadPython } from './platform';
 import { coreAudioOutputDevices, outputHealthJson } from './output-health';
 import {
 	APP_HOST,
@@ -48,7 +51,6 @@ import {
 	classifyMainFrameNavigation,
 	packagedRemoteDebuggingRefusal,
 	REMOTE_DEBUGGING_SWITCHES,
-	isExternalUrlAllowed,
 	isTrustedPage,
 	macAppSupportDir,
 	macMenuTemplate,
@@ -61,6 +63,8 @@ import {
 	writeAudioEngineChoice
 } from './policy';
 import { ShellHealthServer } from './shell-health';
+import { SidePlayer } from './side-player';
+import { sideCollapsedArg, sideOpenArgs } from './side-player-layout';
 import { EngineError, appendShellLog, installShellLogging } from './shell-log';
 import {
 	EngineSupervisor,
@@ -112,29 +116,30 @@ function readIdentifier(): string {
 
 /**
  * The engine's data dir: where Tauri's `app_data_dir()` puts it, so switching
- * shells keeps the user's library. On macOS that is read from `$HOME`, as
- * Tauri reads it, and refused when it is not inside `$HOME` (#6068); see
- * `macAppSupportDir`. Unpackaged builds accept OPENDJ_SHELL_DATA_DIR so tests
- * never touch a real library. Throws EngineError when the folder is refused.
+ * shells keeps the user's library. On macOS that is read from `$HOME`, as Tauri
+ * reads it, and refused when it is not inside `$HOME` (#6068); see
+ * `macAppSupportDir` and `pinChromiumDirsToHome`. On Windows it is
+ * %LOCALAPPDATA%/<identifier> (src/data-dir.ts, never Roaming). Unpackaged
+ * builds accept OPENDJ_SHELL_DATA_DIR so tests never touch a real library.
+ * Throws EngineError when the folder is refused.
  */
 function engineDataDir(identifier: string): string {
 	const override = process.env.OPENDJ_SHELL_DATA_DIR;
 	if (!app.isPackaged && override !== undefined && override.trim() !== '') return path.resolve(override);
-	if (process.platform === 'linux') {
-		const base = process.env.XDG_DATA_HOME?.trim() || path.join(os.homedir(), '.local', 'share');
-		return path.join(base, identifier);
-	}
+	const dataDir = resolveEngineDataDir(identifier, {
+		platform: process.platform,
+		env: process.env,
+		homedir: os.homedir(),
+		appDataDir: app.getPath('appData')
+	});
 	if (process.platform === 'darwin') {
-		const home = process.env.HOME;
-		const dataDir = path.join(macAppSupportDir(home ?? ''), identifier);
 		try {
-			validateDataDirContainedInHome(dataDir, home);
+			validateDataDirContainedInHome(dataDir, process.env.HOME);
 		} catch (error) {
 			throw new EngineError('Open DJ refused its data folder.', (error as Error).message);
 		}
-		return dataDir;
 	}
-	return path.join(app.getPath('appData'), identifier);
+	return dataDir;
 }
 
 /**
@@ -219,6 +224,7 @@ function main(): void {
 	const identity = shellBuildIdentity(app.getVersion(), stamp);
 
 	let window: BrowserWindow | null = null;
+	let sidePlayer: SidePlayer | null = null;
 	let supervisor: EngineSupervisor | null = null;
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
@@ -353,7 +359,7 @@ function main(): void {
 	});
 	ipcMain.handle('opendj:open-external', async (event, url: unknown) => {
 		if (!trusted(event)) return refuse();
-		if (typeof url !== 'string' || !isExternalUrlAllowed(url)) throw new Error(`refusing to open ${String(url)}`);
+		if (typeof url !== 'string' || !isOpenerUrlAllowed(url)) throw new Error(`refusing to open ${String(url)}`);
 		await shell.openExternal(url);
 	});
 	ipcMain.handle('opendj:exit', (event, code: unknown) => {
@@ -387,6 +393,33 @@ function main(): void {
 	ipcMain.handle('opendj:list-coreaudio-outputs', (event) => {
 		if (!trusted(event)) return refuse();
 		return coreAudioOutputDevices(payloadDir());
+	});
+
+	// ----- the Spotify side player (SPOT-6555b/03), bridge version 2 -------------
+	const side = (): SidePlayer => {
+		if (window === null) throw new Error('no app window yet');
+		sidePlayer ??= new SidePlayer(window);
+		return sidePlayer;
+	};
+	ipcMain.handle('opendj:side-open', async (event, url: unknown, options: unknown) => {
+		if (!trusted(event)) return refuse();
+		const args = sideOpenArgs(url, options);
+		await side().open(args.url, { shrinkMain: args.shrinkMain });
+	});
+	ipcMain.handle('opendj:side-collapse', (event, collapsed: unknown) => {
+		if (!trusted(event)) return refuse();
+		// Check the flag before the closed-player short circuit, so a wrong type
+		// is refused whether or not a player is open.
+		const flag = sideCollapsedArg(collapsed);
+		sidePlayer?.setCollapsed(flag);
+	});
+	ipcMain.handle('opendj:side-close', (event) => {
+		if (!trusted(event)) return refuse();
+		sidePlayer?.close();
+	});
+	ipcMain.handle('opendj:side-import-logins', async (event) => {
+		if (!trusted(event)) return refuse();
+		return side().importBrowserLogins();
 	});
 
 	void app.whenReady().then(async () => {
@@ -428,7 +461,7 @@ function main(): void {
 
 		// P3-P8 / P5: start or adopt the engine, or honor the external origin.
 		const payload = payloadDir();
-		const lockProbe = makeLockProbe(path.join(payload, 'runtime', 'bin', 'python3'));
+		const lockProbe = makeLockProbe(payloadPython(payload));
 		const external = process.env[ENGINE_ORIGIN_ENV];
 		let health: ShellHealthServer | null = null;
 		let bootEngine: Supervised | undefined;

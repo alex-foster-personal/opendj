@@ -23,6 +23,7 @@ Two adapter families coexist in the tree, for historical reasons:
 All lookups go through :func:`load_adapter`; tests can monkeypatch
 :data:`ADAPTERS` to inject fakes without touching the CLI.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -111,9 +112,7 @@ def load_adapter(name: str) -> Any:
     if spec.family == "class":
         module_path, _, class_name = spec.target_path.partition(":")
         if not class_name:
-            raise ValueError(
-                f"adapter {name!r}: class family requires 'module:Class' target_path"
-            )
+            raise ValueError(f"adapter {name!r}: class family requires 'module:Class' target_path")
         module = importlib.import_module(module_path)
         return getattr(module, class_name)()
     # module family.
@@ -125,6 +124,4 @@ def get_spec(name: str) -> AdapterSpec:
     try:
         return ADAPTERS[name]
     except KeyError as exc:
-        raise AdapterNotFoundError(
-            f"unknown adapter {name!r}; available: {', '.join(available_adapters())}"
-        ) from exc
+        raise AdapterNotFoundError(f"unknown adapter {name!r}; available: {', '.join(available_adapters())}") from exc

@@ -17,10 +17,7 @@ SYNC_GATE_TABLE_DOC: str = (
 
 SYNC_GATE_COLUMN_DOCS: dict[str, dict[str, str]] = {
     "sync_write_tokens": {
-        "table_name": (
-            "Primary key: the digested table this token watches, one of "
-            "apps.sync_hub.sync_set.FK_ORDER."
-        ),
+        "table_name": ("Primary key: the digested table this token watches, one of apps.sync_hub.sync_set.FK_ORDER."),
         "token": (
             "NOT NULL. 16 random bytes, replaced by that table's write "
             "triggers on every row write. Random rather than a counter so a "

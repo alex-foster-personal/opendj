@@ -3,7 +3,7 @@
 Unifies per-track tags across Rekordbox, djay, MIK, and on-disk audio
 containers and writes the chosen values back into the file (ID3v2 for
 MP3, Vorbis comments for FLAC and Ogg Vorbis / Opus, iTunes atoms for MP4;
-all in-house writers, see `docs/decisions/ADR-NEW-permissive-audio-tag-io.md`). Every decision is stamped with provenance
+all in-house writers, see `(private path)`). Every decision is stamped with provenance
 so later phases (M6 open-dj) can replay.
 
 ## Modules
@@ -31,6 +31,10 @@ so later phases (M6 open-dj) can replay.
 
 Confidence: MIK 0.95, RB 0.90, file 0.70, djay 0.65, filename 0.30.
 
+Precedence is the source-order table (`DEFAULT_POLICY` in `apps/tags/unify.py`); confidence
+is stamped on the winner afterwards and does not reorder the chain. The genre row (rb before
+mik) is deliberate even though MIK's confidence number is higher.
+
 Sanity checks: bpm in [40, 220]; energy in [1, 10]; key non-empty.
 Failed sanity fall through to the next source.
 
@@ -42,7 +46,7 @@ Failed sanity fall through to the next source.
 python -m apps.tags.preview path/to/track.mp3 path/to/track2.m4a
 ```
 
-Writes `data/tags/unified-preview.csv`. Never mutates any file.
+Writes `(private path)`. Never mutates any file.
 
 ### Live apply (2-3 files first)
 
@@ -55,7 +59,7 @@ Per-file safety rails:
 
 1. Skip if the file is an iCloud placeholder (`.icloud` sibling present).
 2. Abort if Rekordbox OR djay is running (pgrep).
-3. Copy to `data/tags/backups/YYYY-MM-DD/<sha256>.ext` before any write.
+3. Copy to `(private path)/<sha256>.ext` before any write.
 4. Write tags via the in-house writer for the container (`apps.shared.id3v2`,
    `apps.shared.flac_meta`).
 5. Re-read and compare; on mismatch restore from backup and fail.

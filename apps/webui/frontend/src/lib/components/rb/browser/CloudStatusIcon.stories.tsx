@@ -15,3 +15,5 @@ export const NotOnCloud: Story = contracts.NotOnCloud;
 export const OnCloudNotLocalGreenTick: Story = contracts.OnCloudNotLocalGreenTick;
 export const StreamingSpotify: Story = contracts.StreamingSpotify;
 export const StreamingSoundcloud: Story = contracts.StreamingSoundcloud;
+export const Offloaded: Story = contracts.Offloaded;
+export const Temporary: Story = contracts.Temporary;

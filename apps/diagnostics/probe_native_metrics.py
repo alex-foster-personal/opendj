@@ -276,8 +276,8 @@ def _vm_stat_page_count(output: str, label: str) -> int | None:
     return int(match.group(1))
 
 
-def vm_stat_churn_snapshot() -> dict[str, int] | None:
-    """Swap/compressor counters from ``vm_stat``, or None when unreadable."""
+def _read_vm_stat() -> tuple[str, int] | None:
+    """Run ``vm_stat`` and parse page size, or None when unreadable."""
 
     try:
         output = run_text(["vm_stat"], timeout=2.0)
@@ -286,7 +286,16 @@ def vm_stat_churn_snapshot() -> dict[str, int] | None:
     header = re.search(r"page size of (\d+) bytes", output)
     if header is None:
         return None
-    page_size = int(header.group(1))
+    return output, int(header.group(1))
+
+
+def vm_stat_churn_snapshot() -> dict[str, int] | None:
+    """Swap/compressor counters from ``vm_stat``, or None when unreadable."""
+
+    read = _read_vm_stat()
+    if read is None:
+        return None
+    output, page_size = read
     swapins = _vm_stat_page_count(output, "Swapins")
     swapouts = _vm_stat_page_count(output, "Swapouts")
     decompressions = _vm_stat_page_count(output, "Decompressions")
@@ -353,15 +362,14 @@ def _vm_stat_free_mb() -> dict[str, float]:
     die, which is exactly the reading this must never fabricate.
     """
 
-    try:
-        output = run_text(["vm_stat"], timeout=2.0)
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    read = _read_vm_stat()
+    if read is None:
         return {}
-    header = re.search(r"page size of (\d+) bytes", output)
+    output, page_size = read
     free = re.search(r"^Pages free:\s+(\d+)", output, re.MULTILINE)
-    if header is None or free is None:
+    if free is None:
         return {}
-    return {"free_memory_mb": round_mb(int(free.group(1)) * int(header.group(1)))}
+    return {"free_memory_mb": round_mb(int(free.group(1)) * page_size)}
 
 
 def machine_metrics() -> dict[str, Any]:

@@ -49,32 +49,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     transfer.add_argument("source", help="Spotify playlist URL, URI, or bare id")
     transfer.add_argument(
-        "--confidence-threshold", type=float, required=True,
+        "--confidence-threshold",
+        type=float,
+        required=True,
         help="minimum (0, 1] confidence for deterministic and LLM matches",
     )
+    transfer.add_argument("--output", type=Path, required=True, help="complete JSON transfer report destination")
     transfer.add_argument(
-        "--output", type=Path, required=True, help="complete JSON transfer report destination"
-    )
-    transfer.add_argument(
-        "--duration-tolerance-ms", type=int, required=True,
+        "--duration-tolerance-ms",
+        type=int,
+        required=True,
         help="maximum deterministic source-to-target duration difference",
     )
     transfer.add_argument(
-        "--sharing", choices=("private", "public"), required=True,
+        "--sharing",
+        choices=("private", "public"),
+        required=True,
         help="sharing mode if --live creates the SoundCloud playlist",
     )
     mode = transfer.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="search without target writes")
     mode.add_argument("--live", action="store_true", help="create the matched SoundCloud playlist")
-    transfer.add_argument(
-        "--i-understand-the-risks", action="store_true", help="required with --live"
-    )
-    transfer.add_argument(
-        "--confirm-playlist-id", help="required with --live; must equal the Spotify id"
-    )
-    transfer.add_argument(
-        "--overwrite", action="store_true", help="atomically replace an existing report"
-    )
+    transfer.add_argument("--i-understand-the-risks", action="store_true", help="required with --live")
+    transfer.add_argument("--confirm-playlist-id", help="required with --live; must equal the Spotify id")
+    transfer.add_argument("--overwrite", action="store_true", help="atomically replace an existing report")
     return parser
 
 

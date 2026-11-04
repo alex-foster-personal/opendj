@@ -1,4 +1,5 @@
 """Set-diff helper for materialisation."""
+
 from __future__ import annotations
 
 

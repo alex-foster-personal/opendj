@@ -14,6 +14,7 @@ The disk floor is a pure function of three explicit numbers
 (:func:`check_disk_floor`), so it can be tested on both sides of the line
 without depending on how full the machine running the test happens to be.
 """
+
 from __future__ import annotations
 
 import json
@@ -76,9 +77,7 @@ def load(data_dir: Path) -> Settings:
     )
 
 
-def resolve(
-    data_dir: Path, *, ingest_root: Path | None = None, min_free_bytes: int | None = None
-) -> Settings:
+def resolve(data_dir: Path, *, ingest_root: Path | None = None, min_free_bytes: int | None = None) -> Settings:
     """Stored settings with any explicit argument laid over them."""
     stored = load(data_dir)
     return Settings(

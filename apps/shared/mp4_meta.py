@@ -27,6 +27,7 @@ Mini-PRD
        decoded audio is identical
   [if] the write fails midway            [then] the original file is intact
 """
+
 from __future__ import annotations
 
 import struct
@@ -45,9 +46,7 @@ FREEFORM = b"----"
 _PADDING_KINDS = {b"free", b"skip"}
 _OFFSET_CONTAINERS = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"moof", b"traf", b"mfra"}
 _FRAGMENT_KINDS = {b"moof", b"mfra"}
-_HDLR_MDIR = (
-    struct.pack(">I4s", 33, b"hdlr") + bytes(4) + bytes(4) + b"mdir" + b"appl" + bytes(8) + b"\x00"
-)
+_HDLR_MDIR = struct.pack(">I4s", 33, b"hdlr") + bytes(4) + bytes(4) + b"mdir" + b"appl" + bytes(8) + b"\x00"
 
 
 class Mp4Error(Exception):
@@ -94,9 +93,7 @@ def atom(kind: bytes, payload: bytes) -> bytes:
 
 
 def _child(buf: bytes, parent: Atom, kind: bytes, where: str, skip: int = 0) -> Atom | None:
-    return next(
-        (a for a in iter_atoms(buf, parent.payload_start + skip, parent.end, where) if a.kind == kind), None
-    )
+    return next((a for a in iter_atoms(buf, parent.payload_start + skip, parent.end, where) if a.kind == kind), None)
 
 
 # ============================================================== items =======
@@ -118,8 +115,11 @@ class Item:
         """``(mean, name)`` of a ``----`` item, else ``None``."""
         if self.kind != FREEFORM:
             return None
-        parts = {kind: payload[4:].decode("utf-8", "replace") for kind, payload in self._children()
-                 if kind in (b"mean", b"name")}
+        parts = {
+            kind: payload[4:].decode("utf-8", "replace")
+            for kind, payload in self._children()
+            if kind in (b"mean", b"name")
+        }
         return parts.get(b"mean", ""), parts.get(b"name", "")
 
     def value(self) -> str | None:
@@ -274,9 +274,7 @@ def read(path: Path) -> Mp4Meta:
 
 
 # ============================================================== write =======
-def _rebuild(
-    buf: bytes, parent: Atom, kind: bytes, skip: int, replace_child: Callable[[Atom | None], bytes]
-) -> bytes:
+def _rebuild(buf: bytes, parent: Atom, kind: bytes, skip: int, replace_child: Callable[[Atom | None], bytes]) -> bytes:
     """``parent`` re-emitted with its ``kind`` child replaced by ``replace_child(child)``
     (``child`` is ``None`` when absent: the result is appended)."""
     pre = buf[parent.payload_start : parent.payload_start + skip]
@@ -356,9 +354,7 @@ class _Shift:
                 trailer = sum(((sizes >> shift) & 0x3) + 1 for shift in (4, 2, 0))
                 self._patch_run(buf, child, body + 16 + width, count, width, stride=2 * width + trailer)
 
-    def _patch_run(
-        self, buf: bytearray, table: Atom, first: int, count: int, width: int, *, stride: int
-    ) -> None:
+    def _patch_run(self, buf: bytearray, table: Atom, first: int, count: int, width: int, *, stride: int) -> None:
         if first + (count - 1) * stride + width > table.end and count:
             raise Mp4Error(f"{self.where}: {table.kind!r} table runs past its atom")
         fmt = ">I" if width == 4 else ">Q"

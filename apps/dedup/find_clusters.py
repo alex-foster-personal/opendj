@@ -55,6 +55,11 @@ MANUAL_REVIEW_CSV_HEADER = (
     "similarity",
     "duration_delta_s",
 )
+
+
+def _write_header_only_csv(path: Path, header: tuple[str, ...]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(",".join(header) + "\n", encoding="utf-8")
 # Identical sub-fingerprints at one offset before a pair is scored at all.
 # At the 0.92 threshold about 7% of a pair's sub-fingerprints are still
 # bit-exact (0.92^32), which is ~66 for a 120 s fingerprint and still 2 or
@@ -280,16 +285,11 @@ def run_find_clusters(
             conn.commit()
         finally:
             conn.close()
-        use_csv.parent.mkdir(parents=True, exist_ok=True)
-        use_csv.write_text(",".join(CLUSTERS_CSV_HEADER) + "\n", encoding="utf-8")
-        use_manual.parent.mkdir(parents=True, exist_ok=True)
-        use_manual.write_text(
-            ",".join(MANUAL_REVIEW_CSV_HEADER) + "\n", encoding="utf-8"
-        )
+        _write_header_only_csv(use_csv, CLUSTERS_CSV_HEADER)
+        _write_header_only_csv(use_manual, MANUAL_REVIEW_CSV_HEADER)
         return []
 
     uf = _UnionFind(n)
-    pair_similarity: dict[tuple[int, int], float] = {}
     for i, j in sorted(candidate_pairs(fps)):
         sim, _offset = match(fps[i], fps[j])
         if sim < threshold:
@@ -297,8 +297,6 @@ def run_find_clusters(
         # Duration-delta guard: flag high sim + large delta as
         # manual review (will still cluster, but marked).
         uf.union(i, j)
-        key = (min(i, j), max(i, j))
-        pair_similarity[key] = sim
 
     # Group members by root.
     buckets: dict[int, list[int]] = {}

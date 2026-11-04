@@ -5,6 +5,7 @@
 event-bus message, which is also what lands in the durable ``events``
 table.
 """
+
 from __future__ import annotations
 
 import dataclasses

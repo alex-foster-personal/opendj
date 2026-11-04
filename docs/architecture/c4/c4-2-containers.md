@@ -17,10 +17,9 @@ over.** Evidence at this commit:
 - `(private path)/` holds `21-01-PLAN.md` and `21-01-SUMMARY.md`
   only; there is no 21-02 plan or summary in this tree.
 - `just dmg` (`justfile`, recipe `dmg`) stages the payload into `apps/desktop/src-tauri/payload`
-  and builds with `cargo tauri build`; neither the recipe nor `scripts/ship_dmg.sh` mentions
-  Electron.
-- The Electron `pack:dir` build ships an empty placeholder payload
-  (`apps/desktop/electron/payload/README.md`), so it cannot run the product without a checkout.
+  and builds with `cargo tauri build`. `scripts/ship_dmg.sh --shell electron` builds and
+  installs the Electron app via `scripts/ship_electron.py`; `pnpm pack:dir` still ships the
+  README placeholder and the ship step swaps in the real payload.
 - The web UI talks to whichever shell hosts it through `apps/webui/frontend/src/lib/shell/native-shell.ts`, which
   has both a Tauri branch and an Electron `window.opendjShell` branch.
 

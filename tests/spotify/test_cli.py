@@ -142,3 +142,22 @@ def test_cli_import_default_max_tracks_is_safe() -> None:
         ["import", "id", "--max-tracks", "0"]
     ).max_tracks == 0
 
+
+
+@pytest.mark.requirement("SPOT-6555")
+@pytest.mark.parametrize(("body", "problem"), [(b"{not json", "not JSON"), (b'{"client_id": "\xff"}', "not UTF-8")])
+def test_cli_login_reports_an_unreadable_client_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, body: bytes, problem: str
+) -> None:
+    """[if] the saved client id file is damaged [then] login prints SPOTIFY_CLIENT_ID_UNREADABLE and exits 3, [else stop].
+
+    Otherwise the CLI dies with a traceback instead of the diagnostic the panel shows."""
+    from apps.spotify import account
+
+    saved = tmp_path / "spotify-client.json"
+    saved.write_bytes(body)
+    monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    monkeypatch.setattr(account, "CLIENT_ID_PATH", saved)
+    assert cli_main(["login", "--no-browser"]) == 3
+    err = capsys.readouterr().err
+    assert "SPOTIFY_CLIENT_ID_UNREADABLE" in err and problem in err

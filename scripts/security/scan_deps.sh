@@ -36,6 +36,7 @@ MANIFESTS=(
   apps/desktop/src-tauri/Cargo.lock
   apps/webui/server/native/waveform/Cargo.lock
   apps/audio-engine/Cargo.lock
+  apps/live-core/Cargo.lock
   scripts/native/oss_tip_audit/Cargo.lock
   tests/opendj_desktop_opener_scope/Cargo.lock
   package-lock.json

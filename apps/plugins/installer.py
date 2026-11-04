@@ -147,8 +147,12 @@ def _check_listing(manifest: PluginManifest, present: Iterable[str]) -> None:
 
 
 def _streamed(
-    manifest: PluginManifest, rel: str, opener: Opener, sink: IO[bytes] | None = None,
-    *, limit: int = MAX_UNPACKED_BYTES,
+    manifest: PluginManifest,
+    rel: str,
+    opener: Opener,
+    sink: IO[bytes] | None = None,
+    *,
+    limit: int = MAX_UNPACKED_BYTES,
 ) -> int:
     """Hash ``rel`` in chunks (copying them to ``sink``) and return its size.
 
@@ -170,9 +174,14 @@ def _streamed(
     return size
 
 
-def _write_staged(root: Path, manifest: PluginManifest, manifest_bytes: bytes,
-                  payload: Mapping[str, Opener], then: Callable[[], None] | None,
-                  install_id: str | None) -> Path:
+def _write_staged(
+    root: Path,
+    manifest: PluginManifest,
+    manifest_bytes: bytes,
+    payload: Mapping[str, Opener],
+    then: Callable[[], None] | None,
+    install_id: str | None,
+) -> Path:
     staging = _contained(root, root / STAGING_DIRNAME / f"{manifest.plugin_id}-{uuid.uuid4().hex}")
     staging.mkdir(parents=True)
     try:
@@ -276,7 +285,8 @@ def _clear_leftovers(root: Path, final: Path) -> None:
                 path.unlink()
         except OSError as exc:
             raise InstallError(
-                "cleanup-pending", f"could not clear {path.name} from an earlier install; restart the engine first ({exc})"
+                "cleanup-pending",
+                f"could not clear {path.name} from an earlier install; restart the engine first ({exc})",
             ) from exc
 
 
@@ -376,9 +386,7 @@ def _open_replacement(root: Path, final: Path) -> bool:
     return _previous(root, final).is_dir() and not _aside(root, final, "done").exists()
 
 
-def _commit(
-    root: Path, staging: Path, final: Path, then: Callable[[], None] | None, install_id: str | None
-) -> None:
+def _commit(root: Path, staging: Path, final: Path, then: Callable[[], None] | None, install_id: str | None) -> None:
     """Rename the staged copy into place, keeping the old copy until the install has landed.
 
     The old copy is renamed aside, never deleted first, and kept until ``then``
@@ -468,8 +476,12 @@ def _read_zip(zf: zipfile.ZipFile) -> tuple[bytes, dict[str, Opener]]:
 
 
 def install_archive(
-    root: Path, archive: bytes, entry: CatalogEntry, *,
-    then: Callable[[], None] | None = None, install_id: str | None = None,
+    root: Path,
+    archive: bytes,
+    entry: CatalogEntry,
+    *,
+    then: Callable[[], None] | None = None,
+    install_id: str | None = None,
 ) -> PluginManifest:
     """Install a store download. ``entry`` is the signed catalog row it came from.
 
@@ -820,8 +832,13 @@ def sweep_unrecorded(root: Path, recorded: Mapping[str, str]) -> None:
     when it was updated or uninstalled is no longer in use, so it goes now.
     ``recorded`` maps each recorded plugin id to its recorded version.
     """
-    ids = {child.name for base in (root, root / RECEIPTS_DIRNAME) if base.is_dir()
-           for child in base.iterdir() if is_plugin_id(child.name)}  # a stray file too: it blocks a later install
+    ids = {
+        child.name
+        for base in (root, root / RECEIPTS_DIRNAME)
+        if base.is_dir()
+        for child in base.iterdir()
+        if is_plugin_id(child.name)
+    }  # a stray file too: it blocks a later install
     for plugin_id in sorted(ids):
         remove_installed(root, plugin_id, keep=[recorded[plugin_id]] if plugin_id in recorded else [])
 
@@ -855,7 +872,8 @@ def _remove_path(path: Path) -> None:
 #: Every call :func:`_clear_folder` makes through a directory descriptor is available here.
 _CLEAR_BY_DESCRIPTOR = (
     shutil.rmtree.avoids_symlink_attacks
-    and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and hasattr(os, "O_DIRECTORY")
     and {os.open, os.stat, os.unlink, os.rmdir} <= os.supports_dir_fd
     and os.scandir in os.supports_fd
 )

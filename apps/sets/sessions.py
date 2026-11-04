@@ -75,7 +75,7 @@ def list_sessions(*, sets_root: Path | None = None) -> list[SessionSummary]:
 
     Sessions without a ``manifest.json`` are skipped.
     """
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     if not root.exists():
         return []
     out: list[SessionSummary] = []
@@ -91,7 +91,7 @@ def list_sessions(*, sets_root: Path | None = None) -> list[SessionSummary]:
 
 def get_session(session_id: str, *, sets_root: Path | None = None) -> Session | None:
     """Return the full :class:`Session` or ``None`` if missing."""
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     session_dir = sets_paths.session_dir(session_id, root=root)
     if not (session_dir / "manifest.json").exists():
         return None

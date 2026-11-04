@@ -395,24 +395,11 @@ def _assert_stem_size_policy_mirror_matches() -> None:
         raise SystemExit(
             "error: stem_size_policy constants drifted from the roformer-spike mirror"
         )
-    for ext, want in (
-        (".flac", "flac"),
-        (".wav", "flac"),
-        (".aiff", "flac"),
-        (".aif", "flac"),
-        (".mp3", "mp3"),
-        (".m4a", "mp3"),
-    ):
-        mirrored = _stem_output_codec_for_source_ext(ext)
-        policy = pol.stem_output_codec_for_source_ext(ext)
-        if mirrored != policy or mirrored != want:
-            raise SystemExit(
-                f"error: stem_output_codec_for_source_ext({ext!r}) drifted -- "
-                f"policy={policy!r} mirror={mirrored!r} want={want!r}"
-            )
-    for kbps in (128.0, 245.0, 256.0, 319.99, 320.0, 500.0):
-        if pol.mp3_lame_settings_for_source_kbps(kbps) != _mp3_lame_settings_for_source_kbps(kbps):
-            raise SystemExit(f"error: mp3_lame_settings_for_source_kbps({kbps}) drifted")
+    # The source-codec choice and rung 1 are NOT compared any more: the
+    # demucs routes moved to STEM-8231's whole-set rule (four parts together at
+    # or under the source, MP3 for every source), while this 2-stem spike
+    # keeps STEM-57's per-part rule (each part at or under the source) in its
+    # own _stem_output_codec_for_source_ext / _mp3_lame_settings_for_source_kbps.
     for kbps in (32.0, 128.0, 192.0, 200.0, 257.0, 262.0, 300.0, 320.0, 500.0):
         if pol.mp3_rung2_cbr_kbps(kbps) != _mp3_rung2_cbr_kbps(kbps):
             raise SystemExit(f"error: mp3_rung2_cbr_kbps({kbps}) drifted")

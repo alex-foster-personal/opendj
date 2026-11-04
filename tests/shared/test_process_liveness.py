@@ -170,3 +170,29 @@ def test_pid_is_alive_dispatches_to_windows_on_nt(monkeypatch: pytest.MonkeyPatc
 
     assert pl.pid_is_alive(9) is True
     assert pl.pid_is_alive(10) is False
+
+
+def test_pid_is_alive_on_nt_never_calls_os_kill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] os.name is nt [then] pid_is_alive never calls os.kill [else stop]."""
+    calls: list[tuple[int, int]] = []
+
+    def _spy(pid: int, sig: int) -> None:
+        calls.append((pid, sig))
+        raise AssertionError("os.kill must not run on nt")
+
+    monkeypatch.setattr(pl.os, "name", "nt")
+    monkeypatch.setattr(pl.os, "kill", _spy)
+    kernel32 = _patch_win_kernel32(monkeypatch)
+    kernel32.OpenProcess.return_value = 99
+    kernel32.CloseHandle.return_value = True
+
+    assert pl.pid_is_alive(42) is True
+    assert calls == []
+
+
+def test_pid_liveness_reexports_process_liveness() -> None:
+    """[if] pid_liveness.pid_is_running is not process_liveness.pid_is_alive [then] split, [else stop]."""
+    from apps.shared.pid_liveness import pid_is_running
+    from apps.shared.process_liveness import pid_is_alive
+
+    assert pid_is_running is pid_is_alive

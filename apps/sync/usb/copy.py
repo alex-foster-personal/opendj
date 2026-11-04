@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,8 +42,48 @@ class CopyResult:
     backup_path: Path | None = None
 
 
+def _fsync_file_windows(path: Path) -> None:
+    """Flush one file on Windows, failing loudly.
+
+    ``os.fsync`` is ``_commit``, which needs a handle opened for writing (a
+    read-only handle fails with EBADF), and a file carrying the read-only
+    attribute cannot be opened for writing at all. ``shutil.copy2`` copies
+    that attribute from a read-only source, so it is lifted for the flush and
+    restored after. ``os.open`` cannot open a directory on Windows, so there
+    is no parent-directory flush. Every error propagates, so the caller marks
+    the op failed instead of recording an unflushed file as durable.
+    """
+    mode = path.stat().st_mode
+    read_only = not mode & stat.S_IWRITE
+    if read_only:
+        os.chmod(path, mode | stat.S_IWRITE)
+    try:
+        fd = os.open(path, os.O_RDWR)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    finally:
+        if read_only:
+            os.chmod(path, mode)
+
+
+def _remove_part(part: Path) -> None:
+    """Delete a leftover ``.part``, lifting the read-only attribute first.
+
+    ``shutil.copy2`` copies a read-only source's attribute onto the ``.part``,
+    and Windows refuses to unlink a read-only file.
+    """
+    if part.exists():
+        os.chmod(part, part.stat().st_mode | stat.S_IWRITE)
+        part.unlink()
+
+
 def _fsync_path(path: Path) -> None:
     """fsync file + parent directory (POSIX only for the directory)."""
+    if os.name == "nt":
+        _fsync_file_windows(path)
+        return
     try:
         fd = os.open(path, os.O_RDONLY)
     except OSError:
@@ -90,8 +131,7 @@ def copy_one(op: Op, profile: Profile) -> CopyResult:
     part = op.dst.with_name(op.dst.name + ".part")
     try:
         # Ensure any leftover .part from a previous crash is gone.
-        if part.exists():
-            part.unlink()
+        _remove_part(part)
         shutil.copy2(op.src, part)
         _fsync_path(part)
         os.replace(part, op.dst)
@@ -119,8 +159,7 @@ def copy_one(op: Op, profile: Profile) -> CopyResult:
         )
     except OSError as exc:
         try:
-            if part.exists():
-                part.unlink()
+            _remove_part(part)
         except OSError:
             pass
         return CopyResult(
@@ -146,8 +185,7 @@ def transcode_one(
     backup = _prepare_dst(op, profile)
     part = op.dst.with_name(op.dst.name + ".part")
     try:
-        if part.exists():
-            part.unlink()
+        _remove_part(part)
         args = [
             ffmpeg,
             "-hide_banner",
@@ -168,8 +206,7 @@ def transcode_one(
         ]
         proc = subprocess.run(args, capture_output=True, text=True, check=False)
         if proc.returncode != 0:
-            if part.exists():
-                part.unlink()
+            _remove_part(part)
             return CopyResult(
                 op=op,
                 ok=False,
@@ -191,8 +228,7 @@ def transcode_one(
         )
     except OSError as exc:
         try:
-            if part.exists():
-                part.unlink()
+            _remove_part(part)
         except OSError:
             pass
         return CopyResult(

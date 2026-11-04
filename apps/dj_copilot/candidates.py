@@ -1,4 +1,5 @@
 """Hard-ish candidate filtering for AI-01 (Phase 13 Plan 03)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,12 +18,7 @@ class FilterTrace:
     dropped_notes: dict[str, list[str]] = field(default_factory=dict)
 
     def total_dropped(self) -> int:
-        return (
-            self.dropped_bpm
-            + self.dropped_artist
-            + self.dropped_energy
-            + self.dropped_current
-        )
+        return self.dropped_bpm + self.dropped_artist + self.dropped_energy + self.dropped_current
 
 
 def _recent_energy_slope(context: SessionContext) -> float:
@@ -46,9 +42,7 @@ def filter_candidates(
     trace = FilterTrace()
     bpm_cur = getattr(current_track, "bpm", None)
     current_stable_id = current_track.stable_id
-    recent_artists_window: list[str | None] = [
-        t.artist for t in context.recent[-cooldown_tracks:]
-    ]
+    recent_artists_window: list[str | None] = [t.artist for t in context.recent[-cooldown_tracks:]]
     slope = _recent_energy_slope(context)
 
     out: list[TrackFeature] = []
@@ -71,11 +65,7 @@ def filter_candidates(
         # Energy slope cap -- reject candidates that would reverse the
         # recent slope by more than ``energy_reverse_cap`` steps.
         cur_energy = getattr(current_track, "energy", None)
-        if (
-            cand.energy is not None
-            and cur_energy is not None
-            and abs(slope) > 0.5
-        ):
+        if cand.energy is not None and cur_energy is not None and abs(slope) > 0.5:
             # Direction the slope is going.
             if slope > 0 and float(cand.energy) < float(cur_energy) - energy_reverse_cap:
                 trace.dropped_energy += 1

@@ -1,0 +1,256 @@
+name: culprit-finder
+
+# Culprit finder (DEVOPS-8427, (private path)). Main's CI runs on the tip only, so a
+# red verdict can cover up to ten merges (Tue 3 Nov 2026) and the checkpoint's culprit-naming came
+# back AMBIGUOUS or named the wrong PR. Running the full suite on every commit is too expensive, so
+# this re-runs ONLY the failing tests against each commit of the red window, oldest first, stops at
+# the first red one, and names its PR. Dispatch-only: the checkpoint (or a person) supplies the
+# window and the failing node ids.
+#
+# Contract with the checkpoint-side reader: the job summary's first line is
+# `request_id=<id> shas=<shas>`, then exactly one of `CULPRIT <sha> #<pr>`, `CULPRIT <sha> #none`,
+# `CULPRIT none` or `CULPRIT error <reason>`, then `CULPRIT-JSON <json>`. The same JSON
+# (keys sha, pr, tested) goes to R2 as `culprit-finder`, since GitHub artifact storage is banned
+# (tests/scripts/test_ci_artifact_storage.py).
+run-name: culprit finder ${{ inputs.request_id }} ${{ inputs.shas }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      shas:
+        description: "Space-separated main commit SHAs, oldest first"
+        type: string
+        required: true
+      tests:
+        description: "Pytest node ids that failed on the red tip, one per line (a parametrized id may hold spaces inside its brackets)"
+        type: string
+        required: true
+      stop_at_first_red:
+        description: "Stop at the first SHA where any test fails"
+        type: boolean
+        default: true
+      request_id:
+        description: "Opaque id the dispatcher uses to find this run (letters, digits, . _ : -)"
+        type: string
+        required: false
+        default: ""
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
+  CI_ARTIFACT_R2_ACCESS_KEY_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCESS_KEY_ID }}
+  CI_ARTIFACT_R2_SECRET_ACCESS_KEY: ${{ secrets.ARTIFACT_ARCHIVE_R2_SECRET_ACCESS_KEY }}
+  CI_ARTIFACT_R2_BUCKET: ${{ vars.ARTIFACT_ARCHIVE_R2_BUCKET }}
+
+# pull-requests: read maps the culprit commit to its PR; nothing is written.
+permissions:
+  contents: read
+  pull-requests: read
+
+# One group per run: two culprit searches never cancel each other.
+concurrency:
+  group: culprit-finder-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  culprit:
+    name: culprit finder
+    # The ADR-0041 main-fix reserve first (a red main is what this serves, so it must not queue
+    # behind PR CI), then the light pool, then hosted for a variableless fork; ci.yml's style.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAIN_FIX || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    env:
+      # Same as ci.yml's pytest fast lane: child `uv run` must not re-sync .venv, and one
+      # native thread per process on a shared host.
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+      # The search's own wall budget; the rest of the 30 minutes is provisioning and the verdict.
+      CULPRIT_BUDGET_S: "1200"
+    steps:
+      # First, so this is the first line of the job summary whatever fails later.
+      - name: Echo the request
+        timeout-minutes: 1
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          SHAS: ${{ inputs.shas }}
+        run: echo "request_id=${REQUEST_ID} shas=${SHAS}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Copied from ci.yml's pytest fast lane (#1338).
+      - name: Reclaim workspace ownership before checkout
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # SHA-pinned to the v4 tag commit (resolved 2026-04-17). Full history: the search checks
+      # out older main commits in this same workspace.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Derive the worktree-port lane from the runner identity
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          runner_name="${RUNNER_NAME:-}"
+          if [[ -z "$runner_name" ]]; then
+            echo "::error::RUNNER_NAME is unset; cannot derive a safe port lane" >&2
+            exit 1
+          fi
+          if [[ "$runner_name" =~ -([0-9]+)$ ]]; then
+            lane=$((BASH_REMATCH[1] + 1))
+          else
+            lane=1
+          fi
+          echo "MUSIC_DJ_PORT_LANE=${lane}" >> "$GITHUB_ENV"
+          echo "[OK] runner ${runner_name} -> MUSIC_DJ_PORT_LANE=${lane}"
+
+      - name: Setup Python
+        timeout-minutes: 1
+        # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        timeout-minutes: 1
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Provision isolated Python test environment
+        timeout-minutes: 2
+        run: scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
+
+      - name: System deps for pyrekordbox (SQLCipher) and Mach-O classification
+        timeout-minutes: 4
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
+        run: |
+          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config uv ffmpeg
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        timeout-minutes: 1
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      # The script is copied out first: it checks out older commits in this workspace, and it
+      # restores this run's own SHA before it exits so the steps below find their files.
+      # The persistent workspaces are partial clones, so checking out an older SHA lazily fetches
+      # its blobs from the promisor remote. checkout keeps no credentials (persist-credentials:
+      # false), so this step hands git the job token for its own lifetime through GIT_CONFIG_*
+      # env, the header actions/checkout itself uses, and never writes it to .git/config. Without
+      # it the first run failed: "could not fetch ... from promisor remote" (run 41674831625).
+      - name: Run the failing tests at each SHA of the window
+        id: search
+        timeout-minutes: 22
+        env:
+          TMPDIR: ${{ runner.temp }}
+          GH_TOKEN: ${{ github.token }}
+          SHAS: ${{ inputs.shas }}
+          TESTS: ${{ inputs.tests }}
+          STOP_AT_FIRST_RED: ${{ inputs.stop_at_first_red }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$basic"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic"
+          cp scripts/ci_culprit_finder.py "$RUNNER_TEMP/ci_culprit_finder.py"
+          python3 -I "$RUNNER_TEMP/ci_culprit_finder.py" \
+            --shas "$SHAS" --tests "$TESTS" --stop-at-first-red "$STOP_AT_FIRST_RED" \
+            --request-id "$REQUEST_ID" --repo "$GITHUB_REPOSITORY" \
+            --budget-s "$CULPRIT_BUDGET_S" --restore-sha "$GITHUB_SHA" \
+            --out "$RUNNER_TEMP/culprit-finder.json"
+
+      # A crash, a step timeout or a failed setup step leaves no verdict; say so in the
+      # contract's own words rather than leaving the reader a summary with no CULPRIT line.
+      - name: Write CULPRIT error when the search reached no verdict
+        if: always()
+        timeout-minutes: 1
+        env:
+          SEARCH_OUTCOME: ${{ steps.search.outcome }}
+          SHAS: ${{ inputs.shas }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          [ ! -f "$RUNNER_TEMP/culprit-finder.json" ] || { echo "[OK] the search wrote its verdict"; exit 0; }
+          git checkout --detach --quiet "$GITHUB_SHA" || true
+          [ -f "$RUNNER_TEMP/ci_culprit_finder.py" ] || cp scripts/ci_culprit_finder.py "$RUNNER_TEMP/ci_culprit_finder.py"
+          python3 -I "$RUNNER_TEMP/ci_culprit_finder.py" --no-verdict "search step outcome=${SEARCH_OUTCOME:-not run}" \
+            --shas "$SHAS" --request-id "$REQUEST_ID" --out "$RUNNER_TEMP/culprit-finder.json" || true
+          exit 1
+
+      - name: Upload culprit-finder.json
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/r2-artifact
+        with:
+          mode: upload
+          name: culprit-finder
+          path: ${{ runner.temp }}/culprit-finder.json
+          if-no-files-found: warn

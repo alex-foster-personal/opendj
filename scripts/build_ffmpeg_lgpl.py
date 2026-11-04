@@ -287,7 +287,14 @@ def _sh(argv: list[str], cwd: Path, log: Path) -> None:
     with log.open("a") as out:
         out.write(f"\n$ {' '.join(argv)}\n")
         out.flush()
-        result = subprocess.run(argv, cwd=cwd, stdout=out, stderr=subprocess.STDOUT, check=False)
+        try:
+            result = subprocess.run(argv, cwd=cwd, stdout=out, stderr=subprocess.STDOUT, check=False)
+        except FileNotFoundError as exc:
+            tool = argv[0] if argv else "command"
+            raise FfmpegBuildError(
+                f"{tool} is not on PATH (cold LGPL ffmpeg build needs {', '.join(COLD_BUILD_TOOLS)}; "
+                "a Mac shell may need /opt/homebrew/bin on PATH)"
+            ) from exc
     if result.returncode != 0:
         raise FfmpegBuildError(f"{argv[0]} failed in {cwd} (exit {result.returncode}); see {log}")
 
@@ -414,6 +421,7 @@ def build() -> Path:
     refusal = unsupported_host(sys.platform, platform.machine())
     if refusal:
         raise FfmpegBuildError(refusal)
+    build_readiness()
     cached = cached_artifact()
     if cached is not None:
         return cached

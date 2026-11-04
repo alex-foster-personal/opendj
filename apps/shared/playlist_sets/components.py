@@ -10,7 +10,6 @@ while a component tag labels a run inside one playlist and stays here.
 """
 from __future__ import annotations
 
-import itertools
 import math
 import sqlite3
 from collections.abc import Iterable, Sequence
@@ -239,6 +238,31 @@ def list_components(conn: sqlite3.Connection, playlist_id: str) -> list[Componen
     return [_hydrate(conn, row) for row in rows]
 
 
+def borrowing_playlists(conn: sqlite3.Connection, component_id: int) -> list[str]:
+    """Every playlist whose saved set borrows this component, by playlist id."""
+    apply_playlist_set_migrations(conn)
+    return [
+        str(r[0])
+        for r in conn.execute(
+            "SELECT DISTINCT s.playlist_id FROM playlist_set_parts p "
+            "JOIN playlist_sets s ON s.id = p.set_id WHERE p.component_id=? "
+            "ORDER BY s.playlist_id",
+            (component_id,),
+        )
+    ]
+
+
+def list_borrowed_components(conn: sqlite3.Connection, playlist_id: str) -> list[Component]:
+    """Components from other playlists that this playlist's saved sets borrow, by id.
+
+    They are not the playlist's own components, so they are kept out of
+    ``list_components``; the route view still needs them to draw a saved route.
+    """
+    local_ids = {c.id for c in list_components(conn, playlist_id)}
+    borrowed = {cid for parts in _saved_parts(conn, playlist_id).values() for cid in parts}
+    return [load_component(conn, cid) for cid in sorted(borrowed - local_ids)]
+
+
 def update_component(
     conn: sqlite3.Connection,
     component_id: int,
@@ -316,7 +340,7 @@ def resolve_parts(
     return out
 
 
-def _slot_rank(conn: sqlite3.Connection, playlist_id: str, slot: str) -> int:
+def slot_rank(conn: sqlite3.Connection, playlist_id: str, slot: str) -> int:
     """Where ``slot`` sits in ``playlist_id``'s slot order.
 
     A borrowed component's slot may be missing from this playlist: a ladder
@@ -361,7 +385,7 @@ def validate_parts(
                 f"and {cid} are both {comp.slot!r}"
             )
         seen[comp.slot] = cid
-        rank = _slot_rank(conn, playlist_id, comp.slot)
+        rank = slot_rank(conn, playlist_id, comp.slot)
         if rank < last_rank:
             raise ValueError(
                 f"a route follows the slot order; {comp.slot!r} (component {cid}) "
@@ -426,7 +450,11 @@ def find_set_for_route(
 
 
 def list_routes(
-    conn: sqlite3.Connection, playlist_id: str, *, limit: int = ROUTE_LIMIT_DEFAULT
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    *,
+    limit: int = ROUTE_LIMIT_DEFAULT,
+    offset: int = 0,
 ) -> RouteListing:
     """Every route through the playlist: each full route, then each saved one.
 
@@ -434,10 +462,14 @@ def list_routes(
     saved set may also skip a slot or borrow a component from another playlist;
     those routes follow, in set order, so every saved set shows up. Routes are
     counted, never stored; only a named set persists one. ``total`` is the full
-    count and ``truncated`` says when ``limit`` cut the list.
+    count and ``truncated`` says when the page stopped short of it. ``offset``
+    starts a page partway through that one order, so paging with it lists every
+    route exactly once.
     """
     if limit < 1:
         raise ValueError("limit must be at least 1")
+    if offset < 0:
+        raise ValueError("offset cannot be negative")
     comps = list_components(conn, playlist_id)
     local_ids = {c.id for c in comps}
     groups = _slot_groups(conn, playlist_id, comps)
@@ -446,11 +478,12 @@ def list_routes(
     route_to_set, extra = _split_saved(_saved_parts(conn, playlist_id), len(groups), local_ids)
     total = full_total + len(extra)
 
-    routes = _full_routes(groups, limit, route_to_set)
-    for sid, cids in extra[: max(0, limit - len(routes))]:
+    routes = _full_routes(groups, limit, route_to_set, offset)
+    start = max(0, offset - full_total)
+    for sid, cids in extra[start : start + max(0, limit - len(routes))]:
         tracks = [t for t, _ in resolve_parts(conn, cids)]
         routes.append(_route(cids, tracks, sid))
-    return RouteListing(routes=routes, total=total, truncated=total > len(routes))
+    return RouteListing(routes=routes, total=total, truncated=offset + len(routes) < total)
 
 
 def _slot_groups(
@@ -496,14 +529,26 @@ def _split_saved(
 
 
 def _full_routes(
-    groups: list[list[Component]], limit: int, route_to_set: dict[tuple[int, ...], int]
+    groups: list[list[Component]],
+    limit: int,
+    route_to_set: dict[tuple[int, ...], int],
+    offset: int = 0,
 ) -> list[Route]:
-    """Up to ``limit`` routes taking one component from every slot, in slot order."""
+    """Up to ``limit`` routes from ``offset``, taking one component from every slot, in slot order."""
     # product() of no groups yields one empty tuple: a phantom route.
     if not groups:
         return []
+    # Decode each index in the product order (first slot most significant), so a page
+    # costs its own length, not the offset: walking the product would visit every route before it.
+    sizes = [len(group) for group in groups]
+    total = math.prod(sizes)
     routes: list[Route] = []
-    for combo in itertools.islice(itertools.product(*groups), limit):
+    for n in range(offset, min(offset + limit, total)):
+        picks = [0] * len(groups)
+        rest = n
+        for k in range(len(groups) - 1, -1, -1):
+            rest, picks[k] = divmod(rest, sizes[k])
+        combo = [groups[k][picks[k]] for k in range(len(groups))]
         parts = [c.id for c in combo]
         tracks = [t for c in combo for t in c.stable_ids]
         routes.append(_route(parts, tracks, route_to_set.get(tuple(parts))))

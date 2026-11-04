@@ -1,9 +1,0 @@
-{
-  "bytes": 1024,
-  "measured_main": 301774,
-  "measured_with_pr": 301878,
-  "sha": "8cec8fe78",
-  "date": "Tue 3 Nov 2026",
-  "reason": "Storybook backfill (PR #6561): the library first-load surface grows 104 bytes from the same changes (recording seam, IconRail recordingAvailable prop), measured on one clean vite build of origin/main e44a4d984 (301,774) and of the merge with this PR (301,878). Charged at 1 KiB, the growth ceiled to KiB.",
-  "payback": "none planned"
-}

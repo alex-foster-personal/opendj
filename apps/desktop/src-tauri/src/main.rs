@@ -284,9 +284,14 @@ fn write_parent_file(data_dir: &Path) -> Result<(), engine::EngineError> {
 /// never a real rekordbox library: the engine only creates what it owns
 /// (state/, jobs.db, the lock) and imports happen through the setup flow.
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
+    // Windows keeps the library under %LOCALAPPDATA% (never Roaming), the dir the
+    // Electron shell and the Python CLI resolve, so both shells share one library
+    // and one .engine.lock (ADR windows-data-dir-and-app-identity).
+    #[cfg(target_os = "windows")]
+    let resolved = app.path().app_local_data_dir();
+    #[cfg(not(target_os = "windows"))]
+    let resolved = app.path().app_data_dir();
+    let data_dir = resolved
         .map_err(|err| engine::EngineError {
             headline: "Open DJ could not find its data folder.".into(),
             detail: format!("Resolving Application Support failed: {err}"),
@@ -726,6 +731,13 @@ fn main() {
                 // tasks (macOS 14+, our floor), which would stall agent orders
                 // and the UI mirror exactly like a hidden Chrome tab did.
                 .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+                // DECKUX-8350: every drop target in the UI is an HTML5 `ondrop`
+                // (deck load, playlists, tabs, and the ingest modal reading
+                // Finder files from `dataTransfer.files`). Tauri's native
+                // drag-drop handler answers every drag itself and never hands
+                // it to WebKit, so with it on, dragging a track onto a deck did
+                // nothing. Nothing listens for Tauri's native drop events.
+                .disable_drag_drop_handler()
                 .initialization_script(script)
                 .on_page_load(|_window, payload| {
                     let url = payload.url().to_string();

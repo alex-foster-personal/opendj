@@ -45,12 +45,15 @@ import { coalesce } from './coalesce';
 export type LibraryHealthDot = {
 	label:
 		| 'Frontend'
+		| 'App UI'
 		| 'Backend'
 		| 'Library health'
 		| 'Vocals completion'
 		| 'Stems completion'
 		| 'Lyrics completion';
-	state: 'loading' | 'complete' | 'incomplete' | 'unavailable' | 'error';
+	/** `waiting` is amber "starting up / retrying / still counting" (HEALTH-8304, HEALTH-8304b, HEALTH-8304c):
+	 * no answer yet, which is not a verdict that something is down. */
+	state: 'loading' | 'waiting' | 'complete' | 'incomplete' | 'unavailable' | 'error';
 	detail: string;
 };
 

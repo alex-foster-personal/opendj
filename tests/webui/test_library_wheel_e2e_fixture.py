@@ -5,7 +5,9 @@ listing or the playlist listing then the page records failed resources and
 library-wheel.spec.ts fails at its failed-resource assertion, only in the
 nightly extended job (run 36510204674: ``no such table: djmdPlaylist`` from
 ``playlist_order_index``, ``no such column: c.ImagePath`` from
-``bulk_rb_meta``). This catches the same drift in the fast lane.
+``bulk_rb_meta``). The shape test names both drifted surfaces
+(``djmdPlaylist`` and ``djmdContent.ImagePath``) and catches the same drift
+in the fast lane.
 
 Nothing is monkeypatched: the fixture is built by the exact CLI the Playwright
 config runs, and the probe is a child process booting the daemon's own app
@@ -137,6 +139,13 @@ def test_library_wheel_e2e_master_db_is_rekordbox_shaped(tmp_path: Path) -> None
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         assert {"djmdContent", "djmdGenre", "djmdPlaylist"} <= fixture_tables
+        content_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(djmdContent)")
+        }
+        assert "ImagePath" in content_columns, (
+            "[if] djmdContent lacks ImagePath then bulk_rb_meta 500s on the wheel fixture "
+            "(issue #7032, run 36510204674)"
+        )
         for table in sorted(fixture_tables):
             assert table in models, f"[if] fixture invents table {table} then not rekordbox-shaped"
             fixture_columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}

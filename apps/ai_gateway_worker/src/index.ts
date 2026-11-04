@@ -150,10 +150,7 @@ async function chatCompletions(request: Request, env: Env, ctx: ExecutionContext
 // ----- admin ---------------------------------------------------------------
 async function adminAuthorized(request: Request, env: Env): Promise<boolean> {
   const given = bearer(request);
-  if (!given) return false;
-  const enc = (s: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  const [a, b] = await Promise.all([enc(given), enc(env.ADMIN_TOKEN)]);
-  return crypto.subtle.timingSafeEqual(a, b);
+  return given !== null && (await store.sha256SecretEqual(given, env.ADMIN_TOKEN));
 }
 
 const installNotFound = (id: string) => refuse(404, "gateway_install_not_found", `no install '${id}'`);

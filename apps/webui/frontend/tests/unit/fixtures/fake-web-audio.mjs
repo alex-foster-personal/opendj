@@ -161,4 +161,6 @@ export function installWindow(search) {
 		setInterval,
 		clearInterval
 	};
+	// The engine reads the page query from the bare `location` global; keep it aligned with window.
+	globalThis.location = globalThis.window.location;
 }

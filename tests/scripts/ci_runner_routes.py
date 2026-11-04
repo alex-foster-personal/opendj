@@ -82,9 +82,13 @@ PRE_ROUTE_SHARD = PRE_ROUTE_SHARD_HEAD + SHARD_TAIL
 E2E_POOL_TAIL = "vars.CI_RUNS_ON_E2E || '\"ubuntu-latest\"') }}"
 E2E_POOL_RUNS_ON = "${{ fromJSON(" + E2E_POOL_TAIL
 #: The e2e trunk-repair reserve (ICE row INC-5,
-#: ADR-NEW-e2e-trunk-repair-runner-reserve): ADR-0041's `ci:trunk-repair`
-#: guard, spelled exactly as on the `test` job, in front of the e2e pool.
-E2E_MAIN_FIX_DISJUNCT = f"{_REPAIR_PR} && vars.CI_RUNS_ON_E2E_MAIN_FIX"
+#: ADR-NEW-e2e-trunk-repair-runner-reserve) in front of the e2e pool. Since Wed 4 Nov
+#: 2026 (ADR-NEW-e2e-after-ci-gate) e2e.yml's pull-request runs are workflow_run
+#: runs, whose payload carries no labels, so the guard reads the scope job's
+#: `repair` output (it resolves the pull request's labels through the API) instead
+#: of ADR-0041's `github.event.pull_request.labels` spelling on ci.yml's `test` job.
+E2E_REPAIR_GUARD = "(needs.scope.outputs.repair == 'true')"
+E2E_MAIN_FIX_DISJUNCT = f"{E2E_REPAIR_GUARD} && vars.CI_RUNS_ON_E2E_MAIN_FIX"
 #: The `gate` job with the reserve alone: the control an unset
 #: `CI_RUNS_ON_E2E_TRUNK` must resolve to for every event.
 E2E_REPAIR_RESERVE_RUNS_ON = f"${{{{ fromJSON({E2E_MAIN_FIX_DISJUNCT} || {E2E_POOL_TAIL}"
@@ -115,12 +119,16 @@ E2E_GATE_RUNS_ON = (
 
 
 #: The main-push reserve (Mon 2 Nov 2026): a push to main prefers the opt-in
-#: `CI_RUNS_ON_MAIN` pool on the five jobs main's verdict waits on (scope,
-#: trunk-quarantine-list, trunk-quarantine, test, ci-gate), so main's verdict stops
+#: `CI_RUNS_ON_MAIN` pool on the jobs main's verdict waits on (scope, test,
+#: ci-gate; the Trunk quarantine pair sat there until Wed 4 Nov 2026), so main's verdict stops
 #: queueing behind PR load. It sits FIRST, ahead of every other route. Unset, it is
 #: falsy and each route resolves exactly as before. ci-insights joined them the same
 #: day: it starts after `ci gate`, and the main-push concurrency group holds the next
 #: main run pending until it completes (11 min seat wait on run 41530505387).
+#: Wed 4 Nov 2026: contracts, frontend-build, frontend and quality joined too. They
+#: hold the RUN's conclusion (the checkpoint verdict reads it), and on run
+#: 41769345830 quality sat queued 26 min on the light pool while main-only seats
+#: were idle.
 MAIN_RESERVE_DISJUNCT = f"{_MAIN_PUSH} && vars.CI_RUNS_ON_MAIN"
 _ROUTE_HEAD = "${{ fromJSON("
 
@@ -136,18 +144,62 @@ def without_main_reserve(runs_on: str) -> str:
     return runs_on.replace(f"{MAIN_RESERVE_DISJUNCT} || ", "", 1)
 
 
-MAIN_LIGHT_RUNS_ON = with_main_reserve(LIGHT_RUNS_ON)
-MAIN_TOKEN_RUNS_ON = with_main_reserve(TOKEN_RUNS_ON)
+#: The repair reserve on every ci.yml job (Wed 4 Nov 2026,
+#: ADR-NEW-repair-pr-every-job-on-main-fix-seats): a pull_request labelled
+#: `ci:trunk-repair` prefers the opt-in `CI_RUNS_ON_MAIN_FIX` seats on EVERY job, not
+#: only the `test` shards (ADR-0041). It sits right after the main-push reserve where a
+#: job has one, else first. Why: repair #8531 waited on `ci scope` on the light pool
+#: from 06:40Z while the main-fix seats (agentbox-14/15, nucbox-wsl, nucbox-wsl-2)
+#: were idle; 108 runs queued in 6 h and both workflows start on that pool. Unset,
+#: the disjunct is falsy and every route resolves exactly as before.
+MAIN_FIX_DISJUNCT = f"{_REPAIR_PR} && vars.CI_RUNS_ON_MAIN_FIX"
+
+
+def with_main_fix(runs_on: str) -> str:
+    """`runs_on` with the repair reserve second (after the main-push reserve) or first."""
+    assert runs_on.startswith(_ROUTE_HEAD), runs_on
+    assert "vars.CI_RUNS_ON_MAIN_FIX" not in runs_on, runs_on
+    reserve_head = f"{_ROUTE_HEAD}{MAIN_RESERVE_DISJUNCT} || "
+    head = reserve_head if runs_on.startswith(reserve_head) else _ROUTE_HEAD
+    return f"{head}{MAIN_FIX_DISJUNCT} || {runs_on[len(head) :]}"
+
+
+def without_main_fix(runs_on: str) -> str:
+    """`runs_on` with the one repair reserve removed: the route before it."""
+    return runs_on.replace(f"{MAIN_FIX_DISJUNCT} || ", "", 1)
+
+
+#: The `fast` tier legs before the repair reserve: a `ci:trunk-repair` PR preferred
+#: CI_RUNS_ON_TRUNK (ADR-NEW-trunk-ci-runs-on-agentbox-hosts-only), then the fast pool.
+PRE_ROUTE_FAST = (
+    f"${{{{ fromJSON({_REPAIR_PR} && vars.CI_RUNS_ON_TRUNK || "
+    "vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
+    "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+)
+#: Wed 4 Nov 2026: the main-fix seats win on a repair PR; CI_RUNS_ON_TRUNK is its fallback.
+FAST_RUNS_ON = with_main_fix(PRE_ROUTE_FAST)
+
+#: MAIN_* routes: the main-push reserve first, the repair reserve second (SHARD_RUNS_ON
+#: already carries the repair reserve first, so only the main-push one is added there).
+MAIN_LIGHT_RUNS_ON = with_main_fix(with_main_reserve(LIGHT_RUNS_ON))
+MAIN_TOKEN_RUNS_ON = with_main_fix(with_main_reserve(TOKEN_RUNS_ON))
 MAIN_SHARD_RUNS_ON = with_main_reserve(SHARD_RUNS_ON)
+MAIN_QUALITY_RUNS_ON = with_main_fix(with_main_reserve(QUALITY_RUNS_ON))
 #: The ci.yml jobs that carry the main-push reserve, and the exact route each carries.
 MAIN_RESERVED_JOBS = {
     "scope": MAIN_LIGHT_RUNS_ON,
-    "trunk-quarantine-list": MAIN_TOKEN_RUNS_ON,
-    "trunk-quarantine": MAIN_LIGHT_RUNS_ON,
     "test": MAIN_SHARD_RUNS_ON,
     "ci-gate": MAIN_LIGHT_RUNS_ON,
     "ci-insights": MAIN_TOKEN_RUNS_ON,
+    "contracts": MAIN_LIGHT_RUNS_ON,
+    "frontend-build": MAIN_LIGHT_RUNS_ON,
+    "frontend": MAIN_LIGHT_RUNS_ON,
+    "quality": MAIN_QUALITY_RUNS_ON,
+    # Wed 4 Nov 2026 (ADR-NEW-import-contracts-gate-on-pull-requests): the ci gate's route.
+    "import-contracts": MAIN_LIGHT_RUNS_ON,
 }
+#: Every ci.yml job and the exact route it carries since the repair reserve widened to all.
+REPAIR_ROUTED_JOBS = MAIN_RESERVED_JOBS | {"fast": FAST_RUNS_ON}
 
 
 

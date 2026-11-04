@@ -77,10 +77,22 @@ export function assertDeckReplacementAllowed(
 		.filter(([, value]) => value === true || (typeof value === 'number' && value > 0))
 		.map(([name]) => name);
 	if (activeReasons.length === 0) return;
-	throw new Error(
-		`load: deck ${deck} must be fully stopped before replacement; active state: ` +
-			activeReasons.join(', ')
-	);
+	throw new DeckReplacementBlockedError(deck, activeReasons);
+}
+
+/**
+ * AGENT-8332: the replacement guard's refusal, typed so an agent order can
+ * report it as `deck_playing` instead of a bare string. The message is the one
+ * the guard always threw (toasts and the BrowserPanel replace path match it).
+ */
+export class DeckReplacementBlockedError extends Error {
+	readonly code = 'deck_playing';
+	constructor(
+		readonly deck: DeckId,
+		readonly activeState: readonly string[]
+	) {
+		super(`load: deck ${deck} must be fully stopped before replacement; active state: ${activeState.join(', ')}`);
+	}
 }
 
 export function loadCandidateCanPublish(candidateToken: number, currentToken: number): boolean {

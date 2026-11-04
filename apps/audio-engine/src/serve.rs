@@ -2902,7 +2902,22 @@ mod tests {
 
     fn lines_of(out: &Captured) -> Vec<Value> {
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
-        text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+        // serve is still writing: a line is whole only once its newline is out.
+        let whole = text.rfind('\n').map_or(0, |i| i + 1);
+        text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+    }
+
+    #[test]
+    fn a_line_still_being_written_is_not_read_as_a_line() {
+        // send() streams the value through serde_json and writes its newline
+        // after, so a poll between the two sees this prefix; the MIDI test's
+        // wait loop parsed it and panicked in CI (#7431).
+        let out = Captured::default();
+        let mut writer = out.clone();
+        writer.write_all(b"{\"type\": \"hello\"}\n").unwrap();
+        writer.write_all(b"{\"type").unwrap();
+        let lines = lines_of(&out);
+        assert_eq!(lines, [serde_json::json!({"type": "hello"})]);
     }
 
     #[test]

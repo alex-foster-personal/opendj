@@ -1,4 +1,5 @@
 """Shared row formatting for ``apps.pairings.list`` output modes."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

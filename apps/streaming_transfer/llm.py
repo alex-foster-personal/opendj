@@ -229,7 +229,7 @@ class OpenRouterBatchMatcher:
             json=build_batch_request(escalations, model=self._model),
             headers={
                 "Authorization": f"Bearer {self._api_key}",
-                "HTTP-Referer": "https://github.com/private_owner/music-dj-tools",
+                "HTTP-Referer": "https://github.com/alex-foster-personal/opendj",
                 "X-Title": "Open DJ",
             },
             timeout=CFG.httpx_timeout(),

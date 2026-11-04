@@ -100,9 +100,7 @@ IDENTITY_NOT_AUTHORISATION: str = (
 #: account, and this endpoint exists precisely to be driven by agents.
 ACCOUNT_DELETE_CONFIRM: str = "delete-my-local-account-data"
 
-DELETE_HINT: str = (
-    f"DELETE /api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}"
-)
+DELETE_HINT: str = f"DELETE /api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}"
 
 
 # ----- models -------------------------------------------------------------
@@ -249,9 +247,7 @@ def _flag_store(request: Request) -> FlagStore:
     return store
 
 
-def _store_build_refusal(
-    flag: FlagState, *, from_store_profile: bool, sandboxed: bool
-) -> RefusalOut | None:
+def _store_build_refusal(flag: FlagState, *, from_store_profile: bool, sandboxed: bool) -> RefusalOut | None:
     """Adapt :func:`apps.feature_flags.store_build_refusal` to the account wire model.
 
     The decision itself lives in ``apps.feature_flags`` so the USB gate
@@ -259,14 +255,10 @@ def _store_build_refusal(
     the SAME inputs this endpoint discloses, rather than each guessing at
     attribution on its own (SAND-01 review, PR #1668).
     """
-    refusal = store_build_refusal(
-        flag, from_store_profile=from_store_profile, sandboxed=sandboxed
-    )
+    refusal = store_build_refusal(flag, from_store_profile=from_store_profile, sandboxed=sandboxed)
     if refusal is None:
         return None
-    return RefusalOut(
-        code=refusal.code, message=refusal.message, ui_title=refusal.ui_title
-    )
+    return RefusalOut(code=refusal.code, message=refusal.message, ui_title=refusal.ui_title)
 
 
 def _refusal() -> RefusalOut:
@@ -314,10 +306,7 @@ def _local_data(state_db: str) -> list[LocalDataOut]:
                 "cookie (never the cookie itself) and the Google refresh and "
                 "access tokens the daemon holds on your behalf."
             ),
-            delete_with=(
-                "POST /api/v1/auth/logout for this browser, or "
-                f"{DELETE_HINT} for every session at once."
-            ),
+            delete_with=(f"POST /api/v1/auth/logout for this browser, or {DELETE_HINT} for every session at once."),
         ),
     ]
 
@@ -330,8 +319,7 @@ def _require_user(request: Request) -> SessionUser:
             detail={
                 "code": "AUTH_REQUIRED",
                 "message": (
-                    "not signed in, so there is no account to act on. Sign in "
-                    "with POST /api/v1/auth/login first."
+                    "not signed in, so there is no account to act on. Sign in with POST /api/v1/auth/login first."
                 ),
             },
         )
@@ -419,9 +407,7 @@ def delete_account(
 
 
 # ----- entitlements -------------------------------------------------------
-def _feature_out(feature_id: str, label: str, *, server_side: bool, note: str) -> (
-    FeatureEntitlementOut
-):
+def _feature_out(feature_id: str, label: str, *, server_side: bool, note: str) -> FeatureEntitlementOut:
     return FeatureEntitlementOut(
         feature_id=feature_id,
         label=label,
@@ -464,9 +450,7 @@ def read_entitlement(feature_id: str) -> FeatureEntitlementOut:
     is configured everything is entitled (ENT-04), and a 404 here would let a
     caller mistake "we have never heard of that" for "you may not".
     """
-    known = {feature.feature_id: feature for feature in FEATURES}.get(
-        feature_id
-    )
+    known = {feature.feature_id: feature for feature in FEATURES}.get(feature_id)
     return _feature_out(
         feature_id,
         known.label if known is not None else feature_id,

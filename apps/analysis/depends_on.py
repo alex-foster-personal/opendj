@@ -1,6 +1,6 @@
 """The five-field dependency identity a downstream lane records.
 
-Spec `specs/native-analysis-v1-lanes/nav1-key-record.md` defines the block a
+Spec `(private path)` defines the block a
 key record carries so a later reader can tell whether the beatgrid it was
 computed against is still the canonical one::
 
@@ -21,6 +21,7 @@ fields.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,15 +69,11 @@ def beatgrid_record_digest(record: AnalysisRecord, lane: str = "beatgrid") -> st
 
 def _failed_lane_digest(status: str, reason: str | None) -> str:
     """``sha256:`` digest naming a non-ok lane by its status and reason."""
-    blob = json.dumps(
-        {"status": status, "reason": reason}, sort_keys=True, separators=(",", ":")
-    )
+    blob = json.dumps({"status": status, "reason": reason}, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def dependency_identity(
-    record: AnalysisRecord, lane: str = "beatgrid"
-) -> dict[str, Any]:
+def dependency_identity(record: AnalysisRecord, lane: str = "beatgrid") -> dict[str, Any]:
     """The five-field block naming ``record`` as a dependency."""
     if lane == "beatgrid" or "beatgrid" in record.lanes:
         digest = beatgrid_record_digest(record, "beatgrid")
@@ -101,9 +98,7 @@ def dependency_identity(
     }
 
 
-def declared_dependency(
-    record: AnalysisRecord, lane: str
-) -> Mapping[str, Any] | None:
+def declared_dependency(record: AnalysisRecord, lane: str) -> Mapping[str, Any] | None:
     """The dependency block ``record`` declares on ``lane``, if any."""
     block = record.features_blob.get(DEPENDS_ON_KEY)
     if isinstance(block, Mapping):
@@ -123,9 +118,7 @@ def declared_dependency(
     return None
 
 
-def dependency_matches(
-    declared: Mapping[str, Any] | None, actual: Mapping[str, Any]
-) -> bool:
+def dependency_matches(declared: Mapping[str, Any] | None, actual: Mapping[str, Any]) -> bool:
     """Field-for-field comparison of a declared block against the real one.
 
     A missing block is a MISMATCH, not a pass: a record that declares no

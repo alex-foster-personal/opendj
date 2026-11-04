@@ -4,6 +4,7 @@ The marker is a tiny JSON sidecar that records the last apply run so we
 can detect drive-identity drift (same label, different UUID) and report
 the last-applied plan.
 """
+
 from __future__ import annotations
 
 import datetime as _dt

@@ -171,6 +171,9 @@ BASS_ACTIVE_DB_V0 = -20.0
 #: two basslines at once. His crossover never enters it (at its midpoint both sit near -4.3 dB). The comb filter of two
 #: kicks a few ms apart is the beat-offset veto's, so there is no phase term here.
 BASS_BOTH_FULL_DB = -3.0
+#: Round 23: a solo whose 20-150 Hz bar-median sits below this has no usable bass reference; bass_overlap is unknown
+#: rather than a floor-normalized pile-up. Mimicked from ONSET_PRESENCE_DB / VOCAL_ACTIVE_DBFS.
+BASS_REF_PRESENT_DB = -40.0
 #: The low band both readings use (the band the shared-low-end reading always used; under the engine's 250 Hz shelf).
 LOW_BAND_HZ = (20.0, 150.0)
 #: Vocal activity: stem RMS above this (spec 10, Mosaikbox), 50 ms frames.
@@ -745,10 +748,23 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
         return
     out_ref_v0 = float(np.median(_bar_low_db(out_deck, sr, out_solo_bars)))
     in_ref_v0 = float(np.median(_bar_low_db(in_deck, sr, in_solo_bars)))
+    out_low, in_low, mix_low = (signals.band_signal(x, sr, LOW_BAND_HZ) for x in (out_deck, in_deck, mix))
+    mix_a = _by_position(_beat_levels(mix_low, sr, out_solo), out_solo)[positions]
+    mix_b = _by_position(_beat_levels(mix_low, sr, in_solo), in_solo)[positions]
+    out_missing = out_ref_v0 < BASS_REF_PRESENT_DB
+    in_missing = in_ref_v0 < BASS_REF_PRESENT_DB
+    if out_missing or in_missing:
+        if out_missing and in_missing:
+            t.unknown["bass_overlap"] = "outgoing and incoming solos have no measurable bass"
+        elif out_missing:
+            t.unknown["bass_overlap"] = "outgoing solo has no measurable bass"
+        else:
+            t.unknown["bass_overlap"] = "incoming solo has no measurable bass"
+        _low_continuity(t, _beat_levels(mix_low, sr, overlap_beats), mix_a, mix_b, overlap_beats, ctx)
+        return
     out_v0 = _bar_low_db(out_deck, sr, overlap_bars) - out_ref_v0
     in_v0 = _bar_low_db(in_deck, sr, overlap_bars) - in_ref_v0
     t.metrics["bass_overlap_bars_v0"] = int(np.sum((out_v0 > BASS_ACTIVE_DB_V0) & (in_v0 > BASS_ACTIVE_DB_V0)))
-    out_low, in_low, mix_low = (signals.band_signal(x, sr, LOW_BAND_HZ) for x in (out_deck, in_deck, mix))
     out_ref = _by_position(_beat_levels(out_low, sr, out_solo), out_solo)[positions]
     in_ref = _by_position(_beat_levels(in_low, sr, in_solo), in_solo)[positions]
     out_beats = _beat_levels(out_low, sr, overlap_beats) - out_ref
@@ -762,8 +778,6 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
     t.metrics["low_switch_s"] = round(switch_s, 3)
     _early_handover(t, switch_s, ctx)
     _low_hole(t, mix_low, overlap_beats, _content_switch(in_beats, raw_out, raw_in, overlap_beats, ctx), ctx)
-    mix_a = _by_position(_beat_levels(mix_low, sr, out_solo), out_solo)[positions]
-    mix_b = _by_position(_beat_levels(mix_low, sr, in_solo), in_solo)[positions]
     _low_continuity(t, _beat_levels(mix_low, sr, overlap_beats), mix_a, mix_b, overlap_beats, ctx)
 
 

@@ -10,6 +10,7 @@ Windows path map) lives in :mod:`apps.shared.platform_paths`; this module
 imports those values and re-exports them so existing
 ``from apps.shared.paths import ...`` call sites keep working unchanged.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -72,7 +73,7 @@ REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"
 # The decrypted working copy every reader in this repo actually consumes.
 # Static by convention: refresh means re-decrypt (see
 # ``apps.shared.rekordbox_db.ensure_plain_db``) and then
-# ``rm -rf data/state/anlz-cache/``.
+# ``rm -rf (private path)/``.
 REKORDBOX_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
 
 # ----- djay Pro ----------------------------------------------------------

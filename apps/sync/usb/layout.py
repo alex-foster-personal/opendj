@@ -3,6 +3,7 @@
 Keeps the three D3 layouts isolated from the diff engine so callers can
 unit-test path generation independently.
 """
+
 from __future__ import annotations
 
 import re

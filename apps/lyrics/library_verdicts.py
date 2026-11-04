@@ -18,7 +18,7 @@ then writes through :func:`apps.lyrics.store.upsert_stem_coverage_verdict`
 **Never clobbers real work** below for why this module needs its own).
 
 **Dependency on PR #2593** (``fix(stems): v1 bundles load MP3 and FLAC parts
-by their own container``). Today ``apps.webui.server.stem_artifacts`` only
+by their own container``). Today ``apps.stems.artifacts`` only
 parses WAV metadata for v1 bundles, so an MP3-part bundle (915 of the 921
 present tracks) fails to load with ``StemArtifactError``. This module makes
 no change to that file and depends only on its public contract
@@ -204,7 +204,7 @@ class VerdictBackfillReport:
 def _bundle_roots(data_dir: Path) -> tuple[Path, Path]:
     """(demucs4 root, roformer2 root) for THIS ``--data-dir``.
 
-    ``apps.webui.server.stem_artifacts.ROFORMER_STEMS_DIR`` is a module
+    ``apps.stems.artifacts.ROFORMER_STEMS_DIR`` is a module
     constant resolved from the process's ``MDT_DATA_DIR``/repo default at
     import time, NOT from a CLI ``--data-dir``. Passing it straight to
     :func:`load_stem_bundle` would silently search the wrong machine's

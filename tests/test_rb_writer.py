@@ -33,6 +33,14 @@ def test_kind_to_rb_hot_without_index():
     assert kind == 1
 
 
+# issue: 182
+@pytest.mark.parametrize("index", [-1, 8, 9, 10, 99])
+def test_kind_to_rb_hot_index_beyond_h_raises(index: int) -> None:
+    """[if] hot index is outside 0..7 [then] _kind_to_rb raises, [else stop]."""
+    with pytest.raises(ValueError, match="Kind 9-11"):
+        _kind_to_rb("hot", index, False)
+
+
 def test_kind_to_rb_loop():
     kind, active = _kind_to_rb("loop", None, False)
     assert kind == 4

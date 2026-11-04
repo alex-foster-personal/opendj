@@ -175,7 +175,8 @@ def _max_cardinality_matched_count(
     """
     adjacency = [
         [
-            d_idx for d_idx, detected in enumerate(detected_boundaries_s)
+            d_idx
+            for d_idx, detected in enumerate(detected_boundaries_s)
             if boundary_within_tolerance(detected, annotated, grid, tolerance_bars=tolerance_bars)
         ]
         for annotated in annotated_boundaries_s

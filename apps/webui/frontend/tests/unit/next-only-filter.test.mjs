@@ -60,14 +60,48 @@ describe('next-only-filter', () => {
 		assert.equal(mod.selectSearchFilterFallback('flare', [], rows, true), rows);
 	});
 
-	it('keeps half/double within 15 BPM as appropriate', () => {
+	it('judges half/double at the reference tempo with the user window (COMPATBPM-02)', () => {
 		const { bpmMatchesCompatiblePrefs, isAppropriateNext, COMPATIBLE_FILTER_DEFAULTS } = mod;
 		const halfDoublePrefs = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 6 };
 		assert.equal(bpmMatchesCompatiblePrefs(90, 180, halfDoublePrefs), true);
-		assert.equal(bpmMatchesCompatiblePrefs(100, 180, halfDoublePrefs), true);
-		assert.equal(bpmMatchesCompatiblePrefs(106, 180, halfDoublePrefs), false);
+		assert.equal(bpmMatchesCompatiblePrefs(93, 180, halfDoublePrefs), true, '93 is heard as 186: 6 off');
+		assert.equal(bpmMatchesCompatiblePrefs(100, 180, halfDoublePrefs), false, 'was true under the fixed 15 BPM fold');
 		assert.equal(bpmMatchesCompatiblePrefs(256, 128, halfDoublePrefs), true);
+		assert.equal(bpmMatchesCompatiblePrefs(268, 128, halfDoublePrefs), true, '268 is heard as 134: 6 off');
+		assert.equal(bpmMatchesCompatiblePrefs(270, 128, halfDoublePrefs), false);
 		assert.equal(isAppropriateNext({ key: '8A', bpm: 90 }, { key: '8A', bpm: 180 }), true);
+	});
+
+	// Live library on silver, Tue 3 Nov 2026 (build 435b7f0d), prefs window 10,
+	// half/double on. Before the fix a 125 master let 47.5 to 77.5 BPM rows
+	// through the half fold, up to 24% off the heard tempo.
+	it('a 125 master no longer admits 70 to 77 BPM rows as half time (COMPATBPM-02)', () => {
+		const { bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const live = { ...COMPATIBLE_FILTER_DEFAULTS, bpm_window_bpm: 10 };
+		for (const bpm of [70, 72.5, 76, 77.5]) {
+			assert.equal(bpmMatchesCompatiblePrefs(bpm, 125, live), false, `${bpm} is heard as ${bpm * 2}`);
+		}
+		assert.equal(bpmMatchesCompatiblePrefs(62.5, 125, live), true, 'exact half time');
+		assert.equal(bpmMatchesCompatiblePrefs(67.5, 125, live), true, 'heard as 135: the 10 BPM edge');
+	});
+
+	it('a placeholder BPM (confidence 0) never matches; rekordbox null confidence does (COMPATBPM-03)', () => {
+		const { isAppropriateNext, bpmIsKnown, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const keyless = { ...COMPATIBLE_FILTER_DEFAULTS, rules: [], bpm_window_bpm: 10 };
+		const ref = { key: null, bpm: 125 };
+		// The unmapped-default placeholder grid: 125.0 at confidence 0 (15 rows on silver).
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, keyless), false);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: null }, ref, keyless), true);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0.7 }, ref, keyless), true);
+		assert.equal(isAppropriateNext({ key: '8A', bpm: 125 }, ref, keyless), true, 'no field: trusted');
+		assert.equal(bpmIsKnown(125, 0), false);
+		assert.equal(bpmIsKnown(0, null), false);
+		assert.equal(bpmIsKnown(null, 0.9), false);
+		// BPM off: the placeholder does not matter.
+		assert.equal(
+			isAppropriateNext({ key: '8A', bpm: 125, bpm_confidence: 0 }, ref, { ...keyless, bpm_enabled: false }),
+			true
+		);
 	});
 
 	it('requires Camelot family + BPM window', () => {

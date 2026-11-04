@@ -1,6 +1,6 @@
 """Perturbation harness: fabricate wrong-version lyric sheets with KNOWN edits.
 
-Track A of specs/lyrics-version-check.md round 1. Each perturbation takes a
+Track A of (private path) round 1. Each perturbation takes a
 song's true word list (with line_final flags), applies ONE structural edit at
 line granularity, and returns the corrupted sheet plus the ground-truth edit
 op and a word-level source map (perturbed index -> original word index, None
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from apps.lyrics.asr_match import normalize_word
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -76,12 +76,10 @@ def find_chorus(lines: list[Line]) -> tuple[int, int] | None:
     return None
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
-def _sheet_from_line_seq(
-    lines: list[Line], line_seq: list[int], ops: list[EditOp]
-) -> PerturbedSheet:
+def _sheet_from_line_seq(lines: list[Line], line_seq: list[int], ops: list[EditOp]) -> PerturbedSheet:
     """Assemble a sheet from a sequence of original line indices. A line index
     appearing a second+ time contributes source_idx=None words (inserted copy,
     no original timestamp of its own)."""
@@ -100,8 +98,11 @@ def _sheet_from_line_seq(
 
 def _block_op(op: str, lines: list[Line], line_start: int, line_end: int, note: str) -> EditOp:
     return EditOp(
-        op=op, line_start=line_start, line_end=line_end,
-        word_start=lines[line_start].start_idx, word_end=lines[line_end].end_idx,
+        op=op,
+        line_start=line_start,
+        line_end=line_end,
+        word_start=lines[line_start].start_idx,
+        word_end=lines[line_end].end_idx,
         note=note,
     )
 
@@ -173,8 +174,13 @@ def perturb_audio_extra_chorus(words: list[str], line_final: list[bool]) -> Pert
     if second is None:
         raise AssertionError("find_chorus guarantees a second occurrence; none found")
     seq = [i for i in range(len(lines)) if not (second <= i <= second + length - 1)]
-    op = _block_op("drop_repeat", lines, second, second + length - 1,
-                   "second chorus occurrence removed from the sheet (audio sings it)")
+    op = _block_op(
+        "drop_repeat",
+        lines,
+        second,
+        second + length - 1,
+        "second chorus occurrence removed from the sheet (audio sings it)",
+    )
     return _sheet_from_line_seq(lines, seq, [op])
 
 
@@ -192,7 +198,10 @@ def perturb_move_block(words: list[str], line_final: list[bool], seed: int) -> P
     insert_at = rng.choice(positions)
     seq = rest[:insert_at] + list(range(start, end + 1)) + rest[insert_at:]
     op = _block_op(
-        "move_block", lines, start, end,
+        "move_block",
+        lines,
+        start,
+        end,
         f"moved {block_len} lines to line pos {insert_at}",
     )
     return _sheet_from_line_seq(lines, seq, [op])

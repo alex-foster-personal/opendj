@@ -1,4 +1,5 @@
 """Materialisation engine (SMART-02)."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -70,8 +71,10 @@ class Materializer:
         if row is None:
             raise ValueError(f"smartlist {smartlist_id!r} not found")
         new_ids = evaluate(
-            row.rule, self.sm_repo.conn,
-            order_by=row.order_by, validate=False,
+            row.rule,
+            self.sm_repo.conn,
+            order_by=row.order_by,
+            validate=False,
         )
         old_ids = row.last_materialized_track_ids
         added, removed = diff_sets(old_ids, new_ids)
@@ -126,7 +129,9 @@ class Materializer:
         for row in self.sm_repo.list_all():
             results.append(
                 self.materialize(
-                    row.id, dry_run=dry_run, live=live,
+                    row.id,
+                    dry_run=dry_run,
+                    live=live,
                     force_adopt=force_adopt,
                 )
             )

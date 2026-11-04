@@ -10,11 +10,8 @@ from pathlib import Path
 
 from apps.sets.paths import SETS_DB
 
-from .query import (
-    DEFAULT_MIN_AUDIBLE_S,
-    AnalyticsSchemaError,
-    query_play_analytics,
-)
+from .contract import DEFAULT_MIN_AUDIBLE_S, AnalyticsSchemaError
+from .query import query_play_analytics
 
 
 def _build_parser() -> argparse.ArgumentParser:

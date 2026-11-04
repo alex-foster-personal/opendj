@@ -74,6 +74,14 @@ export interface _DeckRuntime {
 		processor: AlignedStemDeckProcessor;
 		state: StemDeckState;
 	} | null;
+	/** AUDFID-02: a ready bundle held while every stem control is neutral, so
+	 * the deck plays the original file through its mix processor. Made audible
+	 * on the first stem-control touch (crossfade); released with the load. */
+	heldNeutralStems: {
+		token: number;
+		processor: AlignedStemDeckProcessor;
+		state: StemDeckState;
+	} | null;
 }
 
 export function _emptyRuntime(): _DeckRuntime {
@@ -104,7 +112,8 @@ export function _emptyRuntime(): _DeckRuntime {
 		metadataDurationMs: null,
 		reanchorOperationGeneration: 0,
 		reanchorRampOwnerGeneration: null,
-		pendingStemUpgrade: null
+		pendingStemUpgrade: null,
+		heldNeutralStems: null
 	};
 }
 

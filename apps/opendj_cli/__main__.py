@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from apps.opendj_cli import (
+    EXIT_BLOCKED,
     EXIT_CONFIRMED,
     EXIT_FAILED,
     EXIT_NO_ENGINE,
@@ -42,6 +43,7 @@ from apps.opendj_cli import (
     EXIT_UNCONFIRMED,
     status_cli,
 )
+from apps.opendj_cli.blocked import blocked_line, blocked_steps, replaced_line, replaced_tracks
 from apps.opendj_cli.catalog import DECK_VALUES
 from apps.opendj_cli.client import (
     ORDER_TIMEOUT_S,
@@ -97,6 +99,10 @@ _TRACK_COMMAND = "track"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _FEEDBACK_COMMAND = "feedback"
+_CLIENT_ERRORS_COMMAND = "client_errors"
+_ENRICHMENT_COMMAND = "enrichment"
+_ARTWORK_COMMAND = "artwork"
+_OFFLOAD_COMMAND = "offload"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
@@ -373,7 +379,16 @@ class _Run:
             else "an earlier group was not confirmed"
         )
 
+    @property
+    def blocked(self) -> list[dict[str, Any]]:
+        """AGENT-8332: steps the page refused because the deck is still playing."""
+        return blocked_steps(_steps(self.results))
+
     def verdict(self) -> str:
+        if self.blocked:
+            return "blocked"
+        if self.failed:
+            return "failed"
         if not self.verdicts:
             return "accepted"
         return max(self.verdicts, key=_VERDICTS.index)
@@ -414,14 +429,20 @@ def _post_all(
             )
             continue
         result = client.post_order(order)
+        steps = _steps_of(result)
         run.results.append(
             {
                 "kind": group.kind,
                 "commands": group.label(),
-                "steps": _steps_of(result),
+                "steps": steps,
                 "mirror_delta": result.get("mirror_delta", {}),
             }
         )
+        if any(step.get("status") == "failed" for step in steps):
+            # AGENT-8332: the page already said why. Waiting out the settle
+            # deadline only to print "the page accepted the order" over its
+            # refusal is how a blocked load read as unconfirmed.
+            continue
         checks = final_checks(
             [
                 check
@@ -487,6 +508,10 @@ def _dispatch(
         "checks": [check.description for check in run.checks],
         "verdict": state,
         "unconfirmed": list(failures),
+        # AGENT-8332/54: why a load was refused, the override to send, and
+        # what a replace_playing load stopped.
+        "blocked": run.blocked,
+        "replaced_playing": replaced_tracks(_steps(results)),
         # How long the CLI was willing to wait for the page to answer. A ramp
         # raises it above --timeout, so an agent can see the deadline it
         # actually got rather than infer it.
@@ -499,6 +524,8 @@ def _dispatch(
         print(json.dumps(document, indent=2, sort_keys=True))
     else:
         print(_dispatch_text(document))
+    if state == "blocked":
+        return EXIT_BLOCKED
     if failed:
         return EXIT_FAILED
     if state == "unconfirmed":
@@ -567,8 +594,14 @@ def _dispatch_text(document: dict[str, Any]) -> str:
     lines: list[str] = []
     for entry in document["groups"]:
         lines.extend(_group_text(entry))
+    lines.extend(replaced_line(replaced) for replaced in document["replaced_playing"])
     state = document["verdict"]
-    if state == "confirmed":
+    if state == "blocked":
+        lines.extend(f"verdict: blocked - {blocked_line(summary)}" for summary in document["blocked"])
+    elif state == "failed":
+        errors = _step_errors(_steps(document["groups"]))
+        lines.append(f"verdict: failed - the page refused the order ({'; '.join(errors) or 'no error text'})")
+    elif state == "confirmed":
         lines.append(f"verdict: confirmed ({'; '.join(document['checks'])})")
     elif state == "unconfirmed":
         lines.append(
@@ -680,6 +713,9 @@ _STANDALONE_COMMANDS = frozenset(
     {
         _TRACK_COMMAND,
         _FEEDBACK_COMMAND,
+        _ENRICHMENT_COMMAND,
+        _ARTWORK_COMMAND,
+        _OFFLOAD_COMMAND,
         _AUDIO_OUTPUT_HEALTH_COMMAND,
         _AUDIO_SWITCH_OUTPUT_COMMAND,
     }
@@ -696,6 +732,18 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import feedback_cli
 
         return feedback_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _ENRICHMENT_COMMAND:
+        from apps.opendj_cli import enrichment_cli
+
+        return enrichment_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _OFFLOAD_COMMAND:
+        from apps.opendj_cli import offload_cli
+
+        return offload_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _ARTWORK_COMMAND:
+        from apps.opendj_cli import artwork_cli
+
+        return artwork_cli.run(rest, as_json=args.json, lock=args.lock)
     from apps.opendj_cli import audio_output_health_cli
 
     if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
@@ -703,8 +751,23 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
     return audio_output_health_cli.run_switch_output(rest, as_json=args.json, lock=args.lock)
 
 
+def _run_client_errors(tokens: Sequence[str]) -> int | None:
+    """``client_errors`` carries its own filter flags, so it is split off before the global parser."""
+    split = _split_subcommand(tokens, _CLIENT_ERRORS_COMMAND)
+    if split is None:
+        return None
+    global_tokens, rest = split
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _CLIENT_ERRORS_COMMAND])
+    from apps.opendj_cli import client_errors_cli
+
+    return client_errors_cli.run(rest, as_json=args.json, lock=args.lock)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     tokens = sys.argv[1:] if argv is None else list(argv)
+    client_errors_code = _run_client_errors(tokens)
+    if client_errors_code is not None:
+        return client_errors_code
     mcp_split = _split_subcommand(tokens, _MCP_COMMAND)
     if mcp_split is not None:
         global_tokens, mcp_tokens = mcp_split

@@ -89,7 +89,7 @@ async def sse_payloads(response: httpx.Response) -> AsyncIterator[dict[str, Any]
     async for line in response.aiter_lines():
         if not line.startswith("data:"):
             continue  # blank separators, ': keep-alive' comments, event:/id:
-        data = line[len("data:"):].strip()
+        data = line[len("data:") :].strip()
         if data == "[DONE]":
             return
         try:
@@ -245,8 +245,7 @@ async def complete(
             if response.status_code != 200:
                 text = (await response.aread()).decode("utf-8", errors="replace")
                 raise UpstreamError(
-                    f"{upstream.mode} upstream returned {response.status_code} for model "
-                    f"{model}: {text[:600]}"
+                    f"{upstream.mode} upstream returned {response.status_code} for model {model}: {text[:600]}"
                 )
             async for payload in sse_payloads(response):
                 if content := _take_frame(payload, turn):

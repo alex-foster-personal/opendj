@@ -47,12 +47,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # ----- CFG -------------------------------------------------------------------
-LOSSLESS_EXTS: frozenset[str] = frozenset(
-    {".flac", ".wav", ".aiff", ".aif", ".alac", ".ape", ".wv"}
-)
-LOSSY_EXTS: frozenset[str] = frozenset(
-    {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".mp4"}
-)
+LOSSLESS_EXTS: frozenset[str] = frozenset({".flac", ".wav", ".aiff", ".aif", ".alac", ".ape", ".wv"})
+LOSSY_EXTS: frozenset[str] = frozenset({".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".mp4"})
 
 
 @dataclass(frozen=True)
@@ -68,18 +64,12 @@ class Venue:
 # The ladder. Ascending, and the names are the point: a DJ knows instantly
 # whether a file is a house-party file or a stadium file.
 VENUES: tuple[Venue, ...] = (
-    Venue(0, "naughty_step", "Naughty step",
-          "under 128 kbps effective -- audibly rough, for emergencies only"),
-    Venue(1, "lounge", "Lounge",
-          "128-191 kbps -- fine at conversation volume, thin on a system"),
-    Venue(2, "house_party", "House party",
-          "192-255 kbps -- holds up on speakers, cymbals start to suffer"),
-    Venue(3, "club", "Club",
-          "256-319 kbps -- solid on a real rig"),
-    Venue(4, "warehouse", "Warehouse",
-          "320 kbps or better -- the practical ceiling for lossy"),
-    Venue(5, "stadium", "Stadium",
-          "lossless -- nothing thrown away, safe anywhere"),
+    Venue(0, "naughty_step", "Naughty step", "under 128 kbps effective -- audibly rough, for emergencies only"),
+    Venue(1, "lounge", "Lounge", "128-191 kbps -- fine at conversation volume, thin on a system"),
+    Venue(2, "house_party", "House party", "192-255 kbps -- holds up on speakers, cymbals start to suffer"),
+    Venue(3, "club", "Club", "256-319 kbps -- solid on a real rig"),
+    Venue(4, "warehouse", "Warehouse", "320 kbps or better -- the practical ceiling for lossy"),
+    Venue(5, "stadium", "Stadium", "lossless -- nothing thrown away, safe anywhere"),
 )
 BY_KEY: dict[str, Venue] = {v.key: v for v in VENUES}
 # Upper bound (exclusive) of each lossy rung, in kbps. Lossless skips this.
@@ -122,7 +112,8 @@ class Quality:
 
 # ----- classify --------------------------------------------------------------
 def classify(
-    file_path: str | None, duration_ms: int | None,
+    file_path: str | None,
+    duration_ms: int | None,
     size_bytes: int | None = None,
 ) -> Quality:
     """Venue rung for one file. Returns an UNKNOWN Quality rather than guessing.
@@ -151,7 +142,10 @@ def classify(
         return Quality(None, None, ext, False, f"unrecognised container {ext!r}")
     if not duration_ms:
         return Quality(
-            None, None, ext, False,
+            None,
+            None,
+            ext,
+            False,
             "no duration, so effective bitrate cannot be computed",
         )
     kbps = size_bytes * 8 / (duration_ms / 1000) / 1000
@@ -163,7 +157,4 @@ def classify(
 
 def ladder() -> list[dict]:
     """The whole ladder, for a UI legend."""
-    return [
-        {"rank": v.rank, "key": v.key, "label": v.label, "blurb": v.blurb}
-        for v in VENUES
-    ]
+    return [{"rank": v.rank, "key": v.key, "label": v.label, "blurb": v.blurb} for v in VENUES]

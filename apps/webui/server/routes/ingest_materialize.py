@@ -3,7 +3,10 @@
 POST /ingest/batch/{batch}/materialize runs ``folder_ingest.ingest_folder`` on
 the bytes already written under INGEST_INBOX/<batch>/ so playlist-folder drop
 and similar flows can resolve stable_ids for newly staged files without a
-Rekordbox import step.
+Rekordbox import step. Once committed, the batch is handed to the ingest
+enrichment coordinator (ENRICH-06), which puts its tracks at the front
+of the analysis drain and, once their playback essentials are settled, runs
+the one-time online cover lookup (LIBM-187).
 """
 from __future__ import annotations
 
@@ -16,6 +19,7 @@ from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.writer import StateWriter
+from apps.webui.server import ingest_enrichment
 from apps.webui.server.routes import ingest as ingest_cfg
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -140,6 +144,9 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
         # Commit only after EVERY staged path resolved (see _resolve_staged).
         tracks = _resolve_staged(conn, dest_dir, staged, before_ids)
         conn.commit()
+        # After the commit, so the coordinator reads committed rows (ENRICH-06).
+        ingest_enrichment.coordinator_for(request.app).register(
+            batch, (track.stable_id for track in tracks), "materialize")
         return MaterializeOut(batch=batch, tracks=tracks)
     except Exception:
         conn.rollback()

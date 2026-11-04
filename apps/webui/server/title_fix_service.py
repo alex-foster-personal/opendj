@@ -86,9 +86,9 @@ from .title_fix_undo import (  # noqa: F401  # re-exported: the public surface a
 _SCAN_LOCK = threading.Lock()
 
 
-def read_scan_tracks(state_db_path: Path, stable_ids: list[str] | None, limit: int | None) -> list[
-    tuple[title_fix.Track, list[str]]
-]:
+def read_scan_tracks(
+    state_db_path: Path, stable_ids: list[str] | None, limit: int | None
+) -> list[tuple[title_fix.Track, list[str]]]:
     """(fixer Track, original artists list) per live track with a title. Read-only."""
     if not Path(state_db_path).is_file():
         raise TitleFixError("title_fix_state_db_missing", f"no state.db at {state_db_path}; ingest a library first")
@@ -110,8 +110,11 @@ def _scan_rows(conn: sqlite3.Connection, stable_ids: list[str] | None, limit: in
     if stable_ids is None:
         sql, args = _scan_query(None, limit)
         return conn.execute(sql, args).fetchall()
-    rows = [row for chunk in chunked(list(dict.fromkeys(stable_ids)), STORE_CFG.SQL_IN_CHUNK)
-            for row in conn.execute(*_scan_query(chunk, None)).fetchall()]
+    rows = [
+        row
+        for chunk in chunked(list(dict.fromkeys(stable_ids)), STORE_CFG.SQL_IN_CHUNK)
+        for row in conn.execute(*_scan_query(chunk, None)).fetchall()
+    ]
     rows.sort(key=lambda row: row[0])
     return rows if limit is None else rows[:limit]
 
@@ -129,20 +132,28 @@ def _scan_query(stable_ids: list[str] | None, limit: int | None) -> tuple[str, l
     return sql, args
 
 
-
-
 def _scan_track(
-    stable_id: str, title: str, artists_json: str | None, album: str | None, duration_ms: int | None,
+    stable_id: str,
+    title: str,
+    artists_json: str | None,
+    album: str | None,
+    duration_ms: int | None,
     file_path: str | None,
 ) -> tuple[title_fix.Track, list[str]]:
     """One tracks row as (fixer Track, original artists list); the fixer sees the artists joined by ", "."""
     artists = _artists_or_refuse(stable_id, artists_json)
     # label / year / bitrate / bit depth / sample rate stay None (unknown): state.db stores none of them, and the
     # project rules read an unknown as "cannot say", never as "absent", so they stay silent rather than guess.
-    path = PureWindowsPath(file_path or "")  # splits both / and \\ on any host, so a synced Windows path parses the same everywhere
+    path = PureWindowsPath(
+        file_path or ""
+    )  # splits both / and \\ on any host, so a synced Windows path parses the same everywhere
     track = title_fix.Track(
-        id=stable_id, title=title or "", artist=", ".join(a for a in artists if a), filename=path.name,
-        folder=path.parent.as_posix() if file_path else "", album=album,
+        id=stable_id,
+        title=title or "",
+        artist=", ".join(a for a in artists if a),
+        filename=path.name,
+        folder=path.parent.as_posix() if file_path else "",
+        album=album,
         length_s=None if duration_ms is None else duration_ms // 1000,
     )
     return track, artists
@@ -179,22 +190,38 @@ def start_scan(ctx: Ctx, stable_ids: list[str] | None, limit: int | None, *, bac
         )
     with _SCAN_LOCK:
         tracks = read_scan_tracks(ctx.paths.state_db, stable_ids, limit)
-        scan = _when_store_free(  # the cross-process lease; nothing has started yet, so waiting out a busy store is safe
-            ctx.store.begin_scan, len(tracks), config.spend_cap_usd, auto_apply_policy=config.auto_apply_policy,
-            stale_before=_stale_scan_cutoff())
+        scan = (
+            _when_store_free(  # the cross-process lease; nothing has started yet, so waiting out a busy store is safe
+                ctx.store.begin_scan,
+                len(tracks),
+                config.spend_cap_usd,
+                auto_apply_policy=config.auto_apply_policy,
+                stale_before=_stale_scan_cutoff(),
+            )
+        )
         if scan is None:
             running = ctx.store.running_scan()
-            raise TitleFixError("title_fix_scan_running", f"scan {running.scan_id if running else '?'} is still running")
+            raise TitleFixError(
+                "title_fix_scan_running", f"scan {running.scan_id if running else '?'} is still running"
+            )
     if background:
-        threading.Thread(target=_run_scan, args=(ctx, scan.scan_id, tracks, key, config), daemon=True,
-                         name=f"title-fix-scan-{scan.scan_id[:8]}").start()
+        threading.Thread(
+            target=_run_scan,
+            args=(ctx, scan.scan_id, tracks, key, config),
+            daemon=True,
+            name=f"title-fix-scan-{scan.scan_id[:8]}",
+        ).start()
         return scan
     _run_scan(ctx, scan.scan_id, tracks, key, config)
     return ctx.store.get_scan(scan.scan_id)
 
 
 def _run_scan(
-    ctx: Ctx, scan_id: str, tracks: list[tuple[title_fix.Track, list[str]]], key: str, config: TitleFixConfig,
+    ctx: Ctx,
+    scan_id: str,
+    tracks: list[tuple[title_fix.Track, list[str]]],
+    key: str,
+    config: TitleFixConfig,
 ) -> None:
     """``config`` is the one the scan started under; the cap enforced is the one recorded on the scan row."""
     budget = title_fix.SpendBudget(ctx.store.get_scan(scan_id).spend_cap_usd)  # one budget for the whole scan
@@ -204,7 +231,9 @@ def _run_scan(
             if budget.spent_usd >= budget.limit_usd:
                 break  # state becomes capped below
             chunk = tracks[start : start + CFG.CHUNK]
-            _when_store_free(ctx.store.update_scan, scan_id, processed=processed)  # heartbeat before the slow model calls
+            _when_store_free(
+                ctx.store.update_scan, scan_id, processed=processed
+            )  # heartbeat before the slow model calls
             with _heartbeating(ctx, scan_id):  # serialized probes can make one chunk outlast SCAN_STALE_S
                 verdicts = title_fix.fix_tracks([t for t, _ in chunk], api_key=key, spend_budget=budget)
             cost = budget.spent_usd  # what OpenRouter charged, including paid responses that failed to parse
@@ -219,17 +248,26 @@ def _run_scan(
         if budget.spent_usd >= budget.limit_usd:
             state = "capped"  # the last chunk's last answer can be the one that spends the cap
         auto_batch, auto_warning = None, None
-        _when_store_free(ctx.store.update_scan, scan_id, processed=processed)  # still the lease holder before it applies anything
+        _when_store_free(
+            ctx.store.update_scan, scan_id, processed=processed
+        )  # still the lease holder before it applies anything
         if config.auto_apply_policy != "off":
             auto_batch, auto_warning = _auto_apply_batch_id(ctx, scan_id, config.auto_apply_policy, config.tag_families)
         _when_store_free(
-            ctx.store.update_scan, scan_id, state=state, finished_at=_now(), auto_batch_id=auto_batch, error=auto_warning)
+            ctx.store.update_scan,
+            scan_id,
+            state=state,
+            finished_at=_now(),
+            auto_batch_id=auto_batch,
+            error=auto_warning,
+        )
     except ScanLeaseLostError:
         return  # another process took the lease over: its row and proposals are not this worker's to touch
     except Exception as exc:  # the scan row must not stay 'running' forever; the error is surfaced on it
         with contextlib.suppress(ScanLeaseLostError):  # a taken-over lease means the new holder owns the row
             _when_store_free(
-                ctx.store.update_scan, scan_id, state="failed", finished_at=_now(), error=f"{type(exc).__name__}: {exc}")
+                ctx.store.update_scan, scan_id, state="failed", finished_at=_now(), error=f"{type(exc).__name__}: {exc}"
+            )
         raise
 
 
@@ -251,7 +289,9 @@ def _heartbeating(ctx: Ctx, scan_id: str) -> Iterator[None]:
                 if not _is_store_contention(exc):
                     failures.append(exc)
                     return
-                wait_s = CFG.SCAN_STALE_S / CFG.CONTENTION_RETRIES_PER_STALE_WINDOW  # retry soon: the margin is shrinking
+                wait_s = (
+                    CFG.SCAN_STALE_S / CFG.CONTENTION_RETRIES_PER_STALE_WINDOW
+                )  # retry soon: the margin is shrinking
             except ScanLeaseLostError as exc:
                 failures.append(exc)
                 return
@@ -279,7 +319,10 @@ def _was_scanned(verdict: title_fix.Verdict) -> bool:
 
 
 def _auto_apply_batch_id(
-    ctx: Ctx, scan_id: str, policy: str, tag_families: tuple[str, ...],
+    ctx: Ctx,
+    scan_id: str,
+    policy: str,
+    tag_families: tuple[str, ...],
 ) -> tuple[str | None, str | None]:
     """The undo batch an auto-apply recorded, and the warning if its write committed but could not be confirmed. A
     write that committed but whose result could not be re-read still changed tracks, so its batch is linked to the
@@ -298,6 +341,15 @@ def _auto_apply(ctx: Ctx, scan_id: str, policy: str, tag_families: tuple[str, ..
         ctx.write_gate()  # the request's own check ended when it returned; a long scan must ask the lock again
     rows, _total = ctx.store.list_proposals(ProposalFilter(state="pending", scan_id=scan_id, limit=_ALL_ROWS))
     eligible = [r.proposal_id for r in rows if auto_apply_eligible(r, policy)]
-    return apply_proposals(
-        ctx, eligible, kind="auto", policy=policy, scan_id=scan_id, tag_families=tag_families,
-    ) if eligible else Outcome()
+    return (
+        apply_proposals(
+            ctx,
+            eligible,
+            kind="auto",
+            policy=policy,
+            scan_id=scan_id,
+            tag_families=tag_families,
+        )
+        if eligible
+        else Outcome()
+    )

@@ -110,9 +110,7 @@ from scripts.review_sol import is_sol_artifact, marker
 REMOTE_SEAT_ENV = "MDT_SOL_REMOTE_SEAT"
 #: Comma-separated hostnames on which that seat runs directly instead of over ssh.
 REMOTE_SEAT_HOSTNAMES_ENV = "MDT_SOL_REMOTE_SEAT_HOSTNAMES"
-#: Stage-1 defaults, kept until every review host sets the variables (ADR-0317).
-DEFAULT_REMOTE_SEAT = "nucbox-wsl"
-DEFAULT_REMOTE_SEAT_HOSTNAMES: frozenset[str] = frozenset({"NucBoxEVO-X2"})
+#: Required process env (#5639 stage 2); no alias default.
 #: One ssh alias or hostname: no option-looking leading dash, no shell syntax.
 _HOST_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
 
@@ -124,17 +122,34 @@ def _host_name(variable: str, value: str) -> str:
 
 
 def remote_seat(environ: Mapping[str, str] | None = None) -> str:
-    """The remote seat's ssh alias; unset or blank keeps the stage-1 default."""
+    """The remote seat's ssh alias from MDT_SOL_REMOTE_SEAT."""
     env = os.environ if environ is None else environ
-    return _host_name(REMOTE_SEAT_ENV, (env.get(REMOTE_SEAT_ENV) or "").strip() or DEFAULT_REMOTE_SEAT)
+    value = (env.get(REMOTE_SEAT_ENV) or "").strip()
+    if not value:
+        raise TriageError(
+            f"{REMOTE_SEAT_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
+    return _host_name(REMOTE_SEAT_ENV, value)
 
 
 def remote_seat_hostnames(environ: Mapping[str, str] | None = None) -> frozenset[str]:
-    """Hostnames where the remote seat is this machine; unset or blank keeps the default."""
+    """Hostnames where the remote seat is this machine."""
     env = os.environ if environ is None else environ
-    names = {_host_name(REMOTE_SEAT_HOSTNAMES_ENV, n.strip())
-             for n in (env.get(REMOTE_SEAT_HOSTNAMES_ENV) or "").split(",") if n.strip()}
-    return frozenset(names) or DEFAULT_REMOTE_SEAT_HOSTNAMES
+    raw = (env.get(REMOTE_SEAT_HOSTNAMES_ENV) or "").strip()
+    if not raw:
+        raise TriageError(
+            f"{REMOTE_SEAT_HOSTNAMES_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
+    names = {
+        _host_name(REMOTE_SEAT_HOSTNAMES_ENV, n.strip())
+        for n in raw.split(",")
+        if n.strip()
+    }
+    if not names:
+        raise TriageError(
+            f"{REMOTE_SEAT_HOSTNAMES_ENV} is not set; set it in the process environment (see .env.sample)"
+        )
+    return frozenset(names)
 
 
 def configured_seats(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:

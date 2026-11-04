@@ -1,6 +1,6 @@
 """The hub's generation token: how a spoke knows the hub went backwards.
 
-Contract: ``specs/design_decision_08.md`` point 4, amended by round 2
+Contract: ``(private path)`` point 4, amended by round 2
 finding N6. Round 2 inferred "the hub was restored" from its ``MAX(seq)``
 going backwards, which is true of a Litestream point-in-time restore and
 ALSO true of any maintenance that prunes the changelog -- so a routine
@@ -39,13 +39,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from apps.sync_hub import engine
+from apps.sync_hub.atomic_json import write_json_atomic
 
 log = logging.getLogger(__name__)
 
@@ -115,15 +115,12 @@ def _read(path: Path) -> Anchor | None:
 
 def _write(path: Path, anchor: Anchor) -> None:
     """Replace the anchor file atomically, or raise."""
-    payload = json.dumps(
-        {"generation": anchor.generation, "high_water": anchor.high_water},
-        sort_keys=True,
-    )
-    temp = path.with_suffix(".json.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp.write_text(payload, encoding="utf-8")
-        os.replace(temp, path)
+        write_json_atomic(
+            path,
+            {"generation": anchor.generation, "high_water": anchor.high_water},
+        )
     except OSError as exc:
         raise SyncGenerationError(
             f"cannot write the hub generation file {path}: {exc}"

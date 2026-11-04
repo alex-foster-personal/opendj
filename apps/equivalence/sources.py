@@ -22,6 +22,7 @@ from apps.mik.bookmark import BookmarkParseError, parse_bookmark_path
 _MIK_ENERGY_PREFIX = re.compile(r"^\s*\d{1,2}\s*-\s*")
 _NON_ALNUM = re.compile(r"[^0-9a-z]+")
 
+
 class MalformedEnergySegment(ValueError):
     """A ``ZENERGYSEGMENT`` row is missing a required column.
 
@@ -100,7 +101,7 @@ class MikEnergySegment:
     """One ``ZENERGYSEGMENT`` row: a span of the energy TIME SERIES.
 
     Time-indexed in seconds, so no BPM dependency (see
-    ``docs/terminology-reference/time-series-vs-scalar.md``). This is a shape
+    ``(private path)``). This is a shape
     ``track_fields`` cannot hold: many rows per track, not one.
     """
 
@@ -145,8 +146,7 @@ def read_rekordbox(db_path: Path) -> list[RbRow]:
     """Every ``djmdContent`` row with its key name and artist name joined."""
     if not db_path.exists():
         raise FileNotFoundError(
-            f"rekordbox working copy not found: {db_path} (expected the "
-            f"decrypted data/master.plain.db; see CLAUDE.md)"
+            f"rekordbox working copy not found: {db_path} (expected the decrypted (private path); see CLAUDE.md)"
         )
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row

@@ -125,6 +125,14 @@ def test_every_available_style_validates_clean_and_hands_over(name: str) -> None
         (lambda doc: doc["out"].update(deck=7), "deck 1..4"),
         (lambda doc: doc.update(events=[]), "non-empty"),
         (lambda doc: doc.update(tempo={"mode": "warp"}), "tempo.mode"),
+        (lambda doc: doc.update(intent=7), "intent must be text"),
+        (lambda doc: doc.update(anchor=[]), "anchor must be one of"),
+        (lambda doc: doc.update(tempo={"mode": []}), "tempo.mode must be one of"),
+        (lambda doc: doc.update(tempo=[]), "tempo must be an object"),
+        (lambda doc: doc.update(tempo=False), "tempo must be an object"),
+        (lambda doc: doc.update(tempo=0), "tempo must be an object"),
+        (lambda doc: doc["events"].append({"at_bar": 1, "deck": 2, "do": []}), "do must be one of"),
+        (lambda doc: doc.update(rationale=["because"]), "rationale must be text"),
     ],
 )
 def test_parse_refuses_malformed_plans(mutate: Any, message: str) -> None:
@@ -888,6 +896,16 @@ def test_compile_sets_the_incoming_tempo_before_its_quantized_launch() -> None:
     assert not [c for c in untouched["prepare"] if c["type"] == "tempo"]
     unranged = compile_plan(parse_plan(_plan()), IN, plan_id="plan-test", live=_live_tempo(132.0, None))["plan"]
     assert not [c for c in unranged["prepare"] if c["type"] == "tempo"]
+
+
+def test_a_huge_integer_is_a_plan_error_not_an_overflow() -> None:
+    """[if] a plan number is too large for a float [then] it is refused as a plan error, [else stop]."""
+    document = _plan()
+    document["events"][0]["at_bar"] = 10**400
+    with pytest.raises(PlanError, match="must be finite"):
+        parse_plan(document)
+    # Control: the same plan with an ordinary bar parses.
+    assert parse_plan(_plan())
 
 
 def test_a_silent_gap_shorter_than_a_grid_cell_still_counts() -> None:

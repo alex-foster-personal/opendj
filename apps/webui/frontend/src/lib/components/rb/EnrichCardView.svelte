@@ -16,6 +16,7 @@
 		absentLines,
 		dudLines,
 		analysisLines,
+		attentionTitle,
 		collapsedLine,
 		lyricsLine,
 		offersRetry,
@@ -23,8 +24,10 @@
 		stemsDeclinedText,
 		stemsText,
 		stemsTitle,
-		stemsTone
+		stemsTone,
+		warningLines
 	} from '$lib/enrich/enrich-card';
+	import { suggestionsLine } from '$lib/enrich/artwork-suggestions';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 
 	interface Props {
@@ -51,6 +54,8 @@
 		onnever?: () => void;
 		/** ENRICH-05: take back a stored "never" (PUT answer "ask"). */
 		onaskagain?: () => void;
+		/** LIBM-189: open the store-cover review dialog. */
+		onreviewcovers?: () => void;
 	}
 
 	const {
@@ -68,11 +73,14 @@
 		onretry,
 		onask,
 		onnever,
-		onaskagain
+		onaskagain,
+		onreviewcovers
 	}: Props = $props();
 
+	const coversLine = $derived(summary ? suggestionsLine(summary.artwork_suggestions ?? 0) : null);
+
 	const lines = $derived(
-		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary)] : []
+		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary), ...warningLines(summary)] : []
 	);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const declinedLine = $derived(summary ? stemsDeclinedText(summary) : null);
@@ -105,7 +113,7 @@
 		onclick={ontoggle}
 		aria-expanded={expanded}
 		aria-label={`Library enrichment: ${pillLine.text}${attention ? ', needs you' : ''}`}
-		title={`${pillLine.title}${attention ? '\nSomething needs you: click to see it.' : ''}`}
+		title={`${pillLine.title}${attention ? `\n${summary ? attentionTitle(summary) : 'Something needs you: click to see it.'}` : ''}`}
 		data-testid="enrich-pill"
 	>
 		<span class="enrich-dot" aria-hidden="true"></span>
@@ -139,12 +147,21 @@
 				{line.text}
 			</p>
 		{/each}
+		{#if coversLine}
+			<p class="enrich-line note" data-lane="artwork-suggestions" data-tone="note">{coversLine}</p>
+			<div class="enrich-actions">
+				<button type="button" class="enrich-go" onclick={onreviewcovers} disabled={onreviewcovers === undefined}
+					data-testid="enrich-review-covers">Review covers...</button
+				>
+			</div>
+		{/if}
 		{#if summary && offersRetry(summary)}
 			<button type="button" onclick={onretry} disabled={busy}>Retry failed analysis</button>
 		{/if}
 		{#if stemsLine}
 			<p
 				class="enrich-line {summary ? stemsTone(summary.stems) : 'unavailable'}"
+				class:attention={summary?.stems.state === 'ask'}
 				title={summary ? (stemsTitle(summary.stems) ?? undefined) : undefined}
 				data-lane="stems"
 				data-tone={summary ? stemsTone(summary.stems) : undefined}
@@ -220,9 +237,11 @@
 		background: var(--rb-accent);
 		box-shadow: 0 0 0 2px var(--rb-accent-glow);
 	}
+	/* "needs you" is a literal orange on every skin: Gothic grays --rb-orange,
+	   and this must not follow the skin. */
 	.enrich-flag {
 		flex: none;
-		color: var(--rb-text);
+		color: #e8a13a;
 		font-weight: 600;
 	}
 	.enrich-pill-text {
@@ -278,6 +297,10 @@
 	}
 	.enrich-line.failed {
 		color: var(--rb-red);
+	}
+	.enrich-line.attention {
+		/* Literal orange. Gothic sets --rb-orange to gray; this must not follow the skin. */
+		color: #e8a13a;
 	}
 	.enrich-line.unavailable {
 		color: var(--rb-text-dim);

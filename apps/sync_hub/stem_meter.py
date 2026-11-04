@@ -61,9 +61,7 @@ class StemCapExceeded(RuntimeError):
     """The owner's month is spent. Carries the numbers a refusal should name."""
 
     def __init__(self, *, month: str, used: int, cap: int) -> None:
-        super().__init__(
-            f"CloudStems monthly cap reached for {month}: {used} of {cap} tracks"
-        )
+        super().__init__(f"CloudStems monthly cap reached for {month}: {used} of {cap} tracks")
         self.month = month
         self.used = used
         self.cap = cap
@@ -84,21 +82,15 @@ def parse_cap(env: Mapping[str, str]) -> int:
     # (Sentry 2310931, Devin discussion_r4312311568). A config number is ASCII
     # by definition, so anything else is the same refusal as "abc".
     if not (raw.isascii() and raw.isdigit()):
-        raise StemCapConfigError(
-            f"{CAP_ENV} must be a whole number >= 1, got {raw!r}."
-        )
+        raise StemCapConfigError(f"{CAP_ENV} must be a whole number >= 1, got {raw!r}.")
     try:
         value = int(raw)
     except ValueError as exc:
         # ``int()`` also refuses a digit string past its own length limit, so
         # an absurd-but-numeric setting still answers 503, never a 500.
-        raise StemCapConfigError(
-            f"{CAP_ENV} must be a whole number >= 1, got {raw!r}."
-        ) from exc
+        raise StemCapConfigError(f"{CAP_ENV} must be a whole number >= 1, got {raw!r}.") from exc
     if value < 1:
-        raise StemCapConfigError(
-            f"{CAP_ENV} must be a whole number >= 1, got {raw!r}."
-        )
+        raise StemCapConfigError(f"{CAP_ENV} must be a whole number >= 1, got {raw!r}.")
     return value
 
 
@@ -110,9 +102,7 @@ def month_of(now: datetime) -> str:
 
 
 def _table_exists(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (USAGE_TABLE,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (USAGE_TABLE,)).fetchone()
     return row is not None
 
 
@@ -131,9 +121,7 @@ def ensure_usage_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def used(
-    conn: sqlite3.Connection, *, owner_sub: str, month: str
-) -> int:
+def used(conn: sqlite3.Connection, *, owner_sub: str, month: str) -> int:
     """Distinct bundles this owner has taken in ``month``. Read-only."""
     if not _table_exists(conn):
         return 0
@@ -168,8 +156,7 @@ def check_room(
     if not _table_exists(conn):
         return
     row = conn.execute(
-        f"SELECT 1 FROM {USAGE_TABLE} "
-        "WHERE owner_sub = ? AND month = ? AND stable_id = ?",
+        f"SELECT 1 FROM {USAGE_TABLE} WHERE owner_sub = ? AND month = ? AND stable_id = ?",
         (owner_sub, month, stable_id),
     ).fetchone()
     if row is not None:
@@ -203,8 +190,7 @@ def reserve(
         raise StemCapConfigError(f"stems monthly cap must be >= 1, got {cap!r}")
     ensure_usage_table(conn)
     cursor = conn.execute(
-        f"INSERT OR IGNORE INTO {USAGE_TABLE} "
-        "(owner_sub, month, stable_id, counted_at) VALUES (?, ?, ?, ?)",
+        f"INSERT OR IGNORE INTO {USAGE_TABLE} (owner_sub, month, stable_id, counted_at) VALUES (?, ?, ?, ?)",
         (owner_sub, month, stable_id, counted_at),
     )
     # ``rowcount`` is what separates "this call took the last track" from
@@ -222,8 +208,7 @@ def reserve(
         return total
     if total > cap:
         conn.execute(
-            f"DELETE FROM {USAGE_TABLE} "
-            "WHERE owner_sub = ? AND month = ? AND stable_id = ?",
+            f"DELETE FROM {USAGE_TABLE} WHERE owner_sub = ? AND month = ? AND stable_id = ?",
             (owner_sub, month, stable_id),
         )
         raise StemCapExceeded(month=month, used=total - 1, cap=cap)

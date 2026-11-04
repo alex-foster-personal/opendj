@@ -233,16 +233,13 @@ SYNC_RESPONSES: dict[int | str, dict[str, Any]] = {
 GRANT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **LOCAL_ONLY_RESPONSE,
     404: _declared(
-        "No signed-in user on this hub has that email; none is created. "
-        "code: CLOUDSYNC_GRANT_OWNER_UNKNOWN."
+        "No signed-in user on this hub has that email; none is created. code: CLOUDSYNC_GRANT_OWNER_UNKNOWN."
     ),
     409: _declared(
         "This machine is not a hub (MDT_IS_HUB is not 1); a grant is an act "
         "of hub authority. code: CLOUDSYNC_NOT_A_HUB."
     ),
-    500: _declared(
-        "MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID."
-    ),
+    500: _declared("MDT_IS_HUB holds a value other than 1, 0 or empty. code: CLOUDSYNC_HUB_FLAG_INVALID."),
 }
 
 
@@ -260,8 +257,7 @@ def require_local_operator(request: Request) -> None:
         raise _refuse(
             403,
             "CLOUDSYNC_OPS_LOCAL_ONLY",
-            f"CloudSync operator actions are local-operator only: {reason}. "
-            "Run them on the machine itself.",
+            f"CloudSync operator actions are local-operator only: {reason}. Run them on the machine itself.",
         )
 
 
@@ -364,7 +360,6 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
     if reason is not None:
         raise _refuse(409, "CLOUDSYNC_SYNC_DEFERRED", f"CloudSync sync deferred: {reason}")
     with _one_sync_at_a_time(data_dir):
-
         try:
             result = maintenance.sync(
                 data_dir,
@@ -375,9 +370,7 @@ def run_sync_round(body: SyncRunIn, request: Request) -> SyncRunOut:
             )
         except sync_client.SyncTransportError as exc:
             if is_wire_version_refusal(exc):
-                raise _refuse(
-                    409, "CLOUDSYNC_SYNC_REFUSED", f"SyncVersionMismatch: {exc}"
-                ) from exc
+                raise _refuse(409, "CLOUDSYNC_SYNC_REFUSED", f"SyncVersionMismatch: {exc}") from exc
             raise _refuse(502, "CLOUDSYNC_HUB_UNREACHABLE", str(exc)) from exc
         except DECLARED_SYNC_REFUSALS as exc:
             raise _refuse(409, "CLOUDSYNC_SYNC_REFUSED", f"{type(exc).__name__}: {exc}") from exc

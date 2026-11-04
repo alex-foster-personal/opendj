@@ -70,6 +70,11 @@
 					the Open DJ data folder (under Library/Application Support) and restart, or delete
 					<code>telemetry-consent.json</code> there to be asked again.
 				</p>
+				<p>
+					Stem separation, when you ask for it, can upload the source track to the project's
+					stems service. That upload is not covered by this dialog and is not gated by your
+					answer here.
+				</p>
 			</details>
 			{#if failure !== null}
 				<p class="tc-failure" role="alert">Could not save your answer: {failure}</p>

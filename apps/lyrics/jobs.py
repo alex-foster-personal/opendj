@@ -34,7 +34,7 @@ class LyricJob:
 
 
 def jobs_path(state_dir: Path) -> Path:
-    """``state_dir`` is the directory holding state.db (data/state)."""
+    """``state_dir`` is the directory holding state.db ((private path))."""
     return state_dir / "lyrics-jobs.json"
 
 
@@ -51,18 +51,14 @@ def _load(path: Path) -> list[LyricJob]:
 
 def _save(path: Path, jobs: list[LyricJob]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps([asdict(job) for job in jobs], indent=2) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps([asdict(job) for job in jobs], indent=2) + "\n", encoding="utf-8")
 
 
 def list_jobs(state_dir: Path) -> list[LyricJob]:
     return _load(jobs_path(state_dir))
 
 
-def enqueue(
-    state_dir: Path, kind: str, stable_ids: list[str], note: str | None = None
-) -> LyricJob:
+def enqueue(state_dir: Path, kind: str, stable_ids: list[str], note: str | None = None) -> LyricJob:
     if kind not in JOB_KINDS:
         raise ValueError(f"unknown job kind {kind!r}; valid: {sorted(JOB_KINDS)}")
     if not stable_ids:
@@ -107,9 +103,7 @@ def annotate(state_dir: Path, job_id: str, note: str) -> LyricJob:
     return _updated(state_dir, job_id, {"note": note})
 
 
-def complete(
-    state_dir: Path, job_id: str, status: str, note: str | None = None
-) -> LyricJob:
+def complete(state_dir: Path, job_id: str, status: str, note: str | None = None) -> LyricJob:
     """Close a queued job. ``note=None`` keeps the note already on the job."""
     if status not in JOB_STATUSES - {"queued"}:
         raise ValueError(f"completion status must be done|failed, got {status!r}")

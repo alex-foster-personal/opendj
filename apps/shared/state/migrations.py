@@ -8,6 +8,7 @@ module holds the v1-v5 ladder; v6-v8 live in
 :mod:`apps.shared.state.migrations_v6_v8` (issue #1583) because the combined
 ladder alone exceeds the 600-line file-size gate.
 """
+
 from __future__ import annotations
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -206,8 +207,7 @@ _V4: list[str] = [
         )
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
-    "ON track_locations(stable_id)",
+    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable ON track_locations(stable_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_path "
     "ON track_locations(stable_id, kind, file_path) "
     "WHERE file_path IS NOT NULL",

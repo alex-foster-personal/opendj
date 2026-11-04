@@ -1,4 +1,5 @@
 """Lazy module-scoped :class:`~apps.shared.state.events.EventBus` holders."""
+
 from __future__ import annotations
 
 import threading

@@ -2,6 +2,7 @@
 
 Accepts URL / URI / bare id; returns the 22-char playlist id.
 """
+
 from __future__ import annotations
 
 import re
@@ -12,9 +13,7 @@ __all__ = ["parse_playlist_identifier", "PLAYLIST_ID_RE"]
 
 PLAYLIST_ID_RE: re.Pattern[str] = re.compile(r"^[0-9A-Za-z]{21,24}$")
 
-_URL_PATH_RE: re.Pattern[str] = re.compile(
-    r"^/(?:embed/)?playlist/([0-9A-Za-z]{21,24})/?$"
-)
+_URL_PATH_RE: re.Pattern[str] = re.compile(r"^/(?:embed/)?playlist/([0-9A-Za-z]{21,24})/?$")
 
 _URI_RE: re.Pattern[str] = re.compile(r"^spotify:playlist:([0-9A-Za-z]{21,24})$")
 

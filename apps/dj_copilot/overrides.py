@@ -1,4 +1,5 @@
 """PLAY-03 per-track override write path."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -13,9 +14,7 @@ from apps.shared.play_orders.validation import (
 _UNSET = object()
 
 
-def _lookup_parent(
-    conn: sqlite3.Connection, play_order_id: int, position: int
-) -> tuple[str, str]:
+def _lookup_parent(conn: sqlite3.Connection, play_order_id: int, position: int) -> tuple[str, str]:
     row = conn.execute(
         "SELECT po.playlist_id, po.name "
         "FROM play_orders po "
@@ -24,10 +23,7 @@ def _lookup_parent(
         (play_order_id, position),
     ).fetchone()
     if row is None:
-        raise LookupError(
-            f"no play_order_entries row for "
-            f"play_order_id={play_order_id}, position={position}"
-        )
+        raise LookupError(f"no play_order_entries row for play_order_id={play_order_id}, position={position}")
     return str(row[0]), str(row[1])
 
 
@@ -51,14 +47,10 @@ def set_override(
         changes.append(("target_tempo", target_tempo))
     if key_sync is not _UNSET:
         validate_key_sync(key_sync)  # type: ignore[arg-type]
-        changes.append(
-            ("key_sync", None if key_sync is None else int(bool(key_sync)))
-        )
+        changes.append(("key_sync", None if key_sync is None else int(bool(key_sync))))
     if transition_hint is not _UNSET:
         if transition_hint is not None and not isinstance(transition_hint, str):
-            raise ValueError(
-                f"transition_hint must be str or None, got {transition_hint!r}"
-            )
+            raise ValueError(f"transition_hint must be str or None, got {transition_hint!r}")
         changes.append(("transition_hint", transition_hint))
 
     if not changes:
@@ -69,13 +61,10 @@ def set_override(
     params: list[object] = [val for _, val in changes]
     params.extend([play_order_id, position])
     conn.execute(
-        f"UPDATE play_order_entries SET {assignments} "
-        "WHERE play_order_id=? AND position=?",
+        f"UPDATE play_order_entries SET {assignments} WHERE play_order_id=? AND position=?",
         params,
     )
-    emit_play_order_changed(
-        conn, playlist_id=playlist_id, name=name, action="updated"
-    )
+    emit_play_order_changed(conn, playlist_id=playlist_id, name=name, action="updated")
 
 
 def clear_override(
@@ -91,6 +80,4 @@ def clear_override(
         "WHERE play_order_id=? AND position=?",
         (play_order_id, position),
     )
-    emit_play_order_changed(
-        conn, playlist_id=playlist_id, name=name, action="updated"
-    )
+    emit_play_order_changed(conn, playlist_id=playlist_id, name=name, action="updated")

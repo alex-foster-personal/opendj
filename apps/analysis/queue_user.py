@@ -6,6 +6,7 @@ is untouched so #1586 tests keep their meaning.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -102,9 +103,7 @@ def _item_from_row(row: Sequence[object]) -> UserJobItem:
 
 
 def require_lane(lane: str) -> str:
-    return require_allowed_value(
-        lane, USER_JOB_LANES, "user lane", "lanes", QueueError
-    )
+    return require_allowed_value(lane, USER_JOB_LANES, "user lane", "lanes", QueueError)
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
@@ -119,10 +118,7 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
     queue_store.ensure_queue_tables(conn)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(analysis_queue_item)")}
     if "position" not in cols:
-        conn.execute(
-            "ALTER TABLE analysis_queue_item "
-            "ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
-        )
+        conn.execute("ALTER TABLE analysis_queue_item ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
     placeholders = ",".join("?" for _ in USER_BATCH_IDS)
     present = {
         str(row[0])
@@ -147,20 +143,15 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _get_row(
-    conn: sqlite3.Connection, batch_id: str, stable_id: str, lane: str
-) -> UserJobItem | None:
+def _get_row(conn: sqlite3.Connection, batch_id: str, stable_id: str, lane: str) -> UserJobItem | None:
     row = conn.execute(
-        f"SELECT {_ITEM_COLS} FROM analysis_queue_item "
-        "WHERE batch_id = ? AND stable_id = ? AND lane = ?",
+        f"SELECT {_ITEM_COLS} FROM analysis_queue_item WHERE batch_id = ? AND stable_id = ? AND lane = ?",
         (batch_id, stable_id, lane),
     ).fetchone()
     return _item_from_row(row) if row is not None else None
 
 
-def _live_tracks(
-    conn: sqlite3.Connection, stable_ids: Sequence[str]
-) -> dict[str, tuple[str | None, int | None]]:
+def _live_tracks(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, tuple[str | None, int | None]]:
     wanted = list(dict.fromkeys(stable_ids))
     found: dict[str, tuple[str | None, int | None]] = {}
     for offset in range(0, len(wanted), 500):
@@ -177,10 +168,7 @@ def _live_tracks(
             )
     missing = [sid for sid in wanted if sid not in found]
     if missing:
-        raise QueueError(
-            f"{len(missing)} stable_id(s) are not a live track "
-            f"(unknown or deleted): {missing[:5]}"
-        )
+        raise QueueError(f"{len(missing)} stable_id(s) are not a live track (unknown or deleted): {missing[:5]}")
     return found
 
 
@@ -204,9 +192,7 @@ def artifact_is_fresh(
     verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
     if verdict is None:
         return False
-    return fetch_verdicts.is_terminal_fresh(
-        verdict, vocals_sha256_for_track(data_dir, stable_id)
-    )
+    return fetch_verdicts.is_terminal_fresh(verdict, vocals_sha256_for_track(data_dir, stable_id))
 
 
 def _cache_has_lyric_line(loaded: lyrics_cache.Lyrics) -> bool:
@@ -234,11 +220,7 @@ def lyrics_skip_reason(stable_id: str, *, data_dir: Path) -> str | None:
     path = lyrics_cache.cache_path(data_dir, stable_id)
     loaded = lyrics_cache.load(path)
     verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
-    if (
-        loaded is not None
-        and loaded.stable_id == stable_id
-        and _cache_has_lyric_line(loaded)
-    ):
+    if loaded is not None and loaded.stable_id == stable_id and _cache_has_lyric_line(loaded):
         # LYRICS-07: an ASR cache re-asks LRCLIB once its last ask is stale.
         if loaded.source == ASR_SOURCE and asr_recheck_due(verdict, datetime.now(UTC)):
             return None
@@ -306,9 +288,7 @@ def _pending_ids(conn: sqlite3.Connection, batch_id: str, lane: str) -> list[str
     return [str(r[0]) for r in rows]
 
 
-def _resequence(
-    conn: sqlite3.Connection, batch_id: str, lane: str, ordered: Sequence[str]
-) -> None:
+def _resequence(conn: sqlite3.Connection, batch_id: str, lane: str, ordered: Sequence[str]) -> None:
     for index, sid in enumerate(ordered, start=1):
         conn.execute(
             "UPDATE analysis_queue_item SET position = ? "
@@ -380,9 +360,7 @@ def enqueue_next(
     if not stable_ids:
         raise QueueError("enqueue needs at least one stable_id")
     if len(stable_ids) > MAX_ENQUEUE_IDS:
-        raise QueueError(
-            f"enqueue capped at {MAX_ENQUEUE_IDS} stable_ids, got {len(stable_ids)}"
-        )
+        raise QueueError(f"enqueue capped at {MAX_ENQUEUE_IDS} stable_ids, got {len(stable_ids)}")
     ordered = list(dict.fromkeys(stable_ids))
     ensure_user_schema(conn)
     batch_id = USER_BATCH_IDS[lane]
@@ -416,14 +394,8 @@ def enqueue_next(
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    items = tuple(
-        item
-        for sid in result_ids
-        if (item := _get_row(conn, batch_id, sid, lane)) is not None
-    )
-    return EnqueueUserResult(
-        lane=lane, items=items, already_running=tuple(already_running)
-    )
+    items = tuple(item for sid in result_ids if (item := _get_row(conn, batch_id, sid, lane)) is not None)
+    return EnqueueUserResult(lane=lane, items=items, already_running=tuple(already_running))
 
 
 def list_lane(
@@ -462,8 +434,7 @@ def counts_for_lane(conn: sqlite3.Connection, lane: str) -> dict[str, int]:
         )
     }
     for state, n in conn.execute(
-        "SELECT state, COUNT(*) FROM analysis_queue_item "
-        "WHERE batch_id = ? AND lane = ? GROUP BY state",
+        "SELECT state, COUNT(*) FROM analysis_queue_item WHERE batch_id = ? AND lane = ? GROUP BY state",
         (USER_BATCH_IDS[lane], lane),
     ):
         if state in out:
@@ -471,9 +442,7 @@ def counts_for_lane(conn: sqlite3.Connection, lane: str) -> dict[str, int]:
     return out
 
 
-def _loaded_item(
-    conn: sqlite3.Connection, batch_id: str, lane: str, stable_id: str
-) -> UserJobItem:
+def _loaded_item(conn: sqlite3.Connection, batch_id: str, lane: str, stable_id: str) -> UserJobItem:
     item = _get_row(conn, batch_id, stable_id, lane)
     if item is None:
         raise QueueError(f"no {lane} job for {stable_id}")
@@ -482,16 +451,12 @@ def _loaded_item(
 
 def _require_pending(item: UserJobItem) -> None:
     if item.state != queue_store.ITEM_PENDING:
-        raise UserJobConflict(
-            f"{item.lane}/{item.stable_id} is {item.state}, not pending"
-        )
+        raise UserJobConflict(f"{item.lane}/{item.stable_id} is {item.state}, not pending")
 
 
 def _require_active(item: UserJobItem) -> None:
     if item.state in SETTLED_STATES:
-        raise UserJobConflict(
-            f"{item.lane}/{item.stable_id} is already {item.state}"
-        )
+        raise UserJobConflict(f"{item.lane}/{item.stable_id} is already {item.state}")
 
 
 def _insert_before(
@@ -504,9 +469,7 @@ def _insert_before(
         pending.append(stable_id)
         return
     if before_stable_id not in pending:
-        raise QueueError(
-            f"before_stable_id {before_stable_id!r} is not a pending {lane} job"
-        )
+        raise QueueError(f"before_stable_id {before_stable_id!r} is not a pending {lane} job")
     pending.insert(pending.index(before_stable_id), stable_id)
 
 
@@ -537,9 +500,7 @@ def reorder_item(
     return moved
 
 
-def cancel_item(
-    conn: sqlite3.Connection, *, lane: str, stable_id: str
-) -> UserJobItem:
+def cancel_item(conn: sqlite3.Connection, *, lane: str, stable_id: str) -> UserJobItem:
     require_lane(lane)
     ensure_user_schema(conn)
     batch_id = USER_BATCH_IDS[lane]
@@ -570,9 +531,7 @@ def cancel_item(
     return cancelled
 
 
-def claim_next_for_lane(
-    conn: sqlite3.Connection, lane: str, *, runner_id: str
-) -> UserJobItem | None:
+def claim_next_for_lane(conn: sqlite3.Connection, lane: str, *, runner_id: str) -> UserJobItem | None:
     """Take the next pending item of this lane, ordered by position."""
     require_lane(lane)
     ensure_user_schema(conn)
@@ -609,9 +568,7 @@ def claim_next_for_lane(
         conn.execute("ROLLBACK")
         raise
     if changed != 1:
-        raise RuntimeError(
-            f"claim of {item.stable_id}/{lane} updated {changed} rows"
-        )
+        raise RuntimeError(f"claim of {item.stable_id}/{lane} updated {changed} rows")
     claimed = _get_row(conn, batch_id, item.stable_id, lane)
     assert claimed is not None
     return claimed

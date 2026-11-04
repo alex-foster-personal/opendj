@@ -13,7 +13,7 @@ old path.
 from __future__ import annotations
 
 from apps.engine_core.origin import (
-    DEFAULT_LOCK_PATH,
+    default_lock_path,
     LOCK_PATH_ENV,
     EngineIdentityMismatch,
     EngineNotRunning,
@@ -27,7 +27,7 @@ from apps.engine_core.origin import (
 )
 
 __all__ = [
-    "DEFAULT_LOCK_PATH",
+    "default_lock_path",
     "LOCK_PATH_ENV",
     "EngineIdentityMismatch",
     "EngineNotRunning",

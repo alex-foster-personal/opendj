@@ -1,4 +1,5 @@
 """Smartlist evaluator + CLI (SMART-02)."""
+
 from __future__ import annotations
 
 from .evaluator import EvaluatorError, compile_rule, evaluate

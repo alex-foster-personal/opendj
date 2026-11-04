@@ -3,7 +3,7 @@
 Mini-PRD
 ========
 
-``data/state/stems/<stable_id>/manifest.json`` is the only supported artifact
+``(private path)/<stable_id>/manifest.json`` is the only supported artifact
 contract.  Version 1 has this exact shape::
 
     {
@@ -231,9 +231,7 @@ def validate_stable_id(stable_id: str) -> None:
     existing caller keeps catching ``StemArtifactError``.
     """
     if not is_safe_stable_id_segment(stable_id):
-        raise StemArtifactError(
-            "stable_id must use 1-128 URL-safe identifier characters"
-        )
+        raise StemArtifactError("stable_id must use 1-128 URL-safe identifier characters")
 
 
 def load_stem_bundle(
@@ -249,11 +247,7 @@ def load_stem_bundle(
     the raised error identifies every configured root and each failed candidate.
     """
     validate_stable_id(stable_id)
-    search_roots = (
-        tuple(Path(root) for root in roots)
-        if roots is not None
-        else stem_roots(stems_dir)
-    )
+    search_roots = tuple(Path(root) for root in roots) if roots is not None else stem_roots(stems_dir)
     if not search_roots:
         raise StemArtifactError("at least one stem root is required")
     failures: list[tuple[Path, StemArtifactError]] = []
@@ -272,17 +266,12 @@ def load_stem_bundle(
                 )
     roots_message = ", ".join(str(root) for root in search_roots)
     if failures:
-        failures_message = "; ".join(
-            f"{root}: {exc}" for root, exc in failures
-        )
+        failures_message = "; ".join(f"{root}: {exc}" for root, exc in failures)
         raise StemArtifactError(
             f"no valid stem bundle exists for {stable_id!r} in any of "
             f"{roots_message}; failed candidates: {failures_message}"
         )
-    raise StemBundleNotFoundError(
-        f"no stem bundle exists for {stable_id!r} in any of "
-        f"{roots_message}"
-    )
+    raise StemBundleNotFoundError(f"no stem bundle exists for {stable_id!r} in any of {roots_message}")
 
 
 def _load_from_root(stable_id: str, root: Path) -> StemBundle:
@@ -293,9 +282,7 @@ def _load_from_root(stable_id: str, root: Path) -> StemBundle:
     try:
         resolved_bundle.relative_to(root)
     except ValueError as exc:
-        raise StemArtifactError(
-            "stem bundle resolves outside the configured stems directory"
-        ) from exc
+        raise StemArtifactError("stem bundle resolves outside the configured stems directory") from exc
 
     manifest_path = bundle_dir / "manifest.json"
     _require_regular_file(manifest_path, label="manifest.json")
@@ -303,9 +290,7 @@ def _load_from_root(stable_id: str, root: Path) -> StemBundle:
     schema = raw.get("schema_version")
     if schema == 2:
         if not stems_accept_v2():
-            raise StemArtifactError(
-                "manifest.json is stem schema v2 (farm FLAC); set MDT_STEMS_ACCEPT_V2=1 to play"
-            )
+            raise StemArtifactError("manifest.json is stem schema v2 (farm FLAC); set MDT_STEMS_ACCEPT_V2=1 to play")
         return _load_v2_bundle(stable_id, resolved_bundle, raw)
     if schema == 3:
         return _load_v3_bundle(stable_id, resolved_bundle, raw)
@@ -328,13 +313,9 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
     try:
         manifest = StemManifest.model_validate(raw)
     except ValidationError as exc:
-        raise StemArtifactError(
-            f"manifest.json violates stem schema v1: {exc}"
-        ) from exc
+        raise StemArtifactError(f"manifest.json violates stem schema v1: {exc}") from exc
     if manifest.stable_id != stable_id:
-        raise StemArtifactError(
-            f"manifest stable_id {manifest.stable_id!r} does not match requested {stable_id!r}"
-        )
+        raise StemArtifactError(f"manifest stable_id {manifest.stable_id!r} does not match requested {stable_id!r}")
 
     files: dict[StemPart, Path] = {}
     metadata: dict[StemPart, WavMetadata] = {}
@@ -384,9 +365,7 @@ def _load_v1_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
 def _load_v2_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
     """Farm schema v2: FLAC parts + nested model/audio; project into v1 client shape."""
     if raw.get("stable_id") != stable_id:
-        raise StemArtifactError(
-            f"manifest stable_id {raw.get('stable_id')!r} does not match requested {stable_id!r}"
-        )
+        raise StemArtifactError(f"manifest stable_id {raw.get('stable_id')!r} does not match requested {stable_id!r}")
     model_obj = raw.get("model")
     if not isinstance(model_obj, dict) or not isinstance(model_obj.get("name"), str):
         raise StemArtifactError("v2 manifest model.name must be a string")
@@ -408,14 +387,8 @@ def _load_v2_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
             channels=int(audio["channels"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
-        raise StemArtifactError(
-            f"v2 manifest audio metadata incomplete: {exc}"
-        ) from exc
-    if (
-        alignment.sample_rate <= 0
-        or alignment.frame_count <= 0
-        or alignment.channels <= 0
-    ):
+        raise StemArtifactError(f"v2 manifest audio metadata incomplete: {exc}") from exc
+    if alignment.sample_rate <= 0 or alignment.frame_count <= 0 or alignment.channels <= 0:
         raise StemArtifactError("v2 manifest audio metadata must be positive")
 
     files: dict[StemPart, Path] = {}
@@ -442,12 +415,8 @@ def _load_v2_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
             }
         )
     except ValidationError as exc:
-        raise StemArtifactError(
-            f"v2 manifest could not project to client contract: {exc}"
-        ) from exc
-    return StemBundle(
-        manifest=manifest, files=files, alignment=alignment, media_type="audio/flac"
-    )
+        raise StemArtifactError(f"v2 manifest could not project to client contract: {exc}") from exc
+    return StemBundle(manifest=manifest, files=files, alignment=alignment, media_type="audio/flac")
 
 
 def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
@@ -464,14 +433,10 @@ def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
     silently misaligned mix.
     """
     if raw.get("stable_id") != stable_id:
-        raise StemArtifactError(
-            f"manifest stable_id {raw.get('stable_id')!r} does not match requested {stable_id!r}"
-        )
+        raise StemArtifactError(f"manifest stable_id {raw.get('stable_id')!r} does not match requested {stable_id!r}")
     layout = raw.get("layout")
     if layout not in STEM_LAYOUTS:
-        raise StemArtifactError(
-            f"v3 manifest layout must be one of {sorted(STEM_LAYOUTS)}; got {layout!r}"
-        )
+        raise StemArtifactError(f"v3 manifest layout must be one of {sorted(STEM_LAYOUTS)}; got {layout!r}")
     parts = STEM_LAYOUTS[layout]
 
     model_obj = raw.get("model")
@@ -508,8 +473,7 @@ def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
                 "layout": layout,
                 "model": {
                     "name": model_obj["name"].strip(),
-                    "version": str(model_obj.get("version") or "unknown").strip()
-                    or "unknown",
+                    "version": str(model_obj.get("version") or "unknown").strip() or "unknown",
                 },
                 "source": {
                     "path": str(source.get("path") or "unknown"),
@@ -519,9 +483,7 @@ def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
             }
         )
     except ValidationError as exc:
-        raise StemArtifactError(
-            f"v3 manifest could not project to client contract: {exc}"
-        ) from exc
+        raise StemArtifactError(f"v3 manifest could not project to client contract: {exc}") from exc
     return StemBundle(
         manifest=manifest,
         files=files,
@@ -545,9 +507,7 @@ def _resolve_v3_files(
         files[part] = file_path  # type: ignore[index]
         media_types.add(_MEDIA_TYPES[file_path.suffix.lower()])
     if len(media_types) != 1:
-        raise StemArtifactError(
-            f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one"
-        )
+        raise StemArtifactError(f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one")
     return files, media_types
 
 
@@ -556,9 +516,7 @@ def _require_flac_magic(path: Path) -> None:
         with path.open("rb") as source:
             magic = source.read(4)
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read FLAC header for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read FLAC header for {path.name}: {exc}") from exc
     if magic != b"fLaC":
         raise StemArtifactError(f"{path.name} is not a FLAC file (missing fLaC magic)")
 
@@ -572,9 +530,7 @@ def _resolve_stem_file(bundle_dir: Path, declared_name: str, part: StemPart) -> 
         or ".." in declared_path.parts
         or suffix not in _STEM_SUFFIXES
     ):
-        raise StemArtifactError(
-            f"{part} file entry must be a relative .wav/.flac/.mp3 path within its bundle"
-        )
+        raise StemArtifactError(f"{part} file entry must be a relative .wav/.flac/.mp3 path within its bundle")
     candidate = bundle_dir / declared_path
     _require_regular_file(candidate, label=f"{part} stem")
     resolved = candidate.resolve()
@@ -591,9 +547,7 @@ def _require_regular_file(path: Path, *, label: str) -> None:
     except OSError as exc:
         raise StemArtifactError(f"{label} is missing or unreadable") from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise StemArtifactError(
-            f"{label} must be a real regular file, not a symlink or directory"
-        )
+        raise StemArtifactError(f"{label} must be a real regular file, not a symlink or directory")
 
 
 # ---------------------------------------------------------------------------
@@ -645,35 +599,25 @@ def read_stem_container_metadata(path: Path) -> tuple[WavMetadata, str]:
     """Read one stem part's geometry from its declared suffix and magic bytes."""
     suffix = path.suffix.lower()
     if suffix not in _STEM_SUFFIXES:
-        raise StemArtifactError(
-            f"{path.name} must use a supported stem suffix {sorted(_STEM_SUFFIXES)}"
-        )
+        raise StemArtifactError(f"{path.name} must use a supported stem suffix {sorted(_STEM_SUFFIXES)}")
     try:
         with path.open("rb") as source:
             magic = source.read(12)
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read container header for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read container header for {path.name}: {exc}") from exc
 
     if suffix == ".wav":
         if len(magic) < 12 or magic[:4] != b"RIFF" or magic[8:12] != b"WAVE":
-            raise StemArtifactError(
-                f"{path.name} suffix is .wav but content is not RIFF/WAVE"
-            )
+            raise StemArtifactError(f"{path.name} suffix is .wav but content is not RIFF/WAVE")
         return read_wav_metadata(path), ".wav"
     if suffix == ".flac":
         if len(magic) < 4 or magic[:4] != b"fLaC":
-            raise StemArtifactError(
-                f"{path.name} suffix is .flac but content is not FLAC"
-            )
+            raise StemArtifactError(f"{path.name} suffix is .flac but content is not FLAC")
         return read_flac_metadata(path), ".flac"
     if suffix == ".mp3":
         probe = _read_mp3_probe(path, magic)
         if not _looks_like_mp3(probe):
-            raise StemArtifactError(
-                f"{path.name} suffix is .mp3 but content is not MPEG audio"
-            )
+            raise StemArtifactError(f"{path.name} suffix is .mp3 but content is not MPEG audio")
         return read_mp3_metadata(path), ".mp3"
     raise StemArtifactError(f"{path.name} uses unsupported container {suffix!r}")
 
@@ -723,9 +667,7 @@ def read_flac_metadata(path: Path) -> WavMetadata:
             _flac_tail_frame_covers_stream(path, streaminfo=streaminfo)
             return metadata
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read FLAC metadata for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read FLAC metadata for {path.name}: {exc}") from exc
 
 
 def _parse_flac_streaminfo(file_name: str, streaminfo: bytes) -> WavMetadata:
@@ -768,11 +710,7 @@ def _flac_crc16(data: bytes) -> int:
     for byte in data:
         crc ^= byte << 8
         for _ in range(8):
-            crc = (
-                ((crc << 1) ^ 0x8005) & 0xFFFF
-                if crc & 0x8000
-                else (crc << 1) & 0xFFFF
-            )
+            crc = ((crc << 1) ^ 0x8005) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
     return crc
 
 
@@ -877,11 +815,7 @@ def _flac_valid_frame_header_at(  # noqa: PLR0911
     header_bytes = data[header_start:offset]
     if _flac_crc8(header_bytes) != data[offset]:
         return None
-    end_sample = (
-        number + block_size
-        if variable_blocksize
-        else number * max_blocksize + block_size
-    )
+    end_sample = number + block_size if variable_blocksize else number * max_blocksize + block_size
     return end_sample, offset + 1, variable_blocksize
 
 
@@ -898,7 +832,7 @@ def _flac_frame_crc16_valid(data: bytes, frame_start: int, stream_end: int) -> b
     if frame_start >= stream_end or stream_end - frame_start < 2:
         return False
     footer = stream_end - 2
-    expected = struct.unpack(">H", data[footer : stream_end])[0]
+    expected = struct.unpack(">H", data[footer:stream_end])[0]
     return _flac_crc16(data[frame_start:footer]) == expected
 
 
@@ -923,9 +857,7 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
             tail = handle.read(tail_len)
         stream_end = _flac_stream_end(tail)
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read FLAC tail for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read FLAC tail for {path.name}: {exc}") from exc
     # A candidate's end_sample is computed from its OWN decoded block size, so a
     # genuinely final frame always ends at exactly total_samples - no slack is
     # needed or safe here. A "within one block" tolerance would always accept the
@@ -956,10 +888,7 @@ def _flac_tail_frame_covers_stream(path: Path, *, streaminfo: bytes) -> None:
     if not found_exact:
         found = "no valid frame header found in file tail"
         if best_end is not None:
-            found = (
-                f"last tail frame candidate ends at sample {best_end} "
-                "but final-frame CRC-16 footer check failed"
-            )
+            found = f"last tail frame candidate ends at sample {best_end} but final-frame CRC-16 footer check failed"
         raise StemArtifactError(
             f"{path.name} FLAC tail frame check failed: STREAMINFO declares "
             f"{total_samples} total samples but {found} "
@@ -974,9 +903,7 @@ def read_mp3_metadata(path: Path) -> WavMetadata:
         file_size = path.stat().st_size
         data = path.read_bytes()
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read MP3 metadata for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read MP3 metadata for {path.name}: {exc}") from exc
     if file_size < 4:
         raise StemArtifactError(f"{path.name} is too short to be MP3")
 
@@ -986,9 +913,7 @@ def read_mp3_metadata(path: Path) -> WavMetadata:
         raise StemArtifactError(f"{path.name} has no MPEG audio sync word")
 
     header = data[sync : sync + 4]
-    version_id, layer, bitrate_idx, sample_rate_idx, padding, channels = (
-        _parse_mpeg_frame_header(header)
-    )
+    version_id, layer, bitrate_idx, sample_rate_idx, padding, channels = _parse_mpeg_frame_header(header)
     if layer != 3:
         raise StemArtifactError(f"{path.name} is not MPEG Layer III")
 
@@ -1000,9 +925,7 @@ def read_mp3_metadata(path: Path) -> WavMetadata:
         raise StemArtifactError(f"{path.name} uses free-format or invalid MP3 bitrate")
 
     samples_per_frame = 1152 if version_id == 3 else 576
-    frame_size = _mpeg_layer3_frame_size(
-        version_id, bitrate_kbps, sample_rate, padding
-    )
+    frame_size = _mpeg_layer3_frame_size(version_id, bitrate_kbps, sample_rate, padding)
     if frame_size <= 0 or sync + frame_size > len(data):
         raise StemArtifactError(f"{path.name} has truncated MP3 frame")
 
@@ -1030,12 +953,7 @@ def read_mp3_metadata(path: Path) -> WavMetadata:
 def _id3v2_skip_size(data: bytes) -> int:
     if len(data) < 10 or data[:3] != b"ID3":
         return 0
-    size = (
-        ((data[6] & 0x7F) << 21)
-        | ((data[7] & 0x7F) << 14)
-        | ((data[8] & 0x7F) << 7)
-        | (data[9] & 0x7F)
-    )
+    size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F)
     return 10 + size
 
 
@@ -1086,9 +1004,7 @@ def _mpeg_bitrate_kbps(version_id: int, layer: int, bitrate_idx: int) -> int:
     return table[bitrate_idx]
 
 
-def _mpeg_layer3_frame_size(
-    version_id: int, bitrate_kbps: int, sample_rate: int, padding: int
-) -> int:
+def _mpeg_layer3_frame_size(version_id: int, bitrate_kbps: int, sample_rate: int, padding: int) -> int:
     if sample_rate <= 0 or bitrate_kbps <= 0:
         return 0
     if version_id == 3:
@@ -1134,8 +1050,8 @@ def _validate_mp3_xing_tail(
         if data[index] != 0xFF or (data[index + 1] & 0xE0) != 0xE0:
             continue
         try:
-            header_version, layer, bitrate_idx, sample_rate_idx, _padding, _channels = (
-                _parse_mpeg_frame_header(data[index : index + 4])
+            header_version, layer, bitrate_idx, sample_rate_idx, _padding, _channels = _parse_mpeg_frame_header(
+                data[index : index + 4]
             )
         except StemArtifactError:
             continue
@@ -1152,22 +1068,18 @@ def _validate_mp3_xing_tail(
             if data[offset] != 0xFF or (data[offset + 1] & 0xE0) != 0xE0:
                 break
             try:
-                frame_version, frame_layer, frame_bitrate_idx, frame_sr_idx, frame_pad, _ = (
-                    _parse_mpeg_frame_header(data[offset : offset + 4])
+                frame_version, frame_layer, frame_bitrate_idx, frame_sr_idx, frame_pad, _ = _parse_mpeg_frame_header(
+                    data[offset : offset + 4]
                 )
             except StemArtifactError:
                 break
             if frame_layer != expected_layer or frame_version != version_id:
                 break
             frame_sample_rate = _mpeg_sample_rate(frame_version, frame_sr_idx)
-            frame_bitrate_kbps = _mpeg_bitrate_kbps(
-                frame_version, frame_layer, frame_bitrate_idx
-            )
+            frame_bitrate_kbps = _mpeg_bitrate_kbps(frame_version, frame_layer, frame_bitrate_idx)
             if frame_sample_rate <= 0 or frame_bitrate_kbps <= 0:
                 break
-            frame_size = _mpeg_layer3_frame_size(
-                frame_version, frame_bitrate_kbps, frame_sample_rate, frame_pad
-            )
+            frame_size = _mpeg_layer3_frame_size(frame_version, frame_bitrate_kbps, frame_sample_rate, frame_pad)
             if frame_size <= 0 or offset + frame_size > len(data):
                 break
             offset += frame_size
@@ -1198,9 +1110,7 @@ def _validate_mp3_xing_length(  # noqa: PLR0913
         field_offset += 4
     if flags & 0x02:
         if field_offset + 4 > len(data):
-            raise StemArtifactError(
-                f"{file_name} MP3 Xing/Info header declares bytes but is truncated"
-            )
+            raise StemArtifactError(f"{file_name} MP3 Xing/Info header declares bytes but is truncated")
         xing_bytes = struct.unpack(">I", data[field_offset : field_offset + 4])[0]
         if audio_bytes < xing_bytes:
             raise StemArtifactError(
@@ -1209,9 +1119,7 @@ def _validate_mp3_xing_length(  # noqa: PLR0913
             )
         return
     if flags & 0x01:
-        min_frame_bytes = _mpeg_layer3_frame_size(
-            version_id, bitrate_kbps, sample_rate, padding=0
-        )
+        min_frame_bytes = _mpeg_layer3_frame_size(version_id, bitrate_kbps, sample_rate, padding=0)
         expected_min = int(frames * min_frame_bytes * 0.9)
         if audio_bytes < expected_min:
             raise StemArtifactError(
@@ -1245,54 +1153,36 @@ def scan_mp3_frames(  # noqa: C901
         if data[offset] != 0xFF or (data[offset + 1] & 0xE0) != 0xE0:
             if _mp3_trailing_data_allowed(data, offset):
                 break
-            raise StemArtifactError(
-                f"{file_name} invalid MP3 frame sync at byte offset {offset}"
-            )
+            raise StemArtifactError(f"{file_name} invalid MP3 frame sync at byte offset {offset}")
         try:
-            version_id, layer, bitrate_idx, sample_rate_idx, padding, _channels = (
-                _parse_mpeg_frame_header(data[offset : offset + 4])
+            version_id, layer, bitrate_idx, sample_rate_idx, padding, _channels = _parse_mpeg_frame_header(
+                data[offset : offset + 4]
             )
         except StemArtifactError as exc:
             if _mp3_trailing_data_allowed(data, offset):
                 break
-            raise StemArtifactError(
-                f"{file_name} invalid MP3 frame header at byte offset {offset}"
-            ) from exc
+            raise StemArtifactError(f"{file_name} invalid MP3 frame header at byte offset {offset}") from exc
         if layer != expected_layer:
-            raise StemArtifactError(
-                f"{file_name} MP3 layer changed at byte offset {offset}"
-            )
+            raise StemArtifactError(f"{file_name} MP3 layer changed at byte offset {offset}")
         if version_id != expected_version_id:
-            raise StemArtifactError(
-                f"{file_name} MP3 version changed at byte offset {offset}"
-            )
+            raise StemArtifactError(f"{file_name} MP3 version changed at byte offset {offset}")
         sample_rate = _mpeg_sample_rate(version_id, sample_rate_idx)
         bitrate_kbps = _mpeg_bitrate_kbps(version_id, layer, bitrate_idx)
         if sample_rate <= 0 or bitrate_kbps <= 0:
-            raise StemArtifactError(
-                f"{file_name} invalid MP3 frame geometry at byte offset {offset}"
-            )
+            raise StemArtifactError(f"{file_name} invalid MP3 frame geometry at byte offset {offset}")
         if expected_sample_rate is None:
             expected_sample_rate = sample_rate
         elif sample_rate != expected_sample_rate:
-            raise StemArtifactError(
-                f"{file_name} MP3 sample rate changed at byte offset {offset}"
-            )
-        frame_size = _mpeg_layer3_frame_size(
-            version_id, bitrate_kbps, sample_rate, padding
-        )
+            raise StemArtifactError(f"{file_name} MP3 sample rate changed at byte offset {offset}")
+        frame_size = _mpeg_layer3_frame_size(version_id, bitrate_kbps, sample_rate, padding)
         if frame_size <= 0 or offset + frame_size > len(data):
-            raise StemArtifactError(
-                f"{file_name} truncated MP3 frame at byte offset {offset}"
-            )
+            raise StemArtifactError(f"{file_name} truncated MP3 frame at byte offset {offset}")
         frame_count += 1
         offset += frame_size
     if frame_count == 0:
         raise StemArtifactError(f"{file_name} has zero MP3 frames")
     if offset < len(data) and not _mp3_trailing_data_allowed(data, offset):
-        raise StemArtifactError(
-            f"{file_name} unexpected trailing data at byte offset {offset}"
-        )
+        raise StemArtifactError(f"{file_name} unexpected trailing data at byte offset {offset}")
     return frame_count
 
 
@@ -1317,9 +1207,7 @@ def _mp3_frame_count(  # noqa: PLR0913
             flags = struct.unpack(">I", data[xing_offset + 4 : xing_offset + 8])[0]
             if flags & 0x01:
                 if xing_offset + 12 > len(data):
-                    raise StemArtifactError(
-                        f"{file_name} MP3 Xing/Info header is truncated"
-                    )
+                    raise StemArtifactError(f"{file_name} MP3 Xing/Info header is truncated")
                 frames = struct.unpack(">I", data[xing_offset + 8 : xing_offset + 12])[0]
                 if frames > 0:
                     _validate_mp3_xing_length(
@@ -1365,14 +1253,12 @@ def _validate_v1_part_metadata(
         )
     if candidate.channels != reference.channels:
         raise StemArtifactError(
-            f"{part} channels {candidate.channels} does not match "
-            f"{reference_part} channels {reference.channels}"
+            f"{part} channels {candidate.channels} does not match {reference_part} channels {reference.channels}"
         )
     if container in {".wav", ".flac"}:
         if candidate.frame_count != reference.frame_count:
             raise StemArtifactError(
-                f"{part} metadata {candidate!r} does not align with "
-                f"{reference_part} metadata {reference!r}"
+                f"{part} metadata {candidate!r} does not align with {reference_part} metadata {reference!r}"
             )
         return
     frame_gap = abs(candidate.frame_count - reference.frame_count)
@@ -1399,16 +1285,10 @@ def read_wav_metadata(path: Path) -> WavMetadata:
                 raise StemArtifactError(f"{path.name} is not a RIFF/WAVE file")
             riff_size = struct.unpack("<I", header[4:8])[0]
             if riff_size + 8 != file_size:
-                raise StemArtifactError(
-                    f"{path.name} RIFF size does not match its actual file size"
-                )
-            return _parse_riff_wav_chunks(
-                source, file_size=file_size, file_name=path.name
-            )
+                raise StemArtifactError(f"{path.name} RIFF size does not match its actual file size")
+            return _parse_riff_wav_chunks(source, file_size=file_size, file_name=path.name)
     except OSError as exc:
-        raise StemArtifactError(
-            f"cannot read WAV metadata for {path.name}: {exc}"
-        ) from exc
+        raise StemArtifactError(f"cannot read WAV metadata for {path.name}: {exc}") from exc
 
 
 def _parse_riff_wav_chunks(source, *, file_size: int, file_name: str) -> WavMetadata:
@@ -1434,22 +1314,18 @@ def _parse_riff_wav_chunks(source, *, file_size: int, file_name: str) -> WavMeta
             if chunk_size < 16:
                 raise StemArtifactError(f"{file_name} has an invalid fmt chunk")
             source.seek(payload_start)
-            audio_format, channels, sample_rate, _byte_rate, block_align, _bits = (
-                struct.unpack("<HHIIHH", source.read(16))
+            audio_format, channels, sample_rate, _byte_rate, block_align, _bits = struct.unpack(
+                "<HHIIHH", source.read(16)
             )
             if audio_format not in {1, 3, 0xFFFE}:
-                raise StemArtifactError(
-                    f"{file_name} uses unsupported WAV format {audio_format}"
-                )
+                raise StemArtifactError(f"{file_name} uses unsupported WAV format {audio_format}")
             fmt = (channels, sample_rate, block_align, audio_format)
         elif chunk_id == b"data":
             data_size += chunk_size
         offset = payload_end + (chunk_size % 2)
 
     if fmt is None or data_size == 0:
-        raise StemArtifactError(
-            f"{file_name} must contain fmt and non-empty data chunks"
-        )
+        raise StemArtifactError(f"{file_name} must contain fmt and non-empty data chunks")
     channels, sample_rate, block_align, _audio_format = fmt
     if channels <= 0 or sample_rate <= 0 or block_align <= 0 or data_size % block_align:
         raise StemArtifactError(f"{file_name} contains inconsistent WAV metadata")
@@ -1496,9 +1372,7 @@ _STEM_SUMMARY_LOCK = threading.Lock()
 _STEM_SUMMARY_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 
 
-def summarize_stem_bundle(
-    stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR
-) -> dict[str, Any]:
+def summarize_stem_bundle(stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR) -> dict[str, Any]:
     """A cheap listing badge for one bundle, cached for STEM_SUMMARY_TTL_S.
 
     Each caller gets its own copy: summaries are handed to row serializers
@@ -1590,9 +1464,7 @@ def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
     return {"status": "none"}
 
 
-def bulk_stem_summaries(
-    stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_STEMS_DIR
-) -> dict[str, dict[str, Any]]:
+def bulk_stem_summaries(stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_STEMS_DIR) -> dict[str, dict[str, Any]]:
     """``summarize_stem_bundle`` for a listing page, keyed by stable_id.
 
     Repeat pages and the 60 s library re-poll are served from that function's

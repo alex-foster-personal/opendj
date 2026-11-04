@@ -39,6 +39,28 @@ test('a dynamic import survives an identifier that merely starts with "import"',
 	);
 });
 
+test('the word "import" inside a string is not read as an import statement', () => {
+	const source = [
+		'<script lang="ts">',
+		"	import { thing } from 'dep-static';",
+		'	function fail(exc: Error) {',
+		'		return `Could not import Chrome sign-ins: ${exc.message}`;',
+		'	}',
+		"	const URL_ = 'https://example.invalid';",
+		'	async function go() {',
+		"		const { open } = await import('dep-dyn');",
+		'		open(thing);',
+		'	}',
+		'</script>'
+	].join('\n');
+	const compiled = svelteImports(source);
+	assert.equal(
+		compiled,
+		"\timport { thing } from 'dep-static';\nimport('dep-dyn')",
+		'if prose containing "import" is extracted then the extraction stops parsing and knip under-reports - broken'
+	);
+});
+
 test('the real SetupOverlay folder picker import reaches knip', () => {
 	// The picker's shell packages are imported by src/lib/shell/native-shell.ts,
 	// which knip reads natively; the overlay reaches them through that module.

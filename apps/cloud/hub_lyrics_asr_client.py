@@ -1,4 +1,5 @@
 """Spoke client for hub ASR lyric transcript presign endpoints (ADR-0049)."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,4 +1,5 @@
 """Stage 2 ranker: Phase 8 pairings re-rank (AI-01)."""
+
 from __future__ import annotations
 
 import logging
@@ -18,10 +19,7 @@ _BUMPS: dict[str, float] = {
 
 
 def _pairings_table_exists(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name='pairings'"
-    ).fetchone()
+    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pairings'").fetchone()
     return row is not None
 
 
@@ -43,10 +41,7 @@ def rerank_with_pairings(
     global _warned_missing_pairings
     if not _pairings_table_exists(conn):
         if not _warned_missing_pairings:
-            _logger.info(
-                "pairings table missing; Stage 2 rerank is a no-op until "
-                "Phase 8 ships."
-            )
+            _logger.info("pairings table missing; Stage 2 rerank is a no-op until Phase 8 ships.")
             _warned_missing_pairings = True
         return stage1
 

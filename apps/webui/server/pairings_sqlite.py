@@ -5,6 +5,7 @@ Phase 8 ``pairings`` edges use ``into|out_of|either``; the webui HTTP model uses
 JSON. This module owns a dedicated ``http_pairings`` table so neither shape is
 lossy, and mirrors edges into the graph table for CAT-03 tooling.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -39,8 +40,7 @@ _HTTP_PAIRINGS_DDL: tuple[str, ...] = (
 )
 
 _SELECT_HTTP = (
-    "pairing_id, from_stable_id, to_stable_id, direction, source, notes, "
-    "snapshot_json, created_at, updated_at"
+    "pairing_id, from_stable_id, to_stable_id, direction, source, notes, snapshot_json, created_at, updated_at"
 )
 
 
@@ -53,23 +53,21 @@ class PairingIdConflictError(AlreadyExistsError):
 
     def __init__(self, pairing_id: str) -> None:
         self.pairing_id = pairing_id
-        BackendError.__init__(
-            self, f"pairing_id {pairing_id} already names a different pairing"
-        )
+        BackendError.__init__(self, f"pairing_id {pairing_id} already names a different pairing")
 
 
 def raise_on_pairing_id_collision(existing: Pairing | None, pairing: Pairing) -> None:
     """Refuse ``pairing`` when ``existing`` holds its id for another edge."""
-    if existing is not None and (
-        existing.from_stable_id, existing.to_stable_id, existing.direction
-    ) != (pairing.from_stable_id, pairing.to_stable_id, pairing.direction):
+    if existing is not None and (existing.from_stable_id, existing.to_stable_id, existing.direction) != (
+        pairing.from_stable_id,
+        pairing.to_stable_id,
+        pairing.direction,
+    ):
         raise PairingIdConflictError(pairing.pairing_id)
 
 
 def _http_table_exists(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='http_pairings'"
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='http_pairings'").fetchone()
     return row is not None
 
 
@@ -104,16 +102,11 @@ def _graph_edge_candidates(pairing: Pairing) -> tuple[tuple[str, str, str], tupl
 
 def _stored_graph_pairing_id(from_id: str, to_id: str, direction: str) -> str:
     """Same derivation as ``sqlite_backend._pairing_id`` for a stored graph key."""
-    digest = hashlib.sha1(
-        f"{from_id}\x1f{to_id}\x1f{direction}".encode()
-    ).hexdigest()
+    digest = hashlib.sha1(f"{from_id}\x1f{to_id}\x1f{direction}".encode()).hexdigest()
     return f"pair-{digest[:24]}"
 
 
-_GRAPH_EDGE_SELECT = (
-    "from_stable_id, to_stable_id, direction, source, notes, "
-    "snapshot_json, created_at, modified_at"
-)
+_GRAPH_EDGE_SELECT = "from_stable_id, to_stable_id, direction, source, notes, snapshot_json, created_at, modified_at"
 
 
 def _graph_edge_row(conn: sqlite3.Connection, pairing: Pairing) -> sqlite3.Row | None:
@@ -121,8 +114,7 @@ def _graph_edge_row(conn: sqlite3.Connection, pairing: Pairing) -> sqlite3.Row |
     PairingsRepo(conn, ensure_schema=True)
     for from_id, to_id, direction in _graph_edge_candidates(pairing):
         row = conn.execute(
-            f"SELECT {_GRAPH_EDGE_SELECT} FROM pairings "
-            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+            f"SELECT {_GRAPH_EDGE_SELECT} FROM pairings WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
             (from_id, to_id, direction),
         ).fetchone()
         if row is not None:
@@ -146,7 +138,9 @@ def _graph_edge_stamp(conn: sqlite3.Connection, pairing: Pairing) -> str | None:
 
 
 def _merge_reverse_stored_edge(
-    conn: sqlite3.Connection, pairing: Pairing, row: sqlite3.Row,
+    conn: sqlite3.Connection,
+    pairing: Pairing,
+    row: sqlite3.Row,
 ) -> Pairing:
     """Update the reverse-stored primary key in place and return its wire view.
 
@@ -156,7 +150,11 @@ def _merge_reverse_stored_edge(
     """
     from_id, to_id, direction = row[0], row[1], row[2]
     source, notes, snap_raw, created_at, modified_at = (
-        row[3], row[4], row[5], row[6], row[7],
+        row[3],
+        row[4],
+        row[5],
+        row[6],
+        row[7],
     )
     existing_snap = json.loads(snap_raw) if snap_raw else None
     new_notes = notes
@@ -166,17 +164,20 @@ def _merge_reverse_stored_edge(
     updated_at = modified_at
     if new_notes != notes or new_snap != existing_snap:
         updated_at = pairing.updated_at
-        snap_json = None if new_snap is None else json.dumps(
-            new_snap, separators=(",", ":"),
+        snap_json = (
+            None
+            if new_snap is None
+            else json.dumps(
+                new_snap,
+                separators=(",", ":"),
+            )
         )
         conn.execute(
             "UPDATE pairings SET notes=?, snapshot_json=?, modified_at=? "
             "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
             (new_notes, snap_json, updated_at, from_id, to_id, direction),
         )
-    wire_from, wire_to = (
-        (to_id, from_id) if direction == "out_of" else (from_id, to_id)
-    )
+    wire_from, wire_to = (to_id, from_id) if direction == "out_of" else (from_id, to_id)
     return Pairing(
         pairing_id=_stored_graph_pairing_id(from_id, to_id, direction),
         from_stable_id=wire_from,
@@ -191,9 +192,7 @@ def _merge_reverse_stored_edge(
 
 
 def _owner_stamp(conn: sqlite3.Connection, pairing_id: str) -> str | None:
-    row = conn.execute(
-        "SELECT graph_owner_stamp FROM http_pairings WHERE pairing_id=?", (pairing_id,)
-    ).fetchone()
+    row = conn.execute("SELECT graph_owner_stamp FROM http_pairings WHERE pairing_id=?", (pairing_id,)).fetchone()
     return None if row is None else row[0]
 
 
@@ -267,11 +266,11 @@ def count_http_pairings(conn: sqlite3.Connection) -> int:
 
 
 def _find_existing(
-    conn: sqlite3.Connection, pairing: Pairing,
+    conn: sqlite3.Connection,
+    pairing: Pairing,
 ) -> Pairing | None:
     row = conn.execute(
-        f"SELECT {_SELECT_HTTP} FROM http_pairings "
-        "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+        f"SELECT {_SELECT_HTTP} FROM http_pairings WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
         (pairing.from_stable_id, pairing.to_stable_id, pairing.direction),
     ).fetchone()
     return _row_to_pairing(row) if row is not None else None
@@ -282,20 +281,12 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
     # is this capture's edge. Update that primary key; do not insert a second one.
     # An HTTP row already covering the wire endpoints keeps the #4014 merge path.
     matched = _graph_edge_row(conn, pairing)
-    if (
-        matched is not None
-        and _is_reverse_stored(pairing, matched)
-        and _find_existing(conn, pairing) is None
-    ):
+    if matched is not None and _is_reverse_stored(pairing, matched) and _find_existing(conn, pairing) is None:
         return _merge_reverse_stored_edge(conn, pairing, matched)
     # Decided before the row write: the edge is this pairing's to (re)write when
     # nobody holds it yet, or when it still carries this pairing's marker.
-    owns_edge = _graph_edge_stamp(conn, pairing) is None or _http_owns_graph_edge(
-        conn, pairing
-    )
-    snap_json = (
-        None if pairing.snapshot is None else json.dumps(pairing.snapshot, separators=(",", ":"))
-    )
+    owns_edge = _graph_edge_stamp(conn, pairing) is None or _http_owns_graph_edge(conn, pairing)
+    snap_json = None if pairing.snapshot is None else json.dumps(pairing.snapshot, separators=(",", ":"))
     conn.execute(
         f"""
         INSERT INTO http_pairings ({_SELECT_HTTP})
@@ -356,16 +347,12 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
         f"SELECT {_SELECT_HTTP} FROM http_pairings WHERE pairing_id=?",
         (pairing.pairing_id,),
     ).fetchone()
-    raise_on_pairing_id_collision(
-        _row_to_pairing(same_id) if same_id is not None else None, pairing
-    )
+    raise_on_pairing_id_collision(_row_to_pairing(same_id) if same_id is not None else None, pairing)
     existing = _find_existing(conn, pairing)
     if existing is not None:
         if pairing.notes and pairing.notes != existing.notes:
             merged_notes = f"{existing.notes or ''}\n{pairing.notes}".strip()
-            snapshot = (
-                existing.snapshot if existing.snapshot is not None else pairing.snapshot
-            )
+            snapshot = existing.snapshot if existing.snapshot is not None else pairing.snapshot
             updated = replace(
                 existing,
                 notes=merged_notes,
@@ -377,7 +364,9 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
             if existing.snapshot is not None:
                 return existing
             updated = replace(
-                existing, snapshot=pairing.snapshot, updated_at=pairing.updated_at,
+                existing,
+                snapshot=pairing.snapshot,
+                updated_at=pairing.updated_at,
             )
             return _upsert_row(conn, updated)
         return existing
@@ -385,7 +374,10 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
 
 
 def delete_http_pairing(
-    conn: sqlite3.Connection, pairing_id: str, *, expected_etag: str,
+    conn: sqlite3.Connection,
+    pairing_id: str,
+    *,
+    expected_etag: str,
 ) -> None:
     from .etag import compute_etag, strip_quotes
 
@@ -410,7 +402,9 @@ def delete_http_pairing(
     conn.execute("DELETE FROM http_pairings WHERE pairing_id=?", (pairing_id,))
     if matched is not None:
         PairingsRepo(conn, ensure_schema=True).remove(
-            matched[0], matched[1], matched[2],
+            matched[0],
+            matched[1],
+            matched[2],
         )
 
 

@@ -164,7 +164,5 @@ def _stamp_paragraphs(lines: list[LyricLine]) -> list[LyricLine]:
             para = (nxt.start_s - line.end_s) >= PARAGRAPH_GAP_S
         else:
             para = False  # no timing evidence: never invent a stanza break
-        out.append(
-            LyricLine(**{**line.__dict__, "para_final": para})
-        )
+        out.append(LyricLine(**{**line.__dict__, "para_final": para}))
     return out

@@ -89,10 +89,7 @@ def _unprovable(reason: str) -> None:
 def _schema(conn: sqlite3.Connection) -> tuple[tuple[str | None, ...], ...]:
     """Every schema object's definition: rollback-safe, unlike the cookie."""
     return tuple(
-        tuple(row)
-        for row in conn.execute(
-            "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
-        )
+        tuple(row) for row in conn.execute("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name")
     )
 
 
@@ -107,9 +104,7 @@ def _trigger_fault(schema: tuple[tuple[str | None, ...], ...]) -> str | None:
 
 def _write_tokens(conn: sqlite3.Connection) -> tuple[tuple[str, bytes], ...] | None:
     """One token per digested table, or None when any is absent."""
-    tokens = dict(
-        conn.execute(f"SELECT table_name, token FROM {migrations_v21.WRITE_TOKEN_TABLE}").fetchall()
-    )
+    tokens = dict(conn.execute(f"SELECT table_name, token FROM {migrations_v21.WRITE_TOKEN_TABLE}").fetchall())
     if not set(sync_set.FK_ORDER) <= set(tokens):
         return None
     return tuple((table, bytes(tokens[table])) for table in sync_set.FK_ORDER)
@@ -123,10 +118,7 @@ def _identity_remap(conn: sqlite3.Connection) -> tuple[tuple[object, ...], ...] 
     ).fetchone()
     if exists is None:
         return None
-    return tuple(
-        tuple(row)
-        for row in conn.execute(f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk")
-    )
+    return tuple(tuple(row) for row in conn.execute(f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk"))
 
 
 def _max_seq(conn: sqlite3.Connection, table: str) -> int:

@@ -14,35 +14,12 @@ import pytest
 
 from apps.shared.playlist_sets.store import _snapshot_membership
 from apps.shared.state import db as state_db
+from tests.shared.playlist_sets.conftest import (
+    seed_playlist_and_tracks,
+    seed_playlist_membership,
+)
 
 NOW = "2026-09-01T00:00:00+00:00"
-
-
-def _seed_track(conn: sqlite3.Connection, stable_id: str) -> None:
-    conn.execute(
-        "INSERT INTO tracks(stable_id, stable_id_tier, title, "
-        "created_at, updated_at) VALUES (?, 'inferred', ?, ?, ?)",
-        (stable_id, stable_id, NOW, NOW),
-    )
-
-
-def _seed_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
-    conn.execute(
-        "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
-        "created_at, updated_at) VALUES (?, ?, 'rekordbox', ?, ?, ?)",
-        (playlist_id, f"pl-{playlist_id}", playlist_id, NOW, NOW),
-    )
-
-
-def _seed_membership(
-    conn: sqlite3.Connection, playlist_id: str, stable_id: str, position: int,
-    *, deleted: bool = False,
-) -> None:
-    conn.execute(
-        "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
-        "deleted_at) VALUES (?, ?, ?, ?)",
-        (playlist_id, stable_id, position, NOW if deleted else None),
-    )
 
 
 def test_a_soft_deleted_membership_is_excluded_from_the_snapshot(
@@ -50,11 +27,9 @@ def test_a_soft_deleted_membership_is_excluded_from_the_snapshot(
 ) -> None:
     conn = state_db.open_rw(tmp_path / "state.db")
     try:
-        _seed_track(conn, "trk-live")
-        _seed_track(conn, "trk-gone")
-        _seed_playlist(conn, "pl1")
-        _seed_membership(conn, "pl1", "trk-live", 0)
-        _seed_membership(conn, "pl1", "trk-gone", 1, deleted=True)
+        seed_playlist_and_tracks(conn, "pl1", ["trk-live", "trk-gone"], now=NOW)
+        seed_playlist_membership(conn, "pl1", "trk-live", 0)
+        seed_playlist_membership(conn, "pl1", "trk-gone", 1, deleted_at=NOW)
         conn.commit()
         assert _snapshot_membership(conn, "pl1") == [("trk-live", 0)]
     finally:

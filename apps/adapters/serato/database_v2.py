@@ -80,7 +80,7 @@ class CrateTrack:
     title: str = ""
     artist: str = ""
     album: str = ""
-    bpm: str = ""        # kept as the decimal string Serato writes
+    bpm: str = ""  # kept as the decimal string Serato writes
     key: str = ""
     file_type: str = ""
     composer: str = ""
@@ -121,9 +121,7 @@ class CrateTrack:
             else:
                 # Nested container inside an otrk -- rare; treat as opaque raw
                 # by re-encoding it.
-                extras.append(
-                    RawTag(type=child.type, payload=TagStream.write((child,)))
-                )
+                extras.append(RawTag(type=child.type, payload=TagStream.write((child,))))
         return cls(extra_tags=tuple(extras), **values)
 
     def to_tag(self) -> ContainerTag:

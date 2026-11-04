@@ -48,6 +48,8 @@ DEFAULT_PREFIX = "bench"
 _ACCESS_KEYS = ("CF_R2_ACCESS_KEY_ID", "R2_ACCESS_KEY_ID")
 _SECRET_KEYS = ("CF_R2_SECRET_ACCESS_KEY", "R2_SECRET_ACCESS_KEY")
 _ACCOUNT_KEYS = ("CF_R2_ACCOUNT_ID", "R2_ACCOUNT_ID")
+
+
 @dataclass(frozen=True)
 class DirStore:
     """A filesystem-backed store: a mounted or rsynced asset directory."""
@@ -150,9 +152,7 @@ class R2Store:
         try:
             import boto3
         except ImportError as exc:
-            raise BundleError(
-                "boto3 is required to reach an S3 store: `uv sync --extra cloud`"
-            ) from exc
+            raise BundleError("boto3 is required to reach an S3 store: `uv sync --extra cloud`") from exc
         return boto3.client(
             "s3",
             endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
@@ -262,15 +262,12 @@ def push_bundle(bundle: Path, store: Store, *, lane: str, version: str) -> str:
     manifest = verify_bundle(Path(bundle))
     if manifest["lane"] != lane or manifest["version"] != version:
         raise BundleError(
-            f"{bundle} is {manifest['lane']}/{manifest['version']}, "
-            f"not the {lane}/{version} it was asked to push as"
+            f"{bundle} is {manifest['lane']}/{manifest['version']}, not the {lane}/{version} it was asked to push as"
         )
     return store.upload(Path(bundle), lane, version)
 
 
-def pull_bundle(
-    store: Store, *, lane: str, version: str, dest: Path, expect_bundle_id: str | None = None
-) -> Path:
+def pull_bundle(store: Store, *, lane: str, version: str, dest: Path, expect_bundle_id: str | None = None) -> Path:
     """Download and verify, leaving nothing behind when the checksums disagree."""
     dest = Path(dest)
     if dest.exists():

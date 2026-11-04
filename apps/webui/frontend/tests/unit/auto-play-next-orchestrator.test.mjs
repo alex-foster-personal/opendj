@@ -73,6 +73,31 @@ function _setupLoadedDecks(harness, { incomingBassAtDetailIndex = 500 } = {}) {
 	return { beats, durationMs };
 }
 
+async function _pollUntilFirstBeatLoop(harness, maxTurns = 50) {
+	for (let i = 0; i < maxTurns; i += 1) {
+		if (harness.getDispatchPerformanceCommandCalls().some((cmd) => cmd.type === 'beat_loop')) {
+			return;
+		}
+		await Promise.resolve();
+	}
+	throw new Error('beat_loop dispatch never recorded');
+}
+
+function _holdFirstBeatLoopStub(harness) {
+	let releaseBeatLoop;
+	const heldBeatLoop = new Promise((resolve) => {
+		releaseBeatLoop = resolve;
+	});
+	let beatLoopCount = 0;
+	harness.setDispatchPerformanceCommandStub(async (cmd) => {
+		if (cmd.type === 'beat_loop') {
+			beatLoopCount += 1;
+			if (beatLoopCount === 1) await heldBeatLoop;
+		}
+	});
+	return { releaseBeatLoop };
+}
+
 before(async () => {
 	entry = await loadTypeScriptModule('tests/unit/fixtures/auto-play-next-entry.ts', {
 		alias: { '$lib/rb/performance-ipc.svelte': STUB_IPC }
@@ -243,6 +268,52 @@ test('no eligible pick and a refused plan both fall back to the loop and say why
 	} finally {
 		planner.restore();
 	}
+});
+
+test('cancel while the fallback beat_loop is pending releases the loop and stays disarmed', async () => {
+	// requirement: AGENT-8383
+	// [if] cancel arrives while fallback beat_loop is pending [then] the late loop is released and armed is false, [else stop].
+	_setupLoadedDecks(entry);
+	const { releaseBeatLoop } = _holdFirstBeatLoopStub(entry);
+	const arming = entry.armAutoPlayNext();
+	await _pollUntilFirstBeatLoop(entry);
+	assert.equal(entry.autoPlayNextState.phase, 'planning');
+	assert.equal(entry.autoPlayNextState.armed, true);
+	await entry.cancelAutoPlayNext();
+	releaseBeatLoop();
+	assert.equal(await arming, false);
+	const loopRelease = entry
+		.getDispatchPerformanceCommandCalls()
+		.find((cmd) => cmd.type === 'loop' && cmd.loop === null && cmd.deck === 1);
+	assert.ok(loopRelease, 'expected loop: null on outgoing deck after stale beat_loop');
+	assert.equal(entry.autoPlayNextState.armed, false);
+	assert.equal(entry.autoPlayNextState.phase, 'idle');
+	assert.equal(entry.autoPlayNextState.outgoing, null);
+	assert.equal(entry.autoPlayNextState.incoming, null);
+});
+
+test('a cancelled fallback does not reset a later arm', async () => {
+	// requirement: AGENT-8383
+	// [if] a cancelled fallback later returns false [then] a newer arm's state is left intact, [else stop].
+	_setupLoadedDecks(entry);
+	const { releaseBeatLoop } = _holdFirstBeatLoopStub(entry);
+	const firstArming = entry.armAutoPlayNext();
+	await _pollUntilFirstBeatLoop(entry);
+	await entry.cancelAutoPlayNext();
+	const secondArming = entry.armAutoPlayNext();
+	assert.equal(await secondArming, true);
+	assert.equal(entry.autoPlayNextState.armed, true);
+	assert.equal(entry.autoPlayNextState.phase, 'looping');
+	releaseBeatLoop();
+	assert.equal(await firstArming, false);
+	assert.equal(entry.autoPlayNextState.armed, true);
+	assert.equal(entry.autoPlayNextState.phase, 'looping');
+	assert.equal(entry.autoPlayNextState.outgoing, 1);
+	const calls = entry.getDispatchPerformanceCommandCalls();
+	const beatLoopIdx = calls.findLastIndex((cmd) => cmd.type === 'beat_loop');
+	assert.ok(beatLoopIdx >= 0);
+	const trailingNull = calls.slice(beatLoopIdx + 1).some((cmd) => cmd.type === 'loop' && cmd.loop === null);
+	assert.equal(trailingNull, false, 'stale fallback must not strip the second arm loop');
 });
 
 test('cancel while planning drops the late answer: no plan, no loop', async () => {

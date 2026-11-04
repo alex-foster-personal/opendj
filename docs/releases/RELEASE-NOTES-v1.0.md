@@ -134,8 +134,8 @@ pip install 'music_dj_tools-1.0.0-py3-none-any.whl[all]'
 Or from source:
 
 ```bash
-git clone https://github.com/private_owner/music-dj-tools.git
-cd music-dj-tools
+git clone https://github.com/alex-foster-personal/opendj.git
+cd opendj
 git checkout v1.0
 python3 -m venv .venv && source .venv/bin/activate
 pip install --no-build-isolation -r requirements.txt

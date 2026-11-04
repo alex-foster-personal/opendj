@@ -59,12 +59,17 @@ def client_env(
         yield client, data_dir, state_db_path
 
 
+_INDEX_MTIME = 1_700_000_000_000_000_000
+
+
 def _seed_index_aged(state_db_path: Path, data_dir: Path, paths: list[str], age_s: float) -> None:
     namespace = path_index.resolver_namespace(data_dir)
     stamp = (datetime.now(UTC) - timedelta(seconds=age_s)).isoformat(timespec="microseconds")
     conn = state_db.open_rw(state_db_path)
     try:
-        path_index.upsert_rows(conn, namespace, [(path, 256) for path in paths])
+        path_index.upsert_rows(
+            conn, namespace, [(path, 256, _INDEX_MTIME) for path in paths]
+        )
         conn.execute("UPDATE path_availability SET checked_at = ?", (stamp,))
         conn.commit()
     finally:
@@ -136,14 +141,20 @@ def test_own_expired_stat_is_served_past_the_ttl(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr("apps.webui.server.path_availability_refresh.schedule", lambda _p: None)
     path = str(tmp_path / "a.mp3")
     rb_config._FILE_EXISTS_CACHE[path] = (
-        time.monotonic() - 120, 512, path, path_index.resolver_namespace(rb_config.DATA_DIR)
+        time.monotonic() - 120,
+        512,
+        path,
+        path_index.resolver_namespace(rb_config.DATA_DIR),
+        512,
     )
     budget = availability.ProbeBudget(availability.AvailabilityProbeMode.ROW_HYDRATION)
     budget.remaining = 0
 
     probed = availability.bulk_probe_paths([path], budget=budget, trust_index=False)
 
-    assert probed[path] == availability.PathProbeResult("present", 512, resolved_path=path)
+    assert probed[path] == availability.PathProbeResult(
+        "present", 512, resolved_path=path, st_mtime_ns=512
+    )
 
 
 def _write_path_map(path_map: Path, target: Path) -> None:
@@ -168,8 +179,12 @@ def test_index_answers_name_a_file_only_when_no_rule_can_move_it(
 
     probed = availability.bulk_probe_paths([plain, mapped])
 
-    assert probed[plain] == availability.PathProbeResult("present", 256, resolved_path=plain)
-    assert probed[mapped] == availability.PathProbeResult("present", 256, resolved_path=None)
+    assert probed[plain] == availability.PathProbeResult(
+        "present", 256, resolved_path=plain, st_mtime_ns=_INDEX_MTIME
+    )
+    assert probed[mapped] == availability.PathProbeResult(
+        "present", 256, resolved_path=None, st_mtime_ns=_INDEX_MTIME
+    )
 
 
 @pytest.mark.requirement("QLTSCAN-02")
@@ -181,7 +196,11 @@ def test_cached_answers_resolve_no_paths(
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     in_l1, in_index = str(tmp_path / "l1.flac"), str(tmp_path / "index.flac")
     rb_config._FILE_EXISTS_CACHE[in_l1] = (
-        time.monotonic(), 512, in_l1, path_index.resolver_namespace(data_dir)
+        time.monotonic(),
+        512,
+        in_l1,
+        path_index.resolver_namespace(data_dir),
+        _INDEX_MTIME,
     )
     _seed_index_aged(state_db_path, data_dir, [in_index], age_s=0)
     resolved: list[str] = []

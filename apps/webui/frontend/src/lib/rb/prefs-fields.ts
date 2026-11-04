@@ -178,7 +178,7 @@ function _parseSpotifyIdList(
  * wrong shape throws, same fail-fast as last_playlist. A too-long but
  * well-typed list loads truncated to the pin/recent caps. */
 export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLibraryPref {
-	if (raw === undefined) return { pinned_ids: [], recent_ids: [] };
+	if (raw === undefined) return { pinned_ids: [], recent_ids: [], shrink_main_for_player: true };
 	if (raw === null || typeof raw !== 'object') {
 		throw new Error(
 			`${storageKey}: malformed prefs blob (spotify_library must be an object) - ` +
@@ -186,7 +186,15 @@ export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLi
 		);
 	}
 	const obj = raw as Partial<SpotifyLibraryPref>;
+	const shrink = obj.shrink_main_for_player;
+	if (shrink !== undefined && typeof shrink !== 'boolean') {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (spotify_library.shrink_main_for_player must be a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	return {
+		shrink_main_for_player: shrink ?? true,
 		pinned_ids: _parseSpotifyIdList(obj.pinned_ids, storageKey, 'pinned_ids', SPOTIFY_PINNED_CAP),
 		recent_ids: _parseSpotifyIdList(obj.recent_ids, storageKey, 'recent_ids', SPOTIFY_RECENT_CAP)
 	};

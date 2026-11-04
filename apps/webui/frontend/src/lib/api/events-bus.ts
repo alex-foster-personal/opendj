@@ -45,9 +45,10 @@ export const TOPIC_SHELL_QUIT = 'shell.quit';
 /** Desktop shell -> engine: confirms a shell.quit frame was received (issue #6262). */
 export const TOPIC_SHELL_QUIT_ACK = 'shell.quit.ack';
 
-/** `kind` values the server publishes on `library.changed`. Mirrors the
- * `publish("library.changed", {"kind": ...})` call sites under
- * `apps/webui/server/routes/` and `apps/set_notes/routes.py`. */
+/** `kind` values the server publishes on `library.changed` (INFRA-8304).
+ * Mirrors `LIBRARY_CHANGED_KINDS` in `apps/engine_core/ws.py`, the backend
+ * contract; `tests/engine_core/test_library_changed_kinds.py` fails when the
+ * two lists or any `publish("library.changed", ...)` call site drift. */
 export const LIBRARY_KINDS = [
 	'tracks',
 	'playlists',
@@ -62,9 +63,16 @@ export const LIBRARY_KINDS = [
 	'pairings',
 	'library_jobs',
 	'playlist_sets',
+	'playlist_components',
 	'midi_maps',
 	'set_notes',
-	'sections'
+	'sections',
+	'plays',
+	'cloudsync_policy',
+	'cloudsync_playlist_pin',
+	'tags',
+	'works',
+	'undo'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];

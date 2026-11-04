@@ -18,7 +18,9 @@ Lifecycle:
 
 - Stdin stays open for the engine's life. Closing it is how ``stop()`` asks
   the engine to exit, and it is also what stops the engine when this process
-  dies, because the kernel closes the pipe.
+  dies, because the kernel closes the pipe. On Windows the kernel is also
+  told to end the engine with this process, read or not, and the engine gets
+  no console window (``audio_engine_win``).
 - An engine that exits on its own is restarted with backoff, with a new token.
   ``generation`` counts spawns, so a client can tell a restart happened.
   After ``crash_limit`` exits inside ``crash_window_s`` the supervisor stops
@@ -47,7 +49,6 @@ from __future__ import annotations
 
 import collections
 import json
-import os
 import logging
 import queue
 import secrets
@@ -60,6 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Literal
 
+from apps.engine_core import audio_engine_win
 from apps.shared.odj_audio_binary import (
     BIN_ENV,
     EXE_NAME,
@@ -472,10 +474,25 @@ class AudioEngineSupervisor:
                 stderr=subprocess.PIPE,
                 env=env,
                 text=True,
+                # Protocol v1 is UTF-8 on every OS. Left to the locale, Windows
+                # decodes with the ANSI code page, and a line naming a track
+                # outside it ends the reader. Bytes that are not UTF-8 stay
+                # visible as escapes rather than ending it.
+                encoding="utf-8",
+                errors="backslashreplace",
                 bufsize=1,
+                **audio_engine_win.popen_kwargs(),
             )
         except OSError as exc:
             self._set(state="failed", error=f"could not start {binary.path}: {exc}")
+            return "fatal"
+        try:
+            binding = audio_engine_win.bind_to_this_process(proc)
+        except OSError as exc:
+            # An engine this process cannot take down with it is not run, and
+            # it is gone before the status says so.
+            self._terminate(proc)
+            self._set(state="failed", error=f"could not tie {binary.path} to this process: {exc}")
             return "fatal"
         lines: queue.Queue[str | None] = queue.Queue()
         _pump(proc.stdout, lines.put, "engine.audio-stdout")
@@ -497,26 +514,8 @@ class AudioEngineSupervisor:
                 self._terminate(proc)
                 return "fatal"
             if hello is not None:
-                with self._lock:
-                    self._status.state = "running"
-                    self._status.ws_url = hello["ws"]
-                    self._status.token = token
-                    self._status.protocol = hello["protocol"]
-                    self._status.engine = hello.get("engine")
-                    self._status.sample_rate = hello.get("sample_rate")
-                    self._status.error = None
-                log.info("odj-audio %s up on %s", clock, hello["ws"])
-                # Drain until EOF, or until stop() asks: an engine that
-                # ignores stdin EOF keeps its stdout open, and _wait is what
-                # escalates to terminate. The engine sends state to stdio too.
-                while not self._stop.is_set():
-                    try:
-                        line = lines.get(timeout=0.2)
-                    except queue.Empty:
-                        continue
-                    if line is None:
-                        break
-                    self._on_line(line)
+                self._publish_running(hello, token, clock)
+                self._drain(lines)
             code = self._wait(proc)
             if proc.poll() is None:
                 # The stop budget ran out and the process is still alive.
@@ -532,6 +531,33 @@ class AudioEngineSupervisor:
                 with self._lock:
                     self._proc = None
             self._fail_pending("odj-audio exited before answering")
+            if binding is not None:
+                binding.close()
+
+    def _publish_running(self, hello: dict[str, Any], token: str, clock: str) -> None:
+        """Record the engine's hello as the running status."""
+        with self._lock:
+            self._status.state = "running"
+            self._status.ws_url = hello["ws"]
+            self._status.token = token
+            self._status.protocol = hello["protocol"]
+            self._status.engine = hello.get("engine")
+            self._status.sample_rate = hello.get("sample_rate")
+            self._status.error = None
+        log.info("odj-audio %s up on %s", clock, hello["ws"])
+
+    def _drain(self, lines: queue.Queue[str | None]) -> None:
+        """Drain until EOF, or until stop() asks: an engine that ignores stdin
+        EOF keeps its stdout open, and _wait is what escalates to terminate.
+        The engine sends state to stdio too."""
+        while not self._stop.is_set():
+            try:
+                line = lines.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            self._on_line(line)
 
     def _await_hello(
         self, lines: queue.Queue[str | None]
@@ -653,7 +679,7 @@ def _close_quietly(stream: IO[str] | None) -> None:
     fd = _owner_fd(owner)
     if fd is not None:
         try:
-            os.set_blocking(fd, False)
+            audio_engine_win.set_blocking(fd, False)
         except OSError as exc:
             log.warning(
                 "odj-audio stdin fd %d could not be made non-blocking (%s); "

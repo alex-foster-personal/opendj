@@ -28,6 +28,7 @@
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalFixMenuItem } from './vocal-correction-menu';
+	import { runTransitionInCue } from './transition-in-menu';
 	import { waveClickAt } from './wave-click';
 	import { transitionTargetOk } from '$lib/rb/auto-play-next.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
@@ -296,27 +297,14 @@
 		if (click !== null) {
 			// AGENT-51: the engine snaps the click to the nearest downbeat and says which bar.
 			// A refusal (no beatgrid, unknown track) is toasted, never swallowed.
-			runners['transition-in'] = async () => {
-				try {
-					const set = await setTransitionInCue(click.stableId, click.timeS * 1000);
-					pushToast(`Transition-in cue set at bar ${set.bar}`, 'info');
-					try {
-						for (const id of DECK_IDS) {
-							if (getDeckState(id).stable_id === click.stableId) {
-								// refreshHotCues also replaces st.anlz from a fresh /anlz fetch.
-								await engine.refreshHotCues(id);
-							}
-						}
-					} catch (refreshErr) {
-						pushToast(
-							`Transition-in cue saved but waveform did not refresh: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`,
-							'error'
-						);
-					}
-				} catch (e) {
-					pushToast(`Transition-in cue not set: ${e instanceof Error ? e.message : String(e)}`, 'error');
-				}
-			};
+			runners['transition-in'] = () =>
+				runTransitionInCue(click, {
+					setTransitionInCue,
+					pushToast,
+					deckIds: DECK_IDS,
+					getDeckState,
+					refreshHotCues: (id) => engine.refreshHotCues(id)
+				});
 		}
 		const outTargets = DECK_IDS.filter((other) => other !== deck && transitionTargetOk(other));
 		if (click !== null) {

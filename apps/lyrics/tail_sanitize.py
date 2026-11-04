@@ -48,9 +48,7 @@ HALLUCINATION_PHRASES: tuple[str, ...] = (
 _WEAK_WITNESS: frozenset[str] = frozenset({"contradict", "lost", "unheard"})
 
 _PHRASES_RE = re.compile(
-    r"^(?:(?:"
-    + "|".join(re.escape(p) for p in sorted(HALLUCINATION_PHRASES, key=len, reverse=True))
-    + r")(?: |$))+$"
+    r"^(?:(?:" + "|".join(re.escape(p) for p in sorted(HALLUCINATION_PHRASES, key=len, reverse=True)) + r")(?: |$))+$"
 )
 
 
@@ -151,8 +149,7 @@ def sanitize_words_for_artifact(
     if trim:
         cut = len(kept) - trim
         dropped.extend(
-            (kept_orig_idx[j], str(kept[j].get("word", "")), "post_final_hallucination")
-            for j in range(cut, len(kept))
+            (kept_orig_idx[j], str(kept[j].get("word", "")), "post_final_hallucination") for j in range(cut, len(kept))
         )
         kept = kept[:cut]
 

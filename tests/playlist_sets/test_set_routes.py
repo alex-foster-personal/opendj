@@ -26,6 +26,7 @@ from apps.shared.playlist_sets import (
     create_component,
     create_playlist_set,
     delete_component,
+    list_borrowed_components,
     list_components,
     list_routes,
     list_slots,
@@ -118,6 +119,25 @@ def test_route_listing_truncates_and_says_so(conn: sqlite3.Connection) -> None:
     assert listing.total == 6
     assert len(listing.routes) == 4
     assert listing.truncated is True
+
+
+def test_paging_with_offset_lists_every_route_exactly_once(conn: sqlite3.Connection) -> None:
+    ids = _party(conn)
+    # A saved set that skips two slots: it is an extra route, listed after the full ones.
+    create_playlist_set(conn, "pl1", "SkipToMain", parts=[ids["main"]])
+    everything = list_routes(conn, "pl1", limit=100)
+    assert everything.total == 7
+    assert everything.truncated is False
+    paged: list[tuple[int, ...]] = []
+    for offset in range(0, everything.total, 3):
+        page = list_routes(conn, "pl1", limit=3, offset=offset)
+        assert page.total == 7
+        assert page.truncated is (offset + 3 < 7)
+        paged += [tuple(r.parts) for r in page.routes]
+    assert paged == [tuple(r.parts) for r in everything.routes]
+    assert len(set(paged)) == 7
+    with pytest.raises(ValueError):
+        list_routes(conn, "pl1", offset=-1)
 
 
 def test_repeated_track_on_a_route_is_flagged(conn: sqlite3.Connection) -> None:
@@ -377,6 +397,22 @@ def test_a_route_is_saved_once_per_playlist(conn: sqlite3.Connection) -> None:
     assert update_set_parts(conn, first, [ids["warm"], ids["main"]]).parts == [ids["warm"], ids["main"]]
 
 
+def test_borrowed_components_are_listed_apart_from_own_components(
+    conn: sqlite3.Connection,
+) -> None:
+    ids = _party(conn)
+    closer = create_component(conn, "pl-other", "Sig", "ending", ["zq-sig-1"])
+    assert list_borrowed_components(conn, "pl1") == []
+    create_playlist_set(conn, "pl1", "Borrowed", parts=[ids["warm"], ids["main"], closer])
+    borrowed = list_borrowed_components(conn, "pl1")
+    assert [(c.id, c.stable_ids) for c in borrowed] == [(closer, ["zq-sig-1"])]
+    # Control: a borrowed component never becomes one of this playlist's own.
+    assert closer not in [c.id for c in list_components(conn, "pl1")]
+    # Control: a set made only of this playlist's components borrows nothing new.
+    create_playlist_set(conn, "pl1", "Own", parts=[ids["warm"], ids["main"]])
+    assert [c.id for c in list_borrowed_components(conn, "pl1")] == [closer]
+
+
 def test_routes_list_saved_sets_that_skip_a_slot_or_borrow(
     conn: sqlite3.Connection,
 ) -> None:
@@ -591,3 +627,36 @@ def test_component_events_have_their_own_kind_and_set_events_keep_set_id(
     assert all(not p["action"].startswith("component_") for p in sets)
     assert all("component_id" in p and "set_id" not in p for p in comps)
     assert {"component_created", "component_updated"} <= {p["action"] for p in comps}
+
+
+def test_a_route_page_decodes_its_offset_without_walking_the_routes_before_it() -> None:
+    # A page must equal the same slice of the full product, and a late offset must not enumerate
+    # the routes before it (12 slots of 10 is a trillion routes; the page still returns at once).
+    import itertools
+
+    from apps.shared.playlist_sets.components import Component, _full_routes
+
+    def group(base: int, n: int) -> list[Component]:
+        return [
+            Component(
+                id=base + i,
+                playlist_id="p",
+                name=f"c{base + i}",
+                slot="s",
+                stable_ids=[f"t{base + i}"],
+                tags=[],
+                created_at="",
+                updated_at="",
+            )
+            for i in range(n)
+        ]
+
+    groups = [group(100 * k, n) for k, n in enumerate([2, 3, 4])]
+    everything = [tuple(c.id for c in combo) for combo in itertools.product(*groups)]
+    for offset in range(len(everything) + 2):
+        page = _full_routes(groups, 5, {}, offset)
+        assert [tuple(r.parts) for r in page] == everything[offset : offset + 5]
+
+    wide = [group(1000 * k, 10) for k in range(12)]
+    late = _full_routes(wide, 1, {}, 10**11)
+    assert len(late) == 1 and len(late[0].parts) == 12

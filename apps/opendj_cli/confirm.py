@@ -120,9 +120,7 @@ def _format_segment(segment: str, command: Mapping[str, Any]) -> str:
     try:
         return segment.format(**command)
     except KeyError as error:
-        raise ValueError(
-            f"mirror path segment {segment!r} needs command field {error.args[0]!r}"
-        ) from None
+        raise ValueError(f"mirror path segment {segment!r} needs command field {error.args[0]!r}") from None
 
 
 def _observe_check(observe: Observe, command: Mapping[str, Any]) -> Check:
@@ -183,9 +181,7 @@ def final_checks(checks: Sequence[Check]) -> tuple[Check, ...]:
 
 def verdict(checks: Sequence[Check], mirror: Mapping[str, Any]) -> tuple[str, tuple[str, ...]]:
     """``confirmed`` / ``unconfirmed`` / ``accepted`` plus the reasons it is not."""
-    failures = tuple(
-        failure for check in checks if (failure := check.unmet_because(mirror)) is not None
-    )
+    failures = tuple(failure for check in checks if (failure := check.unmet_because(mirror)) is not None)
     if failures:
         return "unconfirmed", failures
     if any(check.affirms for check in checks):

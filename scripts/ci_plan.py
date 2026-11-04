@@ -25,6 +25,7 @@ exit 0, a canary green 25 runs of 28 without running a test). `plan` raises inst
 from __future__ import annotations
 
 import argparse
+import functools
 import re
 import subprocess
 import sys
@@ -514,6 +515,31 @@ SESSION_LOAD = "<pytest_plugins>"  # a consumer no scope owns: a session-wide or
 
 
 def _helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set[str]]:
+    """`_scan_helper_importers`, computed once per tree state. The scan reads and parses every
+    pytest input (~54 s on the real tree, Wed 4 Nov 2026), and the three drift guards and the
+    planner ask for the same tree in one process. The key carries each input's mtime and size,
+    so an edited file is rescanned, and every call gets its own copy of the sets."""
+    files = sorted((relative, str(file)) for relative, file in inputs.items())
+    conftest = root / "conftest.py"
+    stamps = tuple((relative, file, *_stamp(Path(file))) for relative, file in files)
+    found = _cached_importers(str(root), stamps, _stamp(conftest) if conftest.is_file() else None)
+    return {relative: set(consumers) for relative, consumers in found.items()}
+
+
+def _stamp(file: Path) -> tuple[int, int]:
+    stat = file.stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
+@functools.lru_cache(maxsize=8)
+def _cached_importers(
+    root: str, stamps: tuple[tuple[str, str, int, int], ...], _conftest: tuple[int, int] | None
+) -> dict[str, frozenset[str]]:
+    found = _scan_helper_importers({relative: Path(file) for relative, file, *_ in stamps}, Path(root))
+    return {relative: frozenset(consumers) for relative, consumers in found.items()}
+
+
+def _scan_helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set[str]]:
     """For each pytest input, the other inputs that load it: by import, or by `import_module` with a
     literal name. One that `pytest_plugins` names is loaded for the whole session, a load the reader
     cannot resolve may be any of them, and a computed path load may be any file its module names:
@@ -534,12 +560,13 @@ def _helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set[str]
         loads = loaded_test_helpers(text, relative)
         unresolved |= loads.unresolved
         path_targets |= loads.path_targets
-        for target in _helper_files(imported_test_helpers(text, relative) | loads.by_call, importers):
+        imported = imported_test_helpers(text, relative)
+        for target in _helper_files(imported | loads.by_call, importers):
             if target != relative:
                 importers[target].add(consumer)
         for target in _helper_files(loads.by_plugins | loads.lookalike, importers):
             importers[target].add(SESSION_LOAD)
-        named = imported_test_helpers(text, relative) | loads.by_call | loads.by_plugins | loads.lookalike
+        named = imported | loads.by_call | loads.by_plugins | loads.lookalike
         for target in _case_variants(named, by_folded):
             importers[target].add(SESSION_LOAD)
     for target, consumers in importers.items():

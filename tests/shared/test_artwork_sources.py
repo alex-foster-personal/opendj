@@ -17,6 +17,14 @@ Regression one-liners:
   - if the second of a deck's two simultaneous views shows no cover then broken
   - if a view waits on a stuck lookup without bound then broken
   - if ODJ_ARTWORK_ONLINE=0 still sends a request then broken
+  - if a cached miss does not say whether MusicBrainz knew the song at all then broken
+  - if a title+artist-only track MusicBrainz lacks gets no store cover then broken
+  - if a store hit by a different artist with the same title is accepted then broken
+  - if "Asco" matches "Ascoltare" (artist substring, not whole words) then broken
+  - if "X - Techno Remix" does not match the store's "X (Techno Remix)" then broken
+  - if a store cover URL off the store's own CDN is fetched then broken
+  - if a store outage is cached as a miss then broken
+  - if a miss does not name why each source missed then broken
 """
 from __future__ import annotations
 
@@ -180,13 +188,36 @@ def test_found_cover_is_cached_and_not_fetched_again(tmp_path: Path) -> None:
     assert len(http.calls) == 3, "a cached cover must not be looked up again"
 
 
+NO_STORE_HITS = {
+    art.DEEZER_URL: (200, json.dumps({"data": []}).encode()),
+    art.ITUNES_URL: (200, json.dumps({"results": []}).encode()),
+}
+
+
 def test_miss_is_remembered(tmp_path: Path) -> None:
-    http = RecordingHttp({art.MB_URL: (200, json.dumps({"recordings": []}).encode())})
+    http = RecordingHttp({art.MB_URL: (200, json.dumps({"recordings": []}).encode()),
+                          **NO_STORE_HITS})
     cache = ArtworkCache(tmp_path / "artwork-cache")
     assert art.online_cover(cache, "sid", QUERY, http) is None
     assert art.online_cover(cache, "sid", QUERY, http) is None
-    assert len(http.calls) == 1
+    assert len(http.calls) == 3, "MusicBrainz, Deezer, iTunes once each, then the cached miss"
     assert not cache.has("sid")
+    assert cache.miss_reason("sid") == (
+        "musicbrainz: no matching recording (MusicBrainz has no recording with this title by "
+        "this artist); deezer: no artist+title match in 0 results; "
+        "itunes: no artist+title match in 0 results"
+    )
+
+
+@pytest.mark.requirement("LIBM-187")
+def test_miss_reason_says_when_recordings_came_back_but_none_matched(tmp_path: Path) -> None:
+    """[if] MusicBrainz answers with recordings that do not match [then] the miss reason says so, [else stop]."""
+    stranger = {"recordings": [_recording("Glue", "Some Stranger", 269_000, ["rg-x"])]}
+    http = RecordingHttp({art.MB_URL: (200, json.dumps(stranger).encode()), **NO_STORE_HITS})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "sid", QUERY, http) is None
+    assert cache.miss_reason("sid") is not None
+    assert "MusicBrainz returned 1 " in str(cache.miss_reason("sid"))
 
 
 def test_network_failure_is_not_remembered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -264,3 +295,163 @@ def test_wait_on_a_stuck_lookup_is_bounded_and_caches_nothing(
         lock.release()
     assert http.calls == []
     assert not cache.recent_miss("sid", 0.0) and not cache.has("sid")
+
+
+# ----- store search (LIBM-188) --------------------------------------------------
+
+DEEZER_COVER = "https://e-cdns-images.dzcdn.net/images/cover/abc/500x500-000000-80-0-0.jpg"
+ITUNES_COVER_100 = "https://is1-ssl.mzstatic.com/image/thumb/Music/v4/aa/cover.jpg/100x100bb.jpg"
+MB_EMPTY = (200, json.dumps({"recordings": []}).encode())
+
+
+def _deezer(*items: tuple[str, str, int, str]) -> tuple[int, bytes]:
+    """Deezer /search answer shape (trimmed): title, artist.name, duration s, album.cover_big."""
+    return 200, json.dumps({"data": [
+        {"title": t, "artist": {"name": a}, "duration": d, "album": {"cover_big": c}}
+        for t, a, d, c in items
+    ]}).encode()
+
+
+def _itunes(*items: tuple[str, str, int, str]) -> tuple[int, bytes]:
+    """iTunes Search answer shape (trimmed): trackName, artistName, trackTimeMillis, artworkUrl100."""
+    return 200, json.dumps({"results": [
+        {"trackName": t, "artistName": a, "trackTimeMillis": ms, "artworkUrl100": c}
+        for t, a, ms, c in items
+    ]}).encode()
+
+
+PHANTOM = TrackQuery(artist="Charles B, MOR3L, Amero",
+                     title="The Phantom of the Opera - Techno Remix", duration_ms=167_915)
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_store_hit_is_a_suggestion_never_a_cached_cover(tmp_path: Path) -> None:
+    """Shape of Viva - The cut's Phantom remix: no MusicBrainz recording, on Deezer.
+
+    [if] only a store (Deezer) has the cover [then] it is kept as a pending suggestion and nothing is fetched or cached, [else stop].
+    """
+    http = RecordingHttp({
+        art.MB_URL: MB_EMPTY,
+        art.DEEZER_URL: _deezer(
+            ("O Fortuna", "Charles B", 168, DEEZER_COVER + "?wrong"),
+            ("The Phantom of the Opera (Techno Remix)", "Charles B", 152, DEEZER_COVER),
+            ("Phantom of the Opera Overture", "Charles B. Ancheta", 229, DEEZER_COVER + "?x"),
+        ),
+    })
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "sid", PHANTOM, http) is None
+    assert DEEZER_COVER not in http.calls, "no store image is fetched without consent"
+    assert not any(url.startswith(art.ITUNES_URL) for url in http.calls)
+    assert not list((tmp_path / "artwork-cache").glob("*.img")), "nothing from a store is cached"
+    suggestion = cache.suggestion("sid")
+    assert suggestion is not None
+    assert (suggestion.source, suggestion.cover_url) == ("deezer", DEEZER_COVER)
+    assert set(cache.pending_suggestions()) == {"sid"}
+    assert art.online_cover(cache, "sid", PHANTOM, http) is None
+    assert len(http.calls) == 2, "a pending suggestion is not searched again on the next view"
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_accepting_a_suggestion_fetches_and_caches_the_cover(tmp_path: Path) -> None:
+    """[if] the user accepts a store suggestion [then] the cover is fetched and cached with its store source, [else stop]."""
+    cover = _image("JPEG")
+    http = RecordingHttp({art.MB_URL: MB_EMPTY, art.DEEZER_URL: _deezer(
+        ("The Phantom of the Opera (Techno Remix)", "Charles B", 152, DEEZER_COVER)),
+        DEEZER_COVER: (200, cover)})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    art.online_cover(cache, "sid", PHANTOM, http)
+    art.accept_suggestion(cache, "sid", http)
+    assert cache.get("sid") == (cover, "image/jpeg")
+    assert cache.pending_suggestions() == {}
+    meta = json.loads(next((tmp_path / "artwork-cache").glob("*.json")).read_bytes())
+    assert (meta["source"], meta["ref"]) == ("deezer", DEEZER_COVER)
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_skipping_a_suggestion_is_remembered_for_good(tmp_path: Path) -> None:
+    """[if] the user skips a store suggestion [then] the track is never suggested again, even after a rerun, [else stop]."""
+    http = RecordingHttp({art.MB_URL: MB_EMPTY, art.DEEZER_URL: _deezer(
+        ("The Phantom of the Opera (Techno Remix)", "Charles B", 152, DEEZER_COVER))})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    art.online_cover(cache, "sid", PHANTOM, http)
+    art.skip_suggestion(cache, "sid")
+    assert cache.pending_suggestions() == {} and not cache.has("sid")
+    cache.forget_miss("sid")  # a rerun forgets the miss, never the user's "no"
+    art.online_cover(cache, "sid", PHANTOM, http)
+    assert cache.suggestion("sid") is None
+    assert "you skipped a store cover" in str(cache.miss_reason("sid"))
+    assert sum(u.startswith(art.DEEZER_URL) for u in http.calls) == 1
+    with pytest.raises(art.SuggestionError):
+        art.accept_suggestion(cache, "sid", http)
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_itunes_fills_what_deezer_lacks_and_suggests_600px(tmp_path: Path) -> None:
+    """Shape of Vik Portos 'Capriccio D'inverno': Deezer empty, iTunes has the single.
+
+    [if] Deezer has no match and iTunes does [then] the iTunes cover is suggested at 600px, [else stop].
+    """
+    big = ITUNES_COVER_100.replace("/100x100bb.", "/600x600bb.")
+    http = RecordingHttp({
+        art.MB_URL: MB_EMPTY,
+        art.DEEZER_URL: _deezer(),
+        art.ITUNES_URL: _itunes(("Capriccio D'inverno", "Vik Portos", 209_000, ITUNES_COVER_100)),
+    })
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    query = TrackQuery(artist="Vik Portos", title="Capriccio D'inverno", duration_ms=209_345)
+    assert art.online_cover(cache, "sid", query, http) is None
+    suggestion = cache.suggestion("sid")
+    assert suggestion is not None and (suggestion.source, suggestion.cover_url) == ("itunes", big)
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_store_hit_needs_the_same_artist_and_title() -> None:
+    """[if] a store hit differs in artist or title [then] it is not a match, and matches sort by closest length, [else stop]."""
+    query = TrackQuery(artist="ASCO", title="Aria", duration_ms=207_438)
+    hits = [
+        art.StoreHit("Aria", "Someone Else", 207, DEEZER_COVER + "?1"),
+        art.StoreHit("Aria", "Ascoltare", 207, DEEZER_COVER + "?2"),
+        art.StoreHit("Aria (Live)", "ASCO", 207, DEEZER_COVER + "?3"),
+        art.StoreHit("Aria", "Asco", 264, DEEZER_COVER + "?far"),
+        art.StoreHit("Aria", "Asco, DJ Friend", 206, DEEZER_COVER + "?near"),
+    ]
+    assert [h.cover_url for h in art.matching_store_hits(hits, query)] == [
+        DEEZER_COVER + "?near", DEEZER_COVER + "?far",
+    ], "artist as whole words, exact title, closest length first, length not a veto"
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_store_cover_off_the_store_cdn_is_never_fetched() -> None:
+    """[if] a store hit's cover is off the store's own HTTPS CDN [then] it is never a match, [else stop]."""
+    query = TrackQuery(artist="ASCO", title="Aria", duration_ms=None)
+    hits = [
+        art.StoreHit("Aria", "ASCO", None, "http://e-cdns-images.dzcdn.net/plain-http.jpg"),
+        art.StoreHit("Aria", "ASCO", None, "https://evil.example/dzcdn.net.jpg"),
+        art.StoreHit("Aria", "ASCO", None, "https://dzcdn.net.evil.example/a.jpg"),
+        art.StoreHit("Aria", "ASCO", None, ""),
+    ]
+    assert art.matching_store_hits(hits, query) == []
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_store_outage_is_not_cached_as_a_miss(tmp_path: Path) -> None:
+    """[if] a store answers with an outage [then] no miss is cached and a later view retries, [else stop]."""
+    http = RecordingHttp({art.MB_URL: MB_EMPTY, art.DEEZER_URL: (503, b"")})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "sid", QUERY, http) is None
+    assert cache.miss_reason("sid") is None and not cache.recent_miss("sid", 0.0)
+    assert art.online_cover(cache, "sid", QUERY, http) is None
+    assert len(http.calls) == 4, "a later view retries after a store outage"
+
+
+@pytest.mark.requirement("LIBM-188")
+def test_musicbrainz_hit_never_asks_the_stores(tmp_path: Path) -> None:
+    """[if] MusicBrainz has the cover [then] neither Deezer nor iTunes is asked, [else stop]."""
+    cover = _image("JPEG")
+    http = RecordingHttp({
+        art.MB_URL: (200, MB_FOUND.encode()),
+        art.CAA_URL.format(rg="rg-1"): (200, cover),
+    })
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "sid", QUERY, http) == (cover, "image/jpeg")
+    assert not any(u.startswith((art.DEEZER_URL, art.ITUNES_URL)) for u in http.calls)

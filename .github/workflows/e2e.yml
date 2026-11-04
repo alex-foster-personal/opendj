@@ -22,20 +22,46 @@ name: E2E
 # Spend is attributed in ci-budget-watch.yml (ADR-0121 retired per-run spike guard).
 
 on:
-  pull_request:
-    branches: [main, af--b2b-link]
-    # af--b2b-link is a batching branch: feature PRs merge into it and it lands
-    # on main as one PR. With main as the only base, those PRs never ran E2E and
-    # product reds accumulated unseen until the branch was dispatched by hand. A
-    # pull_request run reads this file from its merge commit, so the branch picks
-    # this up once it merges main.
-    # EVERY pull request to main triggers this workflow (issue #4168); the
-    # docs-only skip moved inside the run. The `scope` job evaluates
-    # E2E_PATHS_IGNORE in scripts/ci_pr_scope.py against the merge commit and
-    # the gate runs only when it says in scope. A trigger-level filter created
-    # no run at all for a docs-only change, so a merge queue waiting on a named
-    # check (Trunk, draft-PR mode) waited out its timeout. The list: docs, plus
-    # workflow YAML and pytest-only trees that cannot change Playwright behavior.
+  # A PULL REQUEST'S E2E RUNS AFTER ITS `ci gate` IS GREEN (ADR-NEW-e2e-after-ci-gate,
+  # Wed 4 Nov 2026). The trigger is the CI workflow completing; the `scope` job reads
+  # the triggering run (its pull request, head sha) and the `ci gate` check-run at
+  # that head before anything else starts, and skips (out of scope, reason printed)
+  # unless the gate is green. A red head never spends an e2e seat, and E2E never
+  # queues in front of a gate: at 06:45Z Wed 4 Nov 2026 108 runs were queued in
+  # 6 h, 47 of them E2E and 42 CI, and both workflows started with a scope job on
+  # `linux-light`, so advisory E2E held the seats the gates needed (repair #8531 sat
+  # at "ci scope in_progress" from 06:40Z). Every pull request to main still gets an
+  # `e2e verdict` check (issue #4168), now after `ci gate` rather than beside it.
+  #
+  # What a workflow_run trigger changes, deliberately:
+  #   - this file is read FROM main, not from the pull request, so a PR that edits
+  #     e2e.yml exercises its edit only once it lands (push to main and the schedule
+  #     read the file as before);
+  #   - the run's own `github.sha`/`github.ref` are main's, so every job checks out
+  #     `needs.scope.outputs.checkout_ref` (the pull request's merge commit, pinned
+  #     ONCE by scripts/ci_e2e_admission.py while the head is still the pull request's
+  #     head, never the moving refs/pull/<n>/merge) and keys the frontend artifact on
+  #     `needs.scope.outputs.sha`; when main moved after CI built that artifact the
+  #     acquire script builds it on the e2e seat (ADR-0028's existing fallback), which
+  #     the gate log says;
+  #   - GitHub attaches every check-run of this run to main's tip, not to the pull
+  #     request head (the event's documented sha), so the head would show no
+  #     `e2e verdict` at all; the `verdict` job PUBLISHES one on
+  #     `workflow_run.head_sha` through the Checks API (scripts/ci_e2e_admission.py
+  #     publish, `checks: write` on that job alone), green, red, or skipped with the
+  #     reason when the scope job admitted nothing;
+  #   - a CI completion whose gate is red, a CI run that was not a pull request
+  #     (push, schedule, dispatch) and a pull request whose base is neither main nor
+  #     af--b2b-link (a batching branch: its feature PRs land on main as one PR) all
+  #     come out of scope in `scope`;
+  #   - E2E stays advisory to landing: the lander reads `ci gate` only.
+  # The docs-only skip is unchanged: `scope` evaluates E2E_PATHS_IGNORE in
+  # scripts/ci_pr_scope.py against the merge commit and the gate runs only when it
+  # says in scope (a trigger-level filter created no run at all for a docs-only
+  # change, so a merge queue waiting on a named check waited out its timeout).
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   push:
     branches: [main]
     # A push run needs no aggregator to exist, so push keeps its trigger-level
@@ -107,13 +133,20 @@ on:
 # run as no verdict and looks at the next) keep a measurement. PR and dispatch runs
 # keep one group per ref with cancel-in-progress on, as before.
 concurrency:
-  group: e2e-${{ github.ref }}-${{ github.event_name == 'push' && 'push-tip' || 'shared' }}
+  # A workflow_run run's github.ref is main's, so the pull request's own head branch
+  # keys the group: a new CI completion for the same branch supersedes the running one.
+  group: e2e-${{ github.event.workflow_run.head_branch || github.ref }}-${{ github.event_name == 'push' && 'push-tip' || 'shared' }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
   # Cross-workflow artifact download from ci.yml (issue #1513).
   actions: read
+  # The scope job reads the `ci gate` check-run at the triggering head and the pull
+  # request's head, labels and mergeability (ADR-NEW-e2e-after-ci-gate). The verdict
+  # job alone raises checks to write, to publish `e2e verdict` on that head.
+  checks: read
+  pull-requests: read
 
 env:
   CI_ARTIFACT_R2_ACCOUNT_ID: ${{ secrets.ARTIFACT_ARCHIVE_R2_ACCOUNT_ID }}
@@ -151,17 +184,33 @@ jobs:
   # ---------------------------------------------------------------------------
   scope:
     name: e2e scope (docs-only skip decision)
-    # Seconds of work on the light pool, never the pytest or e2e label: the job
-    # runs `git diff` on the merge commit and one stdlib script. Every event runs
-    # it; only a pull_request can come out of scope.
-    # A Trunk queue draft (trunk-merge/* head, author trunk-io[bot], same-repo
-    # head) prefers the opt-in CI_RUNS_ON_MERGE_QUEUE pool on every job on its
-    # path to a required status, the e2e gate excepted; unset, the chain is
-    # unchanged (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool).
-    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # Seconds of work: the job resolves the pull request behind the run, runs
+    # `git diff` on the merge commit and one stdlib script. Every event runs it.
+    # ON THE E2E SEATS, not the light pool (ADR-NEW-e2e-after-ci-gate, Wed 4 Nov
+    # 2026): a scope job on `linux-light` in front of every E2E run held the seats
+    # the ci.yml gates needed. The job needs a checkout, so a seconds-long slot on
+    # the pool its own gate will use is the honest place for it; unset, hosted.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 5
     outputs:
       in_scope: ${{ steps.decide.outputs.in_scope }}
+      # The event the scope decision was made for (ADR-NEW-e2e-after-ci-gate):
+      # `pull_request` when CI completed for a pull request whose `ci gate` is
+      # green, else the run's own event name (a skipped workflow_run included).
+      scope_event: ${{ steps.pr.outputs.scope_event }}
+      # What every later job checks out: the pull request's merge commit sha, pinned
+      # by the resolve step; empty (the event's own sha) otherwise.
+      checkout_ref: ${{ steps.pr.outputs.checkout_ref }}
+      # Why nothing was admitted (empty on an admitted pull request or any other
+      # event); the verdict job publishes it with a skipped `e2e verdict` on the head.
+      skip: ${{ steps.pr.outputs.skip }}
+      # The sha that checkout resolved to: the production frontend artifact and the
+      # footprint ledger key on it, never on this run's github.sha.
+      sha: ${{ steps.sha.outputs.sha }}
+      # 'true' when the pull request carries ci:trunk-repair; the gate's runner
+      # reserve reads it, since a workflow_run payload carries no labels.
+      repair: ${{ steps.pr.outputs.repair }}
+      pr: ${{ steps.pr.outputs.pr }}
       # The root Playwright spec selection (TEST-BUDGET round 3,
       # scripts/ci_e2e_selection.py): `full` or `affected`, and the selected spec
       # paths. Empty on any event but an in-scope pull request, which the gate's
@@ -222,17 +271,20 @@ jobs:
             fi
           fi
 
+      # First checkout: the run's own sha (main's tip on a workflow_run, the event's
+      # sha otherwise), which holds scripts/ci_e2e_admission.py; the admitted revision
+      # is not known until that script has run.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          # 0, not 2: every persistent-runner checkout fetches full history
-          # ((private path)),
-          # which is a superset of the depth-2 this job used to need to diff
-          # the pull_request test-merge commit against its first (base) parent.
+          # 0: every persistent-runner checkout fetches full history
+          # ((private path)).
           fetch-depth: 0
-          # false on purpose: the next step cleans all but the dependency trees.
+          # false on purpose: the debris step below cleans all but the dependency trees.
           clean: false
 
+      # Right after the first checkout, before any script runs from this persistent
+      # workspace; the second checkout below cleans again for the ref it switches to.
       - name: Remove untracked build debris, keeping dependency dirs
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
@@ -244,8 +296,53 @@ jobs:
         timeout-minutes: 1
         run: scripts/ci_runner_preflight.sh python3
 
+      # Admission (ADR-NEW-e2e-after-ci-gate, scripts/ci_e2e_admission.py resolve). A
+      # workflow_run payload names the pull request (same-repo heads) and the head CI
+      # ran; the `ci gate` check-run at that head is the admission test, and the pull
+      # request's CURRENT head must still be that head (a newer push remakes
+      # refs/pull/<n>/merge, and its own CI completion triggers its own E2E). An
+      # admitted head is pinned to its merge commit sha, which every later checkout
+      # uses. Anything else writes a `skip` reason the decide step turns into
+      # in_scope=false and the verdict job publishes on the head.
+      - name: Resolve the pull request behind this run, its ci gate and its merge commit
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_BASE: ${{ github.event.workflow_run.pull_requests[0].base.ref }}
+        run: python3 -m scripts.ci_e2e_admission resolve
+
+      # Second checkout, admitted pull requests only: the pinned merge commit. A bare
+      # sha is fetched by itself when the full-history fetch did not carry it
+      # (GitHub serves an open pull request's merge commit by sha; verified Wed 4 Nov
+      # 2026 against #8547), and a merge commit a newer push has retired fails here,
+      # loudly, rather than testing another revision.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: ${{ steps.pr.outputs.checkout_ref != '' }}
+        with:
+          ref: ${{ steps.pr.outputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Record the checked-out sha for the later jobs
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Decide whether this change set is in e2e.yml's scope
         id: decide
+        env:
+          # The resolved event and skip reason above (scripts/ci_required_gate.py).
+          MDT_CI_SCOPE_EVENT_NAME: ${{ steps.pr.outputs.scope_event }}
+          MDT_CI_SCOPE_SKIP: ${{ steps.pr.outputs.skip }}
         run: python3 -m scripts.ci_required_gate scope --workflow e2e.yml
 
       # The root Playwright footprint map (TEST-BUDGET round 3): built from every
@@ -254,7 +351,7 @@ jobs:
       # a fetch that cannot answer writes nothing and the selection below reads
       # the committed seed instead, never a smaller run.
       - name: Resolve the published e2e footprint map (ci-data-e2e)
-        if: github.event_name == 'pull_request' && steps.decide.outputs.in_scope == 'true'
+        if: steps.pr.outputs.scope_event == 'pull_request' && steps.decide.outputs.in_scope == 'true'
         timeout-minutes: 1
         continue-on-error: true
         env:
@@ -272,7 +369,7 @@ jobs:
       # Repo variable CI_E2E_SPEC_SELECTION=full is the kill switch.
       - name: Select the root Playwright specs this change set affects
         id: e2e-select
-        if: github.event_name == 'pull_request' && steps.decide.outputs.in_scope == 'true'
+        if: steps.pr.outputs.scope_event == 'pull_request' && steps.decide.outputs.in_scope == 'true'
         timeout-minutes: 2
         env:
           CI_E2E_SPEC_SELECTION: ${{ vars.CI_E2E_SPEC_SELECTION }}
@@ -303,7 +400,7 @@ jobs:
   # vars.TRUNK_QUARANTINE_CI is the kill switch.
   trunk-quarantine-list:
     name: Trunk quarantined tests (list)
-    if: ${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: ${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request' && github.event_name != 'workflow_run' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX) }}
     timeout-minutes: 3
     outputs:
@@ -606,7 +703,7 @@ jobs:
       # Saved only from main (push or dispatch): a pull request's cache is
       # scoped to that PR, so saving there would buy nothing.
       - name: Cache the live list for runs that cannot fetch it
-        if: steps.resolve.outputs.source == 'live' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.resolve.outputs.source == 'live' && github.event_name != 'pull_request' && github.event_name != 'workflow_run' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .trunk-quarantine/list.json
@@ -645,12 +742,13 @@ jobs:
     # otherwise, and the runner user has NOPASSWD sudo.
     #
     # Trunk-repair reserve (ICE row INC-5, ADR-NEW-e2e-trunk-repair-runner-reserve):
-    # a pull_request labeled `ci:trunk-repair` prefers vars.CI_RUNS_ON_E2E_MAIN_FIX,
+    # a pull request labeled `ci:trunk-repair` prefers vars.CI_RUNS_ON_E2E_MAIN_FIX,
     # mirroring ADR-0041's reserve on ci.yml's `test` job. On Wed 7 and Thu 8 Oct
     # 2026 main stopped merging twice for 6-7 h because the repair PR's e2e queued
-    # behind the backlog on the 4 e2e runners. The event_name check comes first so
-    # a push, schedule or dispatch run never reads github.event.pull_request; an
-    # unset variable or any other event falls through to today's chain unchanged.
+    # behind the backlog on the 4 e2e runners. Since Wed 4 Nov 2026 the label is
+    # read by the scope job (a workflow_run payload has none) and published as
+    # `needs.scope.outputs.repair`; a push, schedule or dispatch run publishes
+    # false, so an unset variable or any other event falls through unchanged.
     # Pinned by tests/scripts/test_ci_e2e_main_fix_runner_reserve.py.
     #
     # Trunk lane (ADR-NEW-main-e2e-gets-a-trunk-runner-lane, E2ELANE-01), the
@@ -673,7 +771,7 @@ jobs:
     # steps below (`vars.CI_RUNS_ON_E2E == ''`) still mean exactly "hosted runner".
     # Unset, the chain is exactly the two disjuncts above and the pool.
     # Pinned by (private path).
-    runs-on: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && vars.CI_RUNS_ON_E2E_TRUNK || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) && vars.CI_RUNS_ON_E2E_MAIN_FIX || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE || vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && vars.CI_RUNS_ON_E2E_TRUNK || (needs.scope.outputs.repair == 'true') && vars.CI_RUNS_ON_E2E_MAIN_FIX || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE || vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     # 30 -> 40 min (Fri 9 Oct 2026): the gate now runs right at 30 minutes on a
     # clean pass. PR #6123's run at 9d70c0f6a passed every suite (288 passed,
     # 0 failed) on agbox3-7 and was killed one second after its last suite
@@ -788,6 +886,8 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # The pull request's pinned merge commit on a workflow_run; empty is the event's own sha.
+          ref: ${{ needs.scope.outputs.checkout_ref }}
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
           persist-credentials: false
@@ -902,8 +1002,10 @@ jobs:
         # with `uv run --no-sync`, which requires an already-populated .venv;
         # against an unpopulated one it resolves somewhere else entirely and
         # reports success while binding the wrong thing. Populating the venv
-        # here is what makes that command mean what it says.
-        run: uv sync --locked --extra analysis
+        # here is what makes that command mean what it says. The spotify extra
+        # lets the root suite drive the real Connect Spotify route
+        # (spotify-connect-popup.spec.ts, SPOT-01).
+        run: uv sync --locked --extra analysis --extra spotify
 
       - name: Prove the venv is populated and is this checkout's
         # Fail fast and loudly rather than letting the engine boot fail 180s
@@ -1065,7 +1167,7 @@ jobs:
         id: frontend-artifact
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ needs.scope.outputs.sha }}"
 
       # -- TIER 1a: the WebKit artifact gate ----------------------------------
       - name: WebKit artifact gate (production build, named subset)
@@ -1713,6 +1815,8 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # The pull request's pinned merge commit on a workflow_run; empty is the event's own sha.
+          ref: ${{ needs.scope.outputs.checkout_ref }}
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
           persist-credentials: false
@@ -1825,7 +1929,7 @@ jobs:
         id: frontend-artifact
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ github.sha }}"
+        run: scripts/ci_frontend_build_acquire_from_ci.sh "${{ needs.scope.outputs.sha }}"
 
       - name: Electron shell gate (production build, named subset)
         if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
@@ -2364,7 +2468,10 @@ jobs:
     # every run because it needs `always()`; concludes SUCCESS only when the
     # scope job said out of scope and the gate was skipped, or said in scope and
     # the gate succeeded (scripts/ci_required_gate.py). Never SKIPPED, since how
-    # a queue reads `skipped` is undocumented. If the gate is ever skipped on
+    # a queue reads `skipped` is undocumented (the published copy on a pull request
+    # head, below, IS `skipped` when the scope job admitted nothing: the reader of
+    # that copy is ci-wait, which treats any non-success as red, and the queue that
+    # needed never-skipped left with #8500). If the gate is ever skipped on
     # ordinary PR heads by design (PR #4175's queue-draft-only gate), that
     # condition belongs in the scope decision, not in the gate's own `if`:
     # (private path) pins that `if` to the scope
@@ -2380,6 +2487,12 @@ jobs:
     if: ${{ always() }}
     runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
+    # The one job that writes: it publishes `e2e verdict` on the pull request head
+    # (last step), because GitHub attaches this run's own check-runs to main's tip on
+    # a workflow_run. Everything else keeps the read-only token at the top.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - name: Reclaim workspace ownership before checkout
         run: |
@@ -2431,6 +2544,8 @@ jobs:
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # The pull request's pinned merge commit on a workflow_run; empty is the event's own sha.
+          ref: ${{ needs.scope.outputs.checkout_ref }}
           persist-credentials: false
           # 0: every persistent-runner checkout fetches full history
           # ((private path)).
@@ -2450,9 +2565,33 @@ jobs:
         run: scripts/ci_runner_preflight.sh python3
 
       - name: Aggregate the gated jobs into one verdict
+        id: verdict
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 -m scripts.ci_required_gate verdict
+
+      # On a workflow_run the check-run above lands on main's tip (the event's own
+      # sha), so the pull request head gets its `e2e verdict` from here: success or
+      # failure as aggregated, `skipped` with the scope job's reason when nothing was
+      # admitted (gate not green, head moved, not mergeable), failure when the scope
+      # job itself failed. Runs after a red aggregate (`!cancelled()`), never after a
+      # cancelled one: a superseded run publishes nothing and the newer run does.
+      # scripts/ci_e2e_admission.py publish; tests/scripts/test_ci_e2e_admission.py.
+      - name: Publish the verdict on the pull request head
+        if: ${{ !cancelled() && github.event_name == 'workflow_run' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          SCOPE_EVENT: ${{ needs.scope.outputs.scope_event }}
+          SKIP: ${{ needs.scope.outputs.skip }}
+          IN_SCOPE: ${{ needs.scope.outputs.in_scope }}
+          VERDICT_OUTCOME: ${{ steps.verdict.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: python3 -m scripts.ci_e2e_admission publish
 
   # ---------------------------------------------------------------------------
   # Root Playwright JUnit to Trunk Flaky Tests (ADR-NEW-trunk-flaky-quarantine-on).

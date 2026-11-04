@@ -6,7 +6,7 @@ as well at half that (a kick-snare pattern at 174 is a steady pulse at 87). Our
 toward the band's geometric center (112 BPM) and published 87 for a track every
 DJ calls 174. Round 4 measured the damage: all 6 fixed-tempo rekordbox fixtures
 at 163 to 175 BPM that the model tracked at the fast level were published at
-half (`ops/beatbench/round-4/README.md`, "The octave experiment is not served").
+half (`(private path)`, "The octave experiment is not served").
 
 Two separate mechanisms fix two separate failures:
 
@@ -166,10 +166,7 @@ def fold_half_time(beats: Sequence[float]) -> FoldResult:
     for a, b in itertools.pairwise(ts):
         gap = b - a
         multiple = round(gap / period)
-        if (
-            2 <= multiple <= FOLD_MAX_MULTIPLE
-            and abs(gap / (multiple * period) - 1.0) <= FOLD_TOLERANCE
-        ):
+        if 2 <= multiple <= FOLD_MAX_MULTIPLE and abs(gap / (multiple * period) - 1.0) <= FOLD_TOLERANCE:
             out.extend(a + gap * j / multiple for j in range(1, multiple))
             filled += multiple - 1
         out.append(b)

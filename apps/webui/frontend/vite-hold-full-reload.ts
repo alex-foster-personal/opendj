@@ -1,19 +1,40 @@
 import type { HMRPayload, Plugin, ViteDevServer } from 'vite';
 
+/** The single method every full-reload path in Vite broadcasts through. */
+interface HotChannel {
+	send: (payload: HMRPayload) => void;
+}
+
 /**
  * Holds a Vite dev full reload behind REFRESH-01's countdown instead of
  * letting it land immediately.
  *
- * `reload-countdown.ts`'s module docstring has the full trace: in Vite
- * 5.4.21, `client.mjs`'s `case "full-reload"` branch calls
- * `notifyListeners("vite:beforeFullReload", ...)` and then `pageReload()`
- * unconditionally on the next line, ~50ms later - nothing a browser-side
- * listener does can stop it, and `location.reload` cannot be patched either
- * (it is LegacyUnforgeable). So the hold has to happen before the message
- * ever reaches the client: this plugin wraps `server.hot.send` (the one
- * broadcaster every full-reload path in Vite core goes through - a changed
- * tsconfig, a client-dir file, an HMR propagation failure) and rewrites a
- * `full-reload` payload into a custom event instead of forwarding it.
+ * `reload-countdown.ts`'s module docstring has the full trace: the client's
+ * `case "full-reload"` branch calls `notifyListeners("vite:beforeFullReload",
+ * ...)` and then `pageReload()` unconditionally on the next line, ~50ms later -
+ * nothing a browser-side listener does can stop it, and `location.reload`
+ * cannot be patched either (it is LegacyUnforgeable). So the hold has to happen
+ * before the message ever reaches the client: this plugin rewrites an outgoing
+ * `full-reload` payload into a custom event instead of forwarding it, so the
+ * Vite client never sees a `full-reload` message at all and its unconditional
+ * `pageReload()` never runs.
+ *
+ * ## Which object to wrap (measured against vite 6.4.3 this run)
+ *
+ * Wrapping `server.hot.send` alone is dead code on the installed Vite: every
+ * `DevEnvironment` is given its OWN hot channel in its constructor
+ * (`normalizeHotChannel(...)` / the raw WebSocket transport), and `server.hot`
+ * is a SEPARATE normalised wrapper around the same transport. Measured on the
+ * real dev server started from `tests/e2e/vite.full-reload-gate.config.ts`:
+ * `server.hot === server.environments.client.hot` is `false`, and the plugin's
+ * patched method reported the rewrite while a real `full-reload` still reached
+ * the page (the gate spec observed the overlay never appearing and the page
+ * reloading at once). The HMR propagation calls `environment.hot.send(...)`,
+ * so the channel that actually broadcasts has to be the one patched. Both are
+ * patched here - `server.hot` for any caller still routing through the
+ * compatibility wrapper, every environment's own channel for Vite itself -
+ * with a WeakSet so a channel shared by two owners is wrapped once and the
+ * rewrite cannot recurse.
  *
  * ## The catch-vs-app-code race (r3918992964)
  *
@@ -44,14 +65,27 @@ export function holdFullReloadPlugin(): Plugin {
 	return {
 		name: 'mdt-hold-full-reload',
 		configureServer(server: ViteDevServer) {
-			const send = server.hot.send.bind(server.hot);
-			server.hot.send = ((payload: HMRPayload) => {
-				if (payload.type === 'full-reload') {
-					send({ type: 'custom', event: 'mdt:full-reload', data: { path: payload.path } });
-					return;
-				}
-				send(payload);
-			}) as typeof server.hot.send;
+			const patched = new WeakSet<object>();
+
+			const hold = (channel: HotChannel): void => {
+				if (patched.has(channel)) return;
+				patched.add(channel);
+				const forward = channel.send.bind(channel);
+				channel.send = ((payload: HMRPayload) => {
+					if (payload.type === 'full-reload') {
+						forward({
+							type: 'custom',
+							event: 'mdt:full-reload',
+							data: { path: payload.path }
+						});
+						return;
+					}
+					forward(payload);
+				}) as HotChannel['send'];
+			};
+
+			hold(server.hot);
+			for (const environment of Object.values(server.environments)) hold(environment.hot);
 		}
 	};
 }

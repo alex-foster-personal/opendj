@@ -21,9 +21,7 @@ from typing import Literal
 VolumeKind = Literal["rekordbox", "djay", "music", "unknown"]
 VolumeRole = Literal["usb_stick", "mounted_drive", "disk_image", "other"]
 
-_AUDIO_EXTS = frozenset(
-    {".mp3", ".m4a", ".flac", ".wav", ".aiff", ".aif", ".aac", ".ogg", ".alac"}
-)
+_AUDIO_EXTS = frozenset({".mp3", ".m4a", ".flac", ".wav", ".aiff", ".aif", ".aac", ".ogg", ".alac"})
 
 
 def classify_mount(root: Path, *, root_names: frozenset[str] | None = None) -> VolumeKind:

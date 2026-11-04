@@ -8,8 +8,9 @@ import SpotifySourcePanelView from './SpotifySourcePanelView.svelte';
 /**
  * The Spotify source: imported Spotify playlists (pinned first, then
  * recent, with a filter) above the selected playlist's buy list of tracks
- * not in the library. The container reads pinned and recent ids from prefs
- * and owns the pin toggle. Titles, artists and links are invented.
+ * not in the library, plus (SPOT-6555) every playlist on the signed-in account
+ * and the side player controls. The container reads prefs, talks to the engine
+ * and the shell, and owns the pin toggle. Titles, artists and links are invented.
  */
 type Props = ComponentProps<typeof SpotifySourcePanelView>;
 type Playlist = Props['playlists'][number];
@@ -52,6 +53,29 @@ const playlists = [
 	playlist('sp-3', 'Festival Warmup', 54)
 ];
 
+// An account playlist as the engine lists it; the player URL is built from the id.
+const accountPlaylist = (spotify_id: string, name: string, track_count: number) => ({
+	spotify_id,
+	name,
+	owner_id: 'invented-dj',
+	owner_name: null,
+	owned: true,
+	collaborative: false,
+	public: null,
+	track_count,
+	image_url: null,
+	open_url: `https://open.spotify.com/playlist/${spotify_id}`,
+	snapshot_id: null
+});
+
+const signedIn = {
+	connected: true as const,
+	user_id: 'invented-dj',
+	display_name: 'Invented DJ',
+	total_reported: 2,
+	playlists: [accountPlaylist('0InventedPlaylistA', 'Sunrise Set Ideas', 21), accountPlaylist('0InventedPlaylistB', 'Warehouse Openers', 40)]
+};
+
 const meta = {
 	title: 'Components/Browser/SpotifySourcePanelView',
 	component: SpotifySourcePanelView,
@@ -69,7 +93,24 @@ const meta = {
 		purchaseSources: ['beatport', 'bandcamp', 'qobuz', 'apple_music', 'discogs'],
 		oncollection: fn(),
 		onselect: fn(),
-		ontogglepin: fn()
+		ontogglepin: fn(),
+		account: null,
+		accountLoading: false,
+		accountError: null,
+		connectNote: null,
+		playerNote: null,
+		connectHere: true,
+		nativeShell: false,
+		sidePlayerDocked: false,
+		shrinkMain: true,
+		clientIdSaving: false,
+		onrefresh: fn(),
+		onconnect: fn(),
+		onplay: fn(),
+		onimportlogins: fn(),
+		onshrinkchange: fn(),
+		onsaveclientid: fn(async () => true),
+		onopenexternal: fn()
 	},
 	parameters: { layout: 'fullscreen' }
 } satisfies Meta<typeof SpotifySourcePanelView>;
@@ -108,3 +149,19 @@ export const NoPlaylists: Story = { args: { playlists: [] } };
 
 /** The playlist load failed. */
 export const PlaylistsError: Story = { args: { playlists: [], playlistsError: 'spotify_not_connected' } };
+
+/** SPOT-6555: a signed-in account lists its own playlists beside the imported ones. */
+export const AccountSignedIn: Story = { args: { account: signedIn, sidePlayerDocked: true } };
+
+/** SPOT-6555: the account's rows stay listed while the imported list is still loading. */
+export const AccountWhileImportsLoad: Story = { args: { account: signedIn, playlistsLoading: true } };
+
+/** SPOT-6555: signed out, the panel says why and offers Connect Spotify. */
+export const AccountSignedOut: Story = {
+	args: { account: { connected: false, reason: 'not_signed_in', message: 'Sign in to Spotify.', playlists: [] } }
+};
+
+/** SPOT-6555: a fresh install asks for the user's own Spotify app Client ID first. */
+export const AccountNoClientId: Story = {
+	args: { account: { connected: false, reason: 'no_client_id', message: 'No Spotify Client ID.', playlists: [] } }
+};

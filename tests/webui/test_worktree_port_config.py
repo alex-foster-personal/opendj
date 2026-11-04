@@ -23,6 +23,7 @@ from apps.webui.port_config import (
     POOL_SIZE,
     PORT_LANE_ENV,
     PORT_LANE_STRIDE,
+    PRODUCT_FIXED_PORTS,
     PROJECT_ROOT,
     RESERVED_FIXED_PORTS,
     PortConfigError,
@@ -979,6 +980,61 @@ def test_claim_ports_reallocates_a_pre_existing_now_reserved_env_pair(
 
     assert claimed.backend not in RESERVED_FIXED_PORTS
     assert claimed.frontend not in RESERVED_FIXED_PORTS
+
+
+def test_the_spotify_redirect_port_is_a_reserved_product_port() -> None:
+    """if the port the real Spotify sign-in binds is not reserved then broken --
+    a worktree configured onto it would leave every Connect failing with
+    SPOTIFY_REDIRECT_PORT_BUSY"""
+    from urllib.parse import urlsplit
+
+    from apps.spotify.client import DEFAULT_REDIRECT_URI
+
+    redirect_port = urlsplit(DEFAULT_REDIRECT_URI).port
+    assert redirect_port is not None
+    assert redirect_port in PRODUCT_FIXED_PORTS
+
+
+def test_claim_ports_refuses_a_requested_product_port(tmp_path: Path) -> None:
+    """if an explicit request for the Spotify redirect port is honored then
+    broken: the lane windows never reach 8888, so only this check stops it"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    product_port = min(PRODUCT_FIXED_PORTS)
+    other_port = _free_port(exclude=(product_port,))
+
+    with pytest.raises(PortConfigError, match="product listener"):
+        claim_ports(
+            repo_root=repo_root,
+            common_dir=common_dir,
+            environ={},
+            requested=WebuiPorts(backend=product_port, frontend=other_port),
+        )
+
+
+def test_claim_ports_reallocates_an_env_pair_on_a_product_port(tmp_path: Path) -> None:
+    """if a checkout's .env naming the Spotify redirect port is kept then
+    broken; CONTROL: an ordinary free .env pair is kept as it is"""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    product_port = min(PRODUCT_FIXED_PORTS)
+    other_port = _free_port(exclude=(product_port,))
+    _write_env(repo_root, product_port, other_port)
+
+    claimed = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert product_port not in (claimed.backend, claimed.frontend)
+
+    control_root = tmp_path / "control"
+    control_root.mkdir()
+    kept_backend, kept_frontend = _free_ports(2, exclude=(product_port, *RESERVED_FIXED_PORTS))
+    _write_env(control_root, kept_backend, kept_frontend)
+    kept = claim_ports(repo_root=control_root, common_dir=common_dir, environ={})
+    assert kept == WebuiPorts(backend=kept_backend, frontend=kept_frontend)
 
 
 def test_owner_registry_dir_is_the_shared_path_the_reaper_reads() -> None:

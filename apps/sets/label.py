@@ -30,7 +30,7 @@ _KEYMAP: dict[str, str | None] = {
 
 
 def labels_path(session_id: str, *, sets_root: Path | None = None) -> Path:
-    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root = sets_paths.resolve_sets_root(sets_root)
     return sets_paths.session_dir(session_id, root=root) / "labels.jsonl"
 
 

@@ -6,6 +6,7 @@ place both ``upsert_record`` and the queue runner can call.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -17,9 +18,7 @@ from .record import AnalysisRecord
 from .store import UpsertResult
 
 
-def cascade_if_canonical(
-    conn: sqlite3.Connection, record: AnalysisRecord
-) -> list[CascadeOutcome]:
+def cascade_if_canonical(conn: sqlite3.Connection, record: AnalysisRecord) -> list[CascadeOutcome]:
     """Run the dependency cascade when ``record`` is the canonical row."""
     from .canonical import canonical_pointer
 
@@ -39,9 +38,7 @@ def cascade_if_canonical(
     )
 
 
-def auto_requeue_on_version_bump(
-    conn: sqlite3.Connection, record: AnalysisRecord, *, inserted: bool
-) -> None:
+def auto_requeue_on_version_bump(conn: sqlite3.Connection, record: AnalysisRecord, *, inserted: bool) -> None:
     """Enqueue stale tracks when a NEW row lands at the current producer version."""
     if not inserted:
         return

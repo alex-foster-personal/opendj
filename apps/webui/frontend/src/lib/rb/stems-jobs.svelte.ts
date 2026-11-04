@@ -156,11 +156,20 @@ export function stemsProgressTitle(state: StemsProgress, jobs: readonly Job[] = 
 	return `${parts.join('. ')}. Separation runs on Modal GPUs and costs real money; see JOBS for per-job detail.`;
 }
 
+/** On-device separation. GPU minutes and dollars from the plan do not apply. */
+export function isLocalStemsPlan(plan: StemsPlan): boolean {
+	return plan.executor === 'local' || plan.transport === 'local' || plan.tier === 'LOCAL';
+}
+
 /** Human summary of a plan, for the install prompt. Every number named. */
 export function stemsPlanSummary(plan: StemsPlan): string {
+	const counts = `${plan.pending} of ${plan.total} tracks still need stems (${plan.ready} already done, ${plan.unavailable} have no audio on this machine).`;
+	// Local work is free and the GPU clock is a farm number. Quoting "1 min"
+	// and "under $0.01" on this machine is the lie the prompt used to tell.
+	if (isLocalStemsPlan(plan)) return `${counts} Runs on this machine.`;
 	const minutes = Math.max(1, Math.round(plan.estimate_seconds / 60));
 	const cost = plan.estimate_usd < 0.01 ? 'under $0.01' : `about $${plan.estimate_usd.toFixed(2)}`;
-	return `${plan.pending} of ${plan.total} tracks still need stems (${plan.ready} already done, ${plan.unavailable} have no audio on this machine). Roughly ${minutes} min on ${plan.tier_name} GPUs, ${cost}.`;
+	return `${counts} Roughly ${minutes} min on ${plan.tier_name} GPUs, ${cost}.`;
 }
 
 // ----- HTTP ---------------------------------------------------------------

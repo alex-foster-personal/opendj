@@ -5,11 +5,6 @@ caught by ``tests/webui/test_route_table_without_scripts.py``; this gate catches
 the lazy class: ``from scripts...`` inside a function, which passes route-table
 boot and fails only when the endpoint is exercised.
 
-Dev-only trees not shipped in the engine payload are allowlisted:
-
-- ``apps/analysis_bench/``
-- ``apps/stems/relay/``
-
     python -m scripts.apps_scripts_import_audit
     python -m scripts.apps_scripts_import_audit --root /path/to/checkout
 """
@@ -21,15 +16,12 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-# Narrowed in round 12 of the SMARTEST-CI counter from two packages to one file:
-# the bench CLI now runs the key-bundle builder as the process the lane
-# registry names, and the relay's Modal backend moved up to
-# scripts/stems_relay_app.py. What remains is controls.py
-# reading the beatgrid report from scripts/beatbench, which imports
-# apps.analysis_bench back at 19 sites; that pair is one unit split across two
-# trees and is not resolved by a move. A new entry here is a new app-to-scripts
-# edge.
-ALLOWLIST_PREFIXES: tuple[str, ...] = ("apps/analysis_bench/controls.py",)
+# Empty. Round 12 narrowed this from two packages to controls.py (the bench
+# CLI and the relay's Modal backend had already moved). That last entry is
+# gone: controls.py reads fixtures from
+# apps.analysis_bench.scorers.beatgrid_report instead of
+# scripts.beatbench.report. A new entry here is a new app-to-scripts edge.
+ALLOWLIST_PREFIXES: tuple[str, ...] = ()
 
 __all__ = [
     "ALLOWLIST_PREFIXES",

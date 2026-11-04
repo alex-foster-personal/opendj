@@ -8,6 +8,7 @@ ANY row has drifted the whole batch is rejected (409, nothing applied).
 Only once every row clears the pre-check are the writes issued, one per
 row through the existing StateBackend.update_track chokepoint.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -48,9 +49,7 @@ class BulkEditIn(BaseModel):
             and self.tags_add is None
             and self.tags_remove is None
         ):
-            raise ValueError(
-                "at least one of rating/notes/genre/comments/tags_add/tags_remove is required"
-            )
+            raise ValueError("at least one of rating/notes/genre/comments/tags_add/tags_remove is required")
         if self.rating is not None and not (0 <= self.rating <= 5):
             raise ValueError("rating must be between 0 and 5")
         return self
@@ -92,10 +91,7 @@ def bulk_edit(
     if body.tags_remove is not None:
         patch_dict["tags_remove"] = body.tags_remove
 
-    updates = [
-        TrackUpdate(stable_id, patch_dict, body.expected_etags[stable_id])
-        for stable_id in body.stable_ids
-    ]
+    updates = [TrackUpdate(stable_id, patch_dict, body.expected_etags[stable_id]) for stable_id in body.stable_ids]
     try:
         tracks = backend.update_tracks(updates, source="webui")
     except BatchConflictError as exc:

@@ -50,7 +50,7 @@
 	import { filterForKeyCode, type LibraryFilterId } from '$lib/rb/library-filter-labels';
 	import { libraryIndexIsCurrent, loadLibraryIndex, onLibraryIndexInvalidated, peekLibraryIndex } from '$lib/rb/library-index';
 	import { createPickLoader, deckLoadMark, loadCommitted, settleForLoad, waitDeckIdle, type LoadGuard, type SettleMeta } from '$lib/rb/cmdk-load';
-	import { compatibleKeyChecked, computeNextOnlyRef } from '$lib/rb/next-only-filter';
+	import { bpmConfidenceIn, compatibleKeyChecked, computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import CmdkDeckRings from './cmdk/CmdkDeckRings.svelte';
 	import CmdkFilterRow from './cmdk/CmdkFilterRow.svelte';
 	import CmdkPreviewStrip from './cmdk/CmdkPreviewStrip.svelte';
@@ -211,6 +211,8 @@
 				stable_id: decks[d].stable_id,
 				key: decks[d].key,
 				bpm: decks[d].bpm,
+				pitch: decks[d].pitch,
+				bpm_confidence: bpmConfidenceIn(decks[d].stable_id, collection),
 				key_shift_semitones: decks[d].key_shift_semitones
 			})),
 			compatibleKeyChecked(uiPrefs.compatible_filter)

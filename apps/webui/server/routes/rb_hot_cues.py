@@ -6,7 +6,8 @@ not. A track whose cues were never copied in falls back to its rekordbox cues
 for reads, and its first edit seeds the own set from them. Nothing here writes
 to rekordbox; write-back is the separate write-back-rekordbox-djay node.
 
-Contract:
+The letter API stays A-H; ``djmdCue.Kind`` integers for slots D-H are unproven
+until issue #4069's rekordbox-UI experiment (see ``cue_kind.KIND_BY_SLOT``).
 
   * ``GET    /api/v1/tracks/{stable_id}/hot-cues`` -> eight slot revisions
   * ``PUT    /api/v1/tracks/{stable_id}/hot-cues/{slot}`` -> mutation + reversal token

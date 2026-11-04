@@ -23,8 +23,10 @@
  *   could not see that await, which sat before it.
  * - if BrowserPanel stops passing playlistsLoading to SpotifySourcePanel then
  *   the sidebar can never leave its loading state
- * - if SpotifySourcePanel stops gating its rows behind playlistsLoading then
- *   the flag no longer decides whether the sidebar is usable
+ * - if SpotifySourcePanel stops branching on playlistsLoading then the flag no
+ *   longer decides when the imported rows join the list (the signed-in
+ *   account's own rows render in that branch too, so a slow state.db never
+ *   hides them; spotify-source-panel.test.mjs pins that)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -107,7 +109,7 @@ test('the readiness flag reaches the sidebar and gates whether it renders rows',
 
 	const guard = sidebar.indexOf('{#if playlistsLoading}');
 	assert.ok(guard >= 0, 'SpotifySourcePanel must branch on playlistsLoading');
-	const rows = sidebar.indexOf('{#each visiblePlaylists as playlist', guard);
+	const rows = sidebar.indexOf('{#each visibleRows as row', guard);
 	assert.ok(rows > guard, 'the playlist rows must sit in the ready branch after playlistsLoading clears');
 	assert.equal(
 		sidebar.slice(guard, rows).includes('{/if}'),

@@ -87,9 +87,7 @@ def plan_policies(
     "/policies/apply",
     response_model=PolicyOutcomeOut,
     response_description="Gated; written is true only when dry_run is false",
-    responses=policy_write_responses(
-        "MACHINE_NOT_FOUND", "PLAYLIST_NOT_FOUND", "POLICY_NOT_FOUND", "PIN_NOT_FOUND"
-    ),
+    responses=policy_write_responses("MACHINE_NOT_FOUND", "PLAYLIST_NOT_FOUND", "POLICY_NOT_FOUND", "PIN_NOT_FOUND"),
 )
 def apply_policies(
     body: PolicyApplyIn,

@@ -244,6 +244,22 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 	);
 });
 
+test('_refreshLibraryRowsOnce logs library-refresh failures unless the error is a transient abort', () => {
+	const source = readFileSync(BROWSER_PANEL, 'utf8');
+	const refreshFn = source.match(
+		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{[\s\S]*?\n\t\}/
+	)?.[0];
+	assert.ok(refreshFn, '_refreshLibraryRowsOnce body');
+	assert.match(
+		refreshFn,
+		/if \(!isTransientNetworkError\(String\(exc\)\)\) \{[\s\S]*\[library-refresh\] track count refresh failed:/
+	);
+	assert.match(
+		refreshFn,
+		/if \(!isTransientNetworkError\(String\(exc\)\)\) \{[\s\S]*\[library-refresh\] pane \$\{requestedPlaylistId\} refresh failed:/
+	);
+});
+
 test('the deferred refresh drains on a stop and on a library interaction', () => {
 	const source = readFileSync(BROWSER_PANEL, 'utf8');
 

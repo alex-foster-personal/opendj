@@ -6,6 +6,9 @@
 
 import { ApiError, api, unwrap } from '$lib/api/client';
 
+/** Re-exported for spotify-account-api.ts, so the Spotify modules add one importer of the client, not two. */
+export { api, unwrap };
+
 export const SPOTIFY_PURCHASE_SOURCES = [
 	'beatport',
 	'bandcamp',

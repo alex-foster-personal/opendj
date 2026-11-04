@@ -48,6 +48,7 @@ than silently wrong.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -80,9 +81,7 @@ def _split_envelope_file(raw: bytes, path: Path) -> tuple[dict[str, Any], bytes]
 
 def _parse_envelope_header(header: dict[str, Any], path: Path) -> int:
     if header.get("schema") != ENVELOPE_SCHEMA:
-        raise ValueError(
-            f"{path}: schema {header.get('schema')} != {ENVELOPE_SCHEMA}"
-        )
+        raise ValueError(f"{path}: schema {header.get('schema')} != {ENVELOPE_SCHEMA}")
     if header.get("dtype") != ENVELOPE_DTYPE:
         raise ValueError(f"{path}: dtype {header.get('dtype')!r} unsupported")
     return int(header["frames"])
@@ -128,8 +127,7 @@ def write_envelope(
     for name, blob in (("vocals_rms", vocals_rms_bytes), ("mix_rms", mix_rms_bytes)):
         if len(blob) != expected:
             raise ValueError(
-                f"{name} for {stable_id} is {len(blob)} bytes, expected "
-                f"{expected} for {frames} float16 frames"
+                f"{name} for {stable_id} is {len(blob)} bytes, expected {expected} for {frames} float16 frames"
             )
     header = {
         "schema": ENVELOPE_SCHEMA,
@@ -143,18 +141,13 @@ def write_envelope(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(
-        json.dumps(header, separators=(",", ":")).encode("utf-8")
-        + b"\n"
-        + vocals_rms_bytes
-        + mix_rms_bytes
+        json.dumps(header, separators=(",", ":")).encode("utf-8") + b"\n" + vocals_rms_bytes + mix_rms_bytes
     )
     tmp.replace(path)
     return path
 
 
-def read_envelope(
-    path: Path, expect_signature: dict[str, int] | None = None
-) -> Envelope | None:
+def read_envelope(path: Path, expect_signature: dict[str, int] | None = None) -> Envelope | None:
     """Read one sidecar, or None if it was never written.
 
     None means "entry predates envelope persistence", which is the normal state
@@ -170,8 +163,7 @@ def read_envelope(
     expected_body = _envelope_body_byte_length(frames)
     if len(body) != expected_body:
         raise ValueError(
-            f"{path}: body is {len(body)} bytes, expected {expected_body} for "
-            f"{frames} frames of two float16 arrays"
+            f"{path}: body is {len(body)} bytes, expected {expected_body} for {frames} frames of two float16 arrays"
         )
     if expect_signature is not None and header["audio_signature"] != expect_signature:
         raise ValueError(

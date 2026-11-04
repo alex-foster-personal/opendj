@@ -153,7 +153,10 @@ def probe_duration_s(path: Path) -> float | None:
     """
     report = subprocess.run(
         [resolve_ffmpeg(), "-hide_banner", "-nostdin", "-i", str(path)],
-        capture_output=True, text=True, errors="replace", check=False,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=False,
         timeout=PROBE_TIMEOUT_S,
     ).stderr
     match = _DURATION_LINE.search(report)

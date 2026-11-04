@@ -76,6 +76,19 @@ export const MENU_COMMANDS = {
 	'track.library_job': http('POST', '/api/v1/library-jobs/enqueue'),
 	'track.stems.generate': http('POST', '/api/v1/stems/generate'),
 	'track.remove_from_library': http('POST', '/api/v1/tracks/{stable_id}:remove'),
+	// OFFLOAD (spec e8da14b8): upload, verify, delete local; restore 24 h or for good.
+	'track.offload': http('POST', '/api/v1/offload/tracks', 'opendj offload tracks <stable_id>...'),
+	'track.offload_restore': http(
+		'POST',
+		'/api/v1/offload/restore',
+		'opendj offload restore <stable_id>... --for-24h|--permanent'
+	),
+	'playlist.offload': http('POST', '/api/v1/offload/playlists/{playlist_id}', 'opendj offload playlist <playlist_id>'),
+	'playlist.offload_restore': http(
+		'POST',
+		'/api/v1/offload/playlists/{playlist_id}/restore',
+		'opendj offload restore-playlist <playlist_id> --for-24h|--permanent'
+	),
 	// PAIR-10: a loose pair (no snapshot) of exactly two selected rows.
 	'track.pair': http('POST', '/api/v1/pairings'),
 	// Playlists and smartlists.

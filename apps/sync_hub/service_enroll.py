@@ -27,6 +27,7 @@ on the hub, and a user told their token is bad would re-sign-in forever
 against a hub that has no client id. It used to be 501, while the kind was
 reserved but unbuilt; the verifier landed in :mod:`apps.sync_hub.google_id_token`.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -84,10 +85,7 @@ class EnrollErrorResponse(BaseModel):
 ENROLL_RESPONSES: dict[int | str, dict[str, object]] = {
     401: {
         "model": EnrollErrorResponse,
-        "description": (
-            "The credential did not establish an owner. code: "
-            "SYNC_ENROLL_CREDENTIAL."
-        ),
+        "description": ("The credential did not establish an owner. code: SYNC_ENROLL_CREDENTIAL."),
     },
     409: {
         "model": EnrollErrorResponse,
@@ -131,16 +129,13 @@ class EnrollResponse(BaseModel):
     sync_credential: str | None
 
 
-def _grant_is_unspent(
-    conn: sqlite3.Connection, credential: enrollment_credentials.VerifiedCredential
-) -> bool:
+def _grant_is_unspent(conn: sqlite3.Connection, credential: enrollment_credentials.VerifiedCredential) -> bool:
     """True iff ``credential`` is a grant nobody has redeemed yet. Read
     BEFORE redemption, which is what makes "this call spent it" knowable."""
     if not isinstance(credential, enrollment_credentials.GrantCredential):
         return False
     row = conn.execute(
-        f"SELECT redeemed_at FROM {enrollment_credentials.GRANT_TABLE} "
-        f"WHERE grant_token_sha256 = ?",
+        f"SELECT redeemed_at FROM {enrollment_credentials.GRANT_TABLE} WHERE grant_token_sha256 = ?",
         (enrollment_credentials.hash_grant_token(credential.value),),
     ).fetchone()
     return row is not None and row[0] is None
@@ -161,11 +156,7 @@ def _mints_credential(
     Anything else is an idempotent replay and mints nothing, which is what
     keeps "returned exactly once" true.
     """
-    return (
-        result.created
-        or spent_fresh_grant
-        or machine_credentials.minted_at(conn, result.machine_id) is None
-    )
+    return result.created or spent_fresh_grant or machine_credentials.minted_at(conn, result.machine_id) is None
 
 
 def verify_credential(
@@ -199,9 +190,7 @@ def perform_enroll(
     """
     with _enroll_errors_as_http():
         spent_fresh_grant = _grant_is_unspent(conn, credential)
-        owner = enrollment_credentials.resolve_enrollment_identity(
-            conn, credential, machine_id=machine.machine_id
-        )
+        owner = enrollment_credentials.resolve_enrollment_identity(conn, credential, machine_id=machine.machine_id)
         result = enrollment.enroll_machine(
             conn,
             machine=machine,
@@ -252,9 +241,7 @@ def _enroll_errors_as_http() -> Iterator[None]:
             detail={"code": "SYNC_ENROLL_REVOKED", "message": str(exc)},
         ) from exc
     except enrollment.EnrollmentError as exc:
-        raise HTTPException(
-            status_code=409, detail={"code": "SYNC_ENROLL", "message": str(exc)}
-        ) from exc
+        raise HTTPException(status_code=409, detail={"code": "SYNC_ENROLL", "message": str(exc)}) from exc
 
 
 __all__ = ["EnrollCredentialModel", "EnrollResponse", "perform_enroll", "verify_credential"]

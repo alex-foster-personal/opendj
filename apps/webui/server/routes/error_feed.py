@@ -69,12 +69,8 @@ def list_errors(
     default_since, default_until = default_window()
     since_dt = _parse_query_time(since, default_since)
     until_dt = _parse_query_time(until, default_until)
-    client_error_log_dir = getattr(
-        request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR
-    )
-    legacy_dir = getattr(
-        request.app.state, "client_error_legacy_log_dir", DEFAULT_LOG_DIR
-    )
+    client_error_log_dir = getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR)
+    legacy_dir = getattr(request.app.state, "client_error_legacy_log_dir", DEFAULT_LOG_DIR)
     performance_log_dir = getattr(request.app.state, "performance_log_dir", None)
     ui_mirror: dict[str, Any] | None = getattr(request.app.state, "ui_mirror", None)
 

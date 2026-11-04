@@ -64,9 +64,7 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
     )
 
     try:
-        return regenerate_agents_md_if_writable(
-            conn, state_dir, owned_tables=owned_tables, cache_marker=marker
-        )
+        return regenerate_agents_md_if_writable(conn, state_dir, owned_tables=owned_tables, cache_marker=marker)
     except (ExistingSidecarAccessError, SidecarReplacePermissionError) as exc:
         _log.warning(
             "AGENTS.md sidecar access failed (%s); skipping this open",

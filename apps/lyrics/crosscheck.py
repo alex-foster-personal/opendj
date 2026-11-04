@@ -54,7 +54,7 @@ WITNESS_LOCAL_WINDOW_S: float = 5.0
 # line quality, UI tinting via the API) -- never re-declare the pair.
 WITNESS_RED_CLASSES: frozenset[str] = frozenset({"contradict", "lost"})
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def normalize_token(token: str) -> str:
@@ -103,9 +103,7 @@ def crosscheck(
     matcher = SequenceMatcher(a=lyric_norm, b=asr_norm, autojunk=False)
     matched_asr_for_lyric = _matched_asr_for_lyric(matcher, lyric_idx, asr_idx)
 
-    verdicts, deltas = _word_verdicts(
-        lyric_words, lyric_norm_all, aligner_starts_s, asr_words, matched_asr_for_lyric
-    )
+    verdicts, deltas = _word_verdicts(lyric_words, lyric_norm_all, aligner_starts_s, asr_words, matched_asr_for_lyric)
 
     n_matchable = len(lyric_idx)
     n_matched = len(matched_asr_for_lyric)
@@ -120,15 +118,12 @@ def crosscheck(
     )
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _validate_crosscheck_inputs(lyric_words: list[str], aligner_starts_s: list[float]) -> None:
     if len(lyric_words) != len(aligner_starts_s):
-        raise ValueError(
-            f"lyric_words ({len(lyric_words)}) and aligner_starts_s "
-            f"({len(aligner_starts_s)}) must be 1:1"
-        )
+        raise ValueError(f"lyric_words ({len(lyric_words)}) and aligner_starts_s ({len(aligner_starts_s)}) must be 1:1")
     if not lyric_words:
         raise ValueError("no lyric words to cross-check")
 
@@ -144,9 +139,7 @@ def _normalized_stream(tokens: list[str]) -> tuple[list[str], list[int], list[st
     return norm_all, idx, [norm_all[i] for i in idx]
 
 
-def _matched_asr_for_lyric(
-    matcher: SequenceMatcher, lyric_idx: list[int], asr_idx: list[int]
-) -> dict[int, int]:
+def _matched_asr_for_lyric(matcher: SequenceMatcher, lyric_idx: list[int], asr_idx: list[int]) -> dict[int, int]:
     """Diff blocks expanded to a lyric-word-index -> ASR-word-index mapping."""
     matched: dict[int, int] = {}
     for block in matcher.get_matching_blocks():
@@ -262,9 +255,7 @@ def witness_verdicts(
     def _close_run() -> None:
         nonlocal run
         verdict: WitnessClass = "lost" if len(run) >= WITNESS_MIN_RUN else "unheard"
-        verdicts.extend(
-            WitnessVerdict(i, lyric_words[i], verdict, None, "none") for i in run
-        )
+        verdicts.extend(WitnessVerdict(i, lyric_words[i], verdict, None, "none") for i in run)
         run = []
 
     for v in report.verdicts:
@@ -273,20 +264,14 @@ def witness_verdicts(
             _close_run()
             verdicts.append(WitnessVerdict(v.index, v.word, "unmatchable", None, "none"))
             continue
-        local_delta = _nearest_local_delta(
-            occurrences, norm, v.aligner_start_s, local_window_s
-        )
+        local_delta = _nearest_local_delta(occurrences, norm, v.aligner_start_s, local_window_s)
         if local_delta is not None:
             _close_run()
-            verdicts.append(
-                WitnessVerdict(v.index, v.word, _witness_class(local_delta), local_delta, "local")
-            )
+            verdicts.append(WitnessVerdict(v.index, v.word, _witness_class(local_delta), local_delta, "local"))
         elif v.status == "matched":
             assert v.delta_s is not None
             _close_run()
-            verdicts.append(
-                WitnessVerdict(v.index, v.word, _witness_class(v.delta_s), v.delta_s, "diff")
-            )
+            verdicts.append(WitnessVerdict(v.index, v.word, _witness_class(v.delta_s), v.delta_s, "diff"))
         else:
             run.append(v.index)
     _close_run()
@@ -297,9 +282,7 @@ def witness_verdicts(
     return verdicts
 
 
-def flagged_indices(
-    report: CrossCheckReport, delta_threshold_s: float, min_unmatched_run: int = 5
-) -> set[int]:
+def flagged_indices(report: CrossCheckReport, delta_threshold_s: float, min_unmatched_run: int = 5) -> set[int]:
     """Lyric-word indices the cross-check distrusts (Round 4a tuned rule):
 
     - matched with |aligner - asr| over delta_threshold_s, always;

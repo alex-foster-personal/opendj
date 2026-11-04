@@ -1,4 +1,5 @@
 """Greedy beam PLAY IT solver (PLAY-02). Deterministic; no randomness."""
+
 from __future__ import annotations
 
 import time
@@ -113,9 +114,7 @@ def _score_candidate_inline(
     bpm_relaxed = False
     bpm_score = tight
     if tight == 0.0 and prev.bpm is not None and cand.bpm is not None:
-        relaxed = bpm_compatibility(
-            prev.bpm, cand.bpm, max_diff_pct=_BPM_RELAX_WINDOW_PCT
-        )
+        relaxed = bpm_compatibility(prev.bpm, cand.bpm, max_diff_pct=_BPM_RELAX_WINDOW_PCT)
         if relaxed > 0.0:
             bpm_score = relaxed * 0.5
             bpm_relaxed = True
@@ -131,21 +130,14 @@ def _score_candidate_inline(
     if cand.energy is None:
         energy_score = 0.5
     else:
-        energy_score = max(
-            0.0, 1.0 - abs(target_energy_slot - float(cand.energy)) / 9.0
-        )
+        energy_score = max(0.0, 1.0 - abs(target_energy_slot - float(cand.energy)) / 9.0)
     if cand.artist is None:
         artist_score = 0.5
     elif cand.artist in recent_artists_set:
         artist_score = 0.0
     else:
         artist_score = 1.0
-    composite = (
-        W_KEY * key_score
-        + W_BPM * bpm_score
-        + W_ENERGY * energy_score
-        + W_ARTIST * artist_score
-    )
+    composite = W_KEY * key_score + W_BPM * bpm_score + W_ENERGY * energy_score + W_ARTIST * artist_score
     return composite, bpm_relaxed
 
 
@@ -328,9 +320,7 @@ def _best_beam(beams: list[_BeamState]) -> _BeamState:
     )
 
 
-def _result(
-    order: list[str], best: _BeamState, t0: float
-) -> SolveResult:
+def _result(order: list[str], best: _BeamState, t0: float) -> SolveResult:
     solve_ms = (time.perf_counter() - t0) * 1000.0
     return SolveResult(
         order=order,
@@ -365,12 +355,8 @@ def suggest_order(
 ) -> SolveResult:
     """Greedy beam search. Deterministic. Same inputs -> identical order."""
     if not goal.peak_pins and not goal.opener_pins and goal.closer_pin is None:
-        return _suggest_order_unpinned(
-            tracks=tracks, goal=goal, beam_width=beam_width, seed=seed
-        )
-    return _suggest_order_pinned(
-        tracks=tracks, goal=goal, beam_width=beam_width, seed=seed
-    )
+        return _suggest_order_unpinned(tracks=tracks, goal=goal, beam_width=beam_width, seed=seed)
+    return _suggest_order_pinned(tracks=tracks, goal=goal, beam_width=beam_width, seed=seed)
 
 
 def _suggest_order_unpinned(
@@ -433,19 +419,13 @@ def _suggest_order_pinned(
 
     reservations = plan_reservations(tracks, goal)
     reserved_occurrences = {r.occurrence for r in reservations.values()}
-    role_by_occurrence = {
-        r.occurrence: r.role for r in reservations.values()
-    }
+    role_by_occurrence = {r.occurrence: r.role for r in reservations.values()}
 
     start_occurrence = start_occurrence_for_pinned(tracks, goal, reservations)
     if 0 in reservations and reservations[0].occurrence != start_occurrence:
         raise PinUnsatisfiableError("opener_unsatisfiable")
 
-    beams: list[_BeamState] = [
-        _initial_beam(
-            tracks, goal, start_occurrence, role_by_occurrence.get(start_occurrence)
-        )
-    ]
+    beams: list[_BeamState] = [_initial_beam(tracks, goal, start_occurrence, role_by_occurrence.get(start_occurrence))]
     total = len(tracks)
 
     for slot_idx in range(1, total):

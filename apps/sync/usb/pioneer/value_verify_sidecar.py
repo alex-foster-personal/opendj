@@ -1,4 +1,5 @@
 """Loudness sidecar probes for rekordbox USB OneLibrary copies."""
+
 from __future__ import annotations
 
 import shutil
@@ -23,9 +24,7 @@ def probe_odj_analysis_scalar(db_path: Path) -> dict[int, dict[str, str]]:
         if row is None:
             return {}
         out: dict[int, dict[str, str]] = {}
-        for content_id, field_name, value in conn.execute(
-            f"SELECT ContentID, field, value FROM {_SCALAR_TABLE}"
-        ):
+        for content_id, field_name, value in conn.execute(f"SELECT ContentID, field, value FROM {_SCALAR_TABLE}"):
             cid = int(content_id)
             out.setdefault(cid, {})[str(field_name)] = str(value)
         return out

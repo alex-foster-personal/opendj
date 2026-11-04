@@ -14,10 +14,11 @@
 	 * daemon that cannot serve either file renders a banner, not an empty
 	 * grid.
 	 *
-	 * TABS. Five controls share one ARIA tablist: "KPI ledger" is this page's
+	 * TABS. Six controls share one ARIA tablist: "KPI ledger" is this page's
 	 * default content, "Diagnostics" is an in-page panel at ?tab=diagnostics,
-	 * "Playground" is an in-page panel at ?tab=playground, "Title fixes" is an
-	 * in-page panel at ?tab=title-fix, and "Setup" leaves
+	 * "Playground" is an in-page panel at ?tab=playground, "Spotify" is an
+	 * in-page panel at ?tab=spotify (connection probe and live listen history),
+	 * "Title fixes" is an in-page panel at ?tab=title-fix, and "Setup" leaves
 	 * for /setup through the shared entry point so the doors into the wizard
 	 * behave identically.
 	 */
@@ -37,8 +38,10 @@
 	import TipLayer from './TipLayer.svelte';
 	import DiagnosticsPanel from './DiagnosticsPanel.svelte';
 	import PlaygroundPanel from './PlaygroundPanel.svelte';
+	import SpotifyPanes from './SpotifyPanes.svelte';
+	import { backstageEnabled } from '$lib/shell/backstage-flag';
 	import TitleFixPanel from './TitleFixPanel.svelte';
-	import { adminTabFromUrl, type AdminTab } from './admin-tab';
+	import { adminPanelFromUrl, adminTabFromUrl, ADMIN_PANEL_IDS, type AdminTab } from './admin-tab';
 	import {
 		fetchKpiLedger,
 		fetchPerfKpiLedger,
@@ -53,6 +56,11 @@
 
 	// ----- tabs --------------------------------------------------------------
 	const tab = $derived(adminTabFromUrl($page.url));
+	/** Backstage (shell.backstage ON only): ?p=<id> shows exactly one panel and
+	 * hides the tab strip. With the flag off ?p is ignored, as before. */
+	const panel = $derived(
+		backstageEnabled() ? adminPanelFromUrl($page.url) : ({ kind: 'none' } as const)
+	);
 
 	function selectTab(next: AdminTab): void {
 		const url = new URL($page.url);
@@ -99,6 +107,48 @@
 	});
 </script>
 
+{#if panel.kind === 'panel'}
+<h2>Backstage</h2>
+<div class="bs-panel" data-panel={panel.id}>
+	{#if panel.id === 'status'}
+		<section class="panel">
+			<h3>Status</h3>
+			<p class="sub" title="Placeholder until the Status overview is built - see PARITY-TODO">
+				The Status overview is a placeholder in this slice: not implemented - see PARITY-TODO. Use the
+				Backstage sidebar to open a panel.
+			</p>
+		</section>
+	{:else if panel.id === 'sources'}
+		<section class="panel"><h3>Lyric sources</h3><LyricSourceOrder /></section>
+	{:else if panel.id === 'jobs'}
+		<section class="panel"><h3>Lyric jobs</h3><LyricJobs /></section>
+	{:else if panel.id === 'triage'}
+		{@render triagePanel()}
+	{:else if panel.id === 'coverage'}
+		<LyricsKpiPanel />
+	{:else if panel.id === 'perf'}
+		{@render perfPanel()}
+	{:else if panel.id === 'farm'}
+		{@render farmPanel()}
+	{:else if panel.id === 'quality'}
+		<QualityRatchet />
+	{:else if panel.id === 'flags'}
+		<EntitlementsInspector />
+	{:else if panel.id === 'preflight'}
+		<PreflightScreen mode="admin" navigate={goto} />
+	{:else if panel.id === 'health' || panel.id === 'bus' || panel.id === 'ports'}
+		<DiagnosticsPanel />
+	{:else if panel.id === 'api' || panel.id === 'sql'}
+		<PlaygroundPanel />
+	{/if}
+	<TipLayer />
+</div>
+{:else if panel.kind === 'unknown'}
+<h2>Backstage</h2>
+<div class="fatal" title={`Known panels: ${ADMIN_PANEL_IDS.join(', ')}`}>
+	UNKNOWN PANEL {panel.id} - known panels: {ADMIN_PANEL_IDS.join(', ')}
+</div>
+{:else}
 <h2>Admin</h2>
 
 <!-- A div, not a nav: a nav is non-interactive and cannot carry role=tablist.
@@ -140,6 +190,17 @@
 	<button
 		type="button"
 		class="admin-tab"
+		class:on={tab === 'spotify'}
+		role="tab"
+		aria-selected={tab === 'spotify'}
+		title="Spotify connection probe and live listen history, served by GET /api/v1/spotify/status and GET /api/v1/spotify/recently-played."
+		onclick={() => selectTab('spotify')}
+	>
+		Spotify
+	</button>
+	<button
+		type="button"
+		class="admin-tab"
 		class:on={tab === 'title-fix'}
 		role="tab"
 		aria-selected={tab === 'title-fix'}
@@ -167,31 +228,31 @@
 {#if tab === 'kpi'}
 <EntitlementsInspector />
 
-<section class="panel" id="lyrics-generator">
-	<h3>Lyrics generator</h3>
-	<p class="sub">
-		The generator pipeline runs offline: stems (vocal separation) -&gt; alignment (word timings)
-		-&gt; witness (independent ASR cross-check) -&gt; ingest into state.db. Order the lyric sources
-		below to steer where the text comes from, and queue per-track generation here or from the
-		library right-click menu.
-	</p>
-	<LyricSourceOrder />
-	<hr />
-	<LyricJobs />
-</section>
-
-<section class="panel">
-	<h3>Lyric triage</h3>
-	<p class="sub">
-		Review and repair: the tracks whose lyrics deserve human eyes first, ranked most suspect
-		first. Click a row to open the track page with the full lyric panel; use the override buttons
-		to record your verdict - an override beats the computed one everywhere.
-	</p>
-	<LyricTriage />
-</section>
-
+{@render lyricsPanel()}
+{@render triagePanel()}
 <LyricsKpiPanel />
 
+{@render farmPanel()}
+{@render perfPanel()}
+<QualityRatchet />
+
+<!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
+     GET /api/v1/preflight the boot gate reads; no navigation side effect. -->
+<PreflightScreen mode="admin" navigate={goto} />
+
+<TipLayer />
+{:else if tab === 'diagnostics'}
+<DiagnosticsPanel />
+{:else if tab === 'playground'}
+<PlaygroundPanel />
+{:else if tab === 'spotify'}
+<SpotifyPanes />
+{:else if tab === 'title-fix'}
+<TitleFixPanel />
+{/if}
+{/if}
+
+{#snippet farmPanel()}
 <section class="panel">
 	<h3>Demucs farm KPI ledger</h3>
 	<p class="sub">
@@ -240,6 +301,8 @@
 	{/if}
 </section>
 
+{/snippet}
+{#snippet perfPanel()}
 <section class="panel perf-panel">
 	<h3>Performance KPIs</h3>
 	{#if perfError}
@@ -287,20 +350,34 @@
 	{/if}
 </section>
 
-<QualityRatchet />
+{/snippet}
+{#snippet lyricsPanel()}
+<section class="panel" id="lyrics-generator">
+	<h3>Lyrics generator</h3>
+	<p class="sub">
+		The generator pipeline runs offline: stems (vocal separation) -&gt; alignment (word timings)
+		-&gt; witness (independent ASR cross-check) -&gt; ingest into state.db. Order the lyric sources
+		below to steer where the text comes from, and queue per-track generation here or from the
+		library right-click menu.
+	</p>
+	<LyricSourceOrder />
+	<hr />
+	<LyricJobs />
+</section>
 
-<!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
-     GET /api/v1/preflight the boot gate reads; no navigation side effect. -->
-<PreflightScreen mode="admin" navigate={goto} />
+{/snippet}
+{#snippet triagePanel()}
+<section class="panel">
+	<h3>Lyric triage</h3>
+	<p class="sub">
+		Review and repair: the tracks whose lyrics deserve human eyes first, ranked most suspect
+		first. Click a row to open the track page with the full lyric panel; use the override buttons
+		to record your verdict - an override beats the computed one everywhere.
+	</p>
+	<LyricTriage />
+</section>
 
-<TipLayer />
-{:else if tab === 'diagnostics'}
-<DiagnosticsPanel />
-{:else if tab === 'playground'}
-<PlaygroundPanel />
-{:else if tab === 'title-fix'}
-<TitleFixPanel />
-{/if}
+{/snippet}
 
 <style>
 	/* No success/positive token exists in app.css yet; scoped here rather than

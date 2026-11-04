@@ -34,16 +34,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.scripts.ci_runner_routes import FAST_RUNS_ON as ROUTE_FAST_RUNS_ON
+
 pytestmark = pytest.mark.requirement("INFRA-03")
 
 CI: Path = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
-FAST_RUNS_ON = (
-    "${{ fromJSON((github.event_name == 'pull_request' && "
-    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
-    "&& vars.CI_RUNS_ON_TRUNK || "
-    "vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
-    "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
-)
+# Wed 4 Nov 2026: the ci:trunk-repair CI_RUNS_ON_MAIN_FIX reserve sits in front of the
+# CI_RUNS_ON_TRUNK fallback (tests/scripts/test_ci_main_fix_runner_reserve.py).
+FAST_RUNS_ON = ROUTE_FAST_RUNS_ON
 
 
 # The three-part Trunk queue draft test every CI_RUNS_ON_MERGE_QUEUE clause uses.
@@ -89,23 +87,24 @@ def test_fast_job_prefers_its_own_pool_then_the_shard_chain() -> None:
     ), "the fast chain must stay a suffix of the shard chain; update both together"
 
 
-def test_fast_job_is_pull_request_only_with_two_legs() -> None:
-    """if the fast job runs on push then a trunk push can cancel its own verdict
+def test_fast_job_runs_only_on_the_fast_tier_dispatch_with_two_legs() -> None:
+    """if the fast job runs on a pull request or a push then it takes two pytest seats per head
 
-    A `workflow_dispatch` is the one other admitted event: main-control.yml
-    dispatches the tier on main every six hours (tests/quality/
-    test_main_control_workflow.py pins the input that keeps the full lane out).
+    Since Wed 4 Nov 2026 (ADR-NEW-fast-tier-not-on-pull-requests) the `tier: fast`
+    `workflow_dispatch` is the ONLY admitted event: main-control.yml dispatches the
+    tier on main every six hours ((private path) pins the
+    input that keeps the full lane out). On a pull request the two legs ran 20 to 29
+    min each, about three quarters of all pytest seat-minutes, and gated nothing.
     """
     job = _jobs()["fast"]
-    # Gated on the in-run scope decision first (issue #4168): a docs-only pull
-    # request must not occupy a pytest runner now that ci.yml triggers on it.
+    # Gated on the in-run scope decision first (issue #4168): a docs-only dispatch
+    # must not occupy a pytest runner.
     assert job["needs"] == "scope"
     assert job["if"] == (
         "needs.scope.outputs.in_scope == 'true' && "
-        "((github.event_name == 'pull_request' && "
-        "needs.scope.outputs.pr_selection != 'full' && !(" + TRUNK_DRAFT + ")) || "
-        "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'))"
+        "github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'"
     )
+    assert "pull_request" not in job["if"] and "push" not in job["if"]
     assert job["strategy"]["matrix"]["leg"] == [1, 2], "TEST-CUT round 3: two legs, was four"
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"
 
@@ -182,10 +181,11 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
     fast = _pytest_step(_jobs()["fast"])
     ignores = lambda run: sorted(tok for tok in run.split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(fast) == ignores(shard)
-    # playlist-switch bench (e2e.yml extended), nextest quarantine (contracts),
-    # the GUARD-8229 seam gate (needs frontend node_modules; runs in ci.yml `quality`
-    # instead), NATIVE-25 live-engine (fail-closed when loudness unavailable; not on fast lane)
-    assert len(ignores(fast)) == 11
+    # playlist-switch bench (e2e.yml extended), the GUARD-8229 seam gate (needs
+    # frontend node_modules; runs in ci.yml `quality` instead), NATIVE-25 live-engine
+    # (fail-closed when loudness unavailable; not on fast lane). The nextest
+    # quarantine probe left with the Trunk quarantine on Wed 4 Nov 2026.
+    assert len(ignores(fast)) == 10
 
 
 def test_shard_job_gains_only_the_ledger_guard() -> None:
@@ -271,14 +271,16 @@ def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
 
 
 @pytest.mark.requirement("DEVOPS-18")
-def test_fast_job_skips_the_same_queue_draft_the_shards_route_to_mq() -> None:
-    """[if] the fast skip and the shards' mq clause name different drafts [then] broken, [else stop].
+def test_fast_job_has_no_pull_request_clause_left_to_drift() -> None:
+    """[if] a pull_request clause (the old Trunk-draft skip or selection test) returns [then] broken, [else stop].
 
-    The skip and the `mq` routing must name one draft. A copy that drifts either
-    runs the ungating legs on drafts again or silently drops them from real PR heads.
+    The draft skip of DEVOPS-18 and the narrowed-selection test (TEST-CUT round 1)
+    were clauses of the pull_request branch; with the branch gone they are gone too,
+    and the shards' `mq` clause is the only place the draft test lives in ci.yml.
     """
     assert TRUNK_DRAFT in _raw_runs_on("test"), "the shard job's mq clause no longer matches TRUNK_DRAFT"
-    assert f"!({TRUNK_DRAFT})" in _jobs()["fast"]["if"]
+    fast_if = _jobs()["fast"]["if"]
+    assert "trunk-merge/" not in fast_if and "github.event.pull_request" not in fast_if
 
 
 def _scope_selection_step() -> dict:
@@ -287,14 +289,11 @@ def _scope_selection_step() -> dict:
     return steps[0]
 
 
-def test_legs_skip_only_a_pr_head_whose_selection_is_full() -> None:
-    """if the legs still run on a FULL PR head then 17k tests run twice; if the skip reaches
-    the fast-tier dispatch then main's six-hour control run loses its whole verdict"""
+def test_legs_never_read_the_pr_selection_and_the_shards_still_do() -> None:
+    """if the fast-tier dispatch reads pr_selection then main's six-hour control run can lose
+    its whole verdict; if the scope job stops publishing it then the shards lose theirs"""
     fast_if = _jobs()["fast"]["if"]
-    pr_clause, dispatch_clause = fast_if.split("||")
-    assert "needs.scope.outputs.pr_selection != 'full'" in pr_clause
-    assert "github.event_name == 'pull_request'" in pr_clause
-    assert "pr_selection" not in dispatch_clause
+    assert "pr_selection" not in fast_if
     outputs = _jobs()["scope"]["outputs"]
     assert outputs["pr_selection"] == "${{ steps.pr-selection.outputs.mode }}"
 

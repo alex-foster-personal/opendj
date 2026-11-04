@@ -1,4 +1,4 @@
-"""Playlist-set HTTP endpoints (SET-05).
+"""Playlist-set HTTP endpoints (SET-05, SET-6586 routes).
 
 SET-05 performance objects use ``playlist_sets`` tables, not PLAY-01
 ``play_orders`` and not SET-01 recorded ``sets``.
@@ -18,6 +18,7 @@ from apps.shared.playlist_sets import (
     list_playlist_sets,
     load_playlist_set,
     record_run,
+    update_set_parts,
 )
 from apps.shared.playlist_sets.schema import apply_playlist_set_migrations
 from apps.shared.state import db as state_db
@@ -45,6 +46,10 @@ class PlaylistSetOut(BaseModel):
     name: str
     play_count: int
     entries: list[PlaylistSetEntryOut]
+    parts: list[int] = Field(
+        default_factory=list,
+        description="Component ids of the set's route (SET-6586); empty for a snapshot set.",
+    )
     created_at: str
     updated_at: str
     runs: list[PlaylistSetRunOut] | None = None
@@ -57,10 +62,21 @@ class PlaylistSetListOut(BaseModel):
 class PlaylistSetCreateIn(BaseModel):
     name: str = Field(min_length=1)
     from_play_order: str | None = None
+    parts: list[int] | None = Field(
+        default=None, description="A route of component ids, instead of a snapshot (SET-6586)."
+    )
 
 
 class PlaylistSetRunIn(BaseModel):
     kind: Literal["practice", "performance"]
+    played_parts: list[int] | None = Field(
+        default=None,
+        description="The route actually played, when an ending was picked live (SET-6586).",
+    )
+
+
+class PlaylistSetPartsIn(BaseModel):
+    parts: list[int] = Field(min_length=1)
 
 
 class PlaylistSetRunResultOut(BaseModel):
@@ -70,7 +86,7 @@ class PlaylistSetRunResultOut(BaseModel):
 
 
 def _state_db_path(request: Request) -> Path:
-    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    return Path(getattr(request.app.state, "state_db_path", "(private path)"))
 
 
 def _open_conn(request: Request) -> sqlite3.Connection:
@@ -101,6 +117,7 @@ def _to_out(ps, *, include_runs: bool = False) -> PlaylistSetOut:
             PlaylistSetEntryOut(stable_id=e.stable_id, position=e.position)
             for e in ps.entries
         ],
+        parts=list(ps.parts),
         created_at=ps.created_at,
         updated_at=ps.updated_at,
         runs=runs,
@@ -165,6 +182,7 @@ def create_set(
                 playlist_id,
                 body.name,
                 from_play_order=body.from_play_order,
+                parts=body.parts,
             )
             conn.commit()
         except ValueError as exc:
@@ -249,11 +267,71 @@ def create_run(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "not_found"},
             )
-        play_count = record_run(conn, set_id, body.kind)
+        try:
+            play_count = record_run(
+                conn, set_id, body.kind, played_parts=body.played_parts
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "invalid_request", "message": str(exc)},
+            ) from exc
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "not_found", "message": str(exc)},
+            ) from exc
         conn.commit()
         _publish_changed(playlist_id, set_id)
         return PlaylistSetRunResultOut(
             set_id=set_id, kind=body.kind, play_count=play_count
         )
+    finally:
+        conn.close()
+
+
+@router.put(
+    "/{playlist_id}/sets/{set_id}/parts",
+    response_model=PlaylistSetOut,
+    operation_id="update_playlist_set_parts",
+)
+def update_parts(
+    playlist_id: str,
+    set_id: int,
+    body: PlaylistSetPartsIn,
+    request: Request,
+    _backend: Annotated[StateBackend, Depends(get_write_state)],
+    backend: Annotated[StateBackend, Depends(get_read_state)],
+) -> PlaylistSetOut:
+    """Replace a set's route (SET-6586). Past runs keep what they played."""
+    _ensure_playlist(backend, playlist_id)
+    conn = _open_conn(request)
+    try:
+        try:
+            ps = load_playlist_set(conn, set_id)
+        except LookupError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "not_found"},
+            ) from None
+        if ps.playlist_id != playlist_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "not_found"},
+            )
+        try:
+            updated = update_set_parts(conn, set_id, body.parts)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "invalid_request", "message": str(exc)},
+            ) from exc
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "not_found", "message": str(exc)},
+            ) from exc
+        _publish_changed(playlist_id, set_id)
+        return _to_out(updated)
     finally:
         conn.close()

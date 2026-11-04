@@ -113,7 +113,13 @@
 	 */
 	const disabledLocally = $derived(
 		buildFlags.flags.filter(
-			(flag) => !flag.enabled && storeBuildRefusal(flag.flag_id) === null
+			(flag) =>
+				!flag.enabled &&
+				storeBuildRefusal(flag.flag_id) === null &&
+				// A shell layout preview (shell.backstage, default OFF) is not a
+				// capability the user is missing: listing it would change this
+				// overlay for everyone while the flag is off (BACKSTAGE-6529).
+				flag.flag_id !== 'shell.backstage'
 		)
 	);
 

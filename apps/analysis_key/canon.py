@@ -37,6 +37,7 @@ Neither rekordbox nor MIK is ground truth for the musical key of a track
 (see (private path) section 5); this module only converts
 between NOTATIONS of a key both sides can already agree to disagree about.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -71,28 +72,23 @@ class Key:
             raise ValueError(f"pitch_class must be 0..11, got {self.pitch_class}")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _from_norm_key(norm_key: _NormKey) -> Key:
     return Key(pitch_class=norm_key.pitch_class, is_minor=norm_key.mode == MODE_MINOR)
 
 
 def _to_norm_key(key: Key) -> _NormKey:
-    return _NormKey(
-        pitch_class=key.pitch_class, mode=MODE_MINOR if key.is_minor else MODE_MAJOR
-    )
+    return _NormKey(pitch_class=key.pitch_class, mode=MODE_MINOR if key.is_minor else MODE_MAJOR)
 
 
 def _normalise_or_raise(value: str, unit: str) -> Key:
     result = normalise_key(value, unit)
     if result is MISSING:
-        raise ValueError(
-            f"{unit} value {value!r} is a documented sentinel for 'no key', "
-            "not a parseable key"
-        )
+        raise ValueError(f"{unit} value {value!r} is a documented sentinel for 'no key', not a parseable key")
     return _from_norm_key(result)
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def to_camelot(key: Key) -> str:
     return _to_norm_key(key).camelot
 
@@ -109,7 +105,7 @@ def from_open_key(open_key: str) -> Key:
     return _normalise_or_raise(open_key, "open_key")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def to_rekordbox_scale_name(key: Key) -> str:
     name = _PITCH_SPELLING[key.pitch_class]
     return f"{name}m" if key.is_minor else name
@@ -126,7 +122,7 @@ def from_rekordbox_scale_name(scale_name: str) -> Key:
     return _normalise_or_raise(scale_name, "mixed_camelot_musical")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # MIK stores keys as Camelot and Open Key strings using the same notations
 # rekordbox and this module use, so no separate parser is needed: these
 # aliases exist only to give MIK-sourced callers self-documenting names.
@@ -136,7 +132,7 @@ from_mik_open_key = from_open_key
 to_mik_open_key = to_open_key
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # A stored key can arrive in any notation a source writes: rekordbox ScaleName
 # (Camelot "8A" OR spelled "Am"/"F#m"/"Fmaj"), MIK Camelot or Open Key ("1m"),
 # an ID3 TKEY ("A minor"), or a user edit. The library showed whichever one

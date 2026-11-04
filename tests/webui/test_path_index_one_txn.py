@@ -46,8 +46,8 @@ def db(tmp_path: Path) -> Iterator[tuple[Path, sqlite3.Connection]]:
         conn.close()
 
 
-def _rows(n: int) -> list[tuple[str, int | None]]:
-    return [(f"/Music/{i:05d}.mp3", None) for i in range(n)]
+def _rows(n: int) -> list[tuple[str, int | None, int | None]]:
+    return [(f"/Music/{i:05d}.mp3", None, None) for i in range(n)]
 
 
 def test_batch_is_one_commit(db) -> None:
@@ -72,7 +72,7 @@ def test_caller_transaction_is_not_committed(db) -> None:
 def test_failed_batch_leaves_no_partial_rows(db) -> None:
     """[if] a row in the batch fails [then] no row of that batch is kept, [else stop]."""
     _db_path, conn = db
-    rows = [*_rows(3), (None, None)]  # logical_path NOT NULL
+    rows = [*_rows(3), (None, None, None)]  # logical_path NOT NULL
     with pytest.raises(sqlite3.IntegrityError):
         path_index.upsert_rows(conn, NS, rows)  # type: ignore[arg-type]
     assert not conn.in_transaction

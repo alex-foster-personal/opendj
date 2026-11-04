@@ -1,4 +1,5 @@
 """Shell route navigation helpers for opendj CLI and MCP (issue #2866)."""
+
 from __future__ import annotations
 
 import time
@@ -16,9 +17,7 @@ MIRROR_POLL_S = 0.2
 REQUEST_TIMEOUT_S = 5.0
 
 
-def no_performance_page_message(
-    origin: EngineOrigin, *, timeout_s: float = MIRROR_TIMEOUT_S
-) -> str:
+def no_performance_page_message(origin: EngineOrigin, *, timeout_s: float = MIRROR_TIMEOUT_S) -> str:
     return (
         f"engine at {origin.base_url} has no performance page on record after "
         f"waiting {timeout_s:g}s; run `{REMEDY_VERB}` (or MCP open_route) "
@@ -49,9 +48,7 @@ def request_shell_navigate(origin: EngineOrigin, route: str = "/performance") ->
     return payload
 
 
-def wait_for_performance_page(
-    origin: EngineOrigin, timeout_s: float = MIRROR_TIMEOUT_S
-) -> bool:
+def wait_for_performance_page(origin: EngineOrigin, timeout_s: float = MIRROR_TIMEOUT_S) -> bool:
     deadline = time.monotonic() + timeout_s
     url = f"{origin.base_url}{MIRROR_PATH}"
     while time.monotonic() < deadline:
@@ -69,9 +66,7 @@ def wait_for_performance_page(
     return False
 
 
-def ensure_performance_page(
-    origin: EngineOrigin, *, timeout_s: float = MIRROR_TIMEOUT_S
-) -> bool:
+def ensure_performance_page(origin: EngineOrigin, *, timeout_s: float = MIRROR_TIMEOUT_S) -> bool:
     request_shell_navigate(origin, "/performance")
     return wait_for_performance_page(origin, timeout_s=timeout_s)
 

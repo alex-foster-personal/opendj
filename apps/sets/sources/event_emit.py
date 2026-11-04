@@ -1,4 +1,5 @@
 """Shared event recording for deck-state set sources."""
+
 from __future__ import annotations
 
 import logging

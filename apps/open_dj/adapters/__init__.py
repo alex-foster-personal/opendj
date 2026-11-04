@@ -12,6 +12,7 @@ Each adapter exposes:
 See :mod:`apps.open_dj.adapters.rekordbox` and
 :mod:`apps.open_dj.adapters.djay`.
 """
+
 from __future__ import annotations
 
 from apps.open_dj.adapters._base import ExportResult, ImportResult, OpenDjAdapter

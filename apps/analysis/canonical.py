@@ -112,6 +112,24 @@ def _key_row_is_stale(
     return not dependency_matches(depends_on, dependency_identity(current))
 
 
+def dependency_stale_row(
+    conn: sqlite3.Connection, stable_id: str, lane: str, record_json: str,
+) -> bool:
+    """True when this own row no longer describes the canonical dependency it names.
+
+    The one staleness question every reader asks, whether or not the queue
+    ever wrote an ``analysis_stale`` marker for the row: the canonical pointer
+    (:func:`_eligible_rows`), the queue runner's already-current check and the
+    ahead drain's done set (NATIVE-36). Only ``key`` has a dependency today
+    (``queue.LANE_DEPENDENCIES``). The comparison is against whichever
+    beatgrid record is canonical, so a grid written under any own backend,
+    including one adopted from another source, re-validates the key.
+    """
+    if lane == "key":
+        return _key_row_is_stale(conn, stable_id, record_json)
+    return False
+
+
 def key_lane_stale_but_unpromoted(
     conn: sqlite3.Connection, stable_id: str,
 ) -> bool:
@@ -162,7 +180,7 @@ def _eligible_rows(
         parsed = parse_own_backend(backend)
         if parsed is None or parsed.lane != lane or parsed.producer == "cand":
             continue
-        if lane == "key" and _key_row_is_stale(conn, stable_id, record_json):
+        if dependency_stale_row(conn, stable_id, lane, record_json):
             continue
         if (backend, backend_version) in stale:
             continue
@@ -485,6 +503,7 @@ __all__ = [
     "CanonicalError",
     "canonical_pointed_ids",
     "canonical_pointer",
+    "dependency_stale_row",
     "rebuild_projection",
     "recompute_canonical",
     "refresh_for_record",

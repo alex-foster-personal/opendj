@@ -30,9 +30,7 @@ log = logging.getLogger("apps.sync_hub.client")
 CREDENTIAL_FILENAME: str = "sync-credential"
 CREDENTIAL_FILE_MODE: int = 0o600
 NOTICE_FILENAME: str = "state/cloudsync-credential-notice.json"
-REENROLL_ACTION: str = (
-    "Re-enroll to collect a sync credential (python -m apps.sync_hub enroll)"
-)
+REENROLL_ACTION: str = "Re-enroll to collect a sync credential (python -m apps.sync_hub enroll)"
 
 #: In-process dedup for ``log_hub_verdict`` within one process lifetime.
 _warned_verdicts: set[tuple[str, str]] = set()
@@ -66,8 +64,7 @@ def write_credential(data_dir: Path, token: str) -> Path:
     """
     if not token.startswith(CREDENTIAL_PREFIX):
         raise SpokeCredentialError(
-            f"refusing to store a sync credential without the "
-            f"{CREDENTIAL_PREFIX!r} prefix; the hub did not mint it."
+            f"refusing to store a sync credential without the {CREDENTIAL_PREFIX!r} prefix; the hub did not mint it."
         )
     target = credential_path(data_dir)
     target.parent.mkdir(parents=True, exist_ok=True)

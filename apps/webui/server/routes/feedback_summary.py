@@ -3,7 +3,7 @@
 Correlates comment pins with the progress-tree ledger when an issue_url matches
 ``links.issues`` on a node in ``building`` or ``partial`` status.
 
-The ledger is a dev-checkout file (``data/progress-tree.yaml``); a packaged
+The ledger is a dev-checkout file (``(private path)``); a packaged
 desktop payload does not stage it. Its absence is reported as
 ``fleet_correlation: "ledger_missing"`` rather than read as "no fleet work", so
 the UI can say the in-progress count excludes fleet correlation instead of
@@ -24,15 +24,11 @@ from .feedback import _COMMENTS_FILE, _dir, _load
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
-_ISSUE_URL_RE = re.compile(
-    r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/(\d+)(?:$|[/?#])"
-)
+_ISSUE_URL_RE = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/(\d+)(?:$|[/?#])")
 _REPO_REF_RE = re.compile(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)\b")
 # Bare ledger refs ("151", "#151") belong to this repository.
 _HOME_REPO = "private_owner/music-dj-tools"
-_KNOWN_STATUSES = frozenset(
-    {"open", "issued", "blocked", "fixed", "merged", "harvested", "archived"}
-)
+_KNOWN_STATUSES = frozenset({"open", "issued", "blocked", "fixed", "merged", "harvested", "archived"})
 
 #: An issue identity: (lowercased "owner/repo", number). The number alone is
 #: not an identity -- another repository can have the same issue number.
@@ -181,9 +177,7 @@ def _summarize_lifecycle(items: list[dict[str, Any]]) -> PinStatusSummaryOut:
     return PinStatusSummaryOut.model_validate(counts)
 
 
-def _summarize_operator(
-    items: list[dict[str, Any]], fleet_issues: frozenset[IssueKey]
-) -> PinOperatorBreakdownOut:
+def _summarize_operator(items: list[dict[str, Any]], fleet_issues: frozenset[IssueKey]) -> PinOperatorBreakdownOut:
     counts = {
         "total": 0,
         "sent_to_queue": 0,

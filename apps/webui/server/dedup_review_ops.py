@@ -1,4 +1,5 @@
 """Cluster hydration and OpenDJ membership apply/undo for the review routes."""
+
 from __future__ import annotations
 
 import hashlib
@@ -78,26 +79,15 @@ def read_raw_clusters(db_path: Path) -> list[dict[str, Any]] | None:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     try:
-        table_names = {
-            str(row[0])
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
+        table_names = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         if not {"duplicate_clusters", "track_aliases"} <= table_names:
             return None
-        cluster_columns = {
-            str(row[1])
-            for row in connection.execute("PRAGMA table_info(duplicate_clusters)")
-        }
+        cluster_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(duplicate_clusters)")}
         flag_expression = (
-            "flagged_manual_review"
-            if "flagged_manual_review" in cluster_columns
-            else "0 AS flagged_manual_review"
+            "flagged_manual_review" if "flagged_manual_review" in cluster_columns else "0 AS flagged_manual_review"
         )
         canonical_duration_expression = (
-            "(SELECT duration FROM fingerprints "
-            "WHERE path = duplicate_clusters.canonical_path) AS canonical_duration"
+            "(SELECT duration FROM fingerprints WHERE path = duplicate_clusters.canonical_path) AS canonical_duration"
             if "fingerprints" in table_names
             else "NULL AS canonical_duration"
         )
@@ -109,8 +99,7 @@ def read_raw_clusters(db_path: Path) -> list[dict[str, Any]] | None:
         clusters: list[dict[str, Any]] = []
         for cluster_row in cluster_rows:
             alias_duration_expression = (
-                "(SELECT duration FROM fingerprints "
-                "WHERE path = track_aliases.alias_path) AS alias_duration"
+                "(SELECT duration FROM fingerprints WHERE path = track_aliases.alias_path) AS alias_duration"
                 if "fingerprints" in table_names
                 else "NULL AS alias_duration"
             )
@@ -166,8 +155,7 @@ def cluster_needs_manual_review(cluster: dict[str, Any]) -> bool:
         return False
     return any(
         alias["alias_duration"] is not None
-        and abs(float(canonical_duration) - float(alias["alias_duration"]))
-        > DEFAULT_DURATION_DELTA_S
+        and abs(float(canonical_duration) - float(alias["alias_duration"])) > DEFAULT_DURATION_DELTA_S
         for alias in cluster["aliases"]
     )
 
@@ -225,8 +213,7 @@ def reject_duplicate_cluster_keys(clusters: list[Any]) -> None:
             raise http_error(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "invalid_cluster_identity",
-                f"duplicate cluster_key {cluster.cluster_key} "
-                f"(cluster_id {previous} and {cluster.cluster_id})",
+                f"duplicate cluster_key {cluster.cluster_key} (cluster_id {previous} and {cluster.cluster_id})",
             )
         seen[cluster.cluster_key] = cluster.cluster_id
 
@@ -328,7 +315,9 @@ def rewrite_playlists(
             before = list(row.items)
             after = rewrite_items(before, alias_ids, survivor)
             store.replace_memberships(
-                playlist.playlist_id, after, expected_etag=row.etag,
+                playlist.playlist_id,
+                after,
+                expected_etag=row.etag,
             )
             applied.append(
                 PersistedApplyPlaylist(
@@ -363,7 +352,9 @@ def _compensate_memberships(
             current = store.get_playlist_row(entry.playlist_id)
             target = entry.before if use_before else entry.after
             store.replace_memberships(
-                entry.playlist_id, target, expected_etag=current.etag,
+                entry.playlist_id,
+                target,
+                expected_etag=current.etag,
             )
         except (BackendError, ConflictError, NotFoundError):
             pass
@@ -382,7 +373,9 @@ def restore_playlists(
             if list(row.items) != list(entry.after):
                 raise _journal_after_mismatch(current_revision)
             store.replace_memberships(
-                entry.playlist_id, entry.before, expected_etag=row.etag,
+                entry.playlist_id,
+                entry.before,
+                expected_etag=row.etag,
             )
             restored.append(entry)
     except (BackendError, ConflictError, HTTPException, NotFoundError):
@@ -400,9 +393,7 @@ def persist_apply_journal(
     applies = dict(snap.applies)
     decisions[record.cluster_key] = record
     applies[apply_row.cluster_key] = apply_row
-    return dump_decision_store_atomic(
-        DecisionStore(schema_version=2, decisions=decisions, applies=applies)
-    )
+    return dump_decision_store_atomic(DecisionStore(schema_version=2, decisions=decisions, applies=applies))
 
 
 def drop_apply_journal(snap: DecisionStore, cluster_key_value: str) -> str:
@@ -410,7 +401,9 @@ def drop_apply_journal(snap: DecisionStore, cluster_key_value: str) -> str:
     applies.pop(cluster_key_value, None)
     return dump_decision_store_atomic(
         DecisionStore(
-            schema_version=2, decisions=dict(snap.decisions), applies=applies,
+            schema_version=2,
+            decisions=dict(snap.decisions),
+            applies=applies,
         )
     )
 
@@ -450,9 +443,7 @@ def prepare_merge_apply(
     journal = rewritten
     if not journal and existing_apply is not None:
         journal = list(existing_apply.playlists)
-    decided_at = (
-        existing_decision.decided_at if existing_decision is not None else now_iso()
-    )
+    decided_at = existing_decision.decided_at if existing_decision is not None else now_iso()
     record = PersistedDecision(
         cluster_id=cluster_id,
         cluster_key=current_cluster_key,
@@ -495,7 +486,9 @@ def prepare_merge_undo(
         )
     try:
         restore_playlists(
-            store, list(apply_row.playlists), current_revision=current_revision,
+            store,
+            list(apply_row.playlists),
+            current_revision=current_revision,
         )
     except ConflictError as exc:
         raise conflict(

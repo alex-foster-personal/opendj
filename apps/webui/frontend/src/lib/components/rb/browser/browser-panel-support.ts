@@ -28,6 +28,7 @@ export {
 	resolveRowVocals
 } from '$lib/rb/row-vocals';
 export {
+	bpmConfidenceIn,
 	compatibleKeyChecked,
 	compatibleRowKeyShift,
 	computeNextOnlyRef,
@@ -36,6 +37,7 @@ export {
 	selectSearchFilterFallback,
 	type NextOnlyRef
 } from '$lib/rb/next-only-filter';
+export { peekLibraryIndex } from '$lib/rb/library-index';
 export { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
 export { libraryHealthDot, type LibraryHealthDot } from '$lib/rb/library-health-dots';
 export { completeLibraryUsable, recordOpenToLibraryRows } from '$lib/client-telemetry';
@@ -79,8 +81,11 @@ export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
 export { libraryAudioLoadRefusal, rowFromIndexWire, rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { applySettledAvailability } from './browser-row-wire';
-export { startPendingSettle } from './pending-availability-settle';
+export { isTransientListingBusy, startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
+/** SET-6586 Routes view: loads on first use so it stays out of the /performance eager bundle. */
+export const loadComponentRouteList = () => import('./ComponentRouteList.svelte');
+export { setRoutesView } from './set-routes-view.svelte';
 export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
 export { default as LibraryKeyFilterPopover } from './LibraryKeyFilterPopover.svelte';
 export { setTabLabel } from './playlist-set-tabs';

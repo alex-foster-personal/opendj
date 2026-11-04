@@ -50,11 +50,24 @@ export interface HeadphoneOutputDevice {
 	/** CUEOUT-26, Mac shell only: the id of the output that actually sounds
 	 * for this one (the occupied headphone jack for the muted MacBook
 	 * speakers). Absent in a browser listing, where every id is its own. */
-	physical_id?: string;
+	physical_id?: string | null;
 	/** CUEOUT-26, Mac shell only: the MacBook speakers while headphones occupy the jack. */
-	muted_by_jack?: boolean;
+	muted_by_jack?: boolean | null;
 	/** CoreAudio transport from the Mac shell (`builtin`, `usb`, `virtual`, ...). */
-	transport?: string;
+	transport?: string | null;
+}
+
+/** GB-6846: the COMPLETE serializable device DTO — the same shape the HTTP
+ * mirror returns (`HeadphoneOutputDeviceOut` in
+ * `server/routes/performance_headphones.py`). The Mac-shell topology fields are
+ * `null` where the browser cannot name them, but the keys are always present,
+ * so one exact-object comparison can hold both sides of the parity contract. */
+export interface CompleteHeadphoneOutputDevice {
+	id: string;
+	label: string;
+	physical_id: string | null;
+	muted_by_jack: boolean | null;
+	transport: string | null;
 }
 
 /** CUEOUT-26: why the cue runs as split cue. `same_device`: MAIN and CUE are
@@ -233,6 +246,31 @@ export interface HeadphoneState {
 	/** CUEOUT-26: set while split cue was chosen because MAIN and CUE are one
 	 * physical output; null or absent when the operator picked the mode. */
 	split_reason?: HeadphoneSplitReason | null;
+	/** AUDFID-05: what the launch restore of the saved MAIN and CUE did, for
+	 * the pill and for agents; null until it ran this session. */
+	launch_restore?: LaunchOutputRestoreState | null;
+	/** AUDFID-03: the live fidelity guard's latest verdict (master bus vs the
+	 * source decode in the neutral state); null until its first tick. */
+	fidelity_guard?: FidelityGuardStateOut | null;
+}
+
+/** AUDFID-03: mirrors rb/fidelity-guard-runtime.ts FidelityGuardState. */
+export interface FidelityGuardStateOut {
+	status: 'idle' | 'ok' | 'degraded' | 'skipped';
+	reason: string | null;
+	checked_at_ms: number | null;
+}
+
+/** AUDFID-05: the launch restore's outcome. `restored`: both saved devices
+ * were present and two_outputs runs on exactly them (undo available).
+ * `practice`: a saved device is missing, named in `missing`. `skipped`: nothing
+ * to restore or the device list could not be read without an input. */
+export interface LaunchOutputRestoreState {
+	status: 'restored' | 'practice' | 'skipped' | 'failed' | 'undone';
+	message: string;
+	main_label: string | null;
+	cue_label: string | null;
+	missing: string[];
 }
 
 /** Whole mixer surface including the real headphone cue bus. */

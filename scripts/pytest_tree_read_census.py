@@ -1248,6 +1248,10 @@ def _what_startup_code_reads(site_directories: list[str], argv: list[str], cwd: 
             probe += [json.dumps(sorted(SPAWN_EVENTS))]
             start = {"argv": argv, "orig_argv": sys.orig_argv, "user_site": site.ENABLE_USER_SITE}
             probe += [json.dumps(start), *site_directories]
+            # `probe` is a fixed argv list (no shell), and `env` is this process's own os.environ, replayed so
+            # the probe sees the same startup branches the census is about to measure. Filtering it would make
+            # the probe start a different Python than the one under test. Logged in (private path).
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             subprocess.run(probe, cwd=cwd, env=env, capture_output=True, check=True)
         finally:
             _State.own_spawn.active = False

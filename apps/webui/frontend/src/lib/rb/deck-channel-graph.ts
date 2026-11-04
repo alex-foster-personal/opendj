@@ -1,6 +1,6 @@
 import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
 import { createMeterTap, type MeterTap, type MeterTapSource } from '$lib/rb/meter-tap';
-import { filterParamsFromKnob } from '$lib/rb/audio-engine-guards';
+import { colorFilterParamsForBuild, colorFxChannelBuilt } from '$lib/rb/color-fx.svelte';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { StretchDeckProcessor } from '$lib/rb/stretch-adapter';
@@ -28,6 +28,8 @@ export interface DeckChannelNodes {
 	filterDry: GainNode;
 	filterLpWet: GainNode;
 	filterHpWet: GainNode;
+	/** COLORFX-01: unity sum of the FILTER branches; the SPACE / ECHO sends tap it. */
+	colorBus: GainNode;
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
@@ -87,7 +89,7 @@ export function buildDeckChannelGraph(deps: {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(ch.filter);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = colorFilterParamsForBuild(deck, ch.filter);
 		const filterLp = deps.ctx.createBiquadFilter();
 		filterLp.type = 'lowpass';
 		filterLp.Q.value = FILTER_Q;
@@ -102,6 +104,7 @@ export function buildDeckChannelGraph(deps: {
 		filterLpWet.gain.value = lpWetGain;
 		const filterHpWet = deps.ctx.createGain();
 		filterHpWet.gain.value = hpWetGain;
+		const colorBus = deps.ctx.createGain();
 		const cue = deps.ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = deps.ctx.createGain();
@@ -115,9 +118,10 @@ export function buildDeckChannelGraph(deps: {
 		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
 		filterLp.connect(filterLpWet);
 		filterHp.connect(filterHpWet);
-		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(cue);
+		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(colorBus);
+		colorBus.connect(cue);
 		cue.connect(deps.cueSum);
-		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(fader);
+		colorBus.connect(fader);
 		const usbLeft = deps.routing?.get(deck) ?? null;
 		let extsplit: ChannelSplitterNode | null = null;
 		if (usbLeft !== null && deps.externalMerger !== null) {
@@ -140,6 +144,7 @@ export function buildDeckChannelGraph(deps: {
 			filterDry,
 			filterLpWet,
 			filterHpWet,
+			colorBus,
 			cue,
 			fader,
 			xf,
@@ -147,6 +152,7 @@ export function buildDeckChannelGraph(deps: {
 		};
 		const tap = createMeterTap();
 		deps.onDeck(deck, nodes, tap);
+		colorFxChannelBuilt(deck, nodes, ch.filter);
 		// The channel fader is the deck-volume control mounted with this meter.
 		// Tap its output so the physical slider and visible light describe the
 		// same audible channel level. The clip pip judges the level heard after
@@ -448,3 +454,5 @@ export {
 	reattachingDeckMessage
 } from '$lib/rb/graph-rebuild-retry';
 export { markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';
+// COLORFX-01: the color knob's per-effect drive, re-exported for the same reason.
+export { applyColorKnob } from '$lib/rb/color-fx.svelte';

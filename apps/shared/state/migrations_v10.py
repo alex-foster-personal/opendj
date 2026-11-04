@@ -14,7 +14,7 @@ is what makes the first useful on a fleet:
 
 1. ``lyric_verdict`` -- one synced row per track carrying the karaoke lyrics
    verdict, its provenance and the content hash of the word-timing artifact.
-   ``specs/karaoke-lyrics-operational-plan.md`` D13.1.
+   ``(private path)`` D13.1.
 2. ``sync_policies`` is REBUILT to widen its ``asset_kind`` CHECK from four
    kinds to six, admitting ``lyrics_cache`` (which unblocks #1470) and the new
    ``karaoke_words`` artifact kind (D13.2).
@@ -57,6 +57,7 @@ test_soft_delete.py``), so readers filter the parent's ``deleted_at`` as well
 as their own. The FK is declared anyway, for the same reason
 ``track_availability`` declares one.
 """
+
 from __future__ import annotations
 
 #: Every value the ``sync_policies.asset_kind`` CHECK admits from v10 onward.

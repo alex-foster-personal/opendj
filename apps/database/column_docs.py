@@ -50,6 +50,7 @@ from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pair_transitions import PAIR_TRANSITION_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
+from apps.database.column_docs_playlist_rollback import PLAYLIST_ROLLBACK_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
 from apps.database.column_docs_sync_gate import SYNC_GATE_COLUMN_DOCS
 from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
@@ -170,7 +171,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "confidence": (
             "Optional 0-1 confidence score for inferred/analysed values; "
-            "NULL for vendor facts that carry no confidence signal."
+            "NULL for vendor facts that carry no confidence signal. Reported "
+            "provenance only, not an arbitration input: a later write wins "
+            "regardless of the number. Source selection lives in import and "
+            "policy layers."
         ),
         "modified_at": (
             "RFC 3339 UTC timestamp this specific field value was last "
@@ -206,6 +210,9 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "superseded_at": "When it was overwritten by the next value.",
     },
     "playlists": {
+        # Leftover columns from reverted library-org v25 (#7886 / #7921); kept so open_rw can open those libraries (#7922).
+        **PLAYLIST_ROLLBACK_COLUMN_DOCS,
+        # Schema v26 reland (main): same keys; later spread is canonical wording.
         **PLAYLIST_ORG_COLUMN_DOCS,
         "playlist_id": "Primary key, minted at ingest.",
         "name": "Playlist display name.",
@@ -438,6 +445,13 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "materialised_size": (
             "Materialised st_size in bytes from fs_residency, or NULL when "
             "the resolved path is missing, not a file, or a dataless stub."
+        ),
+        "mtime_ns": (
+            "Materialised st_mtime_ns from the same fs_residency stat as "
+            "materialised_size, or NULL when the path is missing, not a file, "
+            "a dataless stub, or the row predates migration v27 and has not "
+            "been re-probed. Listing QLT identity reconstructs file_version "
+            "from this plus size; a NULL mtime never keeps a stored grade."
         ),
         "checked_at": (
             "RFC 3339 UTC timestamp when this row was last probed or written."
@@ -680,6 +694,3 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     # Migration v21 sync_write_tokens (issue #4396).
     **SYNC_GATE_COLUMN_DOCS,
 }
-
-
-__all__ = ["COLUMN_DOCS", "TABLE_DOCS"]

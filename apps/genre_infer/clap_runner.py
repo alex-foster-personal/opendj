@@ -83,16 +83,8 @@ def _self_test(model: Any, proc: Any) -> None:
         np.random.default_rng(0).normal(scale=0.3, size=t.size).astype(np.float32),
     ]
     with torch.no_grad():
-        a = _vec(
-            model.get_audio_features(
-                **proc(audio=clips, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-            )
-        )
-        txt = _vec(
-            model.get_text_features(
-                **proc(text=list(SELF_TEST_PROMPTS), return_tensors="pt", padding=True)
-            )
-        )
+        a = _vec(model.get_audio_features(**proc(audio=clips, sampling_rate=SAMPLE_RATE, return_tensors="pt")))
+        txt = _vec(model.get_text_features(**proc(text=list(SELF_TEST_PROMPTS), return_tensors="pt", padding=True)))
     a = a / np.linalg.norm(a, axis=1, keepdims=True)
     txt = txt / np.linalg.norm(txt, axis=1, keepdims=True)
     sim = a @ txt.T
@@ -118,9 +110,7 @@ def _embed(path: Path, model: Any, proc: Any) -> list[float]:
     lo, hi = 0.1 * dur, max(0.1 * dur, 0.9 * dur - WINDOW_S)
     clips = []
     for o in np.linspace(lo, hi, WINDOWS):
-        clip = librosa.load(
-            str(path), sr=SAMPLE_RATE, mono=True, offset=float(o), duration=WINDOW_S
-        )[0]
+        clip = librosa.load(str(path), sr=SAMPLE_RATE, mono=True, offset=float(o), duration=WINDOW_S)[0]
         # A truncated file keeps its full-length header, so the header duration
         # promises audio that is not there (3 of 281 byte-exact FMA files).
         if clip.size < 0.9 * SAMPLE_RATE * WINDOW_S:
@@ -130,11 +120,7 @@ def _embed(path: Path, model: Any, proc: Any) -> list[float]:
             )
         clips.append(clip)
     with torch.no_grad():
-        e = _vec(
-            model.get_audio_features(
-                **proc(audio=clips, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-            )
-        )
+        e = _vec(model.get_audio_features(**proc(audio=clips, sampling_rate=SAMPLE_RATE, return_tensors="pt")))
     e = e / np.linalg.norm(e, axis=1, keepdims=True)
     m = e.mean(0)
     return [round(float(x), 6) for x in m / np.linalg.norm(m)]

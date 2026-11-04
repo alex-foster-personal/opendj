@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { _pingBackend, _pingFrontend } from '$lib/rb/browser-health-probes';
+	import {
+		_pingBackend,
+		_pingFrontend,
+		appUiDot,
+		coverageTimeoutDot,
+		createLivenessTracker,
+		isCoverageTimeout
+	} from '$lib/rb/browser-health-probes';
 	// Build unit: browser (COMPONENT-MAP 1.5, SCREENSHOT-SPEC 5).
 	// Layout: icon rail (inert) | playlist tree (real: /playlists + /health
 	// counts - OUR numbers) | 4-pane track list. Rows arrive FULLY HYDRATED
@@ -15,6 +22,7 @@
 	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
+	import { isTransientNetworkError } from '$lib/telemetry-network-noise';
 	import {
 		ConflictError,
 		RbApiError,
@@ -100,8 +108,11 @@
 		rowFromIndexWire as _rowFromIndexWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		applySettledAvailability,
+		isTransientListingBusy,
 		startPendingSettle,
 		PlaylistSetTabs,
+		loadComponentRouteList,
+		setRoutesView,
 		usbPaneSource,
 		isRemovedStickRow,
 		registerBrowseAdapter,
@@ -200,6 +211,8 @@
 		invalidatePlaylistFirstPage,
 		invalidateAllPlaylistFirstPages,
 		computeNextOnlyRef,
+		bpmConfidenceIn,
+		peekLibraryIndex,
 		compatibleKeyChecked,
 		openUsbExport,
 		UsbExportScreenLoader
@@ -305,6 +318,9 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import OffloadProgress from '$lib/offload/OffloadProgress.svelte';
+	import { rowIsOffloaded } from './browser/browser-row-wire';
+	import { offloadOps } from '$lib/offload/offload-ops.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -313,7 +329,12 @@
 		resolveDisplayedAnlz,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
-	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
+	/** The Spotify source panel, lazy: the account listing and the side player
+	 * stay off the library first paint until the Spotify source is first shown.
+	 * A failed load is shown in the panel's place and retried on the next visit. */
+	let SpotifySourcePanel = $state<typeof import('./browser/SpotifySourcePanel.svelte').default | null>(null);
+	let spotifyPanelLoad: Promise<void> | null = null;
+	let spotifyPanelError = $state<string | null>(null);
 	/**
 	 * LIBWS-01/04/06: set only by the Library workspace (CrateDesk): selection
 	 * goes out via `publish`, deck loads go to Gig via `loadToDeck`, strip
@@ -431,16 +452,24 @@
 	// only thing that distinguishes "the library really is empty" from "the
 	// engine is not answering", which is exactly the confusion that made
 	// this pin worth filing.
-	let frontendOnline = $state<LibraryHealthDot>({
-		label: 'Frontend',
-		state: 'loading',
-		detail: 'checking frontend'
-	});
 	let backendOnline = $state<LibraryHealthDot>({
 		label: 'Backend',
 		state: 'loading',
 		detail: 'checking backend'
 	});
+	// HEALTH-8304b: a packaged app (any production build) is served by the
+	// engine itself, so there is no dev server to ping: the page row reads
+	// "App UI" and mirrors the Backend dot. Only `vite dev` has a separate
+	// dev server worth its own probe.
+	const pageServedByEngine = !import.meta.env.DEV;
+	let devServerOnline = $state<LibraryHealthDot>({
+		label: 'Frontend',
+		state: 'loading',
+		detail: 'checking dev server'
+	});
+	const frontendOnline = $derived<LibraryHealthDot>(
+		pageServedByEngine ? appUiDot(backendOnline) : devServerOnline
+	);
 	let libraryHealthError = $state<string | null>(null);
 	/**
 	 * Derived, not assigned: computed from whatever has landed rather than
@@ -529,7 +558,11 @@
 			startPendingSettle({
 				rows: () => (p.playlist_id === id ? p.rows : []),
 				fetchRows: async () => (await fetchRows(id)).rows,
-				onError: (exc) => console.error(`[pending-settle] ${id}: ${String(exc)}`)
+				onError: (exc) => {
+					const line = `[pending-settle] ${id}: ${String(exc)}`;
+					if (isTransientListingBusy(exc)) console.debug(line);
+					else console.error(line);
+				}
 			})
 		);
 	});
@@ -794,6 +827,10 @@
 				stable_id: s.stable_id,
 				key: s.key,
 				bpm: s.bpm,
+				// COMPATBPM-01: compare against the tempo the deck is heard at.
+				pitch: s.pitch,
+				// COMPATBPM-03: a placeholder-grid deck (confidence 0) is no BPM reference.
+				bpm_confidence: bpmConfidenceIn(s.stable_id, peekLibraryIndex()?.items ?? pane.rows),
 				key_shift_semitones: s.key_shift_semitones
 			};
 		});
@@ -1092,12 +1129,21 @@
 		// original 2.5s cadence and 2s timeout: this is the only signal that
 		// goes red while the rest of the pane simply shows stale data, so a
 		// slower poll would make it lie for longer than it is useful.
+		// HEALTH-8304: a timeout while the engine boots is amber "starting up",
+		// and any failure is amber "retrying" until it repeats; only then red.
 		let connAlive = true;
+		const mountedAt = Date.now();
+		const backendLiveness = createLivenessTracker('Backend', 'engine', mountedAt);
+		const devServerLiveness = createLivenessTracker('Frontend', 'dev server', mountedAt);
 		const pingConn = async (): Promise<void> => {
-			const [be, fe] = await Promise.all([_pingBackend(), _pingFrontend()]);
+			const [be, fe] = await Promise.all([
+				_pingBackend(),
+				pageServedByEngine ? null : _pingFrontend()
+			]);
 			if (!connAlive) return;
-			backendOnline = be;
-			frontendOnline = fe;
+			const now = Date.now();
+			backendOnline = backendLiveness.observe(be, now);
+			if (fe !== null) devServerOnline = devServerLiveness.observe(fe, now);
 		};
 		void pingConn();
 		const connTimer = setInterval(() => void pingConn(), CONN_PING_MS);
@@ -1187,8 +1233,16 @@
 			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
 			return { ok: true, refreshing: coverage.refreshing, refresh_error: coverage.refresh_error };
 		} catch (error: unknown) {
-			// An endpoint that cannot answer is grey "unknown", never a verdict.
 			const why = error instanceof Error ? error.message : String(error);
+			if (isCoverageTimeout(error)) {
+				// HEALTH-8304c: a timeout is the engine busy counting, amber and
+				// re-asked by the schedule, never a scary verdict.
+				vocalsCompletion = coverageTimeoutDot(vocalsCompletion, 'Vocals completion', why);
+				stemsCompletion = coverageTimeoutDot(stemsCompletion, 'Stems completion', why);
+				lyricsCompletion = coverageTimeoutDot(lyricsCompletion, 'Lyrics completion', why);
+				return { ok: false };
+			}
+			// An endpoint that cannot answer is grey "unknown", never a verdict.
 			vocalsCompletion = _unknownDot('Vocals completion', why);
 			stemsCompletion = _unknownDot('Stems completion', why);
 			lyricsCompletion = _unknownDot('Lyrics completion', why);
@@ -1374,6 +1428,24 @@
 	}
 
 	// -------------------------------------------------------- source modes
+
+	function _loadSpotifyPanel(): void {
+		spotifyPanelError = null;
+		spotifyPanelLoad ??= import('./browser/SpotifySourcePanel.svelte').then(
+			(mod) => {
+				SpotifySourcePanel = mod.default;
+			},
+			(exc: unknown) => {
+				spotifyPanelLoad = null;
+				spotifyPanelError = exc instanceof Error ? exc.message : String(exc);
+				console.error('[spotify] Spotify panel failed to load:', exc);
+			}
+		);
+	}
+
+	$effect(() => {
+		if (source === 'spotify' && SpotifySourcePanel === null) _loadSpotifyPanel();
+	});
 
 	function selectSpotifySource(): void {
 		source = 'spotify';
@@ -1733,7 +1805,9 @@
 			allTracksCount = healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
-			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
+			if (!isTransientNetworkError(String(exc))) {
+				console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
+			}
 		}
 		for (const p of panes) {
 			// A blank pane has nothing to refresh. Skip blocking loads
@@ -1769,9 +1843,11 @@
 				// must not rebuild it from playlist rows.
 				if (!(p === pane && wholeCollectionActive)) pruneSelection(p, result.rows);
 			} catch (exc) {
-				console.error(
-					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
-				);
+				if (!isTransientNetworkError(String(exc))) {
+					console.error(
+						`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
+					);
+				}
 			}
 		}
 		// A boot health read that joined an in-flight coalesced entry can settle
@@ -2484,6 +2560,8 @@
 		rb_meta?: BrowserRow['rb_meta'];
 		file_availability?: BrowserRow['file_availability'];
 		file_path?: string | null;
+		/** OFFLOAD: an offloaded row downloads before it loads. */
+		offload?: BrowserRow['offload'];
 	};
 
 	function loadRow(
@@ -2770,7 +2848,10 @@
 				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
-			const loadRefusal = libraryAudioLoadRefusal(row);
+			// OFFLOAD: an offloaded track is downloaded first by the shared load hook
+			// (ensureLocalBeforeLoad in dispatchPerformanceCommand), never refused as missing.
+			const offloaded = rowIsOffloaded(row);
+			const loadRefusal = offloaded ? null : libraryAudioLoadRefusal(row);
 			if (loadRefusal !== null) {
 				// Refuse before dispatchPerformanceCommand. Absent and
 				// unchecked/pending rows never become a deck error toast.
@@ -3412,6 +3493,11 @@
 	// membership, so a plain pane reload (same call every membership
 	// mutation above already makes) is enough to pick up the fresh
 	// file_exists / mostly_broken state - no separate refetch needed.
+	// OFFLOAD: rows show the new offload state as soon as an operation ends.
+	// The library-change path: invalidates the held index and refreshes rows without
+	// resetting selection or scroll (Sentry and Codex on #8601).
+	$effect(() => offloadOps.onFinished(_requestLibraryRefresh));
+
 	async function _reloadActivePane(): Promise<void> {
 		const p = pane;
 		const node = _currentNode(p);
@@ -3566,7 +3652,11 @@
 >
 	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} recordable={library === null} />
 	<div class="tree-panel" data-testid="playlist-tree">
-		{#if source === 'spotify'}
+		{#if source === 'spotify' && SpotifySourcePanel === null}
+			<p class="spotify-panel-status" role="status">
+				{spotifyPanelError === null ? 'Loading Spotify...' : `Spotify panel failed to load: ${spotifyPanelError}`}
+			</p>
+		{:else if source === 'spotify' && SpotifySourcePanel !== null}
 			<SpotifySourcePanel
 				playlists={spotifyPlaylists}
 				playlistsLoading={playlistsLoading}
@@ -3821,8 +3911,14 @@
 			</div>
 		{/if}
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
-			<PlaylistSetTabs playlistId={pane.playlist_id} />
+			<PlaylistSetTabs playlistId={pane.playlist_id} rows={pane.rows} selectedOrders={pane.selected_orders} />
 		{/if}
+		{#if pane.kind === 'playlist' && pane.playlist_id !== null && setRoutesView.active && setRoutesView.playlistId === pane.playlist_id}
+			{#await loadComponentRouteList() then routeList}
+				<routeList.default playlistId={pane.playlist_id} rows={pane.rows} />
+			{/await}
+		{:else}
+		<OffloadProgress />
 		<LibraryLoadIndicator
 			loading={pane.loading}
 			progress={pane.load_progress}
@@ -3890,6 +3986,7 @@
 			{suggestHoverId}
 			compatibleReferenceKey={nextOnlyRef?.key ?? null}
 		/>
+		{/if}
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
 		{/if}
@@ -3982,6 +4079,7 @@
 					class:unavailable={dot.state === 'unavailable'}
 					class:error={dot.state === 'error'}
 					class:loading={dot.state === 'loading'}
+					class:waiting={dot.state === 'waiting'}
 					class="health-dot"
 					aria-label={`${dot.label}: ${dot.detail}`}
 				>
@@ -4098,6 +4196,11 @@
 <UsbExportScreenLoader />
 
 <style>
+	.spotify-panel-status {
+		margin: 8px;
+		font-size: 12px;
+		color: var(--text-dim, #888);
+	}
 	.rb-browser {
 		grid-area: browser;
 		position: relative;
@@ -4475,6 +4578,10 @@
 	}
 	.health-dot.loading > span:first-child { background: color-mix(in srgb, var(--rb-accent) 60%, #3a4048); }
 	.health-dot.incomplete > span:first-child { background: var(--rb-orange); }
+	/* HEALTH-8304: amber, softened and pulsing: no answer yet, not a verdict. */
+	.health-dot.waiting > span:first-child { background: var(--rb-orange); opacity: 0.6; animation: health-dot-waiting 1.6s ease-in-out infinite; }
+	@keyframes health-dot-waiting { 50% { opacity: 1; } }
+	@media (prefers-reduced-motion: reduce) { .health-dot.waiting > span:first-child { animation: none; } }
 	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
 	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }
 	.health-popover {

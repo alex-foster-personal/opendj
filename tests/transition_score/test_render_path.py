@@ -1246,6 +1246,27 @@ def test_a_missing_audio_file_names_the_track_never_the_path(tmp_path: Path) -> 
     assert refused.value.stable_id == "trk-in" and str(tmp_path) not in str(refused.value)
 
 
+@pytest.mark.requirement("TRYER-03")
+def test_engine_source_turns_missing_audio_into_audio_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the resolver finds no audio [then] AudioUnavailable names the id, never a path, [else stop]."""
+    from apps.shared.engine_origin import EngineOrigin
+    from apps.transition_score.tryer import AudioUnavailable, EngineTrackSource
+
+    dummy = EngineOrigin(host="127.0.0.1", port=1, lock_path=Path("x.lock"), pid=None, role=None, boot_id=None)
+    monkeypatch.setattr("apps.transition_score.tryer.resolve_origin", lambda: dummy)
+
+    def no_audio(data_dir: Path, stable_id: str) -> Path:
+        raise FileNotFoundError(f"/srv/music/{stable_id}.mp3")
+
+    monkeypatch.setattr("apps.stems.cli.resolve_audio_path", no_audio)
+    with pytest.raises(AudioUnavailable) as gone:
+        EngineTrackSource(tmp_path).audio_path("trk-in")
+    assert gone.value.stable_id == "trk-in"
+    assert "/srv" not in str(gone.value) and str(tmp_path) not in str(gone.value)
+
+
 def test_only_pair_level_refusals_are_pair_not_tryable(
     engine: Path, tracks: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

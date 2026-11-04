@@ -1,6 +1,6 @@
 """Per-import reporting artifacts.
 
-Emits under ``data/spotify/import-<playlist_id>-<timestamp>/``:
+Emits under ``(private path)<playlist_id>-<timestamp>/``:
 
 * ``matches.csv`` -- every track + decision (matched / review / unmatched).
 * ``to-acquire.csv`` -- unmatched subset + 5 deep-link search URLs.
@@ -9,6 +9,7 @@ Emits under ``data/spotify/import-<playlist_id>-<timestamp>/``:
 
 Atomic writes (tmp + os.replace).
 """
+
 from __future__ import annotations
 
 import csv
@@ -41,17 +42,38 @@ __all__ = [
 
 
 _MATCHES_COLS: tuple[str, ...] = (
-    "position", "spotify_uri", "isrc", "title", "artist", "album",
-    "duration_ms", "status", "confidence", "signals",
-    "local_stable_id", "local_title", "local_artist",
+    "position",
+    "spotify_uri",
+    "isrc",
+    "title",
+    "artist",
+    "album",
+    "duration_ms",
+    "status",
+    "confidence",
+    "signals",
+    "local_stable_id",
+    "local_title",
+    "local_artist",
 )
 
 _TO_ACQUIRE_COLS: tuple[str, ...] = (
-    "playlist_id", "playlist_position", "spotify_uri", "isrc",
-    "title", "artist", "album", "duration_ms", "confidence",
-    "suggested_source_beatport", "suggested_source_bandcamp",
-    "suggested_source_qobuz", "suggested_source_apple",
-    "suggested_source_discogs", "notes", "status",
+    "playlist_id",
+    "playlist_position",
+    "spotify_uri",
+    "isrc",
+    "title",
+    "artist",
+    "album",
+    "duration_ms",
+    "confidence",
+    "suggested_source_beatport",
+    "suggested_source_bandcamp",
+    "suggested_source_qobuz",
+    "suggested_source_apple",
+    "suggested_source_discogs",
+    "notes",
+    "status",
 )
 
 
@@ -160,9 +182,7 @@ def write_to_acquire_md(
     *,
     include_timestamp: bool = True,
 ) -> Path:
-    return render_markdown_file(
-        playlist, entries, path, include_timestamp=include_timestamp
-    )
+    return render_markdown_file(playlist, entries, path, include_timestamp=include_timestamp)
 
 
 def write_summary_md(
@@ -211,12 +231,13 @@ def write_all_reports(
     entries = build_acquisition_entries(result.pairs)
     write_matches_csv(result.pairs, paths.matches_csv)
     write_to_acquire_csv(playlist, entries, paths.to_acquire_csv)
-    write_to_acquire_md(
-        playlist, entries, paths.to_acquire_md, include_timestamp=include_timestamp
-    )
+    write_to_acquire_md(playlist, entries, paths.to_acquire_md, include_timestamp=include_timestamp)
     write_summary_md(
-        playlist, result, paths.summary_md,
+        playlist,
+        result,
+        paths.summary_md,
         include_timestamp=include_timestamp,
-        runtime_seconds=runtime_seconds, live=live,
+        runtime_seconds=runtime_seconds,
+        live=live,
     )
     return paths

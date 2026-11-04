@@ -19,6 +19,7 @@ const set = (id: number, name: string, play_count: number): PlaylistSet => ({
 	name,
 	play_count,
 	entries: [],
+	parts: [],
 	created_at: '2026-10-01T18:00:00Z',
 	updated_at: '2026-10-10T18:00:00Z'
 });

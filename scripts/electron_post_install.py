@@ -29,10 +29,13 @@ Requirements:
   operator's Doppler secrets never reach the launched app.
 - ✔︎ health: the engine of THIS bundle (its payload runtime's listening port)
   answers /api/v1/health with a status and a state_db, reports no
-  forbidden env key with HOME present as the positive control, and
-  /api/v1/build-info reports source=payload at the target sha.
+  forbidden env key with HOME present as the positive control,
+  /api/v1/build-info reports source=payload at the target sha, and
+  /api/v1/audio/output-health returns a measured verdict (probe_available
+  true and verdict ok, not_delivering, or muted_by_jack).
   - [if] the engine reports a forbidden env key, or HOME absent [then ⛔️] UNHEALTHY
   - [if] build-info names another sha or source=repo [then ⛔️] UNHEALTHY
+  - [if] output-health is not a measured verdict [then ⛔️] UNHEALTHY
   - [if] no engine of this bundle answers within HEALTH_WAIT_S [then ⛔️] UNHEALTHY
 """
 
@@ -188,7 +191,8 @@ def engine_probe_command(bundle: str) -> str:
         f'[ -n "$port" ] || exit {PROBE_NO_PORT_EXIT}; '
         'echo "PORT $port"; '
         'printf "HEALTH "; curl -sS -m 5 "http://127.0.0.1:$port/api/v1/health" | tr -d "\\n"; echo; '
-        'printf "BUILD "; curl -sS -m 5 "http://127.0.0.1:$port/api/v1/build-info" | tr -d "\\n"; echo'
+        'printf "BUILD "; curl -sS -m 5 "http://127.0.0.1:$port/api/v1/build-info" | tr -d "\\n"; echo; '
+        'printf "OUTPUT "; curl -sS -m 8 "http://127.0.0.1:$port/api/v1/audio/output-health" | tr -d "\\n"; echo'
     )
 
 
@@ -197,11 +201,12 @@ class Probe:
     port: int | None
     health: Any
     build_info: Any
+    output_health: Any = None
 
 
 def parse_probe(stdout: str) -> Probe:
     port: int | None = None
-    bodies: dict[str, Any] = {"HEALTH": None, "BUILD": None}
+    bodies: dict[str, Any] = {"HEALTH": None, "BUILD": None, "OUTPUT": None}
     for line in stdout.splitlines():
         tag, _, rest = line.partition(" ")
         if tag == "PORT" and rest.strip().isdigit():
@@ -211,7 +216,10 @@ def parse_probe(stdout: str) -> Probe:
                 bodies[tag] = json.loads(rest)
             except ValueError:
                 bodies[tag] = None
-    return Probe(port, bodies["HEALTH"], bodies["BUILD"])
+    return Probe(port, bodies["HEALTH"], bodies["BUILD"], bodies["OUTPUT"])
+
+
+MEASURED_OUTPUT_VERDICTS = ("ok", "not_delivering", "muted_by_jack")
 
 
 def health_problems(probe: Probe, target_sha: str) -> list[str]:
@@ -235,6 +243,14 @@ def health_problems(probe: Probe, target_sha: str) -> list[str]:
         problems.append(
             f"running build is source={build.get('source')!r} sha={str(build.get('git_sha_full'))[:12]!r}, "
             f"not the installed payload at {target_sha[:12]}"
+        )
+    output = probe.output_health
+    if not isinstance(output, dict):
+        problems.append("/api/v1/audio/output-health returned no JSON object")
+    elif output.get("probe_available") is not True or output.get("verdict") not in MEASURED_OUTPUT_VERDICTS:
+        problems.append(
+            f"/api/v1/audio/output-health is unmeasured: verdict={output.get('verdict')!r} "
+            f"reason={output.get('reason')!r}"
         )
     return problems
 

@@ -42,9 +42,7 @@ class _WaveformAccum:
     primary_rs: list[float] = field(default_factory=list)
     secondary_rs: list[float] = field(default_factory=list)
     track_mean_rs: list[float] = field(default_factory=list)
-    band_rs_by_name: dict[str, list[float]] = field(
-        default_factory=lambda: {name: [] for name in BAND_NAMES}
-    )
+    band_rs_by_name: dict[str, list[float]] = field(default_factory=lambda: {name: [] for name in BAND_NAMES})
 
 
 def _record_disposition(sid: str, disposition: str, accum: _WaveformAccum) -> None:

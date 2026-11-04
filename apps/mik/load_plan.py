@@ -4,6 +4,7 @@ review gate). Purely mechanical: ``load.py`` re-exports ``build_plan``, so
 ``from apps.mik.load import build_plan`` (the existing import shape) is
 unaffected.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -33,9 +34,7 @@ from .match import Match, MatchReport, Unmatched
 from .mikdb import MikSong
 
 
-def _existing_field_sources(
-    conn: sqlite3.Connection, field_names: Iterable[str]
-) -> dict[tuple[str, str], str]:
+def _existing_field_sources(conn: sqlite3.Connection, field_names: Iterable[str]) -> dict[tuple[str, str], str]:
     """``{(stable_id, field_name): source}`` for rows already in track_fields."""
     names = tuple(field_names)
     if not names:
@@ -44,16 +43,13 @@ def _existing_field_sources(
     return {
         (stable_id, field_name): source
         for stable_id, field_name, source in conn.execute(
-            f"SELECT stable_id, field_name, source FROM track_fields "
-            f"WHERE field_name IN ({placeholders})",
+            f"SELECT stable_id, field_name, source FROM track_fields WHERE field_name IN ({placeholders})",
             names,
         )
     }
 
 
-def _field_versions(
-    conn: sqlite3.Connection, field_names: Iterable[str]
-) -> dict[tuple[str, str], FieldVersion]:
+def _field_versions(conn: sqlite3.Connection, field_names: Iterable[str]) -> dict[tuple[str, str], FieldVersion]:
     """``{(stable_id, field_name): (source, value_json, modified_at)}`` for rows in track_fields."""
     names = tuple(field_names)
     if not names:
@@ -117,9 +113,7 @@ def series_version(conn: sqlite3.Connection, stable_id: str) -> tuple[tuple[Any,
     )
 
 
-def _promoted_stable_ids(
-    conn: sqlite3.Connection, field_names: Iterable[str]
-) -> dict[tuple[str, str], str]:
+def _promoted_stable_ids(conn: sqlite3.Connection, field_names: Iterable[str]) -> dict[tuple[str, str], str]:
     """``{(source_row_id, field_name): promoted_stable_id}`` for MIK rows a
     prior :func:`apps.mik.promote.promote` already bound to a track.
 
@@ -173,11 +167,7 @@ def _key_precedence_band(confidence: float | None, prior_source: str | None) -> 
     guessed), or clear to go through the normal precedence check."""
     if confidence is None or confidence < KEY_CONFIDENCE_FLOOR:
         return _KEY_BLOCKED_FLOOR
-    if (
-        confidence < KEY_CONFIDENCE_MIK_WINS
-        and prior_source is not None
-        and prior_source != SOURCE
-    ):
+    if confidence < KEY_CONFIDENCE_MIK_WINS and prior_source is not None and prior_source != SOURCE:
         return _KEY_REVIEW_BAND
     return _KEY_PROCEED
 
@@ -199,9 +189,7 @@ def _promoted_row_targets(promoted: dict[tuple[str, str], str]) -> dict[str, str
     return targets
 
 
-def _conflicts_with_promotion(
-    promoted_targets: dict[str, str], row_id: str, stable_id: str
-) -> bool:
+def _conflicts_with_promotion(promoted_targets: dict[str, str], row_id: str, stable_id: str) -> bool:
     """True when this source row was already promoted (on any field) to a
     DIFFERENT track than the one it now matches (see
     :func:`_promoted_row_targets`)."""
@@ -268,9 +256,7 @@ def _blocked_by_precedence(
     return False
 
 
-def _plan_scalar_field(
-    field_name: str, state: _SongPlanState, lookups: _PlanLookups, plan: LoadPlan
-) -> None:
+def _plan_scalar_field(field_name: str, state: _SongPlanState, lookups: _PlanLookups, plan: LoadPlan) -> None:
     """Decide the one write, staged row, or block reason for one scalar field
     of one song. Split out of :func:`build_plan` so its own branching does
     not count against that function's per-song loop.
@@ -287,9 +273,7 @@ def _plan_scalar_field(
         return
     match = state.match
     if match is None:
-        plan.staged.append(
-            _stage(state.song, field_name, value, confidence, state.unmatched)
-        )
+        plan.staged.append(_stage(state.song, field_name, value, confidence, state.unmatched))
         return
     if not state.shared_target and _conflicts_with_promotion(lookups.promoted, state.row_id, match.stable_id):
         plan._bump(plan.blocked_by_promotion_conflict, field_name)
@@ -376,7 +360,11 @@ def _holds_own_mik_analysis(stable_id: str, lookups: _PlanLookups) -> bool:
     sit at ``needs_series`` for good.
     """
     version = lookups.versions.get((stable_id, "energy"))
-    return version is not None and version[0] == SOURCE and lookups.series_analyses.get(stable_id) == frozenset({version[2]})
+    return (
+        version is not None
+        and version[0] == SOURCE
+        and lookups.series_analyses.get(stable_id) == frozenset({version[2]})
+    )
 
 
 def _plan_one_fill(row_state: _SongPlanState, lookups: _PlanLookups, plan: LoadPlan) -> None:
@@ -396,9 +384,7 @@ def _plan_one_fill(row_state: _SongPlanState, lookups: _PlanLookups, plan: LoadP
         del plan.segment_writes[segments_before:]
 
 
-def _plan_shared(
-    state: _SongPlanState, extra: Sequence[Match], lookups: _PlanLookups, plan: LoadPlan
-) -> None:
+def _plan_shared(state: _SongPlanState, extra: Sequence[Match], lookups: _PlanLookups, plan: LoadPlan) -> None:
     """Plan :data:`SHARED_FIELDS` once per duplicate row this song also feeds.
 
     Each row goes through the same gate and precedence checks as a direct
@@ -421,10 +407,7 @@ def _song_state(song: MikSong, report: MatchReport, plan: LoadPlan) -> _SongPlan
     match: Match | None = report.matches.get(song.row_id)
     unmatched: Unmatched | None = report.unmatched.get(song.row_id)
     if match is None and unmatched is None:
-        raise LoadError(
-            f"MIK row {song.row_id} is in neither matches nor unmatched; "
-            f"the match report is incomplete"
-        )
+        raise LoadError(f"MIK row {song.row_id} is in neither matches nor unmatched; the match report is incomplete")
     if song.analysed_at is None:
         plan._bump(plan.no_value, "analysed_at")
         return None
@@ -502,9 +485,7 @@ def _stage(
     unmatched: Unmatched | None,
 ) -> StagedWrite:
     if unmatched is None:
-        raise LoadError(
-            f"MIK row {song.row_id} has no match and no unmatched record"
-        )
+        raise LoadError(f"MIK row {song.row_id} has no match and no unmatched record")
     return StagedWrite(
         source_row_id=str(song.row_id),
         field_name=field_name,

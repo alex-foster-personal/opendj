@@ -9,6 +9,7 @@ USB volume request for that reason alone (Thu 1 Oct 2026).
 Readers dereference ``macos_diskutil.DISKUTIL_PATH`` at call time, so a test
 can point it at a file of its own.
 """
+
 from __future__ import annotations
 
 import os

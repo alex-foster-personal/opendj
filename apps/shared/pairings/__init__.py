@@ -2,7 +2,7 @@
 
 Hand-curated (for v1) directed edges between tracks: "A flows into B",
 "A and B flow either way". The table shape matches the open-dj v0 strawman
-`Pairing` entity (``docs/open-dj-v0-strawman.md`` §4.7) so Phase 15 export
+`Pairing` entity (``(private path)`` §4.7) so Phase 15 export
 is a plain ``SELECT * FROM pairings`` + JSON serialisation.
 
 Public API:
@@ -11,6 +11,7 @@ Public API:
 
 Schema lives in :mod:`apps.shared.state.schema` migration v2.
 """
+
 from __future__ import annotations
 
 from .capture_repo import Alignment, PairingCaptureError, PairingCaptureRepo, SyncSnapshot

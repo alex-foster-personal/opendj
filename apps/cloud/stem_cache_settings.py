@@ -13,6 +13,7 @@ Requirements (mini-PRD):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -66,18 +67,12 @@ def settings_from_mapping(payload: Mapping[str, object]) -> StemCacheSettings:
     known = set(StemCacheSettings.__dataclass_fields__)
     unknown = set(payload).difference(known)
     if unknown:
-        raise StemCacheSettingsError(
-            f"unsupported stem cache setting(s): {sorted(unknown)}; known: {sorted(known)}"
-        )
+        raise StemCacheSettingsError(f"unsupported stem cache setting(s): {sorted(unknown)}; known: {sorted(known)}")
     merged: dict[str, object] = {**asdict(StemCacheSettings()), **payload}
     floor_gib = _number(merged, "floor_gib", ">= 0")
     fraction = _number(merged, "floor_fraction", "in [0, 1)")
     interval = _number(merged, "enforce_interval_s", "> 0")
-    cap = (
-        None
-        if merged["max_cache_gib"] is None
-        else _number(merged, "max_cache_gib", ">= 0, or null")
-    )
+    cap = None if merged["max_cache_gib"] is None else _number(merged, "max_cache_gib", ">= 0, or null")
     auto_evict = merged["auto_evict"]
     if floor_gib < 0:
         raise StemCacheSettingsError(f"floor_gib must be >= 0; got {floor_gib!r}")

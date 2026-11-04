@@ -35,7 +35,7 @@ def find_candidates(
     Scans ``<root>/<session>/audio_*`` (``root`` defaults to
     :data:`apps.sets.paths.SETS_DIR`). ``now`` lets tests pin the clock.
     """
-    base = Path(root) if root is not None else sets_paths.SETS_DIR
+    base = sets_paths.resolve_sets_root(root)
     wall_now = now if now is not None else time.time()
     cutoff = wall_now - retention_days * SECONDS_PER_DAY
     out: list[PruneCandidate] = []

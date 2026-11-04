@@ -28,14 +28,18 @@ Three rounds of review shaped what these tests pin:
 """
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
+
+from tests.waits import EXTERNAL_STATE_GUARD_S
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -326,17 +330,16 @@ def _run_without_platform_primitive(
 
 
 @pytest.mark.requirement("JIT-06")
-def test_without_a_uid_no_private_directory_is_trusted_or_created(
+def test_without_a_uid_the_lock_dir_is_provisioned_but_cache_is_refused(
     tmp_path: Path,
 ) -> None:
-    """[if] a missing uid lets an unproven directory pass as ours [then] fail, [else stop].
+    """[if] no uid lets cache dir pass as ours [then] fail, [else stop].
 
-    Sol review at 7110a58d7 (P1): treating every real directory as owned when
-    ``os.getuid`` is absent let a directory another account prepared pass the
-    trust boundary. Both the lock directory and the cache directory must
-    refuse instead, and must not be created on the way."""
+    Lock directory is provisioned under tmp; cache directory and ownership
+    checks still refuse."""
     existing = tmp_path / "already-here"
     existing.mkdir()
+    lock_path = tmp_path / "lock"
     out = _run_without_platform_primitive(
         tmp_path,
         hide="getuid",
@@ -347,14 +350,15 @@ def test_without_a_uid_no_private_directory_is_trusted_or_created(
         )
         print(
             _is_owned_dir(Path({str(existing)!r})),
-            _ensure_lock_dir(Path({str(tmp_path / "lock")!r}), shared=False),
+            _ensure_lock_dir(Path({str(lock_path)!r}), shared=False),
             ensure_owned_numba_cache_dir(),
         )
         """,
     )
 
-    assert out == "False False None"
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["already-here"]
+    assert out == "False True None"
+    assert lock_path.is_dir()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["already-here", "lock"]
 
 
 @pytest.mark.requirement("JIT-06")
@@ -383,29 +387,140 @@ def test_with_a_uid_the_same_checks_still_pass(tmp_path: Path) -> None:
     assert (tmp_path / "lock").is_dir()
 
 
+@pytest.mark.requirement("JIT-8573")
+@pytest.mark.rb_parity
+def test_a_non_contention_lock_error_refuses_without_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] try_lock raises a non-contention error [then] refuse at once, [else stop]."""
+    import logging
+
+    from apps.analysis import jit_warmup
+    from apps.shared import file_lock
+
+    caplog.set_level(logging.ERROR, logger="apps.analysis.jit_warmup")
+
+    def _bad_lock(_fd: int, *, nt_offset: int = file_lock.NT_LOCK_OFFSET) -> bool:
+        del nt_offset
+        raise OSError(errno.EBADF, "bad fd")
+
+    monkeypatch.setattr(file_lock, "try_lock", _bad_lock)
+    started = time.monotonic()
+    with jit_warmup._compile_lock(
+        tmp_path / "x.lock", 30.0, require_self_owned=False
+    ) as (held, proceed, _waited):
+        assert (held, proceed) == (False, False)
+    assert time.monotonic() - started < 5.0
+    assert any(
+        "REFUSED rather than treat a lock error as contention" in r.message
+        for r in caplog.records
+    )
+    assert not any("another process held" in r.message for r in caplog.records)
+
+
+@pytest.mark.requirement("JIT-8573")
+@pytest.mark.rb_parity
+def test_contention_past_timeout_refuses_rather_than_warming_unlocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] contention outlasts timeout [then] refuse not unlock, [else stop]."""
+    import logging
+
+    from apps.analysis import jit_warmup
+    from apps.shared import file_lock
+
+    caplog.set_level(logging.ERROR, logger="apps.analysis.jit_warmup")
+    monkeypatch.setattr(file_lock, "try_lock", lambda _fd, **_: False)
+    with jit_warmup._compile_lock(
+        tmp_path / "x.lock", 0.4, require_self_owned=False
+    ) as (held, proceed, _waited):
+        assert (held, proceed) == (False, False)
+    assert any(
+        "REFUSED rather than compile a cold cache unlocked" in r.message
+        for r in caplog.records
+    )
+    assert not any("warming WITHOUT" in r.message for r in caplog.records)
+
+
 @pytest.mark.requirement("JIT-06")
-def test_without_fcntl_the_warmup_lock_refuses_rather_than_runs_unlocked(
+@pytest.mark.rb_parity
+def test_the_real_compile_lock_on_this_platform_locks_or_refuses(
     tmp_path: Path,
 ) -> None:
-    """[if] a platform with no fcntl warms a cold cache unlocked [then] fail, [else stop].
-
-    Sol review at 7110a58d7 (P1): ``_compile_lock`` used to yield
-    ``proceed=True`` when ``fcntl`` was missing, so Windows warmed with no
-    cross-process lock at all, against JIT-06. It must refuse instead."""
+    """[if] this platform's compile lock proceeds without holding [then] fail, [else stop]."""
     out = _run_without_platform_primitive(
         tmp_path,
-        hide="fcntl",
+        hide="nothing",
         body=f"""
         from pathlib import Path
         from apps.analysis.jit_warmup import _compile_lock
         with _compile_lock(
-            Path({str(tmp_path / "x.lock")!r}), 1.0, require_self_owned=True
+            Path({str(tmp_path / "x.lock")!r}), 1.0, require_self_owned=False
         ) as (held, proceed, _waited):
             print(held, proceed)
         """,
     )
 
-    assert out == "False False"
+    held, proceed = out.split()
+    assert (held, proceed) == ("True", "True"), out
+
+
+_COMPILE_LOCK_HOLDER = (
+    "import sys\n"
+    "from pathlib import Path\n"
+    "from apps.analysis.jit_warmup import _compile_lock\n"
+    "with _compile_lock(Path(sys.argv[1]), 300.0, require_self_owned=False) as (held, proceed, _):\n"
+    "    print(held, proceed, flush=True)\n"
+    "    sys.stdin.read()\n"
+)
+
+_COMPILE_LOCK_CONTENDER = (
+    "import sys\n"
+    "from pathlib import Path\n"
+    "from apps.analysis.jit_warmup import _compile_lock\n"
+    "with _compile_lock(Path(sys.argv[1]), 1.0, require_self_owned=False) as (held, proceed, _):\n"
+    "    print(held, proceed)\n"
+)
+
+
+def _compile_lock_contender(path: Path) -> tuple[bool, bool]:
+    done = subprocess.run(
+        [sys.executable, "-c", _COMPILE_LOCK_CONTENDER, str(path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=EXTERNAL_STATE_GUARD_S,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr or done.stdout
+    held_s, proceed_s = done.stdout.strip().split()
+    return held_s == "True", proceed_s == "True"
+
+
+@pytest.mark.requirement("JIT-8573")
+@pytest.mark.rb_parity
+def test_the_real_compile_lock_excludes_a_second_process(tmp_path: Path) -> None:
+    """[if] a live holder holds the compile lock [then] a child is refused, [else stop]."""
+    lock_path = tmp_path / "x.lock"
+    holder = subprocess.Popen(
+        [sys.executable, "-c", _COMPILE_LOCK_HOLDER, str(lock_path)],
+        cwd=REPO_ROOT,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        line = holder.stdout.readline().strip()
+        assert line == "True True"
+        assert _compile_lock_contender(lock_path) == (False, False)
+    finally:
+        holder.kill()
+        holder.wait(timeout=EXTERNAL_STATE_GUARD_S)
+        assert holder.stdin is not None and holder.stdout is not None
+        holder.stdin.close()
+        holder.stdout.close()
+    assert _compile_lock_contender(lock_path) == (True, True)
 
 
 @pytest.mark.requirement("META-01")
@@ -430,37 +545,3 @@ def test_a_symlinked_directory_is_refused_on_this_platform(
 
     assert result == "None", "a symlinked NUMBA_CACHE_DIR must refuse, not be purged into"
     assert not (target / ".mdt-numba-cache-owned").exists()
-
-
-@pytest.mark.requirement("JIT-06")
-@pytest.mark.rb_parity
-def test_the_real_compile_lock_on_this_platform_locks_or_refuses(
-    tmp_path: Path,
-) -> None:
-    """[if] this platform's real compile lock lets a warm-up run with no cross-process lock [then] fail, [else stop].
-
-    Codex review at 5c7e6fb75 (P1): the no-fcntl test above simulates Windows
-    on a POSIX host. Enrolled in the Windows parity gate, this one runs the
-    real ``_compile_lock`` with nothing hidden: where ``fcntl`` exists it must
-    hold the lock and proceed, and where it does not (Windows) it must refuse."""
-    out = _run_without_platform_primitive(
-        tmp_path,
-        hide="nothing",
-        body=f"""
-        import importlib.util
-        from pathlib import Path
-        from apps.analysis.jit_warmup import _compile_lock
-        with _compile_lock(
-            Path({str(tmp_path / "x.lock")!r}), 1.0, require_self_owned=True
-        ) as (held, proceed, _waited):
-            print(importlib.util.find_spec("fcntl") is not None, held, proceed)
-        """,
-    )
-
-    has_fcntl, held, proceed = out.split()
-    if has_fcntl == "True":
-        assert (held, proceed) == ("True", "True"), out
-    else:
-        assert (held, proceed) == ("False", "False"), (
-            "with no fcntl the warm-up must refuse, not run unlocked: " + out
-        )

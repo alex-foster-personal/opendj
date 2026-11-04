@@ -7,6 +7,7 @@ match yet. ``state_writer.py`` re-imports and re-exports ``synthetic_stable_id``
 (its only externally-imported name) and calls the rest directly; pending-row
 search URLs use :func:`apps.spotify.acquisition.build_search_urls`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -60,14 +61,10 @@ def _upsert_synthetic_track(
     epoch-old and the push fence never offers it.
     """
     sid = synthetic_stable_id(src.spotify_uri)
-    artists_json = json.dumps(
-        list(src.artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
-    )
+    artists_json = json.dumps(list(src.artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False)
     tier = "isrc" if src.isrc else "inferred"
     file_path = src.spotify_uri or f"spotify:track:{src.spotify_id or sid}"
-    existing = conn.execute(
-        "SELECT deleted_at FROM tracks WHERE stable_id = ?", (sid,)
-    ).fetchone()
+    existing = conn.execute("SELECT deleted_at FROM tracks WHERE stable_id = ?", (sid,)).fetchone()
     if existing is not None and existing[0] is not None:
         return None
     track_stamp = sync_stamp.stamp_and_log(conn, "tracks", (sid,), machine_id, now=now)
@@ -136,9 +133,7 @@ def _set_track_vendor_id(
     ``origin_device_id`` NULL and logged nothing, so a re-import never
     reached the hub.
     """
-    stamp = sync_stamp.stamp_and_log(
-        conn, "track_vendor_ids", (stable_id, VENDOR), machine_id, now=now
-    )
+    stamp = sync_stamp.stamp_and_log(conn, "track_vendor_ids", (stable_id, VENDOR), machine_id, now=now)
     conn.execute(
         "INSERT INTO track_vendor_ids"
         "(stable_id, vendor, vendor_id, updated_at, origin_device_id) "

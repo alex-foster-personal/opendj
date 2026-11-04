@@ -53,6 +53,17 @@ export function hasPendingAvailability(rows: readonly AvailabilityRow[]): boolea
 	return rows.some(_isPending);
 }
 
+/** STATE-14 503 / sqlite lock on a settle re-ask. The loop already retries;
+ * console.error is sampled into Sentry (OPEN-DJ-BE-8Y). */
+export function isTransientListingBusy(exc: unknown): boolean {
+	const text = String(exc).toLowerCase();
+	return (
+		text.includes('state store is busy') ||
+		text.includes('state_store_busy') ||
+		text.includes('database is locked')
+	);
+}
+
 /** Copy settled answers from `fresh` onto the pending rows of `held`, in
  * place. Returns how many held rows are still pending. */
 export function applySettledAvailability(

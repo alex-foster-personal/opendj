@@ -256,7 +256,11 @@ test('a blob without spotify_library loads empty pin/recent lists', async () => 
 	_fakeWindow(JSON.stringify({ hide_broken_links: true }));
 	const prefs = await _loadPrefs();
 
-	assert.deepEqual(prefs.uiPrefs.spotify_library, { pinned_ids: [], recent_ids: [] });
+	assert.deepEqual(prefs.uiPrefs.spotify_library, {
+		pinned_ids: [],
+		recent_ids: [],
+		shrink_main_for_player: true
+	});
 });
 
 test('a persisted spotify_library identity round-trips', async () => {
@@ -270,12 +274,13 @@ test('a persisted spotify_library identity round-trips', async () => {
 
 	assert.deepEqual(prefs.uiPrefs.spotify_library, {
 		pinned_ids: ['pl-pin'],
-		recent_ids: ['pl-recent', 'pl-older']
+		recent_ids: ['pl-recent', 'pl-older'],
+		shrink_main_for_player: true
 	});
 });
 
 test('a malformed spotify_library throws rather than silently resetting', async () => {
-	const bad = ['nope', { pinned_ids: [1] }, { recent_ids: '' }];
+	const bad = ['nope', { pinned_ids: [1] }, { recent_ids: '' }, { shrink_main_for_player: 'yes' }];
 	for (const value of bad) {
 		_fakeWindow(JSON.stringify({ hide_broken_links: false, spotify_library: value }));
 		await assert.rejects(
@@ -285,6 +290,13 @@ test('a malformed spotify_library throws rather than silently resetting', async 
 		);
 		delete globalThis.window;
 	}
+});
+
+test('SPOT-6555b: turning off the side player shrink persists and reloads', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+	prefs.setSpotifyShrinkMain(false);
+	assert.equal(JSON.parse(store.get(STORAGE_KEY)).spotify_library.shrink_main_for_player, false);
 });
 
 test('rememberSpotifyRecent persists prepend and skips rewrite when already first', async () => {

@@ -71,9 +71,7 @@ def from_push_answer(payload: Mapping[str, object], *, confirming: bool = False)
     if raw is None:
         return []
     if not isinstance(raw, list):
-        raise SyncProtocolError(
-            f"push response 'rejected_rows' must be an array or absent, got {raw!r}"
-        )
+        raise SyncProtocolError(f"push response 'rejected_rows' must be an array or absent, got {raw!r}")
     rows = [RejectedRow.from_wire(item) for item in raw]
     for row in rows:
         if confirming:

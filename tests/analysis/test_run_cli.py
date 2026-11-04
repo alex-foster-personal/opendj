@@ -17,6 +17,7 @@ from apps.analysis.record import AnalysisRecord
 class _MockBackend:
     name = "mock"
     version = "mock-1.0"
+    analyze_calls = 0
 
     @classmethod
     def jit_cache_roots(cls) -> tuple[Path, ...]:
@@ -28,6 +29,7 @@ class _MockBackend:
 
     @classmethod
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
+        cls.analyze_calls += 1
         return AnalysisRecord(
             stable_id=stable_id,
             backend=cls.name,
@@ -43,8 +45,63 @@ class _MockBackend:
 @pytest.fixture()
 def mock_backend(monkeypatch: pytest.MonkeyPatch) -> type[_MockBackend]:
     from apps.analysis import backends
+    _MockBackend.analyze_calls = 0
     monkeypatch.setitem(backends.BACKENDS, "mock", _MockBackend)
     return _MockBackend
+
+
+@pytest.mark.requirement("JIT-8573")
+def test_run_raises_when_warm_up_is_refused(
+    tmp_path: Path, mock_backend: type[_MockBackend], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] warm-up is refused [then] run raises before analyze, [else stop]."""
+    from apps.analysis.jit_warmup import WarmupResult
+
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"x" * 100)
+    db = tmp_path / "state.db"
+    refused = WarmupResult(
+        backend="mock",
+        seconds=0.0,
+        lock_path=tmp_path / "x.lock",
+        lock_held=False,
+        waited_s=0.0,
+        detail="lock refused",
+        refused=True,
+    )
+    monkeypatch.setattr(run_mod, "warm_backend_jit", lambda *a, **k: refused)
+    with pytest.raises(RuntimeError, match="warm-up refused"):
+        run_mod.run(
+            run_mod.build_queue([audio]),
+            backend_name="mock",
+            dry_run=False,
+            db_path=db,
+        )
+    assert mock_backend.analyze_calls == 0
+
+
+@pytest.mark.requirement("JIT-8573")
+def test_run_main_returns_internal_error_when_warm_up_is_refused(
+    tmp_path: Path, mock_backend: type[_MockBackend], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] warm-up is refused via main [then] exit 5, [else stop]."""
+    from apps.analysis.jit_warmup import WarmupResult
+
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"x" * 100)
+    refused = WarmupResult(
+        backend="mock",
+        seconds=0.0,
+        lock_path=tmp_path / "x.lock",
+        lock_held=False,
+        waited_s=0.0,
+        detail="lock refused",
+        refused=True,
+    )
+    monkeypatch.setattr(run_mod, "warm_backend_jit", lambda *a, **k: refused)
+    code = run_mod.main(["--backend", "mock", "--files", str(audio)])
+    assert code == run_mod.EXIT_INTERNAL_ERROR
+    assert mock_backend.analyze_calls == 0
 
 
 @pytest.mark.requirement("META-01")

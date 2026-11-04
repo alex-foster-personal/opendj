@@ -63,8 +63,10 @@ def library_mode(*, environ: Mapping[str, str] | None = None) -> LibraryMode:
             "Unset is treated as local only on darwin."
         )
     mode = str(raw).strip().lower()
-    if mode in ("local", "remote"):
-        return mode  # type: ignore[return-value]
+    if mode == "local":
+        return "local"
+    if mode == "remote":
+        return "remote"
     raise RuntimeError(f"{MODE_ENV} must be local or remote, got {raw!r}")
 
 

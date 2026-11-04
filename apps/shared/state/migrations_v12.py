@@ -35,6 +35,7 @@ Four deliberate readings:
    no ``apps.sync_hub.sync_set.PARENT_KEYS`` entry and can never be held
    back by a quarantined parent.
 """
+
 from __future__ import annotations
 
 FEEDBACK_PINS_TABLE: str = "feedback_pins"

@@ -166,9 +166,7 @@ def _parse_transcript(body: bytes, stable_id: str) -> AsrTranscript:
             "ASR transcript words must be a list",
         )
     vocals_sha256 = payload.get("vocals_sha256")
-    if vocals_sha256 is not None and (
-        not isinstance(vocals_sha256, str) or len(vocals_sha256) != 64
-    ):
+    if vocals_sha256 is not None and (not isinstance(vocals_sha256, str) or len(vocals_sha256) != 64):
         raise LyricsAsrFetchError(
             LYRICS_ASR_PRESIGN_FAILED,
             "ASR transcript vocals_sha256 is invalid",

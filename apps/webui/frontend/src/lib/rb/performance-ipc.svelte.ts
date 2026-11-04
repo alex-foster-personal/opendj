@@ -57,6 +57,7 @@ import {
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue, vocalsOf, type Vocals } from '$lib/rb/api-rb';
+import { deckCloudDownloads, ensureLocalBeforeLoad, type DeckCloudDownload } from '$lib/offload/offload-ops.svelte';
 import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
@@ -95,6 +96,7 @@ import {
 	setAutoGainLiveGuard,
 	deckAutoGain,
 	assertDeckLoadAllowed,
+	DeckReplacementBlockedError,
 	commitDueQuantizedLaunches,
 	type DeckTransportClock,
 	type PitchRange
@@ -253,6 +255,8 @@ import {
 	setMidiTakeoverMode
 } from '$lib/rb/midi/takeover-ui.svelte';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
+import { parseColorFxCommand, planColorFxSwitch } from '$lib/rb/color-fx';
+import { applyColorFxSettings, colorFx, colorFxView, type ColorFxDeckView } from '$lib/rb/color-fx.svelte';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -294,6 +298,11 @@ export type PerformanceCommand =
 			// KEYSHIFT-03: a library row the compatible filter matched only after a
 			// key shift loads shifted by it (integer, -3..3, 0 or absent = none).
 			key_shift?: number;
+			// AGENT-8332b: an agent's explicit "yes, replace the playing track".
+			// The deck is ejected (pause, presented stop, unload) before the load,
+			// so the replacement guard then passes. Absent or false = refuse while
+			// playing, which is what every UI surface relies on.
+			replace_playing?: boolean;
 	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
@@ -426,6 +435,11 @@ export type PerformanceCommand =
 	| { type: 'show_stems'; enabled: boolean }
 	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
 	| { type: 'deck_autocue'; enabled: boolean }
+	/** COLORFX-01..05: the channel color knob's effect (FILTER, SPACE, ECHO), the
+	 * echo division, and optionally the knob itself. See color-fx.svelte.ts.
+	 * COLORFX-8341: `next` cycles the effect; switching effect returns the knob to
+	 * center unless `value` is given (the old effect is removed, never stacked). */
+	| { type: 'color_fx'; deck: DeckId; effect?: 'filter' | 'space' | 'echo' | 'next'; echo_beats?: 0.25 | 0.5 | 0.75 | 1; value?: number }
 	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. PLAY-18:
 	 * only a user turns it off, so `enabled: false` needs `by_user: true`. */
 	| { type: 'autoplay'; enabled: boolean; by_user?: boolean }
@@ -572,6 +586,8 @@ export interface PerformanceState {
 	command_pending: boolean;
 	command_queued: number;
 	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
+	/** OFFLOAD: the cloud download a deck is waiting on before it loads (the deck's bar). */
+	cloud_downloads: Record<DeckId, DeckCloudDownload | null>;
 	/** AUTOGAIN-02: what each deck's trim stage applies now (ready, error at 0 dB, or empty). */
 	auto_gain: typeof deckAutoGain;
 	decks: Record<DeckId, PerformanceDeckSnapshot>;
@@ -664,6 +680,8 @@ export interface PerformanceState {
 	};
 	/** TOPVIEW-05: whether the (i) overlay is open, and on which deck and track. */
 	track_info: { open: boolean; deck: DeckId | null; stable_id: string | null };
+	/** COLORFX-04: per deck, the color knob's effect, echo division and timing. */
+	color_fx: Record<DeckId, ColorFxDeckView>;
 	ui: {
 		show_stems: boolean;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
@@ -1829,6 +1847,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
+	if (type === 'color_fx') return parseColorFxCommand(record);
 	if (type === 'show_stems' || type === 'deck_autocue') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
@@ -1891,7 +1910,8 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			'refuseIfMaster',
 			'stems',
 			'suppressCommandErrorToast',
-			'key_shift'
+			'key_shift',
+			'replace_playing'
 		]);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
@@ -1903,6 +1923,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		const suppressCommandErrorToast = record.suppressCommandErrorToast === undefined
 			? undefined
 			: _boolean('suppressCommandErrorToast', record.suppressCommandErrorToast);
+		const replacePlaying = record.replace_playing === undefined
+			? undefined
+			: _boolean('replace_playing', record.replace_playing);
 		// KEYSHIFT-03: a compatible-filter row loads shifted into the key it plays in.
 		const keyShift = record.key_shift;
 		if (
@@ -1922,7 +1945,8 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			...(keyShift === undefined || keyShift === 0 ? {} : { key_shift: keyShift }),
 			...(refuseIfMaster === undefined ? {} : { refuseIfMaster }),
 			...(stems === undefined ? {} : { stems }),
-			...(suppressCommandErrorToast === undefined ? {} : { suppressCommandErrorToast })
+			...(suppressCommandErrorToast === undefined ? {} : { suppressCommandErrorToast }),
+			...(replacePlaying === true ? { replace_playing: true } : {})
 		};
 	} else if (type === 'load_play_intent') {
 		_exactKeys(record, ['type', 'deck', 'generation', 'desired_play']);
@@ -2509,6 +2533,7 @@ export function queryPerformanceState(): PerformanceState {
 				pending === null ? null : { generation: pending.generation, desired_play: pending.desiredPlay }
 			])
 		) as Record<DeckId, { generation: number; desired_play: boolean } | null>,
+		cloud_downloads: deckCloudDownloads(),
 		auto_gain: $state.snapshot(deckAutoGain),
 		decks: {
 			1: _deckSnapshot(1),
@@ -2621,6 +2646,7 @@ export function queryPerformanceState(): PerformanceState {
 		// every agent reading this snapshot over IPC.
 		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary(),
+		color_fx: colorFxView(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
 			auto_play_enabled: uiPrefs.auto_play_enabled,
@@ -2908,6 +2934,19 @@ async function _applyLoadKeyShift(deck: DeckId, shift: number): Promise<void> {
 	for (let i = 0; i < Math.abs(shift); i += 1) await engine.nudgeKey(deck, step);
 }
 
+/** AGENT-8332b: would a plain load onto `deck` be refused as replacing a sounding deck? */
+function _loadWouldBeBlocked(deck: DeckId): boolean {
+	const st = getDeckState(deck);
+	if (rustMode.enabled) return st.playing || st.audible;
+	try {
+		assertDeckLoadAllowed(deck);
+		return false;
+	} catch (error) {
+		if (error instanceof DeckReplacementBlockedError) return true;
+		throw error;
+	}
+}
+
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
 	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
@@ -2949,11 +2988,20 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	// engine.load repeats it under its own claim. Silence leaves the decoded
 	// buffer for engine.load to reuse. AutoPlay loading the next track is not
 	// a user load and leaves the audition playing (pin 104cf3b626fd).
+	// AGENT-8332b: only an explicit replace_playing ejects a sounding deck first
+	// (the same pause, presented stop and unload Deck's eject runs), so the
+	// guard below then passes. Without it the refusal stands.
+	if (command.type === 'load' && command.replace_playing === true) {
+		initRustMode();
+		if (_loadWouldBeBlocked(command.deck)) await _execute({ type: 'unload', deck: command.deck }, pressT0Ms);
+	}
 	if (command.type === 'load') {
 		initRustMode();
 		if (!rustMode.enabled) assertDeckLoadAllowed(command.deck);
 		if (deckCommandSource(command.deck) !== 'autoplay-handoff') silencePreviewCue();
 	}
+	// OFFLOAD: an offloaded track comes back from the cloud before either engine loads it.
+	if (command.type === 'load') await ensureLocalBeforeLoad(command.deck, command.stable_id);
 	// Before either engine: the Rust dispatch below returns early, and a folded launch must be reported once on both paths.
 	if (command.type === 'beat_sync' && command.enabled && command.normalization !== undefined && command.master !== undefined) {
 		reportFoldedLaunch(command.deck, command.master, command.normalization);
@@ -3236,6 +3284,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setShowStems(command.enabled);
 	} else if (command.type === 'deck_autocue') {
 		await setAutoCue(command.enabled);
+	} else if (command.type === 'color_fx') {
+		// COLORFX-02: the settings half, then the knob through the same setFilter
+		// the FILTER dial uses, which drives the channel with the new effect.
+		// COLORFX-8341: `next` resolves here, and a real switch returns the knob to
+		// center (12 o'clock) unless the command names a value.
+		const plan = planColorFxSwitch(colorFx[command.deck].effect, mixerState.channels[command.deck].filter, command);
+		applyColorFxSettings({ deck: command.deck, effect: plan.effect, echo_beats: command.echo_beats, value: plan.value });
+		engine.setFilter(command.deck, plan.value, pressT0Ms);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_waveform_overlay') {

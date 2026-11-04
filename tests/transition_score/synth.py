@@ -74,6 +74,10 @@ class Mutation:
     maintainer_low_handoff: bool = False
     #: Round 15: both decks' lows killed for 4 bars around the swap (a low-end hole).
     low_hole: bool = False
+    #: Round 23: outgoing/incoming low band killed through that deck's solo span
+    #: (t < OVERLAP[0] / t >= OVERLAP[1]). Default False keeps the locked clean fixture.
+    out_solo_low_killed: bool = False
+    in_solo_low_killed: bool = False
 
 
 def _t(length_s: float = LENGTH_S) -> np.ndarray:
@@ -203,6 +207,10 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
         out_low = out_low + _stabs(t, 70.0, BEAT_S / 4, 1.3)
     if mutation.out_bass_led:
         out_low = out_low + _stabs(t, 70.0, BEAT_S - 0.045, 1.5)
+    if mutation.out_solo_low_killed:
+        out_low = np.where(t < OVERLAP[0], 0.0, out_low)
+    if mutation.in_solo_low_killed:
+        in_low = np.where(t >= OVERLAP[1], 0.0, in_low)
     out_vocal_span = (0.0, 20.0) if mutation.vocals_overlap else (0.0, 16.0)
     in_vocal_span = (12.0, LENGTH_S) if mutation.vocals_overlap else (18.0, LENGTH_S)
     out_vocal, in_vocal = _vocal(t, 220.0, out_vocal_span), _vocal(t, 330.0, in_vocal_span)

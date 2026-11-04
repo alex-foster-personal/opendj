@@ -1,6 +1,6 @@
 """Stale-copy guard: a track the fleet dropped does not come back from a copy.
 
-Contract: ``docs/decisions/ADR-NEW-deletes-stay-deleted.md`` ("Stale copies"),
+Contract: ``(private path)`` ("Stale copies"),
 CLOUDSYNC-30, issue #4628 criteria 1 and 2.
 
 Requirements (status: done + ran + regression tests):
@@ -96,8 +96,7 @@ def candidates_from_changes(changes: Iterable[RowChange]) -> list[Candidate]:
     return [
         Candidate(stable_id=str(change.pk[0]), origin_device_id=change.origin_device_id)
         for change in changes
-        if change.table == protocol_common.TRACKS_TABLE
-        and change.values.get(protocol.DELETED_AT) is None
+        if change.table == protocol_common.TRACKS_TABLE and change.values.get(protocol.DELETED_AT) is None
     ]
 
 
@@ -108,15 +107,11 @@ def classify(
 ) -> Verdict:
     """Decide which of ``candidates`` are orphans of the fleet (rule 1, 3)."""
     foreign = [
-        candidate
-        for candidate in candidates
-        if candidate.origin_device_id not in (protocol.NO_ORIGIN, caller_id)
+        candidate for candidate in candidates if candidate.origin_device_id not in (protocol.NO_ORIGIN, caller_id)
     ]
     if not foreign:
         return Verdict(orphans=())
-    stored = _present(
-        conn, "SELECT stable_id FROM tracks", [candidate.stable_id for candidate in foreign]
-    )
+    stored = _present(conn, "SELECT stable_id FROM tracks", [candidate.stable_id for candidate in foreign])
     registered = _present(
         conn,
         "SELECT machine_id FROM machines",

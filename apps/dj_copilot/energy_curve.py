@@ -1,4 +1,5 @@
 """Target energy curve for PLAY IT."""
+
 from __future__ import annotations
 
 from .set_goal import SetGoal
@@ -11,11 +12,7 @@ def target_energy_at(goal: SetGoal, position_min: float) -> float:
     if goal.peak_at_min is None:
         return (float(goal.floor_energy) + float(goal.ceiling_energy)) / 2.0
 
-    close = (
-        float(goal.floor_energy)
-        if goal.close_on_energy is None
-        else float(goal.close_on_energy)
-    )
+    close = float(goal.floor_energy) if goal.close_on_energy is None else float(goal.close_on_energy)
     peak = float(goal.ceiling_energy)
     floor = float(goal.floor_energy)
     peak_t = float(goal.peak_at_min)

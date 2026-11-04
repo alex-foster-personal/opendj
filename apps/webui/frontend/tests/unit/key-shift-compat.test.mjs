@@ -316,6 +316,9 @@ describe('compatible reference callers', () => {
 			const call = src.indexOf('computeNextOnlyRef(');
 			assert.ok(call > 0, `${file} calls computeNextOnlyRef`);
 			assert.match(src, slice, `${file} passes key_shift_semitones`);
+			// COMPATBPM-01/03: the heard tempo and the loaded track's BPM confidence.
+			assert.match(src, /pitch: (decks\[d\]|s)\.pitch/, `${file} passes the deck tempo ratio`);
+			assert.match(src, /bpm_confidence: bpmConfidenceIn\(/, `${file} passes the deck BPM confidence`);
 		}
 	});
 });
@@ -331,7 +334,12 @@ describe('Cmd-K shows and loads no key shift', () => {
 		);
 		for (const fn of ['commandBarLoad', 'commandBarV2Load']) {
 			const body = src.slice(src.indexOf(`export async function ${fn}(`), src.indexOf(`export async function ${fn}(`) + 200);
-			assert.match(body, /_loadOntoDeck\(row, deck, \{ noKeyShift: true \}\)/, fn);
+			// The options literal may carry more than `noKeyShift`: commandBarV2Load
+			// also forwards `stillNewest`, and command-bar-v2.test.mjs pins that
+			// exact shape. What this test owns is the shift decision, so it asserts
+			// `noKeyShift: true` OPENS the literal rather than that the literal
+			// closes immediately after it.
+			assert.match(body, /_loadOntoDeck\(row, deck, \{ noKeyShift: true\s*[,}]/, fn);
 		}
 		assert.match(src, /function loadRow\([\s\S]{0,200}void _loadOntoDeck\(row, deck, opts\);/);
 	});

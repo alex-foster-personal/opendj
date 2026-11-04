@@ -1,4 +1,5 @@
 """Structural diff between two open-dj library documents."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,9 +7,7 @@ from typing import Any
 
 from apps.open_dj.provenance import PROVENANCE_ENVELOPE_KEYS
 
-PROVENANCE_FIELDS: frozenset[str] = frozenset(
-    {"bpm", "key", "energy", "rating"}
-)
+PROVENANCE_FIELDS: frozenset[str] = frozenset({"bpm", "key", "energy", "rating"})
 
 
 @dataclass
@@ -68,9 +67,7 @@ def _diff_track(a: dict[str, Any], b: dict[str, Any]) -> list[FieldChange]:
     return changes
 
 
-def _diff_provenance(
-    field_name: str, a: Any, b: Any
-) -> list[FieldChange]:
+def _diff_provenance(field_name: str, a: Any, b: Any) -> list[FieldChange]:
     out: list[FieldChange] = []
     if a is None and b is None:
         return out
@@ -80,9 +77,7 @@ def _diff_provenance(
         av = a.get(sub)
         bv = b.get(sub)
         if av != bv:
-            out.append(FieldChange(
-                field_name=f"{field_name}.{sub}", before=av, after=bv
-            ))
+            out.append(FieldChange(field_name=f"{field_name}.{sub}", before=av, after=bv))
     return out
 
 
@@ -101,7 +96,5 @@ def format_report(report: DiffReport) -> str:
         for td in report.mutated:
             lines.append(f"  ~ {td.track_id}")
             for ch in td.changes:
-                lines.append(
-                    f"      {ch.field_name}: {ch.before!r} -> {ch.after!r}"
-                )
+                lines.append(f"      {ch.field_name}: {ch.before!r} -> {ch.after!r}")
     return "\n".join(lines)

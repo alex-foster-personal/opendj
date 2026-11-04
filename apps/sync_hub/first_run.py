@@ -85,9 +85,7 @@ def _default_from_manifest(path: Path) -> str | None:
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise sync_config.CloudSyncConfigError(
-            f"{MANIFEST_ENV}={path} is unreadable: {exc}"
-        ) from exc
+        raise sync_config.CloudSyncConfigError(f"{MANIFEST_ENV}={path} is unreadable: {exc}") from exc
     block = manifest.get(MANIFEST_KEY) if isinstance(manifest, dict) else None
     if block is None:
         return None
@@ -99,9 +97,7 @@ def _default_from_manifest(path: Path) -> str | None:
     if raw is None:
         return None
     if not isinstance(raw, str):
-        raise sync_config.CloudSyncConfigError(
-            f"{path} {MANIFEST_URL_KEY} must be a string or null"
-        )
+        raise sync_config.CloudSyncConfigError(f"{path} {MANIFEST_URL_KEY} must be a string or null")
     return _validated_hub_url(raw, source=f"{path} {MANIFEST_URL_KEY}")
 
 
@@ -139,17 +135,13 @@ def seed_default_config(data_dir: Path, *, env: Mapping[str, str]) -> FirstRunSe
         try:
             existing = sync_config.read_config(data_dir)
         except sync_config.CloudSyncConfigError as exc:
-            log.warning(
-                "cloudsync first run: existing %s is unreadable, leaving it alone: %s", path, exc
-            )
+            log.warning("cloudsync first run: existing %s is unreadable, leaving it alone: %s", path, exc)
             return FirstRunSeed("existing", None, path)
         return FirstRunSeed("existing", existing.hub_url if existing is not None else None, path)
     default = resolve_default_hub_url(env)
     if default is None:
         return FirstRunSeed("no-default", None, path)
-    sync_config.write_config(
-        data_dir, sync_config.CloudSyncConfig(enabled=True, hub_url=default, machine_name=None)
-    )
+    sync_config.write_config(data_dir, sync_config.CloudSyncConfig(enabled=True, hub_url=default, machine_name=None))
     log.info("cloudsync first run: enabled against the build's default hub %s", default)
     return FirstRunSeed("seeded", default, path)
 

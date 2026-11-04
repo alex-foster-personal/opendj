@@ -68,6 +68,7 @@
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
+	import { backstageEnabled } from '$lib/shell/backstage-flag';
 	import { installSettingsHotkeys } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
@@ -104,6 +105,13 @@
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
 	const navLinks = $derived(sidebarNavLinks(uiPrefs.show_dev_ui));
+	/** shell.backstage (default OFF): the Backstage sidebar replaces the flat list. */
+	const backstageOn = $derived(backstageEnabled());
+	// Lazy so the flag-off default keeps the "library" initial-load bundle budget.
+	let BackstageNav = $state<typeof import('$lib/shell/BackstageNav.svelte').default>();
+	$effect(() => {
+		if (backstageOn) void import('$lib/shell/BackstageNav.svelte').then((m) => (BackstageNav = m.default));
+	});
 	setContext<ShellNav>(SHELL_NAV_CONTEXT, {
 		get links() {
 			return navLinks;
@@ -381,6 +389,9 @@
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
+		{#if backstageOn && BackstageNav}
+		<BackstageNav showDev={uiPrefs.show_dev_ui} url={$page.url} />
+		{:else}
 		<h1>Open DJ</h1>
 		<nav>
 			<!-- Links come from $lib/shell/sidebar-nav: developer pages (Queues,
@@ -412,6 +423,7 @@
 				{/if}
 			{/each}
 		</nav>
+		{/if}
 	</aside>
 	<main>
 		<div class="topbar">

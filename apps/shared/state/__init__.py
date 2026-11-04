@@ -17,6 +17,7 @@ Modules:
   ingest.rekordbox -- first adapter: RB master.db -> state.db.
   cli        -- argparse entry (init / stats / ingest-rb / inspect).
 """
+
 from __future__ import annotations
 
 __all__ = [

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from apps.spotify.client import _parse_track_item
+from apps.spotify.client import parse_track_item
 from apps.spotify.matcher_adapter import (
     DURATION_TOLERANCE_MS,
     LocalTrack,
@@ -20,7 +20,7 @@ from .fake_spotipy import make_track
 
 
 def _sp(spotify_id: str, **kwargs):
-    return _parse_track_item(make_track(spotify_id=spotify_id, **kwargs))
+    return parse_track_item(make_track(spotify_id=spotify_id, **kwargs))
 
 
 @pytest.mark.requirement("CAT-01")

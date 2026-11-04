@@ -1,6 +1,6 @@
 """Turning a credential into an owner, for :mod:`apps.sync_hub.enrollment`.
 
-Contract: ``specs/design_decision_12.md`` section B. This is the layer that
+Contract: ``(private path)`` section B. This is the layer that
 authenticates; :func:`apps.sync_hub.enrollment.enroll_machine` is the layer
 that writes, and it never sees a credential. Two kinds resolve to the same
 :class:`~apps.sync_hub.enrollment.OwnerIdentity`, which is what lets the dev
@@ -32,6 +32,7 @@ A static pre-shared hub secret was considered and rejected: it names no
 owner, so it cannot satisfy the ownership requirement at all, and a leaked one
 stays indistinguishable from legitimate use forever.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -172,8 +173,7 @@ def credential_from_wire(kind: str, value: str) -> EnrollmentCredential:
     if kind == GOOGLE_ID_TOKEN_KIND:
         return GoogleIdTokenCredential(value=value)
     raise EnrollmentCredentialError(
-        f"unknown enrollment credential kind {kind!r}; this hub accepts "
-        f"{list(CREDENTIAL_KINDS)}."
+        f"unknown enrollment credential kind {kind!r}; this hub accepts {list(CREDENTIAL_KINDS)}."
     )
 
 
@@ -184,9 +184,7 @@ def owner_by_email(conn: sqlite3.Connection, email: str) -> OwnerIdentity:
     on this hub, and inventing one to make a mint succeed would put a
     fabricated owner on a real machine.
     """
-    row = conn.execute(
-        "SELECT google_sub, email FROM users WHERE email = ?", (email,)
-    ).fetchone()
+    row = conn.execute("SELECT google_sub, email FROM users WHERE email = ?", (email,)).fetchone()
     if row is None:
         raise EnrollmentCredentialError(
             f"no signed-in user with email {email!r} on this hub. Ownership "
@@ -222,13 +220,10 @@ def mint_grant(
     created_at = sync_stamp.canonical_from(created)
     expires_at = sync_stamp.canonical_from(created + timedelta(seconds=ttl_s))
     conn.execute(
-        f"INSERT INTO {GRANT_TABLE}(grant_token_sha256, google_sub, "
-        f"created_at, expires_at) VALUES (?, ?, ?, ?)",
+        f"INSERT INTO {GRANT_TABLE}(grant_token_sha256, google_sub, created_at, expires_at) VALUES (?, ?, ?, ?)",
         (hash_grant_token(token), owner.google_sub, created_at, expires_at),
     )
-    return MintedGrant(
-        token=token, owner=owner, created_at=created_at, expires_at=expires_at
-    )
+    return MintedGrant(token=token, owner=owner, created_at=created_at, expires_at=expires_at)
 
 
 def verify_outside_transaction(credential: EnrollmentCredential) -> VerifiedCredential:
@@ -369,9 +364,7 @@ def _redeem_grant(
     return OwnerIdentity(google_sub=str(user[0]), email=str(user[1]))
 
 
-def _claim_unspent_grant(
-    conn: sqlite3.Connection, token_hash: str, machine_id: str, stamp: str
-) -> str:
+def _claim_unspent_grant(conn: sqlite3.Connection, token_hash: str, machine_id: str, stamp: str) -> str:
     """Spend an unspent grant for ``machine_id``; return the machine holding it.
 
     A conditional UPDATE rather than trusting the earlier SELECT: SQLite

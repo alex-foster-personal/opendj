@@ -10,6 +10,7 @@ urllib rather than httpx, which is a dev/test-only dependency not meant to be
 imported by runtime code (see pyproject.toml [project.optional-dependencies]
 dev comment).
 """
+
 from __future__ import annotations
 
 import json
@@ -46,15 +47,15 @@ def probe_syncthing_status() -> dict[str, Any] | None:
     if connections is None:
         return None
     peers_connected = sum(
-        1 for c in connections.get("connections", {}).values()
-        if isinstance(c, dict) and c.get("connected")
+        1 for c in connections.get("connections", {}).values() if isinstance(c, dict) and c.get("connected")
     )
 
     folder_state = "unknown"
     folder_id = os.environ.get("SYNCTHING_FOLDER_ID", "")
     if folder_id:
         db_status = _get_json(
-            f"{base_url}/rest/db/status?folder={folder_id}", api_key,
+            f"{base_url}/rest/db/status?folder={folder_id}",
+            api_key,
         )
         if db_status is not None:
             folder_state = db_status.get("state", "unknown")

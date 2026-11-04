@@ -3,6 +3,7 @@
 This lives in ``apps.vocals`` because it catches ``UnknownPlaylistError``;
 ``apps.shared`` must not import from the vocals package.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -21,6 +22,5 @@ def run_playlist_aware_cli(
     except UnknownPlaylistError as exc:
         raise SystemExit(
             2,
-            f"error: unknown playlist {exc.name!r}. "
-            f"Known: {', '.join(exc.known) or '(none)'}",
+            f"error: unknown playlist {exc.name!r}. Known: {', '.join(exc.known) or '(none)'}",
         ) from exc

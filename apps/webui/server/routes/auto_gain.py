@@ -125,9 +125,7 @@ def put_track_auto_gain_user_offset(
         try:
             auto_gain.validate_user_offset_db(body.offset_db)
         except ValueError as exc:
-            raise HTTPException(
-                status_code=422, detail={"code": "AUTO_GAIN_INVALID", "message": str(exc)}
-            ) from exc
+            raise HTTPException(status_code=422, detail={"code": "AUTO_GAIN_INVALID", "message": str(exc)}) from exc
     current = backend.get_track(stable_id)  # NotFoundError -> 404 (app handler)
     updated = backend.update_track(
         stable_id,

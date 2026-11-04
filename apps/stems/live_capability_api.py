@@ -20,8 +20,7 @@ def _capability(request: Request) -> LiveStemsCapability:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "live-stems capability is not assessed because this engine is "
-                "not running from an installed payload"
+                "live-stems capability is not assessed because this engine is not running from an installed payload"
             ),
         )
     return capability

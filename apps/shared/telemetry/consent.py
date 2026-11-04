@@ -38,7 +38,7 @@ CONSENT_FILE: str = "telemetry-consent.json"
 #: Bump when docs/legal/test-user-terms.md changes materially. A stored
 #: acceptance of an older version is reported as ``undecided`` so the
 #: frontend asks again; nothing is sent in between.
-TERMS_VERSION: str = "2026-09-21"
+TERMS_VERSION: str = "2026-11-04"
 
 ConsentDecision = Literal["undecided", "accepted", "declined"]
 DECISIONS: frozenset[str] = frozenset(get_args(ConsentDecision))
@@ -140,9 +140,7 @@ def read_consent(data_dir: Path) -> ConsentRecord:
     return _parse_consent(data, path)
 
 
-def write_consent(
-    data_dir: Path, decision: ConsentDecision, *, terms_version: str
-) -> ConsentRecord:
+def write_consent(data_dir: Path, decision: ConsentDecision, *, terms_version: str) -> ConsentRecord:
     """Persist a decision. Only the CURRENT terms can be accepted."""
     if decision not in ("accepted", "declined"):
         raise ConsentError(f"decision must be accepted or declined, got {decision!r}")

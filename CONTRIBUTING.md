@@ -146,9 +146,14 @@ make lint LINT_PATHS="path/to/file.py"   # only the files you touched
 ```
 
 `make lint` reports the absolute count, which is not zero today; the CI gate only fails when a
-count grows. Do not whole-file format files you did not otherwise change: a formatting diff
-mixed into a real edit hides the edit and conflicts with every open pull request on that file.
-Match the style of the surrounding code.
+count grows. Whole-file formatting of files you did not otherwise change is forbidden except in
+an issue #4456 part pull request that formats a measured cold set (see `(private path)`).
+After issue #4456 finishes, it is forbidden again. Local blame with ignore-revs applied:
+`just blame <file>` (passes `--ignore-revs-file` as a flag; do not set
+`git config blame.ignoreRevsFile`, because git config is shared across worktrees). Format-only
+commits on main merge with merge commits only, never squash or rebase. Otherwise match the style
+of the surrounding code; a formatting diff mixed into a real edit hides the edit and conflicts
+with every open pull request on that file.
 
 ## Branching and pull requests
 

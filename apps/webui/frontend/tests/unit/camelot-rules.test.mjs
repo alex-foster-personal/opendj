@@ -89,8 +89,8 @@ describe('the compatible filter reads prefs.rules', () => {
 
 describe('no rule ticked: a keyless deck can be the reference', () => {
 	const decks = [
-		{ is_master: true, playing: true, stable_id: 'm', key: null, bpm: 128, key_shift_semitones: 0 },
-		{ is_master: false, playing: true, stable_id: 'o', key: '8A', bpm: 100, key_shift_semitones: 0 }
+		{ is_master: true, playing: true, stable_id: 'm', key: null, bpm: 128, key_shift_semitones: 0, pitch: 1, bpm_confidence: null },
+		{ is_master: false, playing: true, stable_id: 'o', key: '8A', bpm: 100, key_shift_semitones: 0, pitch: 1, bpm_confidence: null }
 	];
 	it('BPM-only mode keeps the keyless master as the reference', () => {
 		assert.deepEqual(filter.computeNextOnlyRef(decks, false), { key: null, bpm: 128 });

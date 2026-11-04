@@ -16,6 +16,7 @@ CLI twin: `opendj track quality`, `opendj track quality-scan`,
 
 -Claude
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -122,22 +123,30 @@ def _track_facts(stable_ids: list[str], state_db: Path) -> dict[str, tuple[str |
 
 
 def _item(
-    stable_id: str, path: str, title: str | None, duration_ms: int | None,
+    stable_id: str,
+    path: str,
+    title: str | None,
+    duration_ms: int | None,
     stored: audio_quality_store.StoredScan | None,
 ) -> AudioQualityItem:
     quality = audio_quality.classify(path, duration_ms).as_dict()
     facts, error = _current(stored, path)
     grade = audio_grade.grade(quality, facts, error)
     return AudioQualityItem(
-        stable_id=stable_id, title=title, file_path=path, letter=grade.letter,
-        checked=grade.checked, meaning=grade.meaning, issues=list(grade.issues),
-        hover="\n".join(grade.hover), cutoff_hz=grade.cutoff_hz, scan_error=error,
+        stable_id=stable_id,
+        title=title,
+        file_path=path,
+        letter=grade.letter,
+        checked=grade.checked,
+        meaning=grade.meaning,
+        issues=list(grade.issues),
+        hover="\n".join(grade.hover),
+        cutoff_hz=grade.cutoff_hz,
+        scan_error=error,
     )
 
 
-def _current(
-    stored: audio_quality_store.StoredScan | None, path: str
-) -> tuple[dict[str, Any] | None, str | None]:
+def _current(stored: audio_quality_store.StoredScan | None, path: str) -> tuple[dict[str, Any] | None, str | None]:
     """Stored facts checked against the file's full identity (path, mtime, size)."""
     identity = audio_quality_scan.file_identity(path)
     if isinstance(identity, str):
@@ -267,7 +276,10 @@ def get_track_quality(
     facts, error = _current(stored, path)
     quality["grade"] = audio_grade.grade(quality, facts, error).as_dict()
     return AudioQualityTrackOut(
-        stable_id=stable_id, file_path=path, quality=quality, facts=facts,
+        stable_id=stable_id,
+        file_path=path,
+        quality=quality,
+        facts=facts,
         scan_error=error,
         computed_at=stored.computed_at if stored is not None else None,
     )

@@ -111,7 +111,7 @@ def test_refresher_keeps_rows_and_survives_a_busy_writer_lock(
     refresher.start()
     try:
         with _writer_lock_held(state_db_path):
-            refresher.record(namespace, [(path, 131) for path in paths])
+            refresher.record(namespace, [(path, 131, 1_700_000_000_000_000_000) for path in paths])
             assert _wait_until(
                 lambda: "writer lock still busy" in caplog.text, 5.0
             ), "a busy persist was not logged"

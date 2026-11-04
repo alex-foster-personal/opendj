@@ -5,6 +5,7 @@ round 4). See :func:`merge_machines` for the round 3 finding R1 shape this
 enforces: a snapshot may create a machine it has never met, and may refresh
 the row belonging to whoever sent it, but it may not rewrite anyone else's.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -58,9 +59,7 @@ def upsert_machine(conn: sqlite3.Connection, machine: MachineRow) -> bool:
     return conn.total_changes > before
 
 
-def _insert_machine_if_absent(
-    conn: sqlite3.Connection, machine: MachineRow
-) -> bool:
+def _insert_machine_if_absent(conn: sqlite3.Connection, machine: MachineRow) -> bool:
     """Create a peer's row if this DB has never met it; never rewrite one.
 
     A snapshot from a peer is allowed to TEACH this DB about machines it has
@@ -98,8 +97,7 @@ def _insert_machine_if_absent(
 def machines_snapshot(conn: sqlite3.Connection) -> list[MachineRow]:
     """Every known machine, ordered by id so the payload is deterministic."""
     cursor = conn.execute(
-        "SELECT machine_id, name, platform, is_hub, data_root, first_seen, last_seen "
-        "FROM machines ORDER BY machine_id"
+        "SELECT machine_id, name, platform, is_hub, data_root, first_seen, last_seen FROM machines ORDER BY machine_id"
     )
     return [
         MachineRow(
@@ -115,9 +113,7 @@ def machines_snapshot(conn: sqlite3.Connection) -> list[MachineRow]:
     ]
 
 
-def merge_machines(
-    conn: sqlite3.Connection, machines: Iterable[MachineRow], *, caller_id: str
-) -> int:
+def merge_machines(conn: sqlite3.Connection, machines: Iterable[MachineRow], *, caller_id: str) -> int:
     """Apply a registry snapshot under owner-scoped rules. Returns rows changed.
 
     ``caller_id`` is the machine that AUTHORED this snapshot -- the pusher on

@@ -62,7 +62,7 @@ sqlalchemy>=2.0,<2.1
 # that module's tests skip wholesale before importing it. Same shape as the
 # pyobjc gap pyproject records: undeclared, and broken ON macOS, the platform
 # the tool exists for.
-Pillow>=12.3.0
+Pillow>=13.0.0
 # FastAPI/Starlette use AnyIO directly. Keep the CI-only requirements resolver
 # at the same security floor as pyproject.toml and uv.lock.
 anyio>=4.15.1
@@ -91,7 +91,7 @@ llvmlite==0.47.0
 # madmom's own [build-system] asks for numpy>2, and building in isolation would
 # compile it against a numpy this venv's <2 pin never installs.
 #
-# NON-SHIPPABLE (NATIVE-08). madmom's own code is BSD-3-Clause, but the
+# NON-SHIPPABLE (NATIVE-08). madmom's own code is BSD-2-Clause, but the
 # pretrained beat/downbeat models it loads are CC BY-NC-SA 4.0
 # (non-commercial, share-alike) -- not MIT, whatever an older comment here
 # said. This line exists only so the dev/bench venv can run the gated

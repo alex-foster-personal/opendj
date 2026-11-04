@@ -23,6 +23,7 @@ from scripts.ci_plan import (
     PlanError,
     Scope,
     Verdict,
+    _helper_importers,
     observed_dependents,
     plan,
     read_config,
@@ -1627,3 +1628,24 @@ def test_a_conftest_carries_even_when_only_root_tests_sit_beside_it(tmp_path: Pa
     (root / "conftest.py").write_text("from apps.engine_core import thing\n")
     (root / "test_root.py").write_text("from tests.conftest import thing\n")
     assert helper_carried_scopes(_config(), tmp_path) == frozenset({"engine"})
+
+
+def test_the_importer_scan_is_reused_only_while_the_tree_is_unchanged(tmp_path: Path) -> None:
+    """The three drift guards and the planner ask for the same scan in one process, ~54 s each on
+    the real tree (tick 320), so it is cached; the key carries each input's mtime and size.
+    [if] an edited helper's new import is not rescanned [then] the guards read a stale tree, so fail.
+    [if] a caller's edit to the returned sets leaks into the next call [then] fail."""
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "helper_a.py").write_text("X = 1\n")
+    (tests / "helper_b.py").write_text("Y = 1\n")
+    conftest = tests / "conftest.py"
+    conftest.write_text("from tests.helper_a import X\n")
+    inputs = {f"tests/{p.name}": p for p in sorted(tests.glob("*.py"))}
+    first = _helper_importers(inputs, tmp_path)
+    assert first["tests/helper_a.py"] == {"tests/conftest.py"} and not first["tests/helper_b.py"], first
+    first["tests/helper_a.py"].add("tampered")
+    assert _helper_importers(inputs, tmp_path)["tests/helper_a.py"] == {"tests/conftest.py"}
+    conftest.write_text("from tests.helper_b import Y  # now B\n")
+    second = _helper_importers(inputs, tmp_path)
+    assert second["tests/helper_b.py"] == {"tests/conftest.py"} and not second["tests/helper_a.py"], second

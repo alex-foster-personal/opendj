@@ -222,9 +222,7 @@ def _signing_keys_from_jwks(raw: bytes, *, url: str) -> dict[str, Any]:
             and entry.get("kid")
         }
     except (ValueError, KeyError, TypeError, AttributeError, jwt.PyJWTError) as exc:
-        raise GoogleIdTokenVerifierUnavailable(
-            f"the JWKS at {url} is not a usable key set: {exc!r}"
-        ) from exc
+        raise GoogleIdTokenVerifierUnavailable(f"the JWKS at {url} is not a usable key set: {exc!r}") from exc
     if not keys:
         raise GoogleIdTokenVerifierUnavailable(f"the JWKS at {url} published no RS256 signing key.")
     return keys
@@ -283,9 +281,7 @@ class VerifiedGoogleIdentity:
     picture: str | None
 
 
-def verify_google_id_token(
-    token: str, *, config: GoogleIdTokenConfig, cache: JwksCache
-) -> VerifiedGoogleIdentity:
+def verify_google_id_token(token: str, *, config: GoogleIdTokenConfig, cache: JwksCache) -> VerifiedGoogleIdentity:
     """The identity ``token`` proves, or :class:`GoogleIdTokenRejected`."""
     try:
         header = jwt.get_unverified_header(token)
@@ -313,17 +309,14 @@ def verify_google_id_token(
             options={"require": list(REQUIRED_CLAIMS)},
         )
     except jwt.PyJWTError as exc:
-        raise GoogleIdTokenRejected(
-            f"id_token failed verification: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise GoogleIdTokenRejected(f"id_token failed verification: {type(exc).__name__}: {exc}") from exc
     if claims["aud"] != config.client_id:
         # PyJWT accepts a LIST aud that merely contains ours. Google issues a
         # single-string aud for an installed-app sign-in, and a token minted
         # for several audiences was minted for somebody else too, so only
         # the exact string is ours.
         raise GoogleIdTokenRejected(
-            f"id_token aud must be exactly this hub's client id, got "
-            f"{claims['aud']!r}; a multi-valued aud is refused."
+            f"id_token aud must be exactly this hub's client id, got {claims['aud']!r}; a multi-valued aud is refused."
         )
     return _identity_from_verified_claims(claims)
 
@@ -334,9 +327,7 @@ def _identity_from_verified_claims(claims: dict[str, Any]) -> VerifiedGoogleIden
     if not isinstance(sub, str) or not sub:
         raise GoogleIdTokenRejected("verified id_token carries no usable 'sub'.")
     if not isinstance(email, str) or not email:
-        raise GoogleIdTokenRejected(
-            "verified id_token carries no 'email'; the install must request the 'email' scope."
-        )
+        raise GoogleIdTokenRejected("verified id_token carries no 'email'; the install must request the 'email' scope.")
     if claims.get("email_verified") is not True:
         raise GoogleIdTokenRejected(
             f"Google has not verified {email!r} (email_verified is "
@@ -356,9 +347,7 @@ def _identity_from_verified_claims(claims: dict[str, Any]) -> VerifiedGoogleIden
 # ----- from a verified token to an owner -----------------------------------
 
 
-def owner_for_verified_identity(
-    conn: sqlite3.Connection, identity: VerifiedGoogleIdentity
-) -> OwnerIdentity:
+def owner_for_verified_identity(conn: sqlite3.Connection, identity: VerifiedGoogleIdentity) -> OwnerIdentity:
     """Make an ALREADY VERIFIED Google account a ``users`` row here.
 
     Split from :func:`verify_google_id_token` on purpose: verification does

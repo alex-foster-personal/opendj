@@ -126,7 +126,6 @@ def _granted_features(raw: Mapping[str, str | Sequence[str]]) -> dict[str, tuple
     return normalized
 
 
-
 class PolarError(EntitlementProviderError):
     """Polar could not answer, or answered something this module refuses to read.
 

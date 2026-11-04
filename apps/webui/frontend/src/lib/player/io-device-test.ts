@@ -107,3 +107,36 @@ export function ioTestRefusal(bus: IoTestBus, hp: { selected_input_device_id: st
 	if (bus === 'input' && (hp.selected_input_device_id === null || hp.selected_input_device_id === '')) return NO_INPUT_PICKED;
 	return null;
 }
+
+/** CUEOUT-8393: why the I/O panel's passive AUDIO IN meter stays closed, or null
+ * when it may open. In the Mac app (WKWebView) any open microphone makes WebKit
+ * run voice-processing IO and switch the page's audio session to
+ * PlayAndRecord / VideoChat, which ducks the page's own room output: MAIN went
+ * silent on silver (Tue 3 Nov 2026) for as long as the panel was open, while
+ * the shell's CUE (another process) kept sounding. So there the level is shown
+ * only inside an AUDIO IN Test, an explicit and short operator action. */
+export const PASSIVE_INPUT_METER_OFF_NOTE =
+	'AUDIO IN level shows only during its Test in the Mac app: an open microphone turns down MAIN.';
+
+export function passiveInputMeterBlockedReason(macAppWebview: boolean): string | null {
+	if (typeof macAppWebview !== 'boolean') throw new TypeError('macAppWebview must be a boolean');
+	return macAppWebview ? PASSIVE_INPUT_METER_OFF_NOTE : null;
+}
+
+/** Room bus RMS at or above this means MAIN is carrying the set (the silence
+ * watchdog's floor, restated here so this module stays import-free). */
+export const ROOM_PLAYING_RMS_FLOOR = 0.001;
+
+export const MIC_WHILE_ROOM_PLAYS_REFUSAL =
+	'Not opening a microphone while MAIN plays in the Mac app: macOS voice processing would switch Bluetooth outputs to call quality and MAIN can go silent until a restart. Stop the decks, then Test AUDIO IN.';
+
+/** CUEOUT-8393: the one gate every microphone open in the Mac app passes (passive
+ * meter, AUDIO IN Test, agent Test). Silver, Tue 3 Nov 2026: an open mic made
+ * CoreAudio switch the Bluetooth MAIN (HYPERBOOM) to the SCO profile, the room
+ * IO failed to restart ("_StartIO ... error 35") and MAIN stayed silent. */
+export function micOpenRefusal(args: { macAppWebview: boolean; masterRms: number | null }): string | null {
+	if (typeof args.macAppWebview !== 'boolean') throw new TypeError('macAppWebview must be a boolean');
+	if (args.masterRms !== null && !Number.isFinite(args.masterRms)) throw new TypeError('masterRms must be finite or null');
+	if (!args.macAppWebview) return null;
+	return args.masterRms !== null && args.masterRms >= ROOM_PLAYING_RMS_FLOOR ? MIC_WHILE_ROOM_PLAYS_REFUSAL : null;
+}

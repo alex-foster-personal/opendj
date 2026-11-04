@@ -497,6 +497,13 @@ def cascade_dependents(
     for dependent in LANE_DEPENDENTS.get(lane, ()):
         pointer = canonical_pointer(conn, stable_id, dependent)
         if pointer is None:
+            # The dependency write's own canonical refresh runs FIRST
+            # (`canonical.refresh_for_record` adds key to every beatgrid
+            # write) and already dropped a stale key from the pointer, so an
+            # absent pointer does not mean "no record". Mark those rows stale
+            # too, or the runner's already-current check settles the re-queue
+            # as `skipped` and the key stays stale for good (NATIVE-36).
+            _mark_dependency_stale_rows(conn, stable_id, dependent)
             outcomes.append(
                 CascadeOutcome(
                     stable_id=stable_id,
@@ -564,6 +571,31 @@ def cascade_dependents(
             )
         )
     return outcomes
+
+
+def _mark_dependency_stale_rows(
+    conn: sqlite3.Connection, stable_id: str, lane: str
+) -> None:
+    """Mark every own ``lane`` row that no longer matches its canonical dependency."""
+    from .canonical import dependency_stale_row
+
+    rows = conn.execute(
+        "SELECT backend, backend_version, record_json FROM analysis WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchall()
+    for backend, backend_version, record_json in rows:
+        parsed = parse_own_backend(backend)
+        if parsed is None or parsed.lane != lane:
+            continue
+        if dependency_stale_row(conn, stable_id, lane, record_json):
+            queue_store.mark_stale(
+                conn,
+                stable_id=stable_id,
+                lane=lane,
+                backend=backend,
+                backend_version=backend_version,
+                reason=queue_store.STALE_DEPENDENCY_MOVED,
+            )
 
 
 def clear_stale_for_record(

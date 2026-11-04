@@ -49,7 +49,7 @@ The Wave 8 release-asset agent found that `v1.0-rc1` could not produce a wheel o
 - Diff-matrix results published across all available USB export fixtures.
 
 **Phase 4 hardening**
-- `apply_ratings --live` now routes to the LIVE database paths instead of the staging copy (resolves [#1](https://github.com/private_owner/music-dj-tools/issues/1)).
+- `apply_ratings --live` now routes to the LIVE database paths instead of the staging copy (resolves issue 1).
 
 ### Governance + docs + cleanup
 - Governance audit + enhancement of `SECURITY.md`, Code of Conduct, `CONTRIBUTING.md`, and `NOTICE`.
@@ -69,8 +69,8 @@ Same ledger as rc1: the long-standing deferrals listed in the [rc1 notes](RELEAS
 Python 3.11 or newer. Same instructions as rc1:
 
 ```bash
-git clone https://github.com/private_owner/music-dj-tools.git
-cd music-dj-tools
+git clone https://github.com/alex-foster-personal/opendj.git
+cd opendj
 git checkout v1.0-rc2
 python3 -m venv .venv
 source .venv/bin/activate

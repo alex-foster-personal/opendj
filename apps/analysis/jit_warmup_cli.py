@@ -5,6 +5,7 @@ Split out of :mod:`apps.analysis.jit_warmup` so that module stays the library
 printed contract. ``jit_warmup.main`` forwards here, so the pinned invocation
 in every workflow is unchanged.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -84,9 +85,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # A stale check that purged here, before the lock, could delete what a
     # concurrent lock holder is writing; the check and purge happen inside.
-    result = warm_backend_jit(
-        backend, backend_name=args.backend, purge_stale=args.purge_if_stale
-    )
+    result = warm_backend_jit(backend, backend_name=args.backend, purge_stale=args.purge_if_stale)
     print(result.render())
     if result.refused:
         # Artifacts already on disk must not turn a refusal into a pass: the

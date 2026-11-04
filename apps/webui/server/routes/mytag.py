@@ -1,4 +1,5 @@
 """Atomic management endpoints for the custom ``Track.tags`` catalog."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -156,18 +157,30 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
     publish("library.changed", {"kind": "mytags", "ids": sorted({*body.add, *body.remove})})
     return MyTagAssignOut(
         applied_count=len(tracks),
-        results=[MyTagAssignRowOut(stable_id=track.stable_id, tags=track.tags, etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag)) for track in tracks],
+        results=[
+            MyTagAssignRowOut(
+                stable_id=track.stable_id,
+                tags=track.tags,
+                etag=compute_etag(track.stable_id, track.updated_at, track.selection_tag),
+            )
+            for track in tracks
+        ],
     )
 
 
 def _sweep_tag(
-    backend: StateBackend, old_name: str, new_name: str | None, *,
-    expected_catalog_revision: str, expected_track_count: int,
+    backend: StateBackend,
+    old_name: str,
+    new_name: str | None,
+    *,
+    expected_catalog_revision: str,
+    expected_track_count: int,
     confirm_merge: bool = False,
 ) -> int:
     try:
         return backend.update_tag_members(
-            old_name, new_name,
+            old_name,
+            new_name,
             expected_catalog_revision=expected_catalog_revision,
             expected_track_count=expected_track_count,
             confirm_merge=confirm_merge,
@@ -206,7 +219,9 @@ def _sweep_tag(
 )
 def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
     tracks_updated = _sweep_tag(
-        backend, body.old_name, body.new_name,
+        backend,
+        body.old_name,
+        body.new_name,
         expected_catalog_revision=body.expected_catalog_revision,
         expected_track_count=body.expected_track_count,
         confirm_merge=body.confirm_merge,
@@ -227,7 +242,9 @@ def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_
 )
 def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
     tracks_updated = _sweep_tag(
-        backend, body.name, None,
+        backend,
+        body.name,
+        None,
         expected_catalog_revision=body.expected_catalog_revision,
         expected_track_count=body.expected_track_count,
     )

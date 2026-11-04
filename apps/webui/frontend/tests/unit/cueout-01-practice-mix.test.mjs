@@ -92,7 +92,7 @@ test('practice blend sits on the master mute path, never a second sink', async (
 	assert.match(hpSrc, /cueSum\.connect\(nodes\.practiceCueMix\)/);
 	assert.match(hpSrc, /masterGain\.connect\(nodes\.practiceMasterMix\)/);
 	assert.match(engineSrc, /wirePracticeBlendIntoMasterPath\(_masterGain, _masterMuteGain, headphones\)/);
-	assert.match(hpSrc, /output_mode = 'two_outputs'/);
+	assert.match(hpSrc, /_setOutputMode\('two_outputs', 'cue_pick'\)/);
 	assert.match(hpSrc, /'practice'/);
 	assert.match(hpSrc, /output_mode = mode/);
 	assert.doesNotMatch(

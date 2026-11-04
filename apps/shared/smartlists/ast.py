@@ -1,4 +1,5 @@
 """Rule-AST walker helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -11,12 +12,7 @@ def is_logical(node: dict) -> bool:
 
 
 def is_predicate(node: dict) -> bool:
-    return (
-        isinstance(node, dict)
-        and "field" in node
-        and "op" in node
-        and not is_logical(node)
-    )
+    return isinstance(node, dict) and "field" in node and "op" in node and not is_logical(node)
 
 
 def walk(rule: dict) -> Iterator[dict]:

@@ -94,10 +94,7 @@ class LaneFigure:
                 "agreed with the maintainer before any build describes a lane as at parity"
             )
         if not self.measured_at:
-            raise ValueError(
-                f"lane {self.lane!r} figure has no measured_at; a figure "
-                "without a date is not a figure"
-            )
+            raise ValueError(f"lane {self.lane!r} figure has no measured_at; a figure without a date is not a figure")
         if not self.denominator_name:
             raise ValueError(
                 f"lane {self.lane!r} figure has no denominator_name; a figure "

@@ -154,7 +154,15 @@ export default defineConfig({
 				MDT_DATA_DIR: FIXTURE_DATA_DIR,
 				MDT_LIBRARY_MODE: 'local',
 				WEB_CONCURRENCY: '',
-				HOME: SANDBOX_HOME
+				HOME: SANDBOX_HOME,
+				// The engine reads its Spotify client id only from the sandbox
+				// HOME, never from a developer's or CI's credential, so the
+				// fresh-install acceptance runs everywhere.
+				SPOTIFY_CLIENT_ID: '',
+				// Connect listens on a free port, not the registered 8888, so
+				// root suites sharing one CI host cannot collide on it
+				// (apps/spotify/account.py).
+				OPENDJ_SPOTIFY_EPHEMERAL_REDIRECT: '1'
 			}
 		},
 		{

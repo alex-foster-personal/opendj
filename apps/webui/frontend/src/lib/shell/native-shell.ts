@@ -41,8 +41,19 @@ interface ElectronShellBridge {
 	/** Absent in shells built before the engine choice moved to disk. */
 	setAudioEngineChoice?(choice: string): Promise<void>;
 	applyUpdate(onProgress?: (progress: ShellUpdateProgress) => void): Promise<ShellUpdateOutcome>;
+	/** Version 2+: the docked Spotify side player (SPOT-6555b). */
+	sidePlayer?: {
+		open(url: string, options?: { shrinkMain?: boolean }): Promise<void>;
+		setCollapsed(collapsed: boolean): Promise<void>;
+		close(): Promise<void>;
+		importBrowserLogins(): Promise<SideLoginImportOutcome>;
+	};
 	listCoreAudioOutputs(): Promise<unknown[]>;
 }
+
+export type SideLoginImportOutcome =
+	| { kind: 'imported'; browser: string; cookies: number; sites: string[] }
+	| { kind: 'refused'; reason: string };
 
 /** The global Tauri v2 injects into every window it owns. */
 const TAURI_GLOBAL = '__TAURI_INTERNALS__';
@@ -50,9 +61,9 @@ const TAURI_GLOBAL = '__TAURI_INTERNALS__';
 const ELECTRON_GLOBAL = 'opendjShell';
 
 // `globalThis` is assignable to this without a cast, and tests pass plain objects.
-type Scope = { readonly [key: string]: unknown };
+export type Scope = { readonly [key: string]: unknown };
 
-function electronBridge(scope: Scope): ElectronShellBridge | null {
+export function electronBridge(scope: Scope): ElectronShellBridge | null {
 	const candidate = scope[ELECTRON_GLOBAL] as Partial<ElectronShellBridge> | null | undefined;
 	if (candidate === null || typeof candidate !== 'object') return null;
 	return candidate.kind === 'electron' ? (candidate as ElectronShellBridge) : null;

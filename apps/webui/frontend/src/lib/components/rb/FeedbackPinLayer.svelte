@@ -5,7 +5,7 @@
 	 * +layout.svelte so pins work on every route and over root overlays.
 	 */
 	import { afterNavigate } from '$app/navigation';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import {
 		describeAnchor,
 		followOnText,
@@ -15,11 +15,12 @@
 		type PinDraft,
 		type PinSeen
 	} from '$lib/rb/feedback';
+	import { isPinWithinVisibleDays } from '$lib/rb/feedback-pin-age';
 	import { isPinOnPage, parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
 	import { readPinsVisible, writePinsVisible, onPinsVisibleChanged } from '$lib/rb/feedback-pin-visibility';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
-	import { readParkedPinDraft } from '$lib/rb/feedback-pin-draft-restore';
+	import { readParkedPinDraft, restoreParkedPinDraft } from '$lib/rb/feedback-pin-draft-restore';
 	import { persistParkedPinDraft } from '$lib/rb/feedback-pin-draft-persist';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
@@ -52,13 +53,17 @@
 	import FeedbackPinDraftBubble from './FeedbackPinDraftBubble.svelte';
 	import FeedbackPinMarkers from './feedback/FeedbackPinMarkers.svelte';
 
-	let pinDraft:
-		| (PinDraft & {
-				viewport: { width: number; height: number };
-				followOn: { parentId: string; label: string } | null;
-				placement: PinPlacement | null;
-		  })
-		| null = $state(null);
+	/** One composer each. A second comment used to overwrite this and drop the draft. */
+	type OpenPinDraft = PinDraft & {
+		viewport: { width: number; height: number };
+		followOn: { parentId: string; label: string } | null;
+		placement: PinPlacement | null;
+		key: number;
+		stack: number;
+	};
+	const MORE_PIN_DRAFTS_KEY = 'odj-feedback-pin-draft-more';
+	let pinDrafts: (OpenPinDraft | null)[] = $state([]);
+	let nextDraftKey = 1;
 	function _currentViewport(): { width: number; height: number } {
 		return { width: window.innerWidth, height: window.innerHeight };
 	}
@@ -70,31 +75,35 @@
 		// `to` is null only when navigating out of the app; keep the last route.
 		if (to !== null) pathname = to.url.pathname;
 	});
-	let openPinId: string | null = $state(null);
+	let openPinIds: string[] = $state([]);
 	let pinSeen: PinSeen = $state({});
 	let pinsVisible: boolean = $state(false);
 	let showHarvestedPins: boolean = $state(true);
 	let optionKeyHeld = $state(false);
 
-	/* Saved visibility, or a temporary look: placing/adding a comment, or
-	   hovering a comment control. Closing those hides the markers again
-	   unless the checkbox is on. */
+	/* Saved visibility, a hover peek, or armed placement. Writing the
+	   comment (the draft bubble) hides the markers again unless the
+	   checkbox is on. Pin 2230ee193a61. */
 	const pagePins = $derived(
 		pinsVisible ||
 		feedbackState.pinsPeek ||
-		feedbackState.placementArmed ||
-		feedbackState.pendingDraft !== null ||
-		pinDraft !== null
+		feedbackState.placementArmed
 			? feedbackState.pins.filter((p) => {
 					if (!isPinDrawn(p)) return false;
 					if (!isPinOnPage(p, pathname)) return false;
 					if (p.author === 'agent' && !uiPrefs.show_agent_pins) return false;
 					if (p.status === 'harvested' && !showHarvestedPins) return false;
+					if (!isPinWithinVisibleDays(p.created_at, uiPrefs.pin_visible_days, Date.now())) return false;
 					return true;
 				})
 			: []
 	);
-	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
+	const openPins = $derived(
+		openPinIds
+			.map((id) => pagePins.find((p) => p.id === id) ?? null)
+			.filter((p): p is FeedbackPin => p !== null)
+	);
+	const bodyPin = $derived(openPins[openPins.length - 1] ?? null);
 
 	/** Bumped on resize, scroll, and a 1 s tick while pins are drawn, so a pin
 	 * re-places itself when the element it is tagged to moves or goes away
@@ -108,18 +117,70 @@
 		for (const pin of pagePins) positions.set(pin.id, resolvePinPosition(pin, measureSelector, viewport));
 		return positions;
 	});
-	const bodyPinPoint = $derived(bodyPin === null ? null : (pinPositions.get(bodyPin.id) ?? null));
-	$effect(() => {
-		if (!draftHydrated) return;
-		persistParkedPinDraft(localStorage, pinDraft, foreignDraftParked, (err) => {
+	function _draftSaveError(err: unknown): void {
+		pushToast(
+			`comment draft could not be saved: ${err instanceof Error ? err.message : String(err)}`,
+			'error',
+			undefined,
+			err,
+			{ source: 'feedback-pin-draft-storage' }
+		);
+	}
+
+	function _readMoreDrafts(page: string, stackFrom: number): OpenPinDraft[] {
+		try {
+			const raw = localStorage.getItem(MORE_PIN_DRAFTS_KEY);
+			if (raw === null || raw === '') return [];
+			const parsed = JSON.parse(raw) as unknown;
+			if (!Array.isArray(parsed)) return [];
+			const loaded: OpenPinDraft[] = [];
+			for (const item of parsed) {
+				const { draft } = restoreParkedPinDraft(JSON.stringify(item), page, _currentViewport());
+				if (draft === null) continue;
+				loaded.push({ ...draft, key: nextDraftKey, stack: stackFrom + loaded.length });
+				nextDraftKey += 1;
+			}
+			return loaded;
+		} catch (err) {
 			pushToast(
-				`comment draft could not be saved: ${err instanceof Error ? err.message : String(err)}`,
+				`comment draft could not be restored: ${err instanceof Error ? err.message : String(err)}`,
 				'error',
 				undefined,
 				err,
 				{ source: 'feedback-pin-draft-storage' }
 			);
-		});
+			return [];
+		}
+	}
+
+	/** Append a composer. Never replaces one that is already open. */
+	function pushPinDraft(draft: Omit<OpenPinDraft, 'key' | 'stack'>): void {
+		foreignDraftParked = false;
+		const stack = pinDrafts.filter((open) => open !== null).length;
+		pinDrafts = [...pinDrafts, { ...draft, key: nextDraftKey, stack }];
+		nextDraftKey += 1;
+	}
+
+	$effect(() => {
+		if (!draftHydrated) return;
+		const live = pinDrafts.filter((d): d is OpenPinDraft => d !== null);
+		for (const draft of live) void draft.text;
+		const withText = live.filter((draft) => draft.text.trim() !== '');
+		// A new empty composer must not wipe a typed one from storage.
+		persistParkedPinDraft(localStorage, withText[0] ?? null, foreignDraftParked, _draftSaveError);
+		if (foreignDraftParked && withText.length === 0) return;
+		try {
+			const rest = withText.slice(1);
+			if (rest.length === 0) localStorage.removeItem(MORE_PIN_DRAFTS_KEY);
+			else localStorage.setItem(MORE_PIN_DRAFTS_KEY, JSON.stringify(rest));
+		} catch (err) {
+			_draftSaveError(err);
+		}
+	});
+
+	$effect(() => {
+		if (!pinDrafts.some((d) => d === null)) return;
+		pinDrafts = pinDrafts.filter((d) => d !== null);
 	});
 
 	$effect(() => {
@@ -127,8 +188,7 @@
 		if (feedbackState.pendingDraft === null) return;
 		const draft = untrack(() => takePendingPinDraft());
 		if (draft === null) return;
-		foreignDraftParked = false;
-		pinDraft = {
+		pushPinDraft({
 			point: draft.point,
 			anchor: draft.anchor,
 			text: draft.text,
@@ -136,7 +196,7 @@
 			viewport: draft.viewport ?? _currentViewport(),
 			followOn: null,
 			placement: draft.placement ?? null
-		};
+		});
 		void focusPinDraftTextarea();
 	});
 
@@ -197,7 +257,13 @@
 				);
 			}
 		);
-		pinDraft = draft;
+		const restored: OpenPinDraft[] = [];
+		if (draft !== null) {
+			restored.push({ ...draft, key: nextDraftKey, stack: 0 });
+			nextDraftKey += 1;
+		}
+		if (!foreign) restored.push(..._readMoreDrafts(pathname, restored.length));
+		pinDrafts = restored;
 		foreignDraftParked = foreign;
 		draftHydrated = true;
 		bootScheduler.defer('feedback:hydrate', () => {
@@ -281,22 +347,23 @@
 	});
 
 	function openPin(pin: FeedbackPin): void {
-		openPinId = pin.id;
+		if (openPinIds.includes(pin.id)) return;
+		openPinIds = [...openPinIds, pin.id];
 	}
 
-	function closePin(): void {
+	function closePin(pinId: string | null = null): void {
+		const id = pinId ?? openPinIds[openPinIds.length - 1] ?? null;
+		const bodyPin = openPins.find((p) => p.id === id) ?? null;
 		if (bodyPin !== null) _writeSeen(markPinSeen(pinSeen, bodyPin));
-		openPinId = null;
+		if (id !== null) openPinIds = openPinIds.filter((openId) => openId !== id);
 	}
 
 	async function archiveOpenPin(pin: FeedbackPin): Promise<void> {
-		if (await archivePin(pin.id)) openPinId = null;
+		if (await archivePin(pin.id)) openPinIds = openPinIds.filter((id) => id !== pin.id);
 	}
 
 	function startFollowOn(pin: FeedbackPin): void {
-		openPinId = null;
-		foreignDraftParked = false;
-		pinDraft = {
+		pushPinDraft({
 			point: { x_pct: pin.x_pct, y_pct: pin.y_pct },
 			anchor: pin.anchor,
 			viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -305,11 +372,12 @@
 			followOn: { parentId: pin.id, label: followOnText(pin).trim() },
 			// The daemon copies the parent's placement onto the follow-on.
 			placement: null
-		};
+		});
 		void focusPinDraftTextarea();
 	}
 
 	async function focusPinDraftTextarea(): Promise<void> {
+		await tick();
 		await draftBubble?.focusPinDraftTextarea();
 	}
 
@@ -330,8 +398,7 @@
 		// for node:test; here it is always the real element elementsFromPoint returned.
 		const placement = capturePinPlacement({ x: e.clientX, y: e.clientY }, under as Element | null, anchor);
 		disarmPinPlacement();
-		foreignDraftParked = false;
-		pinDraft = {
+		pushPinDraft({
 			point,
 			anchor,
 			viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -339,15 +406,20 @@
 			page: pathname,
 			followOn: null,
 			placement
-		};
+		});
 		void focusPinDraftTextarea();
 	}
 
 	function handleEscape(e: KeyboardEvent): void {
 		if (e.key !== 'Escape') return;
 		if (feedbackState.placementArmed) disarmPinPlacement();
-		else if (pinDraft !== null) pinDraft = null;
-		else if (openPinId !== null) closePin();
+		else if (pinDrafts.some((d) => d !== null)) {
+			let last = -1;
+			for (let i = 0; i < pinDrafts.length; i += 1) {
+				if (pinDrafts[i] !== null) last = i;
+			}
+			if (last >= 0) pinDrafts[last] = null;
+		} else if (openPinIds.length > 0) closePin();
 	}
 </script>
 
@@ -362,16 +434,16 @@
 	onopen={openPin}
 />
 
-{#if bodyPin !== null}
+{#each openPins as pin (pin.id)}
 	<FeedbackPinCard
-		pin={bodyPin}
-		point={bodyPinPoint}
-		onclose={closePin}
-		onarchive={() => archiveOpenPin(bodyPin)}
-		onfollowon={() => startFollowOn(bodyPin)}
-		onreply={(text) => addReply(bodyPin.id, text)}
+		{pin}
+		point={pinPositions.get(pin.id) ?? null}
+		onclose={() => closePin(pin.id)}
+		onarchive={() => archiveOpenPin(pin)}
+		onfollowon={() => startFollowOn(pin)}
+		onreply={(text) => addReply(pin.id, text)}
 	/>
-{/if}
+{/each}
 
 {#if feedbackState.placementArmed}
 	<button
@@ -383,7 +455,11 @@
 	></button>
 {/if}
 
-<FeedbackPinDraftBubble bind:pinDraft bind:this={draftBubble} {pushToast} />
+{#each pinDrafts as draft, i (draft?.key ?? `closed-${i}`)}
+	{#if draft !== null}
+		<FeedbackPinDraftBubble bind:pinDraft={pinDrafts[i]} bind:this={draftBubble} {pushToast} />
+	{/if}
+{/each}
 
 <style>
 	:global(.fb-pin-anchor-target) {

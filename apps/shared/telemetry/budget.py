@@ -40,6 +40,12 @@ PERF_EVENT_MARKER: str = "[perf-event]"
 #: Vite dev-server console lines: they exist only under `vite dev` (the preview),
 #: never in a shipped build, and were 12 of 33 open issues on Mon 14 Sep 2026.
 DEV_TOOLING_MARKERS: tuple[str, ...] = ("[hmr]", "[vite]")
+#: Expected WebMIDI grant refusal / missing API. The panel already shows
+#: lastError; console.error from older clients was OPEN-DJ-BE-6R.
+MIDI_PERMISSION_CONSOLE_MARKERS: tuple[str, ...] = (
+    "WebMIDI permission denied",
+    "WebMIDI is not supported in this browser",
+)
 #: Exact browser fetch/abort messages. Safari WebKit reports ``Load failed``
 #: (Sentry OPEN-DJ-FE-F); Chromium reports ``Failed to fetch``. Keep this set
 #: in lockstep with ``telemetry-network-noise.ts``. Do not substring-match:
@@ -121,6 +127,13 @@ def is_dev_tooling_console(kind: str, message: str) -> bool:
     return kind in PERF_MIRROR_KINDS and message.lstrip().startswith(DEV_TOOLING_MARKERS)
 
 
+def is_expected_midi_permission_console(kind: str, message: str) -> bool:
+    """A console line for WebMIDI denial or missing WebMIDI: UI already shows it."""
+    if kind not in PERF_MIRROR_KINDS:
+        return False
+    return any(marker in message for marker in MIDI_PERMISSION_CONSOLE_MARKERS)
+
+
 def is_transient_network_error(_name: str | None, message: str) -> bool:
     """A browser fetch/abort TypeError: connectivity, not an application bug.
 
@@ -181,6 +194,7 @@ def is_local_only_browser_error(kind: str, name: str | None, message: str) -> bo
     return (
         is_perf_console_mirror(kind, message)
         or is_dev_tooling_console(kind, message)
+        or is_expected_midi_permission_console(kind, message)
         or is_transient_network_error(name, message)
         or is_expected_library_refusal(message)
         or is_expected_state_store_busy(name, message)

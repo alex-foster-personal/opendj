@@ -1,4 +1,5 @@
 """HTTP contract for fail-closed vendor playlist writeback."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -142,17 +143,24 @@ def _conflict(exc: WritebackConflict) -> HTTPException:
 
 @router.get("/{playlist_id}/writeback/capabilities", response_model=WritebackCapabilitiesOut)
 def get_writeback_capabilities(
-    playlist_id: str, backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    playlist_id: str,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
 ) -> WritebackCapabilitiesOut:
     backend.get_playlist(playlist_id)
-    return WritebackCapabilitiesOut(playlist_id=playlist_id, vendors=[VendorCapabilityOut(**cap.__dict__) for cap in (service.capability(v) for v in VENDORS)])
+    return WritebackCapabilitiesOut(
+        playlist_id=playlist_id,
+        vendors=[VendorCapabilityOut(**cap.__dict__) for cap in (service.capability(v) for v in VENDORS)],
+    )
 
 
 @router.get("/{playlist_id}/writeback/targets", response_model=WritebackTargetsOut)
 def get_writeback_targets(
-    playlist_id: str, vendor: VendorLiteral = Query(...), target_mode: TargetModeLiteral = Query(...),  # noqa: B008  # FastAPI DI
-    target_path: str = Query(...), backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    playlist_id: str,
+    vendor: VendorLiteral = Query(...),  # noqa: B008  # FastAPI DI
+    target_mode: TargetModeLiteral = Query(...),  # noqa: B008  # FastAPI DI
+    target_path: str = Query(...),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
 ) -> WritebackTargetsOut:
     backend.get_playlist(playlist_id)
@@ -160,20 +168,34 @@ def get_writeback_targets(
         targets = service.targets(vendor=vendor, target_mode=target_mode, target_path=target_path)
     except WritebackUnavailable as exc:
         raise _unavailable(exc) from exc
-    return WritebackTargetsOut(vendor=vendor, target_mode=target_mode, target_path=target_path,
-        targets=[WritebackTargetOut(playlist_id=t.playlist_id, name=t.name) for t in targets])
+    return WritebackTargetsOut(
+        vendor=vendor,
+        target_mode=target_mode,
+        target_path=target_path,
+        targets=[WritebackTargetOut(playlist_id=t.playlist_id, name=t.name) for t in targets],
+    )
 
 
 @router.get("/{playlist_id}/writeback/plan", response_model=WritebackPlanOut)
 def get_writeback_plan(
-    playlist_id: str, vendor: VendorLiteral = Query(...), target_mode: TargetModeLiteral = Query(...),  # noqa: B008  # FastAPI DI
-    target_path: str = Query(...), target_id: str = Query(...),
-    backend: StateBackend = Depends(get_read_state), service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
+    playlist_id: str,
+    vendor: VendorLiteral = Query(...),  # noqa: B008  # FastAPI DI
+    target_mode: TargetModeLiteral = Query(...),  # noqa: B008  # FastAPI DI
+    target_path: str = Query(...),
+    target_id: str = Query(...),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
 ) -> WritebackPlanOut:
     playlist = backend.get_playlist(playlist_id)
     try:
-        plan = service.plan(vendor=vendor, source_playlist_id=playlist_id, desired_ids=list(playlist.items),
-            target_mode=target_mode, target_path=target_path, target_id=target_id)
+        plan = service.plan(
+            vendor=vendor,
+            source_playlist_id=playlist_id,
+            desired_ids=list(playlist.items),
+            target_mode=target_mode,
+            target_path=target_path,
+            target_id=target_id,
+        )
     except WritebackUnavailable as exc:
         raise _unavailable(exc) from exc
     except WritebackConflict as exc:
@@ -183,7 +205,9 @@ def get_writeback_plan(
 
 @router.post("/{playlist_id}/writeback/apply", response_model=WritebackApplyOut)
 def apply_writeback(
-    playlist_id: str, body: WritebackApplyIn, backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    playlist_id: str,
+    body: WritebackApplyIn,
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
     service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
 ) -> WritebackApplyOut:
     if body.vendor == "rekordbox":
@@ -212,7 +236,9 @@ def apply_writeback(
 
 @router.post("/{playlist_id}/writeback/rollback", response_model=WritebackRollbackOut)
 def rollback_writeback(
-    playlist_id: str, body: WritebackRollbackIn, backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    playlist_id: str,
+    body: WritebackRollbackIn,
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
     service: WritebackService = Depends(get_writeback_service),  # noqa: B008  # FastAPI DI
 ) -> WritebackRollbackOut:
     # DELIBERATELY NOT GATED (mapped as gated=False). Rollback only exists

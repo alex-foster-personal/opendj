@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -1059,6 +1060,264 @@ def test_cli_exit_codes(requests: list[str], capsys: pytest.CaptureFixture[str],
     assert code == EXIT_UNCONFIRMED and error["error"] == "plan_invalid"
     code, error = _cli(page, requests, capsys, "validate", str(tmp_path / "missing.json"))
     assert code == EXIT_FAILED and "cannot read plan" in error["message"]
+
+
+@pytest.mark.requirement("AGENT-26")
+def test_cli_schedules_a_saved_mix_score_and_shows_it_offline(
+    requests: list[str], capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """[if] a proposal is saved as a .mix file [then] show prints it and schedule plays it, [else stop]."""
+    page = FakePage()
+    code, proposed = _cli(page, requests, capsys, "propose", "trk-in")
+    assert code == EXIT_CONFIRMED
+    score_file = tmp_path / "blend.mix"
+    score_file.write_text(proposed["proposals"][0]["notation"], encoding="utf-8")
+    assert dj_cli.run(["show", str(score_file), "--as", "grid"], lock=None) == EXIT_CONFIRMED
+    grid = capsys.readouterr().out
+    assert grid.startswith("bar") and "D2 deck" in grid
+    wide_file = tmp_path / "wide.mix"
+    wide_file.write_text("transition cut\nout D1 a from 1 for 1000000\nin D2 b from 1 for 4\n@0 D2 play\n", encoding="utf-8")
+    assert dj_cli.run(["show", str(wide_file), "--as", "grid"], lock=None) == EXIT_UNCONFIRMED
+    assert "more than" in json.loads(capsys.readouterr().out)["message"]
+    code, scheduled = _cli(page, requests, capsys, "schedule", str(score_file))
+    assert code == EXIT_CONFIRMED and scheduled["plan"] == proposed["proposals"][0]["plan"]
+    score_file.write_text("transition cut\nout D1 a from 1 for 4\n", encoding="utf-8")
+    code, error = _cli(page, requests, capsys, "validate", str(score_file))
+    assert code == EXIT_FAILED and "is not a mix score" in error["message"]
+
+
+
+# ----- sets (AGENT-27) ------------------------------------------------------
+
+SET_IDS = ["trk-out", "trk-in", "trk-next"]
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_plan_set_starts_from_the_live_deck_and_bar(requests: list[str]) -> None:
+    """[if] the first track is playing [then] the set starts on its deck after its bar, [else stop]."""
+    planned = _service(FakePage(out_bar=100.0), requests).plan_set(SET_IDS, intent="smooth", name="warmup")
+    first = planned["set"]["transitions"][0]
+    assert first["out"]["deck"] == 1 and first["out"]["window"]["start_bar"] > 100
+    assert [row["deck"] for row in planned["set"]["tracks"]] == [1, 2, 1]
+    assert planned["score"].startswith("set warmup\n")
+    # Control: with no page open it still plans, from bar 1 on deck 1, and says so.
+    offline = _service(FakePage(page_open=False), requests).plan_set(SET_IDS)
+    assert offline["notes"] and "without the live mix" in offline["notes"][0]
+    assert offline["set"]["transitions"][0]["out"]["window"]["start_bar"] <= 100
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_plan_set_first_deck_follows_the_live_deck_or_is_refused(requests: list[str]) -> None:
+    """[if] first_deck conflicts with the playing deck, or is 0 [then] plan_set refuses, [else stop]."""
+    live = _service(FakePage(out_bar=100.0), requests)
+    with pytest.raises(DjError, match=r"playing on D1.*first_deck 3 conflicts"):
+        live.plan_set(SET_IDS, first_deck=3)
+    assert live.plan_set(SET_IDS, first_deck=1)["set"]["tracks"][0]["deck"] == 1  # control: agreeing is fine
+    offline = _service(FakePage(page_open=False), requests)
+    with pytest.raises(DjError, match=r"deck 1\.\.4"):
+        offline.plan_set(SET_IDS, first_deck=0)
+    assert offline.plan_set(SET_IDS, first_deck=3)["set"]["tracks"][0]["deck"] == 3  # control: an offline override holds
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_plan_set_falls_back_offline_only_without_a_page(requests: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] reading the mix fails but not for a missing page [then] plan_set raises it, [else stop]."""
+    service = _service(FakePage(), requests)
+
+    def broken() -> dict[str, Any]:
+        raise DjError("order_failed", "the engine answered garbage")
+
+    monkeypatch.setattr(service, "_mirror", broken)
+    with pytest.raises(DjError, match="garbage"):
+        service.plan_set(SET_IDS)
+
+
+def _swap_out_track_to_d2(page: FakePage) -> None:
+    decks = page.mirror_doc["decks"]
+    decks["1"], decks["2"] = decks["2"], decks["1"]
+
+
+@pytest.mark.requirement("AGENT-27")
+@pytest.mark.parametrize(
+    ("label", "mutate", "message"),
+    [
+        ("decks list", lambda page: page.mirror_doc.__setitem__("decks", []), "no decks object"),
+        ("deck key x", lambda page: page.mirror_doc["decks"].__setitem__("x", page.mirror_doc["decks"].pop("4")), "unknown deck 'x'"),
+        ("no stable_id", lambda page: page.mirror_doc["decks"]["3"].pop("stable_id"), "deck 3 has no stable_id"),
+        ("ms true", lambda page: page.mirror_doc["decks"]["1"]["position"].__setitem__("ms", True), "position.ms"),
+        ("ms nan", lambda page: page.mirror_doc["decks"]["1"]["position"].__setitem__("ms", float("nan")), "position.ms"),
+        ("agent_plan armed", lambda page: page.mirror_doc.__setitem__("agent_plan", {"status": "armed"}), "agent_plan"),
+    ],
+)
+def test_plan_set_refuses_a_malformed_mirror(requests: list[str], label: str, mutate: Any, message: str) -> None:
+    """[if] an open page's mirror fails set-next's checks [then] plan_set is mirror_invalid, [else stop]."""
+    page = FakePage(out_bar=100.0)
+    mutate(page)
+    with pytest.raises(DjError, match=message) as refused:
+        _service(page, requests).plan_set(SET_IDS)
+    assert refused.value.code == "mirror_invalid", label
+    # Control: the untouched mirror plans live, with no note.
+    live = _service(FakePage(out_bar=100.0), requests).plan_set(SET_IDS)
+    assert "notes" not in live and live["set"]["transitions"][0]["out"]["window"]["start_bar"] > 100
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_plan_set_says_when_it_did_not_start_from_the_live_mix(requests: list[str]) -> None:
+    """[if] the first track is paused or unplaced [then] plan_set starts at bar 1, [else stop]."""
+    paused = FakePage(out_bar=100.0, out_playing=False)
+    _swap_out_track_to_d2(paused)
+    planned = _service(paused, requests).plan_set(SET_IDS)
+    assert planned["notes"] == ["planned without the live mix: trk-out is loaded on D2 but not playing, so the set starts from bar 1"]
+    assert planned["set"]["tracks"][0]["deck"] == 1
+    no_position = FakePage(out_bar=100.0)
+    _swap_out_track_to_d2(no_position)
+    no_position.mirror_doc["decks"]["2"]["position"] = {"ms": None}
+    planned = _service(no_position, requests).plan_set(SET_IDS)
+    assert "D2 plays trk-out but publishes no position" in planned["notes"][0]
+    assert planned["set"]["tracks"][0]["deck"] == 2  # the deck is known even without the bar
+    absent = FakePage(out_bar=100.0)
+    absent.mirror_doc["decks"]["1"]["stable_id"] = None
+    assert "trk-out is not on any deck" in _service(absent, requests).plan_set(SET_IDS)["notes"][0]
+    # Control: playing with a position plans live on its deck with no note.
+    live = FakePage(out_bar=100.0)
+    _swap_out_track_to_d2(live)
+    planned = _service(live, requests).plan_set(SET_IDS)
+    assert "notes" not in planned and planned["set"]["tracks"][0]["deck"] == 2
+
+
+@pytest.mark.requirement("AGENT-27")
+@pytest.mark.parametrize("first_deck", [True, 2.0, 0, 5])
+def test_plan_set_refuses_a_bad_first_deck_as_usage(requests: list[str], first_deck: Any) -> None:
+    """[if] first_deck is not an integer deck 1..4 [then] plan_set refuses it as usage, [else stop]."""
+    offline = _service(FakePage(page_open=False), requests)
+    with pytest.raises(DjError, match=r"first_deck must be a deck 1\.\.4") as refused:
+        offline.plan_set(SET_IDS, first_deck=first_deck)
+    assert refused.value.code == "usage"
+    # Control: an integer deck holds.
+    assert offline.plan_set(SET_IDS, first_deck=2)["set"]["tracks"][0]["deck"] == 2
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_plan_set_refuses_a_repeated_track_as_usage(requests: list[str]) -> None:
+    """[if] the running order names a track twice [then] plan_set refuses it as usage, [else stop]."""
+    service = _service(FakePage(out_bar=100.0), requests)
+    for order in (["trk-out", "trk-in", "trk-out"], ["trk-out", "trk-out", "trk-in"]):
+        with pytest.raises(DjError, match="trk-out appears twice") as refused:
+            service.plan_set(order)
+        assert refused.value.code == "usage"
+    # Control: distinct tracks plan.
+    assert len(service.plan_set(SET_IDS)["set"]["transitions"]) == 2
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_schedule_set_next_performs_only_the_due_transition(requests: list[str]) -> None:
+    """[if] a set is handed over mid-track [then] only the due transition is scheduled, [else stop]."""
+    page = FakePage(out_bar=60.0)
+    service = _service(page, requests, audio="live")
+    from apps.autodj.setscore import parse_set
+
+    planned = parse_set(service.plan_set(SET_IDS)["set"])
+    result = service.schedule_set_next(planned)
+    assert result["scheduled"] is True and result["set_index"] == 0 and result["transitions"] == 2
+    plan_orders = [order["plan"] for order in page.orders if "plan" in order]
+    assert len(plan_orders) == 1 and plan_orders[0]["incoming"] == {"deck": 2, "stable_id": "trk-in"}
+    page.mirror_doc["agent_plan"] = {"status": "running"}
+    busy = service.schedule_set_next(planned)
+    assert busy == {"scheduled": False, "reason": busy["reason"], "transitions": 2} and "running" in busy["reason"]
+    assert len([order for order in page.orders if "plan" in order]) == 1  # nothing more armed
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_schedule_set_next_decides_and_schedules_on_one_mirror_read(
+    requests: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] set-next checks what is due [then] it schedules on that same snapshot, read once, [else stop].
+
+    Control: a read between the due check and the schedule would let a track that started on another deck
+    in between be loaded twice. Control two: the handover is still scheduled."""
+    page = FakePage(out_bar=60.0)
+    page.mirror_doc["decks"]["2"] = {"stable_id": "trk-in", "playing": False}  # loaded: no load, so no confirm read
+    service = _service(page, requests, audio="live")
+    from apps.autodj.setscore import parse_set
+
+    planned = parse_set(service.plan_set(SET_IDS)["set"])
+    reads = 0
+    read = service._mirror
+
+    def counted() -> dict[str, Any]:
+        nonlocal reads
+        reads += 1
+        return read()
+
+    # The decision is one mirror read; schedule() then does its own load and schedule confirmation reads.
+    reads_at_schedule: list[int] = []
+    schedule = service.schedule
+
+    def recorded(plan: Any, mirror: Any = None) -> dict[str, Any]:
+        reads_at_schedule.append(reads)
+        return schedule(plan, mirror)
+
+    monkeypatch.setattr(service, "_mirror", counted)
+    monkeypatch.setattr(service, "schedule", recorded)
+    result = service.schedule_set_next(planned)
+    assert result["scheduled"] is True and result["set_index"] == 0
+    assert reads_at_schedule == [1]
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_schedule_set_next_refuses_a_malformed_mirror(requests: list[str]) -> None:
+    """[if] the mirror lacks a deck the set uses [then] set-next is mirror_invalid, [else stop]."""
+    page = FakePage(out_bar=60.0)
+    service = _service(page, requests, audio="live")
+    from apps.autodj.setscore import parse_set
+
+    planned = parse_set(service.plan_set(SET_IDS)["set"])
+    del page.mirror_doc["decks"]["2"]
+    with pytest.raises(DjError, match="no deck 2") as refused:
+        service.schedule_set_next(planned)
+    assert refused.value.code == "mirror_invalid"
+    assert not [order for order in page.orders if "plan" in order]
+
+
+@pytest.mark.requirement("AGENT-27")
+def test_cli_plans_a_set_shows_it_offline_and_performs_the_next_step(
+    requests: list[str], capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """[if] set-plan output is saved [then] set-show prints it and set-next schedules it, [else stop]."""
+    page = FakePage(out_bar=60.0)
+    code, planned = _cli(page, requests, capsys, "set-plan", *SET_IDS, "--intent", "wind down")
+    assert code == EXIT_CONFIRMED
+    set_file = tmp_path / "set.mix"
+    set_file.write_text(planned["score"], encoding="utf-8")
+    assert dj_cli.run(["set-show", str(set_file), "--as", "grid"], lock=None) == EXIT_CONFIRMED
+    grids = capsys.readouterr().out
+    assert grids.count("\nD2 deck") + grids.count("\nD1 deck") >= 4  # two grids, two deck lanes each
+    wide = json.loads(json.dumps(planned["set"]))
+    for side in ("out", "in"):
+        wide["transitions"][-1][side]["window"]["bars"] = 10**9
+    wide_file = tmp_path / "wide-set.json"
+    wide_file.write_text(json.dumps(wide), encoding="utf-8")
+    assert dj_cli.run(["set-show", str(wide_file), "--as", "grid"], lock=None) == EXIT_UNCONFIRMED
+    assert json.loads(capsys.readouterr().out)["error"] == "plan_invalid"
+    # A window too wide to read back as a score is plan_invalid in the score view too.
+    wide["transitions"][-1]["in"]["window"]["bars"] = 10**30
+    wide_file.write_text(json.dumps(wide), encoding="utf-8")
+    assert dj_cli.run(["set-show", str(wide_file), "--as", "score"], lock=None) == EXIT_UNCONFIRMED
+    assert "30 digits" in json.loads(capsys.readouterr().out)["message"]
+    # Deeply nested JSON names it: a usage error for a set, plan_invalid for a plan (AGENT-5858).
+    deep_file = tmp_path / "deep.json"
+    deep_file.write_text('{"transitions": ' + "[" * 100_000 + "]" * 100_000 + "}", encoding="utf-8")
+    for tool, exit_code in (("set-show", EXIT_FAILED), ("show", EXIT_UNCONFIRMED)):
+        assert dj_cli.run([tool, str(deep_file)], lock=None) == exit_code
+        assert "nested too deeply" in json.loads(capsys.readouterr().out)["message"]
+    code, scheduled = _cli(page, requests, capsys, "set-next", str(set_file))
+    assert code == EXIT_CONFIRMED and scheduled["set_index"] == 0
+    page.mirror_doc["decks"]["1"]["playing"] = False
+    code, idle = _cli(page, requests, capsys, "set-next", str(set_file))
+    assert code == EXIT_UNCONFIRMED and idle["scheduled"] is False
+    set_file.write_text(re.sub(r" from \d+ for", " from 0 for", planned["score"], count=1), encoding="utf-8")
+    code, error = _cli(page, requests, capsys, "set-next", str(set_file))
+    assert code == EXIT_FAILED and "is not a valid set" in error["message"]
 
 
 @pytest.mark.requirement("AGENT-29")

@@ -56,8 +56,15 @@ const LINE_COMMENT = /^[ \t]*\/\/.*$/gm;
 // side of the keyword, and `.` in the trailing guard so `import.meta.env.X` is left
 // alone (it is a meta-property, not a specifier, and matching it swallowed the rest
 // of the file in BuildIdentity.svelte and routes/performance/preload1/+page.svelte).
+//
+// A static import is also anchored to the start of a line. Without that anchor the
+// word "import" inside a string ("Could not import Chrome sign-ins: ${...}") matched
+// as a static import and swallowed text up to the next pair of quotes, which broke
+// SpotifySourcePanel.svelte the same way identifiers broke SetupOverlay. Static
+// imports are statements, so a line-start anchor loses no real one; the dynamic
+// form can sit mid-expression and keeps only the identifier guards.
 const IMPORT_SPECIFIER =
-	/(?<![.\w$])import(?![\w$.])(?:\s*\(\s*['"][^'"]+['"][^)]*\)|(?!\s*\()[^'"]+['"][^'"]+['"])/g;
+	/^[ \t]*import(?![\w$.])(?!\s*\()[^'"]+['"][^'"]+['"]|(?<![.\w$])import(?![\w$.])\s*\(\s*['"][^'"]+['"][^)]*\)/gm;
 
 // Templates can only ever carry the dynamic form, so the static alternative is
 // deliberately absent here: it would match across markup and emit nonsense.

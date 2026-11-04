@@ -49,18 +49,14 @@ def author_or_raise(conn: sqlite3.Connection) -> str:
     try:
         return policy_store.author_machine_id(conn)
     except sync_stamp.SyncStampError as exc:
-        raise HTTPException(
-            status_code=500, detail={"code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc)}
-        ) from exc
+        raise HTTPException(status_code=500, detail={"code": "CLOUDSYNC_IDENTITY_ERROR", "message": str(exc)}) from exc
 
 
 def _input_error(exc: policy_store.PolicyInputError) -> HTTPException:
     return HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)})
 
 
-def evaluate_or_raise(
-    conn: sqlite3.Connection, proposed: ProposedPolicy
-) -> policy_store.PolicyOutcome:
+def evaluate_or_raise(conn: sqlite3.Connection, proposed: ProposedPolicy) -> policy_store.PolicyOutcome:
     """:func:`policy_store.evaluate`, with a refused proposal (a repeated key) as 422."""
     try:
         return policy_store.evaluate(conn, proposed)
@@ -103,11 +99,7 @@ def apply_policy_or_raise(
 
 def _publish_written(outcome: policy_store.PolicyOutcome) -> None:
     for table, kind in _EVENT_KIND.items():
-        ids = [
-            f"{e.machine_id}:{e.key}"
-            for e in outcome.plan
-            if e.table == table and e.action != "unchanged"
-        ]
+        ids = [f"{e.machine_id}:{e.key}" for e in outcome.plan if e.table == table and e.action != "unchanged"]
         if ids:
             publish("library.changed", {"kind": kind, "ids": ids})
 

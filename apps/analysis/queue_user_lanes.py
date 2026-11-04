@@ -5,6 +5,7 @@ Issue #1865 / PERFBATCH-05. These names must never join
 lyrics through memory admission, producer-version skip, and the key ->
 beatgrid cascade.
 """
+
 from __future__ import annotations
 
 USER_JOB_LANES: tuple[str, ...] = ("stems", "lyrics", "genre")

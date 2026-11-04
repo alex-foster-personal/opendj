@@ -17,6 +17,7 @@ Op kinds
 * ``rename``   -- used only by drift remediation (Plan 10-02); the diff
   engine does not emit this by default but callers can compose it.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -69,9 +70,9 @@ class Plan:
     profile_name: str
     drive_root: Path
     ops: list[Op]
-    total_bytes: int                  # sum of bytes_estimate for copies/overwrites/transcodes
-    existing_bytes: int               # already on drive and unchanged
-    free_bytes_needed: int            # incremental space needed (headroom included)
+    total_bytes: int  # sum of bytes_estimate for copies/overwrites/transcodes
+    existing_bytes: int  # already on drive and unchanged
+    free_bytes_needed: int  # incremental space needed (headroom included)
     warnings: list[str] = field(default_factory=list)
     tracks_by_playlist: dict[str, list[CanonicalTrack]] = field(default_factory=dict)
 
@@ -162,10 +163,7 @@ def compute_plan(
             # Duplicate stable_ids across playlists (layout=Artist/Album/Track
             # is playlist-agnostic): keep the first mapping, warn once.
             if rel in expected:
-                warnings.append(
-                    f"track duplicated across playlists mapping to {rel}: "
-                    f"{t.stable_id}"
-                )
+                warnings.append(f"track duplicated across playlists mapping to {rel}: {t.stable_id}")
                 continue
             expected[rel] = (t, idx)
             case_buckets[str(rel).lower()].append(rel)
@@ -173,10 +171,7 @@ def compute_plan(
     # --- 2. Case-collision check.
     for _key, variants in case_buckets.items():
         if len(variants) > 1:
-            warnings.append(
-                "case collision: "
-                + ", ".join(sorted(str(v) for v in variants))
-            )
+            warnings.append("case collision: " + ", ".join(sorted(str(v) for v in variants)))
 
     # --- 3. Existing files on drive.
     existing = enumerate_drive_files(drive_root)
@@ -212,9 +207,7 @@ def compute_plan(
                 continue
             # Drift on drive; honour conflict_policy.
             if profile.conflict_policy == "skip":
-                warnings.append(
-                    f"skip overwrite (conflict_policy=skip): {rel}"
-                )
+                warnings.append(f"skip overwrite (conflict_policy=skip): {rel}")
                 ops.append(
                     Op(
                         kind="skip",
@@ -293,24 +286,13 @@ def filter_plan_by_playlists(plan: Plan, playlists: Iterable[str]) -> Plan:
         profile_name=plan.profile_name,
         drive_root=plan.drive_root,
         ops=filtered,
-        total_bytes=sum(
-            op.bytes_estimate
-            for op in filtered
-            if op.kind in ("copy", "transcode", "overwrite")
-        ),
+        total_bytes=sum(op.bytes_estimate for op in filtered if op.kind in ("copy", "transcode", "overwrite")),
         existing_bytes=plan.existing_bytes,
         free_bytes_needed=int(
-            sum(
-                op.bytes_estimate
-                for op in filtered
-                if op.kind in ("copy", "transcode", "overwrite")
-            )
-            * 1.10
+            sum(op.bytes_estimate for op in filtered if op.kind in ("copy", "transcode", "overwrite")) * 1.10
         ),
         warnings=list(plan.warnings),
-        tracks_by_playlist={
-            k: v for k, v in plan.tracks_by_playlist.items() if k in wanted
-        },
+        tracks_by_playlist={k: v for k, v in plan.tracks_by_playlist.items() if k in wanted},
     )
 
 
@@ -322,19 +304,10 @@ def filter_plan_by_files(plan: Plan, rel_paths: Iterable[str]) -> Plan:
         profile_name=plan.profile_name,
         drive_root=plan.drive_root,
         ops=filtered,
-        total_bytes=sum(
-            op.bytes_estimate
-            for op in filtered
-            if op.kind in ("copy", "transcode", "overwrite")
-        ),
+        total_bytes=sum(op.bytes_estimate for op in filtered if op.kind in ("copy", "transcode", "overwrite")),
         existing_bytes=plan.existing_bytes,
         free_bytes_needed=int(
-            sum(
-                op.bytes_estimate
-                for op in filtered
-                if op.kind in ("copy", "transcode", "overwrite")
-            )
-            * 1.10
+            sum(op.bytes_estimate for op in filtered if op.kind in ("copy", "transcode", "overwrite")) * 1.10
         ),
         warnings=list(plan.warnings),
         tracks_by_playlist=plan.tracks_by_playlist,

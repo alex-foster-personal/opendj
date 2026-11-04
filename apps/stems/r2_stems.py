@@ -12,6 +12,7 @@ layer can import the key prefix from here without a cycle.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import os
@@ -51,14 +52,8 @@ def content_addressed_key(content_sha256: str) -> str:
     so this copy is pinned to it by a parity test instead of by import.
     """
     digest = content_sha256.strip()
-    if (
-        len(digest) != 64
-        or any(char not in _HEX_DIGITS for char in digest)
-    ):
-        raise ValueError(
-            f"content_sha256 must be 64 lowercase hex chars; got "
-            f"{content_sha256!r}"
-        )
+    if len(digest) != 64 or any(char not in _HEX_DIGITS for char in digest):
+        raise ValueError(f"content_sha256 must be 64 lowercase hex chars; got {content_sha256!r}")
     return f"assets/{digest[:2]}/{digest}"
 
 
@@ -107,9 +102,7 @@ def list_r2_sizes(client: Any, bucket: str) -> dict[str, int]:
     re-upload everything it could not see.
     """
     sizes: dict[str, int] = {}
-    for page in client.get_paginator("list_objects_v2").paginate(
-        Bucket=bucket, Prefix="assets/"
-    ):
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix="assets/"):
         for item in page.get("Contents", []):
             sizes[item["Key"]] = item["Size"]
     return sizes

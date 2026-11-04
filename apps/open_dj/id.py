@@ -3,6 +3,7 @@
 Per D2, ``track_id`` IS ``stable_id`` -- we delegate to
 :mod:`apps.shared.state.ids`.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping

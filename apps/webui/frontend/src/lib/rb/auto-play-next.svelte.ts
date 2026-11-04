@@ -103,7 +103,7 @@ let _loopEngaged = false;
 let _eqDucked = false;
 let _loopingSinceMs: number | null = null;
 let _releaseInFlight: Promise<void> | null = null;
-/** Bumped by every arm and cancel, so a planner answer that arrives after a cancel is dropped. */
+/** Bumped by every arm and cancel, so a late planner answer or fallback beat_loop activation after cancel is dropped. */
 let _armGeneration = 0;
 let _plannerAbort: AbortController | null = null;
 let _planId: string | null = null;
@@ -362,10 +362,10 @@ export async function armAutoPlayNext(
 	}
 	let armed = false;
 	try {
-		armed = await _armFeaturette(pair, config);
+		armed = await _armFeaturette(pair, config, generation);
 	} finally {
 		// A refusal or a throw (a track with no beatgrid) must not leave the button armed with nothing running.
-		if (!armed) _reset();
+		if (!armed && generation === _armGeneration) _reset();
 	}
 	return armed;
 }
@@ -375,7 +375,11 @@ export async function armAutoPlayNext(
  * after match, else exactly there; shorter grids keep the last repetitive 8-beat window) on a downbeat via
  * beat_loop. Refuses (returns false, toasts why) when either deck lacks the analysis this needs.
  */
-async function _armFeaturette(pair: NextPair, config: AutoPlayNextConfig): Promise<boolean> {
+async function _armFeaturette(
+	pair: NextPair,
+	config: AutoPlayNextConfig,
+	generation: number
+): Promise<boolean> {
 	const outgoingAnlz = deckStates[pair.outgoing].anlz;
 	const outgoingDuration = deckStates[pair.outgoing].duration_ms;
 	if (outgoingAnlz === null || outgoingDuration === null) {
@@ -410,6 +414,16 @@ async function _armFeaturette(pair: NextPair, config: AutoPlayNextConfig): Promi
 		}, undefined, 'autoplay-handoff');
 	} catch {
 		pushToast('auto-play next: loop engage failed', 'error');
+		return false;
+	}
+	if (generation !== _armGeneration) {
+		if (!_loopEngaged) {
+			await dispatchPerformanceCommand(
+				{ type: 'loop', deck: pair.outgoing, loop: null },
+				undefined,
+				'autoplay-handoff'
+			);
+		}
 		return false;
 	}
 	_loopEngaged = true;

@@ -2,7 +2,7 @@
 
 Local wake-word + Whisper + grammar intent pipeline for mid-set voice
 control of the DJ booth. See ``apps/voice/README.md`` for run-book, and
-``.planning/phases/14-voice-commands/`` for design context.
+``(private path)/`` for design context.
 
 Modules:
   audio     -- mic capture + device selection (sounddevice wrapper).
@@ -21,6 +21,7 @@ Modules:
 
 All tests are tagged ``@pytest.mark.requirement("VOICE-01")``.
 """
+
 from __future__ import annotations
 
 __all__ = [

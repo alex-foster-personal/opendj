@@ -59,9 +59,7 @@ def _log_unreadable(stable_id: str, what: str, exc: Exception) -> None:
     log.warning("row assets: track %s has an unreadable %s (%s)", stable_id, what, type(exc).__name__)
 
 
-def decoded_preview(
-    reader: Any, source: anlz.BytesSource, suffix: str, stable_id: str
-) -> tuple[str, int] | None:
+def decoded_preview(reader: Any, source: anlz.BytesSource, suffix: str, stable_id: str) -> tuple[str, int] | None:
     """``(preview_b64, preview_max)`` from one source of the chain; None when it
     carries no preview tag or cannot be decoded."""
     try:
@@ -140,9 +138,7 @@ def _uncached_analysis(
     return (*preview, vocals)
 
 
-def pvdi_vocals(
-    analysis_data_path: str | None, *, resolver: AssetResolver | None = None
-) -> dict[str, Any]:
+def pvdi_vocals(analysis_data_path: str | None, *, resolver: AssetResolver | None = None) -> dict[str, Any]:
     """The PVDI ``vocals`` payload from a row's .2EX, ``not_analyzed`` without one.
 
     The one-track routes' reader: path-keyed and remembered by ``anlz.vocals_payload``,
@@ -151,17 +147,13 @@ def pvdi_vocals(
     if analysis_data_path:
         mapped = rb_paths.resolve_asset_path(analysis_data_path, resolver=resolver)
         if mapped.resolved is not None:
-            twoex = rb_paths._asset_sibling(
-                mapped, mapped.resolved.with_suffix(".2EX"), resolver=resolver
-            )
+            twoex = rb_paths._asset_sibling(mapped, mapped.resolved.with_suffix(".2EX"), resolver=resolver)
             if twoex.resolved is not None:
                 return anlz.vocals_payload(twoex.resolved)
     return {"status": "not_analyzed"}
 
 
-def rb_artwork_facts(
-    meta: RbRowMeta, *, resolver: AssetResolver | None = None
-) -> tuple[bool | None, str]:
+def rb_artwork_facts(meta: RbRowMeta, *, resolver: AssetResolver | None = None) -> tuple[bool | None, str]:
     """Wire pair for a rekordbox-mapped row: its pre-rendered small cover.
 
     The cover itself goes through the containment walk, as the artwork route's
@@ -172,9 +164,7 @@ def rb_artwork_facts(
     mapped = rb_paths.resolve_asset_path(meta.image_path, resolver=resolver)
     if mapped.resolved is None:
         return False, "unresolved"
-    small = rb_paths._asset_sibling(
-        mapped, mapped.resolved.parent / config.ARTWORK_FILENAMES["s"], resolver=resolver
-    )
+    small = rb_paths._asset_sibling(mapped, mapped.resolved.parent / config.ARTWORK_FILENAMES["s"], resolver=resolver)
     if small.resolved is None:
         return False, "unresolved"
     if not small.resolved.is_file():
@@ -188,9 +178,7 @@ def uncached_row(
     """One row read by path: nothing consulted, nothing remembered, and a
     vendor string that cannot name a file is a row without assets."""
     try:
-        preview_b64, preview_max, vocals = _uncached_analysis(
-            meta.analysis_data_path, resolver, stable_id
-        )
+        preview_b64, preview_max, vocals = _uncached_analysis(meta.analysis_data_path, resolver, stable_id)
     except UNOPENABLE as exc:
         _log_unreadable(stable_id, "analysis path", exc)
         preview_b64, preview_max, vocals = None, None, dict(NOT_ANALYZED)

@@ -36,8 +36,10 @@ import {
 	cancelArmedJump,
 	decideOnPage,
 	electAndRejoin,
-	phaseLockTick,
 	invalidateRustPhaseLocks,
+	maybeLevelHandoff,
+	maybeLevelHandoffTick,
+	phaseLockTick,
 	rustHotCueDriver,
 	rustMaster
 } from './rust-transport';
@@ -369,6 +371,18 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 			clearRustDeck(deckStates[command.deck]);
 			break;
 	}
+	const LEVEL_HANDOFF_ACKS = new Set([
+		'trim',
+		'eq',
+		'filter',
+		'fader',
+		'stem_gain',
+		'stem_eq_mode',
+		'assign',
+		'crossfader',
+		'master_volume'
+	]);
+	if (LEVEL_HANDOFF_ACKS.has(command.type)) maybeLevelHandoff();
 }
 
 /** A decode that failed after the head loaded: the engine has already
@@ -404,6 +418,7 @@ export function mirrorEngineState(s: EngineState): void {
 	// hidden or occluded window keeps a live reading (ui-mirror audio_health).
 	noteEngineMasterRms(s.master.rms, Date.now());
 	let masterStopped: { deck: DeckId; stableId: string; generation: number } | null = null;
+	let playStateChanged = false;
 	for (const d of s.decks) {
 		const deck = d.deck as DeckId;
 		const st = deckStates[deck];
@@ -413,6 +428,7 @@ export function mirrorEngineState(s: EngineState): void {
 		if (st.playing && !d.playing && rustMaster.deck === deck) {
 			masterStopped = { deck, stableId: st.stable_id, generation: st.load_generation };
 		}
+		if (st.playing !== d.playing) playStateChanged = true;
 		st.playing = d.playing;
 		st.audible = d.playing;
 		st.transport_pending = false;
@@ -469,7 +485,9 @@ export function mirrorEngineState(s: EngineState): void {
 		});
 	}
 	// Each frame is a fresh playhead for both decks: keep followers on phase.
+	if (playStateChanged) maybeLevelHandoff();
 	phaseLockTick();
+	maybeLevelHandoffTick();
 }
 
 function _startRaf(): void {

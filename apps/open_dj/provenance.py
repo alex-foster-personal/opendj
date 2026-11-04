@@ -17,14 +17,21 @@ timestamp, or -- when the vendor genuinely does not expose one -- an
 explicit clock value decided at the call site, so the choice is visible
 in a diff rather than buried in this helper.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal, get_args
 
 ProvenanceSource = Literal[
-    "mik", "rekordbox", "djay", "serato", "traktor",
-    "open-dj-tool", "manual", "inferred",
+    "mik",
+    "rekordbox",
+    "djay",
+    "serato",
+    "traktor",
+    "open-dj-tool",
+    "manual",
+    "inferred",
 ]
 
 # Mirror of the schema enum -- keep ProvenanceSource in sync with
@@ -59,8 +66,7 @@ def wrap(
     """
     if source not in _ALLOWED_SOURCES:
         raise ValueError(
-            f"{source!r} is not a valid open-dj ProvenanceValue.source. "
-            f"Allowed: {sorted(_ALLOWED_SOURCES)}."
+            f"{source!r} is not a valid open-dj ProvenanceValue.source. Allowed: {sorted(_ALLOWED_SOURCES)}."
         )
 
     stamp = _format_timestamp(modified_at)
@@ -77,6 +83,4 @@ def _format_timestamp(modified_at: datetime | str) -> str:
     dt = modified_at
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
-    )
+    return dt.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

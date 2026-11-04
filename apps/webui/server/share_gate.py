@@ -13,6 +13,7 @@ Loopback and any other Host stay full-access so agents and ``just run``
 keep working. Cloudflare Access is still the outer door; this is the
 app-level belt so a mis-published port cannot write the library.
 """
+
 from __future__ import annotations
 
 import hmac
@@ -70,14 +71,9 @@ class ShareConfig:
         if not self.host:
             return
         if self.auth not in {AUTH_CLOUDFLARE_ACCESS, AUTH_TOKEN}:
-            raise ValueError(
-                f"{SHARE_AUTH_ENV} must be {AUTH_CLOUDFLARE_ACCESS!r} or "
-                f"{AUTH_TOKEN!r}"
-            )
+            raise ValueError(f"{SHARE_AUTH_ENV} must be {AUTH_CLOUDFLARE_ACCESS!r} or {AUTH_TOKEN!r}")
         if self.auth == AUTH_TOKEN and not self.token:
-            raise ValueError(
-                f"{SHARE_TOKEN_ENV} is required when {SHARE_AUTH_ENV}={AUTH_TOKEN}"
-            )
+            raise ValueError(f"{SHARE_TOKEN_ENV} is required when {SHARE_AUTH_ENV}={AUTH_TOKEN}")
 
 
 @dataclass(frozen=True)

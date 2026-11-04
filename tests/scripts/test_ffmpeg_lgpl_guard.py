@@ -177,3 +177,24 @@ def test_preflight_passes_with_no_cache_when_the_tools_exist(tmp_path: Path, mon
     monkeypatch.setattr(lgpl, "CACHE_ROOT", tmp_path)
     monkeypatch.setattr(lgpl.shutil, "which", lambda tool: f"/usr/bin/{tool}")
     assert lgpl.build_readiness() == "cold-build tools=cmake,make"
+
+
+def test_build_refuses_no_cache_and_no_cmake_before_fetch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] build() runs with no cache and cmake missing [then] it names cmake before fetch, [else stop]."""
+    monkeypatch.setattr(lgpl, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(lgpl.shutil, "which", lambda tool: None if tool == "cmake" else f"/usr/bin/{tool}")
+    monkeypatch.setattr(lgpl, "unsupported_host", lambda _host, _machine: None)
+
+    def _must_not_download(*_args: object, **_kwargs: object) -> Path:
+        pytest.fail("must not download")
+
+    monkeypatch.setattr(lgpl, "fetch_verified", _must_not_download)
+    with pytest.raises(lgpl.FfmpegBuildError, match="cmake"):
+        lgpl.build()
+
+
+def test_sh_names_a_missing_tool_and_homebrew_bin(tmp_path: Path) -> None:
+    log = tmp_path / "build.log"
+    log.write_text("", encoding="utf-8")
+    with pytest.raises(lgpl.FfmpegBuildError, match=r"odj-no-such-tool.*/opt/homebrew/bin"):
+        lgpl._sh(["odj-no-such-tool"], tmp_path, log)

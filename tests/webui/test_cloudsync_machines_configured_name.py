@@ -128,3 +128,42 @@ def test_malformed_config_fails_loudly_instead_of_using_the_hostname(
     response = client.get("/api/v1/cloudsync/machines")
     assert response.status_code == 500, response.text
     assert response.json()["detail"]["code"] == "CLOUDSYNC_CONFIG_INVALID"
+
+
+@pytest.mark.requirement("CLOUDSYNC-8314")
+def test_configured_name_held_by_another_id_is_409_with_the_reason(
+    client: TestClient, data_dir: Path
+) -> None:
+    """if renaming onto another machine id's name answers a bare 500 or changes a row then broken"""
+    _configure_name(data_dir, "silver")
+    assert client.get("/api/v1/cloudsync/machines").status_code == 200
+    stale_conn = sqlite3.connect(data_dir / "state" / "state.db")
+    try:
+        stale_conn.execute(
+            "INSERT INTO machines(machine_id, name, platform, is_hub, data_root, "
+            "first_seen, last_seen) VALUES (?, 'silver-preview', 'macos', 0, NULL, ?, ?)",
+            (PEER_MACHINE_ID, "2026-10-20T09:00:00.000000+00:00",
+             "2026-10-20T09:00:00.000000+00:00"),
+        )
+        stale_conn.commit()
+        before = stale_conn.execute(
+            "SELECT machine_id, name FROM machines ORDER BY machine_id"
+        ).fetchall()
+    finally:
+        stale_conn.close()
+
+    _configure_name(data_dir, "silver-preview")
+    response = client.get("/api/v1/cloudsync/machines")
+
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "CLOUDSYNC_MACHINE_NAME_CONFLICT"
+    assert PEER_MACHINE_ID in detail["message"] and "silver-preview" in detail["message"]
+    check_conn = sqlite3.connect(data_dir / "state" / "state.db")
+    try:
+        after = check_conn.execute(
+            "SELECT machine_id, name FROM machines ORDER BY machine_id"
+        ).fetchall()
+    finally:
+        check_conn.close()
+    assert after == before

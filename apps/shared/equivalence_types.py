@@ -10,6 +10,7 @@ parsing-internals module would otherwise have with ``equivalence.py``
 name here, so ``from apps.shared.equivalence import Verdict`` (the existing
 import shape used throughout the codebase) is unaffected.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,9 +26,7 @@ PASSED_SINGLE_SOURCE: Status = "passed_single_source"
 FAILED: Status = "failed"
 UNTESTED: Status = "untested"
 
-STATUSES: frozenset[str] = frozenset(
-    {PASSED, PASSED_SINGLE_SOURCE, FAILED, UNTESTED}
-)
+STATUSES: frozenset[str] = frozenset({PASSED, PASSED_SINGLE_SOURCE, FAILED, UNTESTED})
 
 # The two statuses that unlock a write. Ordered strongest first.
 WRITABLE_STATUSES: tuple[str, ...] = (PASSED, PASSED_SINGLE_SOURCE)
@@ -37,9 +36,7 @@ WRITABLE_STATUSES: tuple[str, ...] = (PASSED, PASSED_SINGLE_SOURCE)
 BASIS_CROSS_SOURCE = "cross_source"
 BASIS_SINGLE_SOURCE = "single_source"
 BASIS_NONE = "unverified"
-BASES: frozenset[str] = frozenset(
-    {BASIS_CROSS_SOURCE, BASIS_SINGLE_SOURCE, BASIS_NONE}
-)
+BASES: frozenset[str] = frozenset({BASIS_CROSS_SOURCE, BASIS_SINGLE_SOURCE, BASIS_NONE})
 BASIS_BY_STATUS: dict[str, str] = {
     PASSED: BASIS_CROSS_SOURCE,
     PASSED_SINGLE_SOURCE: BASIS_SINGLE_SOURCE,

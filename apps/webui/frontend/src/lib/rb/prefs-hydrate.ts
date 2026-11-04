@@ -32,7 +32,7 @@ import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
 import { validateHiddenColumns, type HideableColumn } from './library-columns';
 import type { DiskConfirmPatch } from './verified-pref-writes';
 import { hydrateTopbarViewFromDisk, type PerfView } from './topbar-view-prefs';
-import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
+import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
 
 export type UiTheme = 'dark' | 'light';
@@ -133,6 +133,7 @@ export type DiskPrefsPatch = {
 	available_offline_filter?: boolean;
 	wheel_sensitivity?: WheelSensitivityDisk;
 	midi_enabled?: boolean;
+	spotify_shrink_main_for_player?: boolean;
 	deck_right_mirror?: boolean;
 	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
@@ -235,6 +236,7 @@ export interface PrefsHydrateTarget {
 	library_watcher_folders: string[];
 	library_key_filter: string[];
 	compatible_filter: CompatibleFilterPrefs;
+	spotify_library: SpotifyLibraryPref;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -508,6 +510,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 					writeBootStampMirror(lastGigAt);
 				}
 			}
+		}
+		if (typeof body.spotify_shrink_main_for_player === 'boolean') {
+			uiPrefs.spotify_library = {
+				...uiPrefs.spotify_library,
+				shrink_main_for_player: body.spotify_shrink_main_for_player
+			};
 		}
 		for (const key of [
 			'beat_sync_max',

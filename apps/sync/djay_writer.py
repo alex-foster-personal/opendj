@@ -23,6 +23,7 @@ we passed in. When live-fixture harvest reveals byte-level deviations
 from Algoriddim's encoding, update the addendum and both encoders
 together.
 """
+
 from __future__ import annotations
 
 import struct
@@ -195,9 +196,7 @@ def patch_rating(blob: bytes, rating: int) -> bytes:
     return blob[:insert_at] + new_field + blob[insert_at:]
 
 
-def _patch_scalar_before_field(
-    blob: bytes, field: bytes, emit_value: bytes
-) -> bytes:
+def _patch_scalar_before_field(blob: bytes, field: bytes, emit_value: bytes) -> bytes:
     """Replace (or insert) the scalar-value bytes immediately before ``field``.
 
     Scalar fields in TSAF place value bytes directly before ``0x08 <field>

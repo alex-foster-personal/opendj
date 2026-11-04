@@ -1,4 +1,5 @@
 """Pairings CRUD endpoints (CAT-03 + CAT-05)."""
+
 from __future__ import annotations
 
 import uuid
@@ -18,10 +19,15 @@ router = APIRouter(prefix="/pairings", tags=["pairings"])
 
 def _to_out(p: Pairing) -> PairingOut:
     return PairingOut(
-        pairing_id=p.pairing_id, from_stable_id=p.from_stable_id,
-        to_stable_id=p.to_stable_id, direction=p.direction,
-        source=p.source, notes=p.notes, snapshot=p.snapshot,
-        created_at=p.created_at, updated_at=p.updated_at,
+        pairing_id=p.pairing_id,
+        from_stable_id=p.from_stable_id,
+        to_stable_id=p.to_stable_id,
+        direction=p.direction,
+        source=p.source,
+        notes=p.notes,
+        snapshot=p.snapshot,
+        created_at=p.created_at,
+        updated_at=p.updated_at,
     )
 
 
@@ -33,7 +39,9 @@ def list_pairings(
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[PairingOut]:
     items = backend.list_pairings(
-        from_stable_id=from_stable_id, to_stable_id=to_stable_id, source=source,
+        from_stable_id=from_stable_id,
+        to_stable_id=to_stable_id,
+        source=source,
     )
     return [_to_out(p) for p in items]
 
@@ -46,10 +54,14 @@ def create_pairing(
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     p = Pairing(
         pairing_id=str(uuid.uuid4()),
-        from_stable_id=body.from_stable_id, to_stable_id=body.to_stable_id,
-        direction=body.direction, source=body.source, notes=body.notes,
+        from_stable_id=body.from_stable_id,
+        to_stable_id=body.to_stable_id,
+        direction=body.direction,
+        source=body.source,
+        notes=body.notes,
         snapshot=None if body.snapshot is None else body.snapshot.model_dump(),
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
     created = backend.create_pairing(p)
     publish("library.changed", {"kind": "pairings", "ids": [created.pairing_id]})
@@ -63,9 +75,7 @@ def delete_pairing(
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ):
     if not if_match:
-        return precondition_required(
-            "DELETE /pairings/{id} requires If-Match header"
-        )
+        return precondition_required("DELETE /pairings/{id} requires If-Match header")
     backend.delete_pairing(pairing_id, expected_etag=if_match)
     publish("library.changed", {"kind": "pairings", "ids": [pairing_id]})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

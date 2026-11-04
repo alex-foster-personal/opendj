@@ -8,6 +8,7 @@ the hot-cue routes use.
 
 -Claude
 """
+
 from __future__ import annotations
 
 from pathlib import Path

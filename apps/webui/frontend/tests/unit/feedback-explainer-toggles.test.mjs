@@ -118,6 +118,33 @@ test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs pre
 	);
 });
 
+test('the hover options ask how many days pins stay visible and the layer hides older ones', () => {
+	assert.match(VISIBILITY_ACTIONS, /How many days should pins be visible\?/);
+	assert.match(VISIBILITY_ACTIONS, /type="number"/);
+	assert.match(VISIBILITY_ACTIONS, /setPinVisibleDays/);
+	assert.match(PIN_LAYER, /isPinWithinVisibleDays\(p\.created_at, uiPrefs\.pin_visible_days/);
+});
+
+/* PGCL-7693g: the days block grew the dock's hover card over the Audio I/O
+ * panel, where it took the placement press. comment-pin-io-modal.spec.ts is
+ * the behavioral gate; this pins the wiring on both comment buttons. */
+test('both comment-pin hover cards close while placement is armed', () => {
+	const SHELL = readFileSync(
+		new URL('../../src/lib/components/rb/FeedbackPinShellButton.svelte', import.meta.url),
+		'utf8'
+	);
+	for (const [name, src] of [
+		['FeedbackWidget', WIDGET],
+		['FeedbackPinShellButton', SHELL]
+	]) {
+		const tag = src.slice(src.indexOf('<ControlExplainer'), src.indexOf('>', src.indexOf('<ControlExplainer')) + 1);
+		assert.notEqual(tag, '', `${name} must render a ControlExplainer`);
+		assert.match(tag, /disabled=\{feedbackState\.placementArmed\}/, `${name}'s explainer must close while placing`);
+	}
+	// The prop this relies on must still close an open card, not only block a new one.
+	assert.match(EXPLAINER, /if \(disabled\) _close\(\);/);
+});
+
 test('"show other users\' pins" is stubbed: rb-inert, explains why, never actually toggles', () => {
 	assert.match(WIDGET, /import FeedbackPinVisibilityActions from '\.\/FeedbackPinVisibilityActions\.svelte'/);
 	assert.match(WIDGET, /<FeedbackPinVisibilityActions/);

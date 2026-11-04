@@ -20,8 +20,9 @@ Modules
 * ``apply``            -- cautious / bulk / remediate-drift CLI.
 * ``verify``           -- hash-compare engine + CLI.
 
-See ``.planning/phases/10-usb-sync/`` for context + plans.
+See ``(private path)/`` for context + plans.
 """
+
 from __future__ import annotations
 
 __all__: list[str] = []

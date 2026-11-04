@@ -56,12 +56,9 @@ _TOKEN_ON_EPHEMERAL_VM = (
 
 #: (workflow file, job id) -> why this job may stay on a GitHub-hosted runner.
 ALLOWED_HOSTED: dict[tuple[str, str], str] = {
-    ("ci.yml", "trunk-quarantine-list"): _TOKEN_ON_EPHEMERAL_VM,
     ("ci.yml", "ci-insights"): _TOKEN_ON_EPHEMERAL_VM,
     ("e2e.yml", "trunk-quarantine-list"): _TOKEN_ON_EPHEMERAL_VM,
     ("e2e.yml", "e2e-trunk-upload"): _TOKEN_ON_EPHEMERAL_VM,
-    ("trunk-queue-config.yml", "sync"): _TOKEN_ON_EPHEMERAL_VM,
-    ("trunk-quarantine-review.yml", "review"): _TOKEN_ON_EPHEMERAL_VM,
     ("security.yml", "semgrep"): (
         "runs the pinned semgrep container with the AppSec Platform token; "
         "ADR-NEW-security-scans-on-self-hosted-pool keeps it hosted"

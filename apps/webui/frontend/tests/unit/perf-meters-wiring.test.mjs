@@ -46,3 +46,35 @@ test('PerfMeters open panel points at Chrome Task Manager capture', () => {
 	assert.match(meters, /Chrome Task Manager/);
 	assert.match(meters, /Shift\+Esc/);
 });
+
+test('the memory figure counts the engine processes and the closed bar refreshes them (PERF-UI-6785)', () => {
+	const meters = source('src/lib/components/rb/PerfMeters.svelte');
+	// regression: the figure was the page alone because only the open monitor fetched the walk
+	assert.match(meters, /processes: processSnapshot\?\.members \?\? null/);
+	// a stale native-probe sample the engine left out is named in the hover, never summed
+	assert.match(meters, /probeStale: processSnapshot\s*\?\s*processSnapshot\.probeStale/);
+	// and from an unavailable response (no live walk, stale probe sample) too
+	assert.match(meters, /: readUnavailableProbeStale\(PROCESS_SNAPSHOT_MAX_AGE_MS\)/);
+	assert.match(
+		meters,
+		/const tick = \(\): void => \{\s*untrack\(_sampleTick\);\s*_refreshProcesses\(false\);/,
+		'the closed bar must refresh the process walk, or the figure never counts the engine'
+	);
+	assert.match(meters, /PROCESS_SNAPSHOT_MAX_AGE_MS/, 'a stale walk must not be shown as current');
+	assert.match(meters, /memoryMB: memoryTotalMB/, 'the chart plots the same figure the meter shows');
+});
+
+test('every reader that shows the processes as current goes through the expiry rule (PERF-UI-6785)', () => {
+	const meters = source('src/lib/components/rb/PerfMeters.svelte');
+	// The raw cache outlives a failed fetch, so reading it shows aged-out
+	// processes as current: the pinned breakdown did, while the figure did not.
+	assert.doesNotMatch(meters, /readProcessFamilySnapshot\(/, 'no reader bypasses the expiry');
+	assert.match(meters, /readFreshProcessFamilySnapshot\(PROCESS_SNAPSHOT_MAX_AGE_MS\)/);
+	const breakdown = /const breakdown = \$derived\([\s\S]*?\n\t\);/.exec(meters)?.[0] ?? '';
+	assert.match(breakdown, /processes: breakdownProcesses/, 'the breakdown lists the expiry-checked snapshot');
+	assert.match(breakdown, /kernelLevel: breakdownProcesses\?\.kernelLevel/);
+	assert.match(breakdown, /churnScore: breakdownProcesses\?\.churnScore/);
+	const assignments = meters.match(/(?<!let )breakdownProcesses = [^;]+;/g) ?? [];
+	assert.ok(assignments.length >= 2, 'refreshed on every tick and every fetch');
+	assert.ok(assignments.every((a) => a === 'breakdownProcesses = _freshProcessSnapshot();'), assignments.join(' | '));
+});

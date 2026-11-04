@@ -13,7 +13,11 @@ scoring per source follows the CONTEXT D4 table:
 * ID3/file:   0.70
 * djay:       0.65
 * filename:   0.30 (last resort)
+
+Precedence is ``DEFAULT_POLICY`` source order; ``SOURCE_CONFIDENCE`` is
+stamped on the winner afterwards and does not reorder the chain.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -180,9 +184,7 @@ def unify(
     provenance: dict[str, Provenance] = {}
 
     for field_name, chain in policy.by_field.items():
-        value, field_provenance = _resolve_field(
-            field_name, chain, src_lookup, now_iso=now_iso
-        )
+        value, field_provenance = _resolve_field(field_name, chain, src_lookup, now_iso=now_iso)
         if field_provenance is None:
             continue
         chosen[field_name] = value

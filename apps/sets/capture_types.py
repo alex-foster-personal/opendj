@@ -1,4 +1,5 @@
 """Types shared by the set-audio capture backends (:mod:`apps.sets.capture`)."""
+
 from __future__ import annotations
 
 import subprocess

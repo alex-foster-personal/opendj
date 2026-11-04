@@ -3,6 +3,7 @@
 Standard library at import time, because the schema-drift gate imports this module and
 may pull in no third-party package; FastAPI loads only when the router is built.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable

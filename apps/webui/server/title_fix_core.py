@@ -27,11 +27,15 @@ class CFG:
     BATCH_GRACE_S = 120  # an apply younger than this may still be between its track write and its commit stamp
     CHUNK = 16  # rows per fix_tracks call; the spend cap is checked between chunks
     BEATS_PER_STALE_WINDOW = 3  # a healthy heartbeat beats this many times per SCAN_STALE_S
-    CONTENTION_RETRIES_PER_STALE_WINDOW = 30  # a beat that met store contention retries this often, not a full interval later
+    CONTENTION_RETRIES_PER_STALE_WINDOW = (
+        30  # a beat that met store contention retries this often, not a full interval later
+    )
     STORE_BUSY_WAIT_S = 120.0  # how long a scan waits out a busy sidecar store before giving up on a write
     STORE_BUSY_PAUSE_S = 1.0
     CAS_REPLAN_ROUNDS = 3  # a write that loses its compare-and-swap re-plans without the raced rows, at most this often
-    SCAN_STALE_S = 900  # a running scan whose worker has not progressed for this long is dead (a chunk is bounded well under it)
+    SCAN_STALE_S = (
+        900  # a running scan whose worker has not progressed for this long is dead (a chunk is bounded well under it)
+    )
     WRITE_SOURCE = "open-dj-tool"
     MAX_SELECTION = 1000
 
@@ -114,7 +118,9 @@ def _artists_or_refuse(stable_id: str, artists_json: str | None) -> list[str]:
         return artists_from_json(artists_json)
     except ArtistsDataError as exc:
         raise TitleFixError(
-            "title_fix_artists_corrupt", f"track {stable_id} has unreadable artists_json ({exc}); repair the row first", 422,
+            "title_fix_artists_corrupt",
+            f"track {stable_id} has unreadable artists_json ({exc}); repair the row first",
+            422,
         ) from exc
 
 

@@ -94,6 +94,7 @@ Run (R2_* come from Doppler; boto3 is inline, so no repo venv needed):
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -118,7 +119,7 @@ from apps.stems.inventory_report import duplicate_ids
 from apps.stems.r2_stems import DEFAULT_BUCKET, list_r2_sizes, r2_client
 
 UPLOAD_PARALLELISM: int = 8
-JOURNAL: Path = REPO_ROOT / "data/state/stem-r2-migration.jsonl"
+JOURNAL: Path = REPO_ROOT / "(private path)"
 CONTENT_TYPES: dict[str, str] = {
     ".mp3": "audio/mpeg",
     ".flac": "audio/flac",
@@ -168,7 +169,8 @@ def upload_for_source(source: Path, legacy_key: str = "") -> Upload:
     return item
 
 
-#----- work set ---------------------------------------------------------------
+# ----- work set ---------------------------------------------------------------
+
 
 def planned_uploads(bundles: list[Bundle]) -> list[Upload]:
     """Every object the publishable bundles would put, keys included.
@@ -195,7 +197,8 @@ def outstanding(planned: list[Upload], remote: dict[str, int]) -> list[Upload]:
     return [item for item in planned if remote.get(item.key) != item.size]
 
 
-#----- transfer ---------------------------------------------------------------
+# ----- transfer ---------------------------------------------------------------
+
 
 def _put_object_kwargs(item: Upload) -> dict[str, Any]:
     """Build the exact ``put_object`` payload from one read of ``item.source``.
@@ -207,9 +210,7 @@ def _put_object_kwargs(item: Upload) -> dict[str, Any]:
     """
     body, snapshot = _read_and_key(item.source, item.legacy_key)
     if snapshot != item:
-        raise RuntimeError(
-            f"source changed after content-addressing: {item.source}; rerun to re-plan"
-        )
+        raise RuntimeError(f"source changed after content-addressing: {item.source}; rerun to re-plan")
     return {"Key": item.key, "Body": body, "ContentType": item.content_type}
 
 
@@ -232,9 +233,7 @@ def upload_one(client: Any, bucket: str, item: Upload) -> None:
     client.put_object(Bucket=bucket, **kwargs)
 
 
-def upload_all(
-    client: Any, bucket: str, items: list[Upload], parallelism: int
-) -> dict[str, str]:
+def upload_all(client: Any, bucket: str, items: list[Upload], parallelism: int) -> dict[str, str]:
     """Upload in parallel, returning {key: error} for the ones that failed.
 
     One bad object must not abandon the other 900: the work set is recomputed
@@ -254,9 +253,7 @@ def upload_all(
     return failures
 
 
-def reconcile(
-    attempted: list[Upload], remote: dict[str, int]
-) -> tuple[list[Upload], list[str]]:
+def reconcile(attempted: list[Upload], remote: dict[str, int]) -> tuple[list[Upload], list[str]]:
     """Split what landed correctly from what did not, given a fresh listing.
 
     Kept pure and separate from the listing call so the decision can be tested
@@ -372,8 +369,7 @@ def new_journal_mappings(
     return [
         item
         for item in planned
-        if final_remote.get(item.key) == item.size
-        and (item.legacy_key, item.key) not in already_journaled
+        if final_remote.get(item.key) == item.size and (item.legacy_key, item.key) not in already_journaled
     ]
 
 
@@ -389,7 +385,8 @@ def run_worth_recording(batch: list[Upload], new_mappings: list[Upload]) -> bool
     return bool(batch) or bool(new_mappings)
 
 
-#----- cli --------------------------------------------------------------------
+# ----- cli --------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -397,17 +394,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Publish local stem bundles to Cloudflare R2",
     )
     parser.add_argument(
-        "--data-dir", type=Path, default=REPO_ROOT / "data",
-        help="data directory holding state/; worktrees point this at the "
-             "primary checkout",
+        "--data-dir",
+        type=Path,
+        default=REPO_ROOT / "data",
+        help="data directory holding state/; worktrees point this at the primary checkout",
     )
-    parser.add_argument("--root", action="append", type=Path, default=None,
-                        help="stem store to publish; repeatable")
+    parser.add_argument("--root", action="append", type=Path, default=None, help="stem store to publish; repeatable")
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--limit", type=int, default=0,
-                        help="cap objects this run (0 = all outstanding)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="report the outstanding set; needs no credentials")
+    parser.add_argument("--limit", type=int, default=0, help="cap objects this run (0 = all outstanding)")
+    parser.add_argument("--dry-run", action="store_true", help="report the outstanding set; needs no credentials")
     parser.add_argument("--parallelism", type=int, default=UPLOAD_PARALLELISM)
     parser.add_argument("--journal", type=Path, default=JOURNAL)
     return parser
@@ -484,10 +479,7 @@ def main(argv: list[str] | None = None) -> int:
             "bytes_confirmed": sum(i.size for i in confirmed),
             "upload_errors": failures,
             "size_mismatches": mismatched,
-            "objects": [
-                {"legacy_key": item.legacy_key, "key": item.key}
-                for item in new_mappings
-            ],
+            "objects": [{"legacy_key": item.legacy_key, "key": item.key} for item in new_mappings],
         }
         append_journal(args.journal, record)
         print(
@@ -504,8 +496,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  size mismatch {line}", file=sys.stderr)
     if failures or mismatched:
         print(
-            "re-run to retry: the work set is recomputed from the two "
-            "listings, so only the unfinished objects remain.",
+            "re-run to retry: the work set is recomputed from the two listings, so only the unfinished objects remain.",
             file=sys.stderr,
         )
         return 1

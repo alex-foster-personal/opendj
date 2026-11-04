@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.scripts.ci_runner_routes import LIGHT_RUNS_ON, QUALITY_RUNS_ON, TRUNK_APP_LOGIN
+from tests.scripts.ci_runner_routes import LIGHT_RUNS_ON, MAIN_QUALITY_RUNS_ON, QUALITY_RUNS_ON, TRUNK_APP_LOGIN
 from tests.scripts.test_ci_trunk_agentbox_pool import LIVE_VARS, Event, resolve
 
 CI = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
@@ -71,7 +71,9 @@ def _unset(event: Event) -> Event:
 
 def test_quality_carries_the_named_route() -> None:
     """if the quality runs-on drifts from QUALITY_RUNS_ON then the cases below test another expression"""
-    assert _runs_on("quality") == QUALITY_RUNS_ON
+    # Wed 4 Nov 2026: a push to main prefers CI_RUNS_ON_MAIN first; the chain after it
+    # is QUALITY_RUNS_ON, which the cases below evaluate.
+    assert _runs_on("quality") == MAIN_QUALITY_RUNS_ON
 
 
 @pytest.mark.parametrize("name", sorted(EVERY_EVENT))

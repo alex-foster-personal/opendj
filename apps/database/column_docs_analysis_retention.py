@@ -30,10 +30,7 @@ ANALYSIS_RETENTION_COLUMN_DOCS: dict[str, dict[str, str]] = {
     },
     "unmatched_source_analysis": {
         "id": "Surrogate AUTOINCREMENT primary key.",
-        "source": (
-            "Which vendor or pipeline produced this analysis row (e.g. "
-            "'mik', 'rekordbox')."
-        ),
+        "source": ("Which vendor or pipeline produced this analysis row (e.g. 'mik', 'rekordbox')."),
         "source_row_id": "The source's own row identifier, opaque here.",
         "field_name": "Which analysed field this row carries.",
         "value_json": "The analysed value, JSON-encoded.",
@@ -56,7 +53,7 @@ ANALYSIS_RETENTION_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "promoted_stable_id": (
             "The tracks row this analysis was later matched to, if any. "
             "The one-way door out of staging into track_fields "
-            "(docs/analysis-retention.md)."
+            "((private path))."
         ),
         "promoted_at": "RFC 3339 UTC timestamp of the promotion, if any.",
     },
@@ -69,9 +66,7 @@ ANALYSIS_RETENTION_COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "length_ms": "Segment length in milliseconds.",
         "energy": "Energy level for this segment, 1-10.",
-        "source": (
-            "Which vendor or pipeline produced this segment (e.g. 'mik')."
-        ),
+        "source": ("Which vendor or pipeline produced this segment (e.g. 'mik')."),
         "confidence": "Confidence score for this segment, if any.",
         "start_clamped": (
             "1 if the source start time was clamped up from negative "
@@ -92,9 +87,7 @@ ANALYSIS_RETENTION_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "normaliser": "Which normaliser was used to compare values, if any.",
         "checked_at": "RFC 3339 UTC timestamp of the verification.",
         "verified_by": "Who or what performed the verification.",
-        "overridden": (
-            "1 if a human forced a write past a non-passing verdict."
-        ),
+        "overridden": ("1 if a human forced a write past a non-passing verdict."),
         "recorded_at": "RFC 3339 UTC timestamp of when this row was written.",
     },
 }

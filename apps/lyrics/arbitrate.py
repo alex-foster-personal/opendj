@@ -1,6 +1,6 @@
 """Stage-2 arbitration features: aligner behavior over a finding's sheet span.
 
-Round 2 (specs/lyrics-version-check.md): text alone cannot adjudicate
+Round 2 ((private path)): text alone cannot adjudicate
 missing-kind findings, so the case's SHEET is force-aligned to the stem and
 the aligner's own behavior over the finding's span testifies. A sheet block
 the audio truly lacks starves the aligner there (bad scores, words crammed or
@@ -28,7 +28,7 @@ REPEAT_SPREAD_THRESHOLD: float = 1.5
 MISSING_SCORE_DELTA_THRESHOLD: float = -1.9
 TWIN_SIM: float = 0.6
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,8 @@ def arbitrated_verdict(v, aligned_words: list[dict], sheet_norm: list[str]):
     if v.verdict in ("unverifiable", "wrong_song"):
         return v
     kept = tuple(
-        f for f in v.findings
+        f
+        for f in v.findings
         if f.kind not in ("missing_in_audio", "sheet_repeat_unsupported")
         or arbitrate_missing_finding(aligned_words, sheet_norm, f.sheet_start, f.sheet_end)
     )
@@ -109,9 +110,7 @@ def arbitrated_verdict(v, aligned_words: list[dict], sheet_norm: list[str]):
     return Verdict(verdict, v.ref_match_rate, v.asr_match_rate, v.longest_anchor, kept)
 
 
-def arbitrate_missing_finding(
-    aligned_words: list[dict], sheet_norm: list[str], lo: int, hi: int
-) -> bool:
+def arbitrate_missing_finding(aligned_words: list[dict], sheet_norm: list[str], lo: int, hi: int) -> bool:
     """True = the finding is REAL (the audio genuinely lacks this sheet block).
 
     Calibrated rules per the module docstring; aligned_words is the CASE

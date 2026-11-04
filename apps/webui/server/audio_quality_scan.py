@@ -101,6 +101,11 @@ def present_tracks(state_db: Path) -> list[tuple[str, str]]:
         conn.close()
 
 
+def file_version_from_parts(path: str, mtime_ns: int, size: int) -> str:
+    digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
+    return f"{digest}:{mtime_ns}:{size}"
+
+
 def file_identity(path: str) -> tuple[str, int] | str:
     """`(file_version, size)` from one stat, or the error text when it cannot be read."""
     try:
@@ -108,8 +113,7 @@ def file_identity(path: str) -> tuple[str, int] | str:
     except OSError as exc:
         log.warning("audio-quality: cannot stat %s (%s)", path, exc)
         return f"file unreadable: {exc}"[:300]
-    digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
-    return f"{digest}:{stat.st_mtime_ns}:{stat.st_size}", stat.st_size
+    return file_version_from_parts(path, stat.st_mtime_ns, stat.st_size), stat.st_size
 
 
 def scan_one(
@@ -294,6 +298,7 @@ __all__ = [
     "ScanResult",
     "ScanRunner",
     "file_identity",
+    "file_version_from_parts",
     "present_tracks",
     "runner_for",
     "scan_library",

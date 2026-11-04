@@ -3,6 +3,7 @@
 Adds ``forbid_duplicates`` to ``playlists`` so a container can reject extra
 copies of an already-present track while the default remains allow-duplicates.
 """
+
 from __future__ import annotations
 
 _V14: list[str] = [

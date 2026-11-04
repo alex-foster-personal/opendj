@@ -8,8 +8,10 @@
 #   uv pip compile --universal --generate-hashes --python-version 3.12 --no-header \
 #     --override /tmp/semgrep-overrides.txt /tmp/semgrep.in -o scripts/security/semgrep-requirements.txt
 #
-# The overrides exist because Semgrep pins opentelemetry-api~=1.37.0 (still true at 1.183.0)
-# and mcp==1.29.0, releases with open advisories (GHSA-xcq7-p3pf-p88h, GHSA-84m7-p3x7-pcfv).
+# The overrides exist because Semgrep pins opentelemetry-api~=1.37.0 (still true at 1.183.0;
+# GHSA-xcq7-p3pf-p88h) and mcp==1.29.0 (still true at 1.183.0; semgrep/semgrep#11992 and
+# #12018 open). mcp 1.29.0 carries GHSA-5h93-6whr-6q8j, GHSA-84m7-p3x7-pcfv,
+# GHSA-rwrf-2pqf-9j8j, and GHSA-w4fh-qvv9-3v23, fixed only in 1.30.0.
 # The install uses --no-deps, so the whole OpenTelemetry family moves together. Drop each
 # override once Semgrep allows the patched release.
 annotated-types==0.8.0 \
@@ -450,7 +452,7 @@ mcp==1.30.0 \
     --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
     --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   semgrep
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
@@ -460,7 +462,7 @@ opentelemetry-api==1.45.1 \
     --hash=sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75 \
     --hash=sha256:b31553efa588ae44bc306f863c785c5333a9ecc091248c6ee68b4b6c87fdedfb
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
@@ -481,13 +483,13 @@ opentelemetry-exporter-otlp-proto-common==1.45.1 \
     --hash=sha256:2e4adcc3a67bcf57804fc49514f0ef64974ca7590aa3491da389852b4a0628f6 \
     --hash=sha256:2f446183ae7047b036226f1d846c41a834b0e8755ad13b51a51dd38952eb466c
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-exporter-otlp-proto-http==1.45.1 \
     --hash=sha256:24a97cf3753c7fb52fad44a696e452ff371686339e2acf3309e2eda3d0230700 \
     --hash=sha256:45c218405ce3fd879596924b1874bf9a8f6880206d61065c5a912c8e5c297fb7
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   semgrep
 opentelemetry-instrumentation==0.66b1 \
     --hash=sha256:4c4aa14dc9a24a02325a9d4c42c4d0208dbb1374c2b1b8fe6c9392d59f3e1008 \
@@ -507,14 +509,14 @@ opentelemetry-proto==1.45.1 \
     --hash=sha256:79e0fb95e4616691a469439238aa9224d75779b3e108e895d1aa125ab29ca77c \
     --hash=sha256:f38e2a8413053c180cd3d2637fbb279673ec2f6a6e09c995aafa2f452c52b46e
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-sdk==1.45.1 \
     --hash=sha256:63d24a6ca645019a631e6a51999c73e93adcac1196ca640b8ae78a7cc4762bf3 \
     --hash=sha256:c604c11dc429810812348989115fa44bd558772a3d7442afc43d024f2c250ca4
     # via
-    #   --override /tmp/t5-ov.txt
+    #   --override /tmp/semgrep-overrides.txt
     #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-http
     #   semgrep
@@ -697,7 +699,7 @@ pyjwt==2.15.1 \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
     # via
-    #   -r /tmp/t5-semgrep.in
+    #   -r /tmp/semgrep.in
     #   mcp
     #   semgrep
 python-dotenv==1.2.3 \
@@ -949,7 +951,7 @@ semgrep==1.179.0 \
     --hash=sha256:c23d79c4839540372acc39b59aad167c1c7f3dc21bacacb27f19aa2edd79d271 \
     --hash=sha256:c7e32b952990434b591003547f26b46c89a5bd56033715b00ff26327a8abe8c5 \
     --hash=sha256:dc6317fbfad49b1dbe396df7da7d9702cffc5ea9ea62cb3b4b2209824496b425
-    # via -r /tmp/t5-semgrep.in
+    # via -r /tmp/semgrep.in
 sse-starlette==3.4.11 \
     --hash=sha256:1bae716c02f3e6f294be41ff333220692dae7c3cbab077c900f159676719dade \
     --hash=sha256:c7b2244bdff016fe7f64e10075e89a3e6bbf899649cc89b0fe884b5545042453

@@ -5,7 +5,7 @@ inside :func:`load_match_set`). It takes flattened RB playlists + djay
 playlists + a match-set, and produces a :class:`PlaylistPlan` tree that the
 CLI/artefact writers (``apps.sync.playlist_diff``) serialise.
 
-Design decisions inherited from ``.planning/phases/03-playlist-sync/03-CONTEXT.md``:
+Design decisions inherited from ``(private path)``:
 
 * D1: Rekordbox is canonical; djay is reconciled to RB.
 * D2: only tracks with a confirmed Phase 2 match are written; unmatched
@@ -20,6 +20,7 @@ Phase 2 has not shipped yet, tests exercise the loader against a hand-rolled
 CSV with the same schema; parent orchestrator wires the real ``matches.csv``
 in the central sweep.
 """
+
 from __future__ import annotations
 
 import csv
@@ -209,20 +210,14 @@ def flatten_rb_playlists(
         path = _path_for(node.id)
         if not path:
             continue
-        ids = tuple(
-            tid
-            for tid in node.track_ids
-            if not (streaming_filter or {}).get(tid, False)
-        )
+        ids = tuple(tid for tid in node.track_ids if not (streaming_filter or {}).get(tid, False))
         # Folder nodes have no direct track members in pyrekordbox; they are
         # skipped here by the "empty ids + name already a prefix of a child"
         # test. We use a simple heuristic: if this node has no tracks AND at
         # least one other node lists it as parent, treat it as a folder and
         # skip. Otherwise keep it (could be a legitimately empty playlist).
         if not ids:
-            has_children = any(
-                other.parent_id == node.id for other in by_id.values()
-            )
+            has_children = any(other.parent_id == node.id for other in by_id.values())
             if has_children:
                 continue
         out.append(
@@ -275,7 +270,7 @@ def load_match_set(path: Path) -> MatchSet:
     if not path.exists():
         raise FileNotFoundError(
             f"matches.csv not found at {path}. Run the Phase 2 matcher first: "
-            "`python -m apps.sync.matcher --out data/sync/matches.csv`."
+            "`python -m apps.sync.matcher --out (private path)`."
         )
 
     raw = path.read_bytes()
@@ -354,13 +349,8 @@ def build_plan(
             continue
         djay_by_canon[canon] = dp
     if collisions:
-        details = "; ".join(
-            f"{canon!r} <- {sorted(set(names))}"
-            for canon, names in sorted(collisions.items())
-        )
-        raise PlaylistPlanError(
-            "djay playlists collide on canonical name (P03-04): " + details
-        )
+        details = "; ".join(f"{canon!r} <- {sorted(set(names))}" for canon, names in sorted(collisions.items()))
+        raise PlaylistPlanError("djay playlists collide on canonical name (P03-04): " + details)
 
     seen_djay_uuids: set[str] = set()
     ops: list[PlaylistOp] = []
@@ -372,14 +362,10 @@ def build_plan(
         for idx, rb_id in enumerate(fp.track_ids_ordered, start=1):
             djay_uuid = matches.rb_to_djay.get(rb_id)
             if djay_uuid:
-                target_members.append(
-                    PlannedMember(track_no=idx, rb_id=rb_id, djay_uuid=djay_uuid)
-                )
+                target_members.append(PlannedMember(track_no=idx, rb_id=rb_id, djay_uuid=djay_uuid))
             else:
                 title, artist = titles.get(rb_id, ("", ""))
-                unmatched.append(
-                    UnmatchedTrack(rb_id=rb_id, title=title, artist=artist)
-                )
+                unmatched.append(UnmatchedTrack(rb_id=rb_id, title=title, artist=artist))
 
         dp = djay_by_canon.get(canon)
         if dp is None:
@@ -409,10 +395,7 @@ def build_plan(
             current_intersection = [u for u in current if u in target_set]
             target_intersection = [u for u in target_uuids if u in current_set]
             reordered = (
-                not adds
-                and not removes
-                and current_intersection != target_intersection
-                and bool(current_intersection)
+                not adds and not removes and current_intersection != target_intersection and bool(current_intersection)
             )
             no_change = not adds and not removes and not reordered
             op = PlaylistOp(

@@ -7,6 +7,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
 from apps.adapters.rekordbox import config
+from apps.adapters.rekordbox.cue_kind import HOT_CUE_KINDS, is_mapped_kind
 from apps.adapters.rekordbox.errors import _open_ro
 
 _SQL_CHUNK = 500
@@ -41,10 +42,10 @@ def _apply_cue_row(
     in_msec: int | None,
     out_msec: int | None,
 ) -> None:
-    if kind is None or not 0 <= int(kind) <= 8:
+    if kind is None or not is_mapped_kind(int(kind)):
         return
     presence.cue_count += 1
-    if 1 <= int(kind) <= 8:
+    if int(kind) in HOT_CUE_KINDS:
         presence.hot_cue_count += 1
     if out_msec is not None and int(out_msec) > 0:
         presence.loop_count += 1

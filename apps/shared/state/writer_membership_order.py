@@ -4,6 +4,7 @@ Split out of :mod:`apps.shared.state.writer_playlists` to keep that module
 under the quality gate's 600-line file ratchet. The host is the playlist
 mixin's ``StateWriter`` surface (:class:`~apps.shared.state.writer_playlists._WriterHost`).
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -31,10 +32,7 @@ def write_membership_order_keys(
     """UPDATE order_key for live membership rows named by ``address``."""
     if not rows:
         return
-    transaction = (
-        host._tx() if host._conn.in_transaction
-        else immediate_transaction(host._conn)
-    )
+    transaction = host._tx() if host._conn.in_transaction else immediate_transaction(host._conn)
     with transaction as conn:
         now = next_playlist_revision(conn, playlist_id, host._now_iso())
         changed = 0
@@ -64,8 +62,7 @@ def write_membership_order_keys(
             return
         stamp = host._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
         conn.execute(
-            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-            "WHERE playlist_id = ?",
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? WHERE playlist_id = ?",
             (stamp.updated_at, stamp.origin_device_id, playlist_id),
         )
         ev = host._append_event(

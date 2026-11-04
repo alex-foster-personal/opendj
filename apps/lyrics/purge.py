@@ -30,12 +30,9 @@ from apps.lyrics import karaoke_cache, store
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
 
-DRY_RUN_R2_REASON: str = (
-    "dry run: no R2 delete attempted, so no object count can be claimed"
-)
+DRY_RUN_R2_REASON: str = "dry run: no R2 delete attempted, so no object count can be claimed"
 LOCAL_MODE_R2_REASON: str = (
-    "cloudsync mode is 'local': this machine has no R2 credentials and pushed "
-    "nothing, so there is no object to delete"
+    "cloudsync mode is 'local': this machine has no R2 credentials and pushed nothing, so there is no object to delete"
 )
 
 
@@ -106,8 +103,7 @@ def purge_by_source(
     """Purge every live verdict whose ``source`` starts with ``source_prefix``."""
     if not source_prefix:
         raise store.LyricStoreError(
-            "purge needs a non-empty --source prefix; an empty prefix would "
-            "match the whole library."
+            "purge needs a non-empty --source prefix; an empty prefix would match the whole library."
         )
     verdicts = store.verdicts_by_source(conn, source_prefix)
     skip_reason = _r2_skip_reason(dry_run)
@@ -123,9 +119,7 @@ def purge_by_source(
     counts = _Counts()
     tombstoned = 0
     for verdict in verdicts:
-        _remove_file(
-            karaoke_cache.cache_path(data_dir, verdict.stable_id), dry_run, counts
-        )
+        _remove_file(karaoke_cache.cache_path(data_dir, verdict.stable_id), dry_run, counts)
         if clients is not None and verdict.words_content_hash is not None:
             _delete_object(verdict.words_content_hash, clients[0], clients[1], counts)
         if not dry_run:

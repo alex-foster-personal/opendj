@@ -4,6 +4,7 @@ If ``mixed-in-key-cli`` is not on PATH the backend still registers but
 ``analyze()`` raises :class:`BackendNotAvailable`.  Callers should treat
 that as "skip this backend".
 """
+
 from __future__ import annotations
 
 import json
@@ -49,10 +50,7 @@ class MikBackend:
     def analyze(cls, path: Path, stable_id: str) -> AnalysisRecord:
         binary = cls._binary_path()
         if not binary:
-            raise BackendNotAvailable(
-                f"{_BIN!r} not found on PATH; install Mixed In Key or use "
-                "--backend librosa."
-            )
+            raise BackendNotAvailable(f"{_BIN!r} not found on PATH; install Mixed In Key or use --backend librosa.")
         result = subprocess.run(
             [binary, "--json", str(path)],
             capture_output=True,
@@ -63,10 +61,7 @@ class MikBackend:
         if result.returncode != 0:
             # The tool ran; it rejected this file. That is per-file, unlike a
             # tool that is missing (BackendNotAvailable, above).
-            raise TrackUnreadable(
-                f"mixed-in-key-cli failed rc={result.returncode}: "
-                f"{result.stderr.strip()[:200]}"
-            )
+            raise TrackUnreadable(f"mixed-in-key-cli failed rc={result.returncode}: {result.stderr.strip()[:200]}")
         data: dict[str, Any] = json.loads(result.stdout)
 
         return AnalysisRecord(

@@ -39,7 +39,7 @@ how they choose the line and nothing else.
 A track with no steady span covering `MIN_COVERAGE` of it is not a constant
 tempo, and the recipe has nothing to say about it; the served fit hands it to
 `grid_fit.fit_grid`, which splits at tempo changes, and says so in
-`GridFit.fitter`. Round 5 (`ops/beatbench/round-5/`) scores both halves.
+`GridFit.fitter`. Round 5 (`(private path)/`) scores both halves.
 
 -Claude
 """
@@ -115,9 +115,7 @@ def _lsq_line(ts: Sequence[float], lo: int, hi: int) -> tuple[float, float]:
     return mt - period * mk, period
 
 
-def _fits(
-    ts: Sequence[float], lo: int, hi: int, tolerance_s: float, least_squares: bool
-) -> tuple[float, float] | None:
+def _fits(ts: Sequence[float], lo: int, hi: int, tolerance_s: float, least_squares: bool) -> tuple[float, float] | None:
     """The region's line when every beat in `lo..hi` is within `tolerance_s` of it."""
     t0, period = (_lsq_line if least_squares else _ends_line)(ts, lo, hi)
     if not period > 0:
@@ -218,9 +216,7 @@ def _try_merge(span: _Span, region: ConstRegion, before: bool, tolerance_s: floa
     return _Span(start, end, n, members)
 
 
-def _extend(
-    regions: Sequence[ConstRegion], i_ref: int, tolerance_s: float, stop: tuple[float, float]
-) -> _Span:
+def _extend(regions: Sequence[ConstRegion], i_ref: int, tolerance_s: float, stop: tuple[float, float]) -> _Span:
     """Grow the reference region outward over every neighbor that fits.
 
     A region that does not fit is skipped rather than ending the walk, so a
@@ -310,9 +306,7 @@ def const_lines(
     return [_line_for_span(ts, span, rounding, tolerance_s, (ts[0], ts[-1]))]
 
 
-def _place_spans(
-    regions: Sequence[ConstRegion], order: Sequence[int], tolerance_s: float
-) -> list[_Span]:
+def _place_spans(regions: Sequence[ConstRegion], order: Sequence[int], tolerance_s: float) -> list[_Span]:
     """Extend each region in `order` within the gap the spans already placed
     leave it, skipping a region an earlier span already covers; sorted by time."""
     spans: list[_Span] = []
@@ -383,9 +377,7 @@ def fit_const_regions(
     if piecewise:
         lines = piecewise_lines(ts, rounding=rounding, least_squares=least_squares)
     else:
-        lines = const_lines(
-            ts, rounding=rounding, min_coverage=min_coverage, least_squares=least_squares
-        )
+        lines = const_lines(ts, rounding=rounding, min_coverage=min_coverage, least_squares=least_squares)
     if lines:
         return grid_from_lines(lines, downbeats, offset_s, fitter=FITTER_CONST_REGIONS)
     if fallback_line:

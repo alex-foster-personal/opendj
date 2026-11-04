@@ -1,11 +1,10 @@
 """Fractional sort keys for playlist membership rows (LIBM-20 / LIBM-02 subset)."""
+
 from __future__ import annotations
 
 MAX_ORDER_KEY_LEN = 64
 
-_ALPHANUM = (
-    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-)
+_ALPHANUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _MID = "V"
 
 
@@ -79,11 +78,7 @@ def between(left: str | None, right: str | None) -> str:
     if right is None:
         return _increment(left)
     common = 0
-    while (
-        common < len(left)
-        and common < len(right)
-        and left[common] == right[common]
-    ):
+    while common < len(left) and common < len(right) and left[common] == right[common]:
         common += 1
     if common == len(left):
         # left is a proper prefix of right: extend left with a suffix below
@@ -109,17 +104,11 @@ def allocate_keys(left: str | None, right: str | None, n: int) -> list[str]:
     for _ in range(n):
         candidate = between(prev, right)
         if len(candidate) > max_len:
-            raise PrecisionExhausted(
-                f"order_key length {len(candidate)} exceeds MAX_ORDER_KEY_LEN={max_len}"
-            )
+            raise PrecisionExhausted(f"order_key length {len(candidate)} exceeds MAX_ORDER_KEY_LEN={max_len}")
         if prev is not None and candidate <= prev:
-            raise PrecisionExhausted(
-                f"order_key {candidate!r} is not strictly after {prev!r}"
-            )
+            raise PrecisionExhausted(f"order_key {candidate!r} is not strictly after {prev!r}")
         if right is not None and candidate >= right:
-            raise PrecisionExhausted(
-                f"order_key {candidate!r} is not strictly before {right!r}"
-            )
+            raise PrecisionExhausted(f"order_key {candidate!r} is not strictly before {right!r}")
         keys.append(candidate)
         prev = candidate
     return keys

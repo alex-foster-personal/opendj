@@ -47,13 +47,23 @@ export function rowRendersUnavailable(row: {
 	stable_id?: string;
 	file_path?: string | null;
 	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
+	offload?: { state: string } | null | undefined;
 }): boolean {
 	if (row.spotify_pending === true) return false;
+	// OFFLOAD: in the cloud on purpose, never a broken link (spec e8da14b8 veto 2).
+	if (rowIsOffloaded(row)) return false;
 	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:')) return false;
 	if (isStreamingAvailability(row)) return true;
 	if (row.file_availability === 'awaiting_volume' || row.is_remote === true) return false;
 	return row.file_exists === false || row.file_availability === 'AVAILABILITY_PENDING';
 }
+
+/** OFFLOAD: the engine reports this row's audio in the cloud (a deck load downloads it first). */
+export function rowIsOffloaded(row: { offload?: { state: string } | null | undefined }): boolean {
+	return row.offload?.state === 'offloaded' || row.offload?.state === 'restoring';
+}
+
+export const OFFLOADED_REFUSAL = 'offloaded to the cloud: load it onto a deck, or Download for 24h first';
 
 /** Why this row must not reach a deck, or null when its audio is present. */
 export function libraryAudioLoadRefusal(row: {
@@ -63,8 +73,10 @@ export function libraryAudioLoadRefusal(row: {
 	file_path?: string | null;
 	streaming_provider?: string | null;
 	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
+	offload?: { state: string } | null | undefined;
 }): string | null {
 	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
+	if (rowIsOffloaded(row)) return OFFLOADED_REFUSAL;
 	// A row that only says the file is on disk (no typed status yet) is loadable.
 	// Pending and awaiting-volume stay refused until the status is present.
 	if (
@@ -82,8 +94,10 @@ export function libraryAudioLoadRefusal(row: {
 /** Row tooltip: the streaming sentence, the missing-file sentence, or pending. */
 export function libraryRowHoverTitle(row: StreamingRowFacts & {
 	file_exists: boolean | null;
+	offload?: { state: string } | null | undefined;
 }): string | undefined {
 	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
+	if (rowIsOffloaded(row)) return 'Offloaded to the cloud. Loading it onto a deck downloads it first.';
 	if (row.file_exists === false) return 'cannot load: audio file missing on disk (broken link)';
 	if (row.file_availability === 'AVAILABILITY_PENDING') {
 		return 'cannot load: audio on this machine has not been confirmed';
@@ -261,6 +275,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		is_remote: wire.is_remote === true,
 		has_remote_copy: wire.has_remote_copy === true,
 		cloud_transfer: wire.cloud_transfer ?? null,
+		offload: wire.offload ?? null,
 		spotify_pending:
 			wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 		streaming_provider: wire.streaming_provider ?? null,
@@ -364,6 +379,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
 		cloud_transfer: track.cloud_transfer ?? null,
+		offload: track.offload ?? null,
 		spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 		quality: track.quality ?? null,
 		play_count: typeof track.play_count === 'number' ? track.play_count : 0,

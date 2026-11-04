@@ -171,4 +171,8 @@ export interface AudioEngine {
 	selectMasterOutput(deviceId: string): Promise<void>;
 	/** Pin label-unlock / capture to an enumerated input. Never default a headphone mic. */
 	selectAudioInput(deviceId: string): Promise<void>;
+	/** AUDFID-05: once per session, after the mount listing, restore two_outputs on the saved MAIN and CUE (never opens an input). */
+	restoreSavedOutputsAtLaunch(): Promise<void>;
+	/** AUDFID-05: the restore pill's Undo: practice, and the room back where it was. */
+	undoLaunchOutputRestore(): Promise<void>;
 }

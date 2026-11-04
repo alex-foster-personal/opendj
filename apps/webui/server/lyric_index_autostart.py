@@ -167,9 +167,7 @@ class LyricIndexWatcher:
         budget - the wait returns the moment a tick records.
         """
         with self._outcome_recorded:
-            self._outcome_recorded.wait_for(
-                lambda: self._state.last_outcome is not None, timeout
-            )
+            self._outcome_recorded.wait_for(lambda: self._state.last_outcome is not None, timeout)
             return self._state.last_outcome
 
     # --- thread lifecycle ------------------------------------------------
@@ -182,8 +180,7 @@ class LyricIndexWatcher:
             self._thread.join(timeout=join_timeout)
             if self._thread.is_alive():
                 log.warning(
-                    "lyric-index: %r did not exit within %.1fs of a restart, "
-                    "so no second loop was started beside it",
+                    "lyric-index: %r did not exit within %.1fs of a restart, so no second loop was started beside it",
                     THREAD_NAME,
                     join_timeout,
                 )
@@ -221,8 +218,7 @@ class LyricIndexWatcher:
                 # the recovery command below - log it loudly, every poll,
                 # rather than blending into the generic warning below.
                 log.error(
-                    "lyric-index: frozen - %s; recover with: "
-                    "python -m apps.lyrics index --force-rebuild --data-dir %s",
+                    "lyric-index: frozen - %s; recover with: python -m apps.lyrics index --force-rebuild --data-dir %s",
                     exc,
                     self._job.data_dir,
                 )

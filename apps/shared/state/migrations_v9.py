@@ -1,4 +1,4 @@
-"""Migration 8 -> 9: machine enrollment (``specs/design_decision_12.md``).
+"""Migration 8 -> 9: machine enrollment (``(private path)``).
 
 Two tables, and deliberately nothing else. No existing table is altered, so
 :func:`apps.sync_hub.protocol.sync_digest` produces the same bytes over the
@@ -32,6 +32,7 @@ diff the ADR:
    hand anybody a redeemable credential. The raw token is returned exactly
    once, to the operator who minted it.
 """
+
 from __future__ import annotations
 
 #: The ``machine_owners.enrolled_via`` vocabulary, as the CHECK enforces it.
@@ -57,8 +58,7 @@ _V9: list[str] = [
         revoked_at      TEXT
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_machine_owners_sub "
-    "ON machine_owners(google_sub)",
+    "CREATE INDEX IF NOT EXISTS idx_machine_owners_sub ON machine_owners(google_sub)",
     # A short-lived single-use credential minted by an authenticated operator
     # on the hub and carried, once, to the machine that is joining.
     """
@@ -72,8 +72,7 @@ _V9: list[str] = [
         redeemed_machine_id TEXT
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires "
-    "ON enrollment_grants(expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_enrollment_grants_expires ON enrollment_grants(expires_at)",
 ]
 
 __all__ = ["ENROLLED_VIA_VALUES", "_V9"]

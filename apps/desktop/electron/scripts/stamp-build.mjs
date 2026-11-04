@@ -45,8 +45,23 @@ function fail(message) {
 	process.exit(1);
 }
 
+/** Absolute path of `name` on an absolute PATH entry, so a shadow in the working directory never runs (AGENTS.md). */
+function resolveProgram(name) {
+	const exts = process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean) : [''];
+	for (const dir of (process.env.PATH ?? process.env.Path ?? '').split(path.delimiter)) {
+		if (!dir || !path.isAbsolute(dir)) continue;
+		for (const ext of exts) {
+			const candidate = path.join(dir, name + ext);
+			if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return candidate;
+		}
+	}
+	fail(`${name} not found on an absolute PATH entry`);
+}
+
+let gitPath = null;
 function git(args) {
-	return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+	gitPath ??= resolveProgram('git');
+	return execFileSync(gitPath, args, { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function parseArgs(argv) {

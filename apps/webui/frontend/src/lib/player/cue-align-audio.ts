@@ -28,6 +28,7 @@ import {
 	withHeadphoneOperationTimeout,
 	type HeadphoneNodes
 } from '$lib/player/headphones';
+import { assertMicOpenAllowedNow } from '$lib/player/io-device-test-audio';
 import { persistMixerConfig } from '$lib/player/mixer-config';
 import { mixerState } from '$lib/player/state.svelte';
 
@@ -290,6 +291,9 @@ export function cueAlignAudioEffects(): Pick<
 	return {
 		sampleRate: () => ctx.sampleRate,
 		async getUserMedia(): Promise<_MicStreamHandle> {
+			// AUDFID-04: calibration opens a mic too, so it passes the same gate
+			// as the AUDIO IN Test (CUEOUT-8393): refused while MAIN plays in the Mac app.
+			assertMicOpenAllowedNow();
 			const mediaDevices = requireHeadphoneDeviceApi();
 			const listed = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
 			const audio = unlockAudioInputConstraints(listed, mixerState.headphones.selected_input_device_id);

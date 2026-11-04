@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from typing import Final
 
-BEATMAP_OWNER: Final = (
-    "BEATMAP-01 (apps.analysis_bench.scorers.beatgrid; "
-    "was scripts/beatbench/scorer.py)"
-)
+BEATMAP_OWNER: Final = "BEATMAP-01 (apps.analysis_bench.scorers.beatgrid; was scripts/beatbench/scorer.py)"
 
 LANE_IDS: Final[tuple[str, ...]] = (
     "bpm",
@@ -45,28 +42,14 @@ REMAINING_REASON: Final[dict[str, str]] = {}
 
 DENOMINATOR_NAME: Final[dict[str, str]] = {
     "bpm": "tracks with rekordbox BPM (djmdContent.BPM x100) in this fixture",
-    "key": (
-        "tracks with rekordbox key (djmdKey.ScaleName, not sentinel All) "
-        "in this fixture"
-    ),
+    "key": ("tracks with rekordbox key (djmdKey.ScaleName, not sentinel All) in this fixture"),
     "beatgrid": "delegated to BEATMAP-01; not a PARITY-01 denominator",
     "downbeat": "delegated to BEATMAP-01; not a PARITY-01 denominator",
-    "waveform_preview": (
-        "tracks with rekordbox waveform preview (PWAV/PWV2) in this fixture"
-    ),
-    "waveform_detail": (
-        "tracks with readable rekordbox color waveform "
-        "(.EXT PWV3/PWV4/PWV5) in this fixture"
-    ),
-    "waveform_triband": (
-        "tracks with rekordbox tri-band waveform (PWV6/PWV7) in this fixture"
-    ),
+    "waveform_preview": ("tracks with rekordbox waveform preview (PWAV/PWV2) in this fixture"),
+    "waveform_detail": ("tracks with readable rekordbox color waveform (.EXT PWV3/PWV4/PWV5) in this fixture"),
+    "waveform_triband": ("tracks with rekordbox tri-band waveform (PWV6/PWV7) in this fixture"),
     "phrase": "tracks with rekordbox PSSI in this fixture",
     "cues_db": "tracks with at least one djmdCue row in this fixture",
-    "cues_anlz": (
-        "tracks with readable rekordbox ANLZ cues (PCOB/PCO2) in this fixture"
-    ),
-    "vocal": (
-        "tracks with rekordbox PVDI among present audio in this fixture"
-    ),
+    "cues_anlz": ("tracks with readable rekordbox ANLZ cues (PCOB/PCO2) in this fixture"),
+    "vocal": ("tracks with rekordbox PVDI among present audio in this fixture"),
 }

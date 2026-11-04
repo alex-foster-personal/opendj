@@ -89,15 +89,28 @@ class BatchRow:
 
 def _proposal_from_row(row: sqlite3.Row) -> ProposalRow:
     return ProposalRow(
-        proposal_id=row["proposal_id"], scan_id=row["scan_id"], stable_id=row["stable_id"],
-        created_at=row["created_at"], original_title=row["original_title"],
-        original_artist=row["original_artist"], original_artists=json.loads(row["original_artists_json"]),
-        proposed_title=row["proposed_title"], proposed_artist=row["proposed_artist"],
-        original_artist_credit=row["original_artist_credit"], tags=json.loads(row["tags_json"]),
-        fixer_status=row["fixer_status"], source=row["source"], confidence=row["confidence"],
-        jev_kind=row["jev_kind"], notes=json.loads(row["notes_json"]), error=row["error"],
-        cost_usd=row["cost_usd"], state=row["state"], batch_id=row["batch_id"],
-        tags_added=json.loads(row["tags_added_json"]), decided_at=row["decided_at"],
+        proposal_id=row["proposal_id"],
+        scan_id=row["scan_id"],
+        stable_id=row["stable_id"],
+        created_at=row["created_at"],
+        original_title=row["original_title"],
+        original_artist=row["original_artist"],
+        original_artists=json.loads(row["original_artists_json"]),
+        proposed_title=row["proposed_title"],
+        proposed_artist=row["proposed_artist"],
+        original_artist_credit=row["original_artist_credit"],
+        tags=json.loads(row["tags_json"]),
+        fixer_status=row["fixer_status"],
+        source=row["source"],
+        confidence=row["confidence"],
+        jev_kind=row["jev_kind"],
+        notes=json.loads(row["notes_json"]),
+        error=row["error"],
+        cost_usd=row["cost_usd"],
+        state=row["state"],
+        batch_id=row["batch_id"],
+        tags_added=json.loads(row["tags_added_json"]),
+        decided_at=row["decided_at"],
     )
 
 

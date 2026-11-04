@@ -17,6 +17,7 @@
 	} from './track-context-menu';
 	import type { TrackEditModalKind } from './track-edit-menu';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
+	import { offloadOps } from '$lib/offload/offload-ops.svelte';
 
 	type DeckId = 1 | 2 | 3 | 4;
 	const DECKS: DeckId[] = [1, 2, 3, 4];
@@ -156,7 +157,10 @@
 			'stems-generate': onstemsdonext ? () => onstemsdonext(targetIds) : undefined,
 			lyrics: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined,
 			'remove-playlist': onremoverow ? () => onremoverow(row) : undefined,
-			'remove-library': onremovefromlibrary ? () => onremovefromlibrary(targetIds) : undefined
+			'remove-library': onremovefromlibrary ? () => onremovefromlibrary(targetIds) : undefined,
+			offload: () => void offloadOps.offloadTracks(targetIds),
+			'offload-restore-24h': () => void offloadOps.restoreTracks(targetIds, 'temporary'),
+			'offload-restore-permanent': () => void offloadOps.restoreTracks(targetIds, 'permanent')
 		};
 		// The stick allowlist stays as a second, independent guard.
 		return menuItemsForTrack(row.stable_id, bindMenuItems(resolved, runners));

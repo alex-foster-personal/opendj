@@ -3,7 +3,7 @@
 A playlist can hold >= 1 named play-orders plus a virtual ``"default"``
 ordering that mirrors the native ``TrackNo`` sequence. Each named order is
 a complete, independent permutation of the same tracks (open-dj v0
-`PlayOrder`, docs/open-dj-v0-strawman.md §4.6).
+`PlayOrder`, (private path) §4.6).
 
 Module layout:
 
@@ -16,6 +16,7 @@ Module layout:
 The public API is intentionally narrow; everything is built on a raw
 ``sqlite3.Connection`` so callers own the DB handle + transactions.
 """
+
 from __future__ import annotations
 
 from .schema import SCHEMA_VERSION, apply_play_order_migrations

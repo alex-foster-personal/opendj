@@ -2,7 +2,7 @@
 
 Audio presence is resolved by BASENAME against an index of the local audio
 mirrors -- a pragmatic stand-in until the library-normalization thread lands
-proper relinking (specs/library-normalization.md). The resolution table is
+proper relinking ((private path)). The resolution table is
 persisted so the enrichment thread can reuse it as relink candidates.
 """
 
@@ -20,7 +20,7 @@ XML_PATH = Path.home() / "Music" / "rekordbox-air-export" / "rekordbox-export-20
 AUDIO_ROOTS = (Path.home() / "Music" / "air-library", Path.home() / "Music" / "Music")
 AUDIO_EXTS = frozenset({".mp3", ".m4a", ".aiff", ".aif", ".wav", ".flac", ".ogg"})
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def normalize_title(title: str) -> str:
@@ -28,14 +28,12 @@ def normalize_title(title: str) -> str:
     key and/or energy number, e.g. '9A - 7 - Gabriel - Soulwax Remix').
     Deliberately never strips version/remix suffixes -- they change which
     lyrics are correct. Full structured normalization is the Haiku pass
-    (specs/library-normalization.md capability B); this is the regex floor."""
+    ((private path) capability B); this is the regex floor."""
     return re.sub(r"^(?:\d{1,2}[AB]?\s*-\s*){1,2}", "", title, flags=re.IGNORECASE).strip()
 
 
 def primary_artist(artist: str) -> str:
-    return re.split(
-        r"\s*[,;/]\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+x\s+", artist, flags=re.IGNORECASE
-    )[0].strip()
+    return re.split(r"\s*[,;/]\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+x\s+", artist, flags=re.IGNORECASE)[0].strip()
 
 
 def collapse_duplicates(tracks: list[Track]) -> list[Track]:
@@ -75,14 +73,16 @@ def load_tracks() -> list[Track]:
             continue
         basename = Path(urllib.parse.unquote(tr.get("Location", ""))).name
         hits = index.get(basename, [])
-        tracks.append(Track(
-            artist=artist,
-            title=title,
-            norm_title=normalize_title(title),
-            primary_artist=primary_artist(artist),
-            duration_s=int(float(total)),
-            audio_path=str(hits[0]) if hits else None,
-        ))
+        tracks.append(
+            Track(
+                artist=artist,
+                title=title,
+                norm_title=normalize_title(title),
+                primary_artist=primary_artist(artist),
+                duration_s=int(float(total)),
+                audio_path=str(hits[0]) if hits else None,
+            )
+        )
     if not tracks:
         raise SystemExit("[ERROR] zero usable tracks in the export")
     _persist_resolution(tracks)
@@ -93,8 +93,5 @@ def _persist_resolution(tracks: list[Track]) -> None:
     out = STATE_DIR / "source-availability" / "audio-resolution.tsv"
     out.parent.mkdir(parents=True, exist_ok=True)
     lines = ["key\tresolved\taudio_path\tartist\ttitle"]
-    lines += [
-        f"{t.key}\t{int(t.audio_path is not None)}\t{t.audio_path or ''}\t{t.artist}\t{t.title}"
-        for t in tracks
-    ]
+    lines += [f"{t.key}\t{int(t.audio_path is not None)}\t{t.audio_path or ''}\t{t.artist}\t{t.title}" for t in tracks]
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")

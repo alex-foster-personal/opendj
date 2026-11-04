@@ -23,8 +23,27 @@ audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
   opendj audio_switch_output --confirm
 
+ingest enrichment (ENRICH-09):
+  opendj enrichment status [--batch B]
+  opendj enrichment rerun --batch B | --playlist P
+
+store cover suggestions (LIBM-189; accept only covers for tracks you own and bought there):
+  opendj artwork list
+  opendj artwork accept --stable-id S ... | --all
+  opendj artwork skip --stable-id S ... | --all
+
+cloud offload (OFFLOAD: free disk, keep the row, get it back any time):
+  opendj offload tracks <stable_id>... [--wait] | playlist <playlist_id> [--wait]
+  opendj offload restore <stable_id>... --for-24h|--permanent [--wait]
+  opendj offload restore-playlist <playlist_id> --for-24h|--permanent [--wait]
+  opendj offload status <stable_id>... | summary | op <op_id> | ops | cancel <op_id>
+  opendj offload sweep [--dry-run] [--wait]
+
 feedback pins (FB-20, issue #4085, pin 6af63c5e9b7c):
   opendj feedback comments summary
+
+browser errors (AGENT-8304; MCP tool client_errors returns the same document):
+  opendj client_errors [--since ISO] [--build-sha PREFIX] [--kind KIND] [--contains TEXT] [--limit N] [--untriaged]
 
 installed app shell navigation (AGENT-12, issue #2866):
   opendj open performance
@@ -39,17 +58,23 @@ installed app MCP (AGENT-11, issue #2753):
   opendj mcp
   claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp
   MCP tools: status, app_state, command, library, ui_url (browser only),
-  open_route (shell), update_check (read-only), update_apply (destructive)
+  open_route (shell), update_check (read-only), update_apply (destructive),
+  client_errors (read-only, AGENT-8304)
   AutoDJ MCP tools (AGENT-29): get_mix_state, get_track_profile, get_mix_windows,
   score_pair, suggest_next, list_verbs, list_transition_styles,
-  propose_transition, validate_plan, schedule_plan, amend_plan
+  propose_transition, validate_plan, show_plan, schedule_plan, amend_plan,
+  plan_set, show_set, schedule_set_next
 
 AutoDJ (AGENT-29, JSON out; plans continue a playing set, never start one):
   opendj dj state                                       # bar, section, mixer per deck
   opendj dj profile|windows|score|suggest ...           # track facts and fit
   opendj dj propose <in_stable_id> --intent "wind down" # validated plans
-  opendj dj validate|schedule <plan.json|->             # check, then perform
+  opendj dj validate|schedule <plan.json|plan.mix|->    # check, then perform
+  opendj dj show <plan.mix|plan.json> [--as grid|json]  # mix score / bar grid, offline
   opendj dj amend <plan_id> abort|finish_now|extend [--bars N]
+  opendj dj set-plan <id> <id> ... [--intent TEXT]      # a whole set, one transition per pair
+  opendj dj set-show <set.mix> [--as grid|json]         # set score / one grid per transition
+  opendj dj set-next <set.mix>                          # perform the transition due now
   opendj dj try --out <id> --in <id> [-n 6] [--context-bars 4] [--json]  # render + rank candidates
   opendj dj try pick <job_id> <cand> --etag <etag>     # record the chosen transition
   opendj dj try undo <job_id> --etag <etag>             # remove that pick

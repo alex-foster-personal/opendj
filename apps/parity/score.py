@@ -54,7 +54,7 @@ def claim_parity(lane: str, *, threshold: float, maintainer_agreed: bool) -> Non
         )
     raise ParityThresholdNotCalibrated(
         f"lane {lane!r}: even with the maintainer-gated agreement recorded, this scorer "
-        "does not declare parity; lock the threshold in specs/parity-01.md first"
+        "does not declare parity; lock the threshold in (private path) first"
     )
 
 
@@ -70,9 +70,7 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
     refuse_forbidden_cue_banklist_keys(payload)
     measured_at = payload.get("measured_at")
     if not measured_at:
-        raise ValueError(
-            "payload has no measured_at; a figure without a date is not a figure"
-        )
+        raise ValueError("payload has no measured_at; a figure without a date is not a figure")
     rows = _present_rows(payload)
     round_label = int(payload.get("round", 0))
     figures: list[LaneFigure] = []
@@ -109,9 +107,7 @@ def _waveform_notes(figure: LaneFigure) -> str:
         parts.append(f"min {figure.min_r:.3f}")
     if figure.band_median_r:
         band_bits = [
-            f"{figure.band_median_r[name]:.3f}"
-            for name in ("low", "mid", "high")
-            if name in figure.band_median_r
+            f"{figure.band_median_r[name]:.3f}" for name in ("low", "mid", "high") if name in figure.band_median_r
         ]
         bands = "/".join(band_bits)
         parts.append(f"bands low/mid/high {bands}")
@@ -190,8 +186,7 @@ def _figure_notes(figure: LaneFigure) -> str:
         )
     elif lane == "vocal" and figure.status == "scored":
         notes = (
-            f"mean IoU - of {figure.scored_n} scored; "
-            f"exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
+            f"mean IoU - of {figure.scored_n} scored; exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
         )
     return notes
 
@@ -203,11 +198,9 @@ def render_report(report: ParityReport, *, round_n: int | None = None) -> str:
         f"# PARITY-01 round {label}",
         "",
         f"Measured {report.measured_at}. Scorer {report.scorer_version}.",
-        "No lane is described as matching a calibrated threshold; "
-        "thresholds are the maintainer-gated and unset.",
+        "No lane is described as matching a calibrated threshold; thresholds are the maintainer-gated and unset.",
         "",
-        "| lane | status | denominator_n | denominator | scored | exact | "
-        "ungradable | no_own | notes |",
+        "| lane | status | denominator_n | denominator | scored | exact | ungradable | no_own | notes |",
         "|---|---|---:|---|---:|---:|---:|---:|---|",
     ]
     for figure in report.figures:

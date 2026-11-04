@@ -27,6 +27,7 @@ Requirements (mini-PRD):
     [if] the level is normal and 8 GiB is available [then] None
     [if] the kernel level cannot be read [then] available memory decides
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -51,7 +52,10 @@ def macos_pressure_level() -> int | None:
     try:
         completed = subprocess.run(
             ["/usr/sbin/sysctl", "-n", MACOS_PRESSURE_SYSCTL],
-            capture_output=True, text=True, timeout=SYSCTL_TIMEOUT_S, check=False,
+            capture_output=True,
+            text=True,
+            timeout=SYSCTL_TIMEOUT_S,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

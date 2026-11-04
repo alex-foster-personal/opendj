@@ -565,3 +565,116 @@ def test_dmg_recipe_checks_the_mounted_app_for_the_license_files() -> None:
     assert "for licensed in THIRD-PARTY-LICENSES.txt NOTICE LICENSE" in recipe, (
         "the dmg verify step no longer asserts the license files are inside the mounted app"
     )
+
+
+# ----- NOTICE credit completeness (issue #6955) -----
+
+NOTICE_CREDIT_RULES: list[tuple[str, list[str]]] = [
+    ("crate-digger", ["Eclipse Public License 2.0"]),
+    ("rekordcrate", ["Mozilla Public License 2.0"]),
+    ("python-prodj-link", ["Apache-2.0"]),
+    ("traktor-nml-utils", ["GPL-3.0"]),
+    ("beat-link", ["Eclipse Public License 2.0"]),
+    ("YapDatabase", ["BSD"]),
+    ("CPJKU/madmom", ["BSD-2-Clause"]),
+    ("Signalsmith Stretch", ["MIT", "Geraint Luff"]),
+]
+
+
+def _notice_bullet_at_index(text: str, idx: int) -> str | None:
+    start = text.rfind("\n* ", 0, idx)
+    if start < 0:
+        if idx < len(text) and text.startswith("* "):
+            start = -1
+        else:
+            return None
+    chunk_start = start + 1 if start >= 0 else 0
+    rest = text[chunk_start:]
+    lines = rest.splitlines()
+    if not lines:
+        return None
+    collected = [lines[0]]
+    for line in lines[1:]:
+        if line.startswith("* "):
+            break
+        if not line.strip():
+            break
+        if line.startswith("    "):
+            collected.append(line)
+            continue
+        break
+    return "\n".join(collected)
+
+
+def _notice_bullets_for_needle(text: str, needle: str) -> list[str]:
+    bullets: list[str] = []
+    pos = 0
+    while True:
+        idx = text.find(needle, pos)
+        if idx < 0:
+            break
+        bullet = _notice_bullet_at_index(text, idx)
+        if bullet and bullet not in bullets:
+            bullets.append(bullet)
+        pos = idx + len(needle)
+    return bullets
+
+
+def _notice_credit_problems(text: str) -> list[str]:
+    problems: list[str] = []
+    for needle, tokens in NOTICE_CREDIT_RULES:
+        bullets = _notice_bullets_for_needle(text, needle)
+        if not bullets:
+            problems.append(f"{needle}: missing credit")
+            continue
+        if not any(all(token in bullet for token in tokens) for bullet in bullets):
+            problems.extend(
+                f"{needle}: missing {token!r} in credit"
+                for token in tokens
+                if not any(token in bullet for bullet in bullets)
+            )
+    return problems
+
+
+def _pyproject_license_files() -> list[str]:
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r"license-files\s*=\s*\[(.*?)\]", pyproject, re.DOTALL)
+    assert match, "pyproject.toml must declare license-files"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def test_repo_notice_credits_the_bundled_and_prior_art_licenses() -> None:
+    notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+    assert _notice_credit_problems(notice) == []
+
+
+def test_repo_notice_credits_fail_when_signalsmith_is_removed() -> None:
+    notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+    start = notice.index("* Signalsmith Stretch")
+    end = notice.index("\nBundled outside the language package managers:")
+    mutated = notice[:start] + notice[end:]
+    problems = _notice_credit_problems(mutated)
+    assert any("Signalsmith" in p for p in problems)
+
+
+def test_repo_notice_credits_fail_when_madmom_says_bsd_3() -> None:
+    notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+    bullets = _notice_bullets_for_needle(notice, "CPJKU/madmom")
+    assert bullets
+    bullet = bullets[0]
+    bad_bullet = bullet.replace("BSD-2-Clause", "BSD-3-Clause")
+    mutated = notice.replace(bullet, bad_bullet, 1)
+    problems = _notice_credit_problems(mutated)
+    assert any("CPJKU/madmom" in p or "madmom" in p for p in problems)
+
+
+def test_pyproject_license_files_include_license_and_notice() -> None:
+    files = _pyproject_license_files()
+    assert files == ["LICENSE", "NOTICE"]
+
+
+def test_pyproject_license_files_control_without_notice() -> None:
+    """Control: license-files with LICENSE only must not pass the NOTICE assertion."""
+    files = re.findall(r'"([^"]+)"', 'license-files = ["LICENSE"]')
+    assert "LICENSE" in files
+    assert "NOTICE" not in files

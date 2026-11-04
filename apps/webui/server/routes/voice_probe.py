@@ -75,9 +75,7 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
 
     intent = grammar.parse(body.text)
     if intent is None:
-        return VoiceProbeResponse(
-            transcript=body.text, intent=None, reason="grammar_miss"
-        )
+        return VoiceProbeResponse(transcript=body.text, intent=None, reason="grammar_miss")
 
     if intent.kind in DESTRUCTIVE_INTENTS:
         return VoiceProbeResponse(

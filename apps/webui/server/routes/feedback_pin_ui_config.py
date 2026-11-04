@@ -3,6 +3,7 @@
 Split out of routes/feedback.py, which uses it in the pin create body and in
 the stored pin environment.
 """
+
 from __future__ import annotations
 
 import re
@@ -45,9 +46,7 @@ class PinUiConfig(BaseModel):
     @classmethod
     def _switches_are_bounded_slugs(cls, value: dict[str, bool]) -> dict[str, bool]:
         if len(value) > PIN_UI_CONFIG_MAX_SWITCHES:
-            raise ValueError(
-                f"at most {PIN_UI_CONFIG_MAX_SWITCHES} switches, got {len(value)}"
-            )
+            raise ValueError(f"at most {PIN_UI_CONFIG_MAX_SWITCHES} switches, got {len(value)}")
         for key in value:
             if _PIN_SWITCH_KEY.fullmatch(key) is None:
                 raise ValueError(f"switch name {key!r} is not a lowercase identifier")

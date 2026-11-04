@@ -263,3 +263,77 @@ test('hydration skips library_key_filter while a disk write is pending', () => {
 	);
 	assert.match(verified, /hydrateLibraryKeyFilter[\s\S]*isUnsaved/);
 });
+
+// Issue #7785: behavioral coverage for malformed library_key_filter on the real
+// boot hydrator and agent-triggered re-read paths (Sol P1, PR #7743).
+const KEY_FILTER_BEHAVIOR_API = 'https://library-key-filter-behavior.example.test';
+
+function uiPrefsJsonResponse(overrides = {}) {
+	return new Response(
+		JSON.stringify({
+			key_notation: 'camelot',
+			library_hidden_columns: [],
+			library_key_filter: [],
+			...overrides
+		}),
+		{ status: 200, headers: { 'content-type': 'application/json' } }
+	);
+}
+
+async function waitForSyncError(getter, label, maxTicks = 100) {
+	for (let tick = 0; tick < maxTicks; tick += 1) {
+		if (getter() !== null) return;
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+	throw new Error(`Timed out waiting for ${label}`);
+}
+
+test('boot hydration rejects malformed disk library_key_filter and keeps the local selection', async () => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async () => uiPrefsJsonResponse({ library_key_filter: ['8a'] });
+	try {
+		const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
+			viteApiBase: KEY_FILTER_BEHAVIOR_API
+		});
+		prefs.uiPrefs.library_key_filter = ['8A'];
+		await assert.rejects(
+			prefs.hydrateConfirmPrefsFromDisk(),
+			/library_key_filter: invalid canonical code "8a"/
+		);
+		assert.deepEqual(prefs.uiPrefs.library_key_filter, ['8A']);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('agent-triggered key-filter re-read surfaces malformed disk state without changing selection', async () => {
+	const originalFetch = globalThis.fetch;
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args.map(String).join(' '));
+	globalThis.fetch = async () => uiPrefsJsonResponse({ library_key_filter: ['8a'] });
+	try {
+		const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
+			viteApiBase: `${KEY_FILTER_BEHAVIOR_API}-reread`
+		});
+		prefs.uiPrefs.library_key_filter = ['8A'];
+		prefs.rereadLibraryKeyFilter();
+		await waitForSyncError(() => prefs.libraryKeyFilterSync.error, 'libraryKeyFilterSync.error');
+		assert.match(
+			prefs.libraryKeyFilterSync.error,
+			/Key filter could not be re-read from disk/
+		);
+		assert.match(
+			prefs.libraryKeyFilterSync.error,
+			/library_key_filter: invalid canonical code "8a"/
+		);
+		assert.deepEqual(prefs.uiPrefs.library_key_filter, ['8A']);
+		assert.ok(
+			logged.some((line) => line.includes('disk re-read failed')),
+			`expected console.error report, got ${JSON.stringify(logged)}`
+		);
+	} finally {
+		globalThis.fetch = originalFetch;
+		console.error = originalError;
+	}
+});

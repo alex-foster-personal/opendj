@@ -87,9 +87,7 @@ async def _request(
             "no performance page is open; open /performance in the app first",
         )
     if not response.is_success:
-        raise ToolFailure(
-            "engine_error", f"{method} {path} -> {response.status_code}: {response.text[:500]}"
-        )
+        raise ToolFailure("engine_error", f"{method} {path} -> {response.status_code}: {response.text[:500]}")
     return response
 
 

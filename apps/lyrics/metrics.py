@@ -1,6 +1,6 @@
 """Word-onset alignment metrics (MIREX-style) for lyric alignment evals.
 
-Scoring contract (specs/karaoke-lyrics-alignment.md): predictions are forced alignments
+Scoring contract ((private path)): predictions are forced alignments
 of the reference word list, so ref and pred are compared 1:1 by index and a length
 mismatch is a hard error, never a warning.
 """
@@ -24,14 +24,12 @@ class OnsetErrorReport:
     abs_errors: tuple[float, ...]  # per-word |pred-ref| values for pooling
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 def _validate_onset(value: float, role: str, index: int) -> None:
     if not math.isfinite(value) or value < 0:
-        raise ValueError(
-            f"{role} onset at word row {index} must be a finite track second >= 0"
-        )
+        raise ValueError(f"{role} onset at word row {index} must be a finite track second >= 0")
 
 
 def _p95(sorted_values: list[float]) -> float:
@@ -60,9 +58,7 @@ def score_onsets(ref_starts_s: list[float], pred_starts_s: list[float]) -> Onset
         mean_abs_error_s=statistics.fmean(abs_errors),
         median_abs_error_s=statistics.median(abs_errors),
         p95_abs_error_s=_p95(abs_errors),
-        within={
-            tol: sum(1 for e in abs_errors if e <= tol) / len(abs_errors) for tol in TOLERANCES_S
-        },
+        within={tol: sum(1 for e in abs_errors if e <= tol) / len(abs_errors) for tol in TOLERANCES_S},
         abs_errors=tuple(abs_errors_list),
     )
 
@@ -82,9 +78,7 @@ def aggregate(reports: list[OnsetErrorReport]) -> OnsetErrorReport:
         mean_abs_error_s=statistics.fmean(pooled),
         median_abs_error_s=statistics.median(pooled),
         p95_abs_error_s=_p95(sorted_errors),
-        within={
-            tol: sum(1 for error in pooled if error <= tol) / n for tol in TOLERANCES_S
-        },
+        within={tol: sum(1 for error in pooled if error <= tol) / n for tol in TOLERANCES_S},
         abs_errors=tuple(pooled),
     )
 

@@ -1,4 +1,5 @@
 """Load + cache the open-dj JSON Schema."""
+
 from __future__ import annotations
 
 import json
@@ -20,9 +21,7 @@ def load_schema(version: str = SCHEMA_VERSION) -> dict[str, Any]:
     """Return the parsed open-dj JSON Schema document for ``version``."""
     path = _schema_json_path(version)
     if not path.exists():
-        raise FileNotFoundError(
-            f"open-dj schema v{version} not found at {path}."
-        )
+        raise FileNotFoundError(f"open-dj schema v{version} not found at {path}.")
     with path.open("rb") as fh:
         return json.load(fh)
 

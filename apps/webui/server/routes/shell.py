@@ -4,6 +4,7 @@ Agents POST a target route; only the installed desktop shell webview polls
 ``GET /shell/navigate/pending`` and calls SvelteKit ``goto``. Browser tabs
 opened via ``ui_url`` must not consume these requests.
 """
+
 from __future__ import annotations
 
 import logging

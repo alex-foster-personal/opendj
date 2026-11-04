@@ -1,4 +1,5 @@
 """Frozen dataclass for one ``smartlists`` row."""
+
 from __future__ import annotations
 
 import json

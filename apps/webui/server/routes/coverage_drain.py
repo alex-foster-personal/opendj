@@ -15,6 +15,7 @@ CLI twin: ``python -m apps.webui.coverage_drain_cli``.
 An engine that never armed the drain answers 503 COVERAGE_DRAIN_NOT_ARMED:
 "not running here" is not "idle", and must not read as it.
 """
+
 from __future__ import annotations
 
 from typing import Any

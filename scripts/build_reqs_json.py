@@ -77,6 +77,17 @@ _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
 _CONTINUATION_STOP_PREFIXES = ("-", "#", ">", "<!--", "|")
 
 
+def ids_from_requirements_text(text: str) -> set[str]:
+    """Bullet-defined requirement ids in markdown text (v1 and v2 shapes)."""
+    ids: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        m_b = _BULLET_V2_RE.match(stripped) or _BULLET_V1_RE.match(stripped)
+        if m_b:
+            ids.add(m_b.group(2))
+    return ids
+
+
 def _is_description_continuation(line: str) -> bool:
     if line.strip() == "":
         return False

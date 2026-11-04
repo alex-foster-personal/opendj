@@ -1,4 +1,5 @@
 """Dispatch pattern for argparse subcommand CLIs."""
+
 from __future__ import annotations
 
 import argparse

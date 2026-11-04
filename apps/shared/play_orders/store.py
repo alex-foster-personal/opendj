@@ -9,6 +9,7 @@ The virtual ``"default"`` play-order is not persisted -- it is a read-
 through alias for the playlist's native ``TrackNo`` sequence, materialised
 on demand. :func:`list_play_orders` always returns it in the response.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -86,9 +87,7 @@ def create_play_order(
         (playlist_id, name, now, now, generated_by, goal_json),
     )
     po_id = int(cur.lastrowid)
-    emit_play_order_changed(
-        conn, playlist_id=playlist_id, name=name, action="created"
-    )
+    emit_play_order_changed(conn, playlist_id=playlist_id, name=name, action="created")
     return po_id
 
 
@@ -114,9 +113,7 @@ def add_entry(
     validate_target_tempo(target_tempo)
     validate_key_sync(key_sync)
     if not isinstance(position, int) or position < 0:
-        raise ValueError(
-            f"position must be a non-negative int, got {position!r}"
-        )
+        raise ValueError(f"position must be a non-negative int, got {position!r}")
     if not stable_id:
         raise ValueError("stable_id must be a non-empty string")
 
@@ -146,14 +143,10 @@ def add_entry(
         "UPDATE play_orders SET updated_at=? WHERE id=?",
         (_now_iso(), play_order_id),
     )
-    emit_play_order_changed(
-        conn, playlist_id=playlist_id, name=name, action="updated"
-    )
+    emit_play_order_changed(conn, playlist_id=playlist_id, name=name, action="updated")
 
 
-def load_play_order(
-    conn: sqlite3.Connection, playlist_id: str, name: str
-) -> PlayOrder:
+def load_play_order(conn: sqlite3.Connection, playlist_id: str, name: str) -> PlayOrder:
     """Fetch a named play-order + its entries (ordered by position).
 
     When ``name == DEFAULT_ORDER_NAME``, the read-through virtual order
@@ -172,10 +165,7 @@ def load_play_order(
         (playlist_id, name),
     ).fetchone()
     if row is None:
-        raise LookupError(
-            f"play-order (playlist_id={playlist_id!r}, name={name!r}) "
-            "does not exist"
-        )
+        raise LookupError(f"play-order (playlist_id={playlist_id!r}, name={name!r}) does not exist")
     po_id, created_at, updated_at, generated_by, goal_json, schema_version = row
     entry_rows = conn.execute(
         "SELECT stable_id, position, target_key, target_tempo, key_sync, "
@@ -208,9 +198,7 @@ def load_play_order(
     )
 
 
-def _load_default_order(
-    conn: sqlite3.Connection, playlist_id: str
-) -> PlayOrder:
+def _load_default_order(conn: sqlite3.Connection, playlist_id: str) -> PlayOrder:
     """Virtual read-through for the native TrackNo sequence.
 
     Reads ``playlist_memberships`` ordered by ``position``. When the
@@ -221,16 +209,13 @@ def _load_default_order(
     entries: list[PlayOrderEntry] = []
     try:
         rows = conn.execute(
-            "SELECT stable_id, position FROM playlist_memberships "
-            "WHERE playlist_id=? ORDER BY position ASC",
+            "SELECT stable_id, position FROM playlist_memberships WHERE playlist_id=? ORDER BY position ASC",
             (playlist_id,),
         ).fetchall()
     except sqlite3.OperationalError:
         rows = []
     for stable_id, position in rows:
-        entries.append(
-            PlayOrderEntry(stable_id=stable_id, position=int(position))
-        )
+        entries.append(PlayOrderEntry(stable_id=stable_id, position=int(position)))
     return PlayOrder(
         id=None,
         playlist_id=playlist_id,
@@ -241,9 +226,7 @@ def _load_default_order(
     )
 
 
-def list_play_orders(
-    conn: sqlite3.Connection, playlist_id: str
-) -> list[str]:
+def list_play_orders(conn: sqlite3.Connection, playlist_id: str) -> list[str]:
     """Return names of all play-orders for ``playlist_id``, starting with
     the virtual ``"default"`` alias.
     """
@@ -255,9 +238,7 @@ def list_play_orders(
     return [DEFAULT_ORDER_NAME, *[r[0] for r in rows]]
 
 
-def delete_play_order(
-    conn: sqlite3.Connection, playlist_id: str, name: str
-) -> None:
+def delete_play_order(conn: sqlite3.Connection, playlist_id: str, name: str) -> None:
     """Delete a named play-order + its entries (CASCADE).
 
     Deleting the virtual ``DEFAULT_ORDER_NAME`` is a no-op (raises no
@@ -271,6 +252,4 @@ def delete_play_order(
         (playlist_id, name),
     )
     if cur.rowcount > 0:
-        emit_play_order_changed(
-            conn, playlist_id=playlist_id, name=name, action="deleted"
-        )
+        emit_play_order_changed(conn, playlist_id=playlist_id, name=name, action="deleted")

@@ -14,7 +14,7 @@ Two kinds of writer, two rules:
 * runtime state (voice settings and logs): resolve under ``DATA_DIR`` at call
   time. In a checkout ``DATA_DIR`` is ``<repo>/data`` unless ``MDT_DATA_DIR``
   overrides it, so development paths do not move.
-* repo-tracked dev ledgers (``data/progress-tree.yaml``,
+* repo-tracked dev ledgers (``(private path)``,
   ``scripts/bench/ratings/``): developers commit these files, so the writer
   keeps its repo path in a checkout and refuses in the packaged app, before
   touching disk, with :data:`DEV_ONLY_CODE` and a sentence naming why.
@@ -25,6 +25,7 @@ Requirements (INSTALL-30):
   [if] the source root is a git checkout and no payload manifest is exported
     [then] the dev-only ledgers write where they always did [⛔️ if dev moves]
 """
+
 from __future__ import annotations
 
 import os
@@ -39,9 +40,7 @@ PAYLOAD_MANIFEST_ENV: str = "OPENDJ_PAYLOAD_MANIFEST"
 DEV_ONLY_CODE: str = "dev_only_in_packaged_app"
 
 
-def is_repo_checkout(
-    source_root: Path, *, environ: Mapping[str, str] | None = None
-) -> bool:
+def is_repo_checkout(source_root: Path, *, environ: Mapping[str, str] | None = None) -> bool:
     """True only when ``source_root`` is a development checkout.
 
     Both halves are required. The launcher's manifest variable says "this is

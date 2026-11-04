@@ -1,4 +1,5 @@
 """Column docs for the transition memory table (schema v25)."""
+
 from __future__ import annotations
 
 PAIR_TRANSITION_COLUMN_DOCS: dict[str, dict[str, str]] = {

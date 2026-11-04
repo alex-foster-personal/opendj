@@ -28,11 +28,11 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 	track: {
 		selection: ['one', 'many'],
 		source: ['collection', 'playlist', 'usb', 'readonly-import'],
-		audio: ['present', 'missing', 'streaming'],
+		audio: ['present', 'missing', 'streaming', 'offloaded', 'temporary'],
 		stems: ['none', 'ready'],
 		workspace: ['performance', 'library']
 	},
-	'track-chip': { audio: ['present', 'missing', 'streaming'] },
+	'track-chip': { audio: ['present', 'missing', 'streaming', 'offloaded', 'temporary'] },
 	'playlists-root': {},
 	playlist: { forbidDuplicates: [false, true] },
 	'playlist-folder': {},

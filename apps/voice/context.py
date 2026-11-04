@@ -24,6 +24,17 @@ def _epoch_now(now: float | None) -> float:
     return now if now is not None else time.time()
 
 
+def _env_float(env: dict[str, str], key: str, default: float) -> float:
+    """Parse ``env[key]`` as float, falling back to ``default`` on missing/invalid."""
+    raw = env.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass
 class VoiceContext:
     """State threaded through the daemon's action loop."""
@@ -50,16 +61,8 @@ class VoiceContext:
         env = coalesce_env(env)
         bus_impl = event_bus if event_bus is not None else bus_mod.make_bus()
         tts_impl = tts_engine if tts_engine is not None else tts_mod.make_tts(env)
-        try:
-            debounce = float(env.get("VOICE_DEBOUNCE_S", DEFAULT_DEBOUNCE_S))
-        except ValueError:
-            debounce = DEFAULT_DEBOUNCE_S
-        try:
-            mute_duration = float(
-                env.get("VOICE_MUTE_DURATION_S", DEFAULT_MUTE_DURATION_S)
-            )
-        except ValueError:
-            mute_duration = DEFAULT_MUTE_DURATION_S
+        debounce = _env_float(env, "VOICE_DEBOUNCE_S", DEFAULT_DEBOUNCE_S)
+        mute_duration = _env_float(env, "VOICE_MUTE_DURATION_S", DEFAULT_MUTE_DURATION_S)
         destructive_flag = env.get("VOICE_ENABLE_DESTRUCTIVE", "").lower() in {
             "1",
             "true",

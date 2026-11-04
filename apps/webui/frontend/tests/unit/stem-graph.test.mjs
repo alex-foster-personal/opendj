@@ -245,3 +245,102 @@ test('a partial stem schedule failure rejects the aligned graph transaction', as
 		/aligned stem schedule failed on 1 branch/i
 	);
 });
+
+// STEM-8302: real decoded lengths from the maintainer's library (Tue 3 Nov 2026). LAME
+// parts at 96 kbps carry one packet past their Xing frame count, which
+// CoreAudio decodes as TRAILING frames; a 48 kHz source resampled to 44.1 kHz
+// rounds one frame long. All of it is end-of-file slack, never an offset.
+// Channel data is allocated lazily (the real lengths are up to 26M frames), and
+// a ramp part reads (i % 1000 + 1) / 1000 so trim/pad positions are checkable.
+class FakeBuffer {
+	#channels = [];
+	constructor(numberOfChannels, length, sampleRate, ramp = false) {
+		this.numberOfChannels = numberOfChannels;
+		this.length = length;
+		this.sampleRate = sampleRate;
+		this.duration = length / sampleRate;
+		this.ramp = ramp;
+	}
+	getChannelData(channel) {
+		if (this.#channels[channel] === undefined) {
+			const data = new Float32Array(this.length);
+			if (this.ramp) for (let i = 0; i < this.length; i++) data[i] = ((i % 1000) + 1) / 1000;
+			this.#channels[channel] = data;
+		}
+		return this.#channels[channel];
+	}
+	copyToChannel(source, channel) {
+		this.getChannelData(channel).set(source);
+	}
+}
+
+const fakeCtx = { createBuffer: (channels, length, rate) => new FakeBuffer(channels, length, rate) };
+const rampAt = (i) => Math.fround(((i % 1000) + 1) / 1000);
+
+function rampPart(length, rate = 44_100) {
+	return new FakeBuffer(1, length, rate, true);
+}
+
+function demucsParts(lengths) {
+	return Object.fromEntries(Object.entries(lengths).map(([part, length]) => [part, rampPart(length)]));
+}
+
+test('STEM-8302: a drums part one MP3 packet long (+1152) is trimmed at its end and aligns', () => {
+	const source = 26_457_088;
+	const buffers = demucsParts({ vocals: source, drums: source + 1152, bass: source, other: source });
+	assert.throws(() => stems.validateStemBufferAlignment(buffers), /stem alignment mismatch for drums/);
+	const conformed = stems.conformStemBuffersToFrameCount(fakeCtx, buffers, source, 44_100);
+	assert.equal(stems.validateStemBufferAlignment(conformed).frame_count, source);
+	const drums = conformed.drums.getChannelData(0);
+	// Start untouched: sample 0 and the last kept sample are the original's, unshifted.
+	assert.equal(drums[0], rampAt(0));
+	assert.equal(drums[source - 1], rampAt(source - 1));
+	assert.equal(conformed.vocals, buffers.vocals, 'an exact part is passed through, not copied');
+});
+
+test('STEM-8302: a drums part +704 frames long (decoded tail past the gapless end) is trimmed', () => {
+	const source = 11_751_424;
+	const buffers = demucsParts({ vocals: source, drums: source + 704, bass: source + 704, other: source });
+	const conformed = stems.conformStemBuffersToFrameCount(fakeCtx, buffers, source, 44_100);
+	assert.deepEqual(
+		Object.values(conformed).map((buffer) => buffer.length),
+		[source, source, source, source]
+	);
+	assert.equal(conformed.bass.getChannelData(0)[1234], rampAt(1234));
+	assert.equal(conformed.bass.getChannelData(0)[source - 1], rampAt(source - 1));
+});
+
+test('STEM-8302: stems one frame SHORTER than a resampled source are padded with trailing silence', () => {
+	const source = 7_532_986;
+	const buffers = demucsParts({ vocals: source - 1, drums: source - 1, bass: source - 1, other: source - 1 });
+	const conformed = stems.conformStemBuffersToFrameCount(fakeCtx, buffers, source, 44_100);
+	for (const buffer of Object.values(conformed)) {
+		assert.equal(buffer.length, source);
+		assert.equal(buffer.getChannelData(0)[source - 1], 0, 'the padded frame is silence');
+		assert.equal(buffer.getChannelData(0)[source - 2], rampAt(source - 2), 'the last real frame is kept, not shifted');
+	}
+	assert.equal(stems.validateStemBufferAlignment(conformed).frame_count, source);
+});
+
+test('STEM-8302: a mismatch past two MP3 frames is NOT conformed and still refuses', () => {
+	const source = 11_751_424;
+	const tooFar = source + stems.STEM_LENGTH_TOLERANCE_FRAMES + 1;
+	assert.equal(stems.STEM_LENGTH_TOLERANCE_FRAMES, 2 * 1152);
+	const buffers = demucsParts({ vocals: source, drums: tooFar, bass: source, other: source });
+	const conformed = stems.conformStemBuffersToFrameCount(fakeCtx, buffers, source, 44_100);
+	assert.equal(conformed.drums, buffers.drums);
+	assert.throws(() => stems.validateStemBufferAlignment(conformed), /stem alignment mismatch for drums/);
+	// A whole bundle seconds short of its source stays short, for the stem/source check to refuse.
+	const wrongEdit = demucsParts({ vocals: source - 44_100, drums: source - 44_100, bass: source - 44_100, other: source - 44_100 });
+	const kept = stems.conformStemBuffersToFrameCount(fakeCtx, wrongEdit, source, 44_100);
+	assert.equal(stems.validateStemBufferAlignment(kept).frame_count, source - 44_100);
+});
+
+test('STEM-8302: a part at another sample rate is left for the alignment check to refuse', () => {
+	const source = 960_000;
+	const buffers = { ...demucsParts({ vocals: source, bass: source, other: source }), drums: rampPart(source + 1, 48_000) };
+	const conformed = stems.conformStemBuffersToFrameCount(fakeCtx, buffers, source, 44_100);
+	assert.equal(conformed.drums, buffers.drums);
+	assert.throws(() => stems.validateStemBufferAlignment(conformed), /alignment mismatch/);
+	assert.throws(() => stems.conformStemBuffersToFrameCount(fakeCtx, buffers, 0, 44_100), RangeError);
+});

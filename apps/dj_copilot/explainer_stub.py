@@ -4,6 +4,7 @@ Swapping this for an Ollama / llama.cpp subprocess consumer is a
 drop-in: same single-function surface, same return string. Lives in
 Phase 13 only so the hot path never depends on an LLM being reachable.
 """
+
 from __future__ import annotations
 
 from .rank_stage1 import ScoredCandidate

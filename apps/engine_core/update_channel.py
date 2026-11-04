@@ -175,7 +175,6 @@ _ARCH_KEYS: dict[str, str] = {
 }
 
 
-
 UpdateStatus = Literal[
     "update-available",
     "up-to-date",
@@ -218,7 +217,6 @@ EXIT_APPLY_FAILED: int = 3
 #: is posted. The status poll that waits for that word had no bound at all,
 #: which let a shell that never answered hang the caller forever.
 APPLY_TIMEOUT_S: float = 600.0
-
 
 
 class UpdateCheckError(RuntimeError):

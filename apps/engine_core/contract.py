@@ -19,17 +19,11 @@ CONTRACT_REV_CHARS: int = 12
 
 def openapi_digest_input(schema: dict[str, Any]) -> bytes:
     """Canonical bytes: sorted keys, no incidental whitespace."""
-    return json.dumps(schema, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    return json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def compute_contract_rev(schema: dict[str, Any]) -> str:
-    digest = hashlib.sha256(
-        openapi_digest_input(schema)
-        + b"\n"
-        + WS_SCHEMA_VERSION.encode("utf-8")
-    )
+    digest = hashlib.sha256(openapi_digest_input(schema) + b"\n" + WS_SCHEMA_VERSION.encode("utf-8"))
     return digest.hexdigest()[:CONTRACT_REV_CHARS]
 
 

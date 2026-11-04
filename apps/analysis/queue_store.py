@@ -152,6 +152,15 @@ def ensure_queue_tables(conn: sqlite3.Connection) -> None:
     from .queue_batch_lease import ensure_batch_lease_columns
 
     ensure_batch_lease_columns(conn)
+    ensure_claimed_audio_hash_column(conn)
+
+
+def ensure_claimed_audio_hash_column(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(analysis_queue_item)")}
+    if "claimed_audio_hash" not in cols:
+        conn.execute(
+            "ALTER TABLE analysis_queue_item ADD COLUMN claimed_audio_hash TEXT"
+        )
 
 
 def new_batch_id() -> str:
@@ -184,6 +193,7 @@ class QueueItem:
     started_at: str | None
     finished_at: str | None
     runner_id: str | None
+    claimed_audio_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -203,7 +213,7 @@ class QueueBatch:
 _ITEM_COLUMNS = (
     "batch_id, stable_id, lane, backend, file_path, duration_s, "
     "predicted_peak_mb, state, reason, attempts, enqueued_at, started_at, "
-    "finished_at, runner_id"
+    "finished_at, runner_id, claimed_audio_hash"
 )
 
 
@@ -223,6 +233,7 @@ def _item_from_row(row: Sequence[Any]) -> QueueItem:
         started_at=row[11],
         finished_at=row[12],
         runner_id=row[13],
+        claimed_audio_hash=row[14] if len(row) > 14 else None,
     )
 
 
@@ -357,7 +368,7 @@ def add_item(conn: sqlite3.Connection, batch_id: str, item: NewItem) -> None:
     conn.execute(
         f"""
         INSERT INTO analysis_queue_item ({_ITEM_COLUMNS})
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?, NULL, NULL)
         """,
         (
             batch_id, item.stable_id, item.lane, item.backend, item.file_path,
@@ -439,14 +450,17 @@ def claim_next(
             conn.execute("COMMIT")
             return None
         item = _item_from_row(row)
+        from .source_bytes import read_track_audio_hash
+
+        claimed_audio_hash = read_track_audio_hash(conn, item.stable_id)
         now = utc_now_iso()
         changed = conn.execute(
             "UPDATE analysis_queue_item SET state = ?, started_at = ?, "
-            "runner_id = ?, attempts = attempts + 1 "
+            "runner_id = ?, attempts = attempts + 1, claimed_audio_hash = ? "
             "WHERE batch_id = ? AND stable_id = ? AND lane = ? AND state = ?",
             (
-                ITEM_RUNNING, now, runner_id, batch_id, item.stable_id,
-                item.lane, ITEM_PENDING,
+                ITEM_RUNNING, now, runner_id, claimed_audio_hash, batch_id,
+                item.stable_id, item.lane, ITEM_PENDING,
             ),
         ).rowcount
         conn.execute("COMMIT")
@@ -468,6 +482,7 @@ def claim_next(
             "started_at": now,
             "runner_id": runner_id,
             "attempts": item.attempts + 1,
+            "claimed_audio_hash": claimed_audio_hash,
         }
     )
 

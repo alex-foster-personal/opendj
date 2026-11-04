@@ -1,4 +1,5 @@
 """UTC timestamps as RFC3339 ``Z`` strings for analysis persistence."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

@@ -119,7 +119,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { notifyPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
-import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyColorKnob, applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -213,6 +213,7 @@ import {
 } from '$lib/rb/stretch-adapter';
 import {
 	AlignedStemDeckProcessor,
+	conformStemBuffersToFrameCount,
 	decodeStemBuffers,
 	DEMUCS_PARTS,
 	loadingStemDeckState,
@@ -222,6 +223,10 @@ import {
 	type StemBuffers
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
+import { deckPlaysOriginalFile, STEM_ENGAGE_CROSSFADE_SEC } from '$lib/rb/stem-neutral-bypass';
+import { createFidelityGuard, startFidelityGuardLoop } from '$lib/rb/fidelity-guard-runtime';
+import { createMasterStereoTap, sampleFidelity, type GuardDeckView, type MasterStereoTap } from '$lib/rb/fidelity-guard-tap';
+import { reportClientError } from '$lib/client-error-reporting';
 import { applyStemCarry, applyTrackLoadChannelReset, captureStemCarry } from '$lib/rb/track-load-reset';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
@@ -264,6 +269,8 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	restoreSavedOutputsAtLaunch as restoreMonitorOutputsAtLaunch,
+	undoLaunchOutputRestore as undoMonitorLaunchRestore,
 	requestIoDeviceNames as requestMonitorDeviceNames,
 	releaseHeadphoneGraphOfFailedBuild,
 	selectAudioInput as selectMonitorAudioInput,
@@ -274,6 +281,7 @@ import {
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	setMasterDelayMs as setMonitorMasterDelay,
 	setMultichannelMonitorActive,
+	splitCueChosenByOperator,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
@@ -468,6 +476,9 @@ export type { DeckTransportClock } from '$lib/rb/deck-runtime';
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
 let _masterAnalyser: AnalyserNode | null = null;
+/** AUDFID-03: the live fidelity guard's stereo tap, after the split-cable stage. */
+let _fidelityTap: MasterStereoTap | null = null;
+let _fidelityLoopStop: (() => void) | null = null;
 /** Opt-in startup mute, after every tap and before the room delay. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
 /** CUEOUT-14 room delay line: THE last node before the destination, after the
@@ -612,7 +623,17 @@ export function deckPcmEstimatedBytes(): number {
 	);
 }
 export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
-bindAudioEngineSilenceProbes({ deckRuntime: (deck) => _rt[deck], graph: () => ({ ctx: _ctx, masterAnalyser: _masterAnalyser, externalRouteAnalyser: _externalRouteAnalyser, profile: _djOutputProfileActive }) });
+bindAudioEngineSilenceProbes({
+	deckRuntime: (deck) => _rt[deck],
+	graph: () => ({
+		ctx: _ctx,
+		masterAnalyser: _masterAnalyser,
+		externalRouteAnalyser: _externalRouteAnalyser,
+		profile: _djOutputProfileActive,
+		externallyRouted: _externalRouting,
+		masterCeilingGain: _ceilingGainMultiplier()
+	})
+});
 
 // ---------------------------------------------------------------- _helpers
 
@@ -860,6 +881,10 @@ function _resetGraphState(releaseHeadphones: () => void): void {
 	if (_ctx !== null) unregisterAudioContext(_ctx);
 	_rafId = null;
 	_masterGain = null;
+	_fidelityTap?.disconnect();
+	_fidelityTap = null;
+	_fidelityLoopStop?.();
+	_fidelityLoopStop = null;
 	releaseMasterMeterTap();
 	attachMasterMuteNode(null);
 	_masterMuteGain = null;
@@ -872,6 +897,20 @@ function _resetGraphState(releaseHeadphones: () => void): void {
 	notifyPerformanceArmedContextReset();
 	resetMasterSilenceWatch();
 	resetPresentationClockStall();
+}
+
+/** Page query string for IOPIN-12 / level handoff; safe under node unit bundles (no bare `location`). */
+function _pageLocationSearch(): string {
+	// Node unit bundles use platform `node`: only `globalThis.window` / `globalThis.location`
+	// exist (installWindow, real-engine-rig). Prefer window over a stale globalThis.location
+	// object tests may have seeded before installWindow runs.
+	const g = globalThis as {
+		window?: { location?: { search?: string } };
+		location?: { search?: string };
+	};
+	if (typeof g.window?.location?.search === 'string') return g.window.location.search;
+	if (typeof g.location?.search === 'string') return g.location.search;
+	return '';
 }
 
 /** IOPIN-12: release whatever a throwing `_ensureGraph()` built, deck nodes included,
@@ -940,7 +979,7 @@ function _ensureGraph(): AudioContext {
 		_masterDelay = createMasterDelayNode(_ctx);
 		const routing = parseExternalRouting();
 		// IOPIN-12: a djio request on an output with < 4 channels plays stereo master.
-		const djio = resolveDjOutputProfile(parseDjOutputProfile(window.location.search), _ctx.destination.maxChannelCount);
+		const djio = resolveDjOutputProfile(parseDjOutputProfile(_pageLocationSearch()), _ctx.destination.maxChannelCount);
 		_djOutputProfileActive = djio.profile;
 		const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
 		const output = wireAudioOutputTopology({
@@ -959,6 +998,8 @@ function _ensureGraph(): AudioContext {
 			wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 			wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
 		}
+		_fidelityTap = createMasterStereoTap(_ctx, _masterMuteGain);
+		_fidelityLoopStop ??= startFidelityGuardLoop(_fidelityGuard, _reportFidelityGuardFailure);
 		// Post-fader channel tap points, one per deck, PLUS one master tap sourced
 		// from `_masterGain` itself (post master gain, so the master volume
 		// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
@@ -1092,6 +1133,7 @@ import {
 	assertDeckLoadConsistency,
 	type DeckReplacementActivity,
 	assertDeckReplacementAllowed,
+	DeckReplacementBlockedError,
 	loadCandidateCanPublish,
 	assertPausedMasterSelectionAllowed,
 	pausedMasterSelectionBlockers,
@@ -1101,7 +1143,6 @@ import {
 	type TransportMutationActivity,
 	planKeyShiftMutation,
 	type KeyShiftMutationPlan,
-	filterParamsFromKnob,
 	applyPausedDeckControlSettings,
 	type DeckControlSettings,
 	type PausedDeckControlUpdate
@@ -1128,6 +1169,7 @@ export {
 	assertDeckLoadConsistency,
 	type DeckReplacementActivity,
 	assertDeckReplacementAllowed,
+	DeckReplacementBlockedError,
 	loadCandidateCanPublish,
 	assertPausedMasterSelectionAllowed,
 	pausedMasterSelectionBlockers,
@@ -1328,7 +1370,7 @@ function _maybeHandoffOnAir(nowMs: number = performance.now()): void {
 /** One step of the level hold from the live mixer, stored as the current hold. */
 function _stepLevelHandoff(nowMs: number): LevelHandoffStep {
 	// The page URL is the boundary; tests that drive the engine stand in a page with an empty query.
-	const extrouteQuery = location.search; // a missing page throws here: the app is client-only (ssr = false)
+	const extrouteQuery = _pageLocationSearch();
 	const live = { master: _masterDeck, locked: _masterMode === 'locked', state: { decks: deckStates, mixer: mixerState }, masterMuted: isMasterMuted(), extrouteQuery };
 	const step = stepLiveLevelHandoff(_levelHandoff, live, DECK_IDS, nowMs);
 	_levelHandoff = step.state;
@@ -1416,6 +1458,7 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const failedProcessor = rt.processor;
 	rt.processor = null;
 	if (failedProcessor !== null) _retireProcessor(failedProcessor);
+	_releasePendingStemUpgrade(rt); // STEM-4756: the cleared deck is at rest, so a held bundle would otherwise land on a deck with no track
 	rt.audioBuffer = null;
 	rt.durationSec = 0;
 	rt.latencySec = 0;
@@ -2124,6 +2167,7 @@ function _tick(): void {
 		for (const deck of DECK_IDS) {
 			_commitPendingIfDue(deck);
 			const observation = _publishPresentedTransport(deck, outputTimestamp);
+			_drainPendingStemUpgrade(deck); // STEM-4756: only this frame publishes audible/transport_pending, so only here can a held bundle find its deck at rest
 			_updateSlipPosition(deck);
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
@@ -2790,14 +2834,53 @@ function _adoptStemProcessor(
  * "PCM should drop to 0 on unload" property the perf log treats as the leak
  * signature. Safe to call when nothing is pending. */
 function _releasePendingStemUpgrade(rt: _DeckRuntime): void {
+	const held = rt.heldNeutralStems;
+	rt.heldNeutralStems = null;
+	if (held !== null) _retireProcessor(held.processor);
 	const pending = rt.pendingStemUpgrade;
 	if (pending === null) return;
 	rt.pendingStemUpgrade = null;
 	_retireProcessor(pending.processor);
 }
 
-/** LAZY-STEMS. Called wherever a deck comes to rest, to land a stem upgrade
- * that finished while the deck was playing. No-op when nothing is pending. */
+/** AUDFID-02: keep a ready bundle with neutral controls built but silent. The
+ * deck reads stems `ready` (buttons live) while the mix processor plays the
+ * original file. */
+function _holdNeutralStems(deck: DeckId, upgrade: NonNullable<_DeckRuntime['heldNeutralStems']>): void {
+	const rt = _rt[deck];
+	if (rt.heldNeutralStems !== null) _retireProcessor(rt.heldNeutralStems.processor);
+	rt.heldNeutralStems = upgrade;
+	deckStates[deck].stems = { ...upgrade.state, playback: 'original' };
+	recordPerfEvent('stem-neutral-bypass', `deck ${deck} stems ready, playing the original file until a stem control is touched`, deck);
+}
+
+/** AUDFID-02: the first stem-control touch makes the held stems audible: a
+ * crossfaded live handoff on a playing deck, the stopped swap at rest. The
+ * touched value is already on the held processor, so it is heard at once. */
+function _engageHeldNeutralStems(deck: DeckId): void {
+	const rt = _rt[deck];
+	const held = rt.heldNeutralStems;
+	const ctx = _ctx;
+	if (held === null) return;
+	if (ctx === null) throw new Error(`deck ${deck} stems: no audio context to engage them on`);
+	rt.heldNeutralStems = null;
+	const st = deckStates[deck];
+	const state: StemDeckState = { ...held.state, controls: st.stems.controls, playback: 'stems' };
+	const stale = (): boolean => held.token !== rt.loadToken || ctx !== _ctx || stemsBlockedState() !== null;
+	void _landStems(deck, { token: held.token, processor: held.processor, state }, ctx, stale).then(
+		(outcome) => recordPerfEvent('stem-engage', `deck ${deck} stems engaged on first touch: ${outcome}`, deck),
+		(error: unknown) => {
+			if (rt.processor !== held.processor) _retireProcessor(held.processor);
+			if (stale()) return;
+			const message = error instanceof Error ? error.message : String(error);
+			st.stems = { ...unavailableStemDeckState(message), status: 'error' };
+			pushToast(`Deck ${deck} stems could not engage - ${message}`, 'error');
+		}
+	);
+}
+
+/** LAZY-STEMS / STEM-4756. Called by every presentation frame (`_tick`), to land a stem
+ * upgrade that finished while the deck was playing on the first frame the deck is at rest. No-op when nothing is pending. */
 function _drainPendingStemUpgrade(deck: DeckId): void {
 	const rt = _rt[deck];
 	const pending = rt.pendingStemUpgrade;
@@ -2849,7 +2932,9 @@ function _landStems(
 			_drainPendingStemUpgrade(deck); // the deck may have come to rest during the last attempt
 		},
 		replaceable: () => _deckIsReplaceable(deck),
-		adoptStopped: () => _adoptStemProcessor(deck, upgrade)
+		adoptStopped: () => _adoptStemProcessor(deck, upgrade),
+		crossfadeSec: STEM_ENGAGE_CROSSFADE_SEC,
+		createGain: () => ctx.createGain()
 	});
 }
 
@@ -2895,7 +2980,7 @@ async function _upgradeDeckStems(
 	ctx: AudioContext,
 	mixBuffer: AudioBuffer
 ): Promise<void> {
-	const rt = _rt[deck];
+	const rt = _rt[deck], mixAtStart = rt.processor; // STEM-4806: the processor these stems replace. A processor failure clears the deck WITHOUT bumping the token (a load in flight must still land), so the token alone let stems land on a deck with no track.
 	const st = deckStates[deck];
 	const t0 = performance.now();
 	const stages: Record<string, number> = {};
@@ -2903,7 +2988,7 @@ async function _upgradeDeckStems(
 	// PERFMODE-15: a mode with stems off (Trackify) settles the deck `unavailable` and ends the upgrade, now or mid-probe.
 	const _stemDecodeBlocked = stemBlockCheck(st, () => token === rt.loadToken);
 	if (_stemDecodeBlocked()) return;
-	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
+	const stale = (): boolean => token !== rt.loadToken || rt.processor !== mixAtStart || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
 	const phase = (name: StemLoadPhase, progress: StemFetchProgress | null = null, reason: string | null = null): void => { if (!stale()) st.stems = loadingStemDeckState({ phase: name, progress, reason }); }; // STEM-48: every stage is a NAMED on-deck state
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
@@ -2928,7 +3013,8 @@ async function _upgradeDeckStems(
 		// Q18: four workers, not four awaits on WebKit's single decode thread.
 		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, stale, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
 		if (stale()) return;
-		const stemBuffers = decoded.buffers;
+		// STEM-8302: trailing codec slack (an extra MP3 packet, resample rounding) is conformed to the source; a real mismatch still refuses below.
+		const stemBuffers = conformStemBuffersToFrameCount(ctx, decoded.buffers, mixBuffer.length, mixBuffer.sampleRate);
 		const created = await time(
 			'stemProcessorCreate',
 			AlignedStemDeckProcessor.create(ctx, stemBuffers, {
@@ -2961,8 +3047,16 @@ async function _upgradeDeckStems(
 			created.alignment
 		);
 		applyStemCarry(deck, token, readyState, created.processor); // DECKGAP-7691: "reset stems" off keeps the previous mix
+		// AUDFID-02: neutral controls play the original file; the stems wait for the first touch.
+		if (deckPlaysOriginalFile(readyState.controls)) {
+			_holdNeutralStems(deck, { token, processor: created.processor, state: readyState });
+			built = null;
+			stages.total = Math.round(performance.now() - t0);
+			recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed: 'held_neutral', pcm_handoff: created.pcmHandoff });
+			return;
+		}
 		// STEM-47: a playing deck takes the stems live instead of holding them until it stops.
-		const landed = await time('landStems', _landStems(deck, { token, processor: created.processor, state: readyState }, ctx, stale));
+		const landed = await time('landStems', _landStems(deck, { token, processor: created.processor, state: { ...readyState, playback: 'stems' } }, ctx, stale));
 		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
 		if (landed === 'deferred') stages.deferredToStop = 1;
 		stages.total = Math.round(performance.now() - t0);
@@ -2978,6 +3072,10 @@ async function _upgradeDeckStems(
 	}
 }
 
+/** STEM-4806. `load` bumps the token before it knows it will publish, which ends the stem upgrade of the track already on the deck for good. A load that FAILS leaves that track there, so start its upgrade again. Only `loading` is owed work; a settled answer is never redone. */
+function _restartStrandedStemUpgrade(deck: DeckId, st = deckStates[deck], rt = _rt[deck]): void {
+	if (st.stable_id !== null && st.stems.status === 'loading' && rt.audioBuffer !== null && _ctx !== null) void _upgradeDeckStems(deck, st.stable_id, rt.loadToken, _ctx, rt.audioBuffer);
+}
 export const upgradeDeckStemsForTest = (deck: DeckId, stableId: string, mixBuffer: AudioBuffer): Promise<void> => _upgradeDeckStems(deck, stableId, _rt[deck].loadToken, _ctx as AudioContext, mixBuffer); // Test seam (PERFMODE-15): the lazy stem upgrade exactly as `load` and the graph rebuild run it (node has no context)
 
 /** CUEOUT-15: build and resume the graph for a non-deck source (the library
@@ -2997,6 +3095,58 @@ function _monitorSource(): { context: AudioContext; masterGain: GainNode } {
 	if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
 	return { context, masterGain: _masterGain };
 }
+
+/** AUDFID-03: the live fidelity guard over this engine's decks and master tap. */
+function _fidelityDeckViews(): GuardDeckView[] {
+	const ctx = _ctx;
+	return DECK_IDS.map((deck) => {
+		const rt = _rt[deck];
+		const st = deckStates[deck];
+		const channel = mixerState.channels[deck];
+		return {
+			playing: st.playing,
+			audible: channel.fader > 0,
+			stems: st.stems,
+			channel,
+			tempoRatio: rt.controlTempoRatio,
+			keyShiftSemitones: rt.controlKeyShiftSemitones,
+			buffer: rt.audioBuffer,
+			positionSec: ctx === null || !st.playing ? 0 : _projectPositionAt(deck, ctx.currentTime)
+		};
+	});
+}
+const _fidelityGuard = createFidelityGuard({
+	sample: () =>
+		sampleFidelity({
+			decks: _fidelityDeckViews(),
+			tap: _fidelityTap,
+			contextSampleRate: _ctx?.sampleRate ?? 0,
+			operatorSplit: splitCueChosenByOperator(),
+			cueBlendOnMain: mixerState.headphones.output_mode === 'practice' && DECK_IDS.some((d) => mixerState.channels[d].cue_enabled)
+		}),
+	toast: (text) => pushToast(text, 'warn', 15_000, undefined, {}, 'fidelity-guard'),
+	reportClientError: (reason, verdict) =>
+		void reportClientError(new Error(`playback degraded vs original: ${reason}`), { source: 'fidelity-guard', verdict: verdict.kind, output_mode: mixerState.headphones.output_mode }),
+	publish: (state) => {
+		mixerState.headphones.fidelity_guard = state;
+	},
+	now: () => Date.now()
+});
+let _fidelityGuardLastError: string | null = null;
+function _reportFidelityGuardFailure(error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	if (message === _fidelityGuardLastError) return;
+	_fidelityGuardLastError = message;
+	recordPerfEvent('fidelity-guard-failed', message, null, 'error');
+}
+
+/** Stem control wiring (AUDFID-02: the first touch engages held stems). */
+const _stemControlDeps = {
+	requireLoaded: _requireLoaded,
+	getChannel: (d: DeckId) => mixerState.channels[d],
+	heldStems: (d: DeckId) => _rt[d].heldNeutralStems?.processor ?? null,
+	engageHeldStems: _engageHeldNeutralStems
+};
 
 // ------------------------------------------------------------- the engine
 
@@ -3186,6 +3336,7 @@ class RbAudioEngine implements AudioEngine {
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
+			_restartStrandedStemUpgrade(deck);
 			throw exc;
 		}
 		if (
@@ -3308,6 +3459,7 @@ class RbAudioEngine implements AudioEngine {
 			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
 			stages.total = perfMs();
 			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
+			if (token === rt.loadToken) _restartStrandedStemUpgrade(deck); // same rule as the catch above: a superseded load leaves this to its successor
 			throw exc;
 		});
 		stages.total = perfMs();
@@ -4292,22 +4444,19 @@ class RbAudioEngine implements AudioEngine {
 
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
-		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] }); _maybeHandoffOnAir();
+		applyStemControl(deck, stem, 'muted', muted, { ..._stemControlDeps }); _maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(STEM_MUTE_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive }); _maybeHandoffOnAir();
+		applyStemControl(deck, stem, 'solo', solo, { ..._stemControlDeps, exclusive }); _maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
 		assertUnitRange('setStemGain', value);
-		applyStemControl(deck, stem, 'gain', value, {
-			requireLoaded: _requireLoaded,
-			getChannel: (d) => mixerState.channels[d]
-		});
+		applyStemControl(deck, stem, 'gain', value, _stemControlDeps);
 	}
 
 	setStemEqMode(deck: DeckId, enabled: boolean): void {
@@ -4391,12 +4540,7 @@ class RbAudioEngine implements AudioEngine {
 		assertUnitRange('setFilter value', value);
 		mixerState.channels[deck].filter = value;
 		const nodes = _rt[deck].nodes;
-		if (nodes !== null) {
-			const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = filterParamsFromKnob(value);
-			_setParam(nodes.filterLp.frequency, lpHz); _setParam(nodes.filterHp.frequency, hpHz);
-			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
-			_setParam(nodes.filterHpWet.gain, hpWetGain);
-		}
+		if (nodes !== null) applyColorKnob(deck, nodes, value); // COLORFX-01: FILTER, SPACE or ECHO per channel
 		if (_ctx !== null) logMixerApply(FILTER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 		_maybeHandoffOnAir();
 	}
@@ -4462,6 +4606,8 @@ class RbAudioEngine implements AudioEngine {
 	setMasterDelayMs = setMonitorMasterDelay;
 	setHeadphoneAlignmentMode = setMonitorAlignmentMode;
 	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	restoreSavedOutputsAtLaunch = (): Promise<void> => restoreMonitorOutputsAtLaunch(_monitorSource);
+	undoLaunchOutputRestore = (): Promise<void> => undoMonitorLaunchRestore(_monitorSource);
 	/** IOPIN-14: the I/O-open listing of a dev-server build; asks for device access once per origin. */
 	requestIoDeviceNames = (): Promise<void> => requestMonitorDeviceNames(_monitorSource);
 	/** Must be called from a visible user gesture. May briefly open the

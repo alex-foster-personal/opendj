@@ -9,6 +9,7 @@ wire, which is exactly what makes it separable from the round trip itself.
 ``apps.sync_hub.client`` re-exports these names, so an existing
 ``client._Round`` reference keeps working.
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,10 +77,7 @@ def _watermark_after_hello(
     rejects on equality, so the replay is idempotent (three replays deep in
     round 1).
     """
-    generation_changed = (
-        watermark.peer_generation is not None
-        and watermark.peer_generation != hub_generation
-    )
+    generation_changed = watermark.peer_generation is not None and watermark.peer_generation != hub_generation
     seq_regressed = not generation_changed and watermark.last_pull_seq > hub_seq
     restored = generation_changed or seq_regressed
     if generation_changed:

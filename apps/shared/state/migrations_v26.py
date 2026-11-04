@@ -28,16 +28,14 @@ is byte-identical to #7886's. ``ALTER TABLE ... ADD COLUMN`` has no IF NOT
 EXISTS form, so :func:`apps.shared.state.schema.apply_migrations` skips one
 whose column is already there.
 """
+
 from __future__ import annotations
 
 from .migrations_v21 import EXPECTED_TRIGGERS as _V21_TRIGGERS
 from .migrations_v21 import WRITE_TOKEN_TABLE, trigger_name, trigger_sql
 from .migrations_v25 import _V25 as _TRANSITION_MEMORY_V25
 
-_SYNC_COLUMNS = (
-    "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
-    "origin_device_id TEXT, deleted_at TEXT"
-)
+_SYNC_COLUMNS = "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, origin_device_id TEXT, deleted_at TEXT"
 
 #: Fixed stamp on seeded rows, so every machine seeds byte-identical rows and
 #: the sync digest agrees without one row crossing the wire.
@@ -53,11 +51,7 @@ def is_untouched_seed(table: str, row: dict[str, object]) -> bool:
     An edit restamps the row with this machine's id and a new ``updated_at``,
     so it then syncs like any other row.
     """
-    return (
-        table in SEEDED_TABLES
-        and row.get("updated_at") == _SEED_STAMP
-        and row.get("origin_device_id") is None
-    )
+    return table in SEEDED_TABLES and row.get("updated_at") == _SEED_STAMP and row.get("origin_device_id") is None
 
 
 #: The digested tables v26 adds, on top of v21's frozen list.
@@ -85,13 +79,11 @@ LIBRARY_ORG_DDL: list[str] = [
     "ALTER TABLE playlists ADD COLUMN parent_id TEXT",
     "ALTER TABLE playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'playlist' "
     "CHECK (kind IN ('folder', 'playlist', 'set'))",
-    "ALTER TABLE playlists ADD COLUMN stage TEXT "
-    "CHECK (stage IN ('inbox', 'sorting', 'ready', 'archive'))",
+    "ALTER TABLE playlists ADD COLUMN stage TEXT CHECK (stage IN ('inbox', 'sorting', 'ready', 'archive'))",
     "ALTER TABLE playlists ADD COLUMN set_status TEXT "
     "CHECK (set_status IN ('draft', 'ready', 'performed', 'background'))",
     "ALTER TABLE playlists ADD COLUMN sort_index INTEGER",
-    "CREATE INDEX idx_playlists_parent ON playlists(parent_id) "
-    "WHERE parent_id IS NOT NULL",
+    "CREATE INDEX idx_playlists_parent ON playlists(parent_id) WHERE parent_id IS NOT NULL",
     f"""
     CREATE TABLE playlist_section (
         id TEXT PRIMARY KEY,

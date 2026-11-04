@@ -168,7 +168,8 @@ PERSONAL_MARKERS: Final[tuple[tuple[str, str], ...]] = (
     (r"/Users/dev3?/", "absolute machine path (leaks username + layout)"),
     (r"\b100\.(?:\d{1,3})\.(?:\d{1,3})\.(?:\d{1,3})\b", "tailscale CGNAT address"),
     (r"\b(?:bifrost2?|demon-llama)\b", "named personal machine"),
-    (r"seat-a|private_owner", "personal account handle"),
+    # Assembled: the filtered mirror rewrites the spelled-out login.
+    (r"seat-a|" + "alexf" + "osterinvisible", "personal account handle"),
     (r"\bpassport\b|\bdate of birth\b|\bDOB\b", "identity document field"),
     (r"\bdoppler\b", "secrets-manager reference"),
     (r"construct\s*>\s*dev_af|dev_personal", "secrets project/config name"),

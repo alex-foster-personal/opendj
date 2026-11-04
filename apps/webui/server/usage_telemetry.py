@@ -19,8 +19,9 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Literal, get_args
+
+from .utc_timestamps import utc_now_iso_ms
 
 Surface = Literal["desktop-shell", "browser"]
 SURFACES: tuple[Surface, ...] = get_args(Surface)
@@ -86,14 +87,6 @@ class ClientHeartbeat:
     seen: Seen
 
 
-def _utc_now() -> str:
-    return (
-        datetime.now(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
-
-
 class UsageStore:
     """Every client seen since engine boot, keyed by client id.
 
@@ -107,7 +100,7 @@ class UsageStore:
         self,
         *,
         monotonic: Callable[[], float] = time.monotonic,
-        wall_clock: Callable[[], str] = _utc_now,
+        wall_clock: Callable[[], str] = utc_now_iso_ms,
     ) -> None:
         self._monotonic = monotonic
         self._wall_clock = wall_clock

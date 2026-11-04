@@ -33,11 +33,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.scripts.ci_runner_routes import MAIN_TOKEN_RUNS_ON, TOKEN_RUNS_ON
+from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+#: ci.yml carried the same pair until Wed 4 Nov 2026 (ADR-NEW-trunk-removed-from-pr-ci).
 WORKFLOWS = {
-    "ci.yml": "trunk-quarantine-ci-",
     "e2e.yml": "trunk-quarantine-e2e-",
 }
 CACHE_JOB = "trunk-quarantine"
@@ -159,7 +159,7 @@ def test_a_fresh_cached_list_is_used_when_the_fetch_did_not_run(
 
 
 def test_a_pull_request_reading_a_recent_cache_is_a_notice_not_a_warning(tmp_path: Path) -> None:
-    rc, out, log, _ = _resolve("ci.yml", tmp_path, cache_hit="true", cached=_cached(2))
+    rc, out, log, _ = _resolve("e2e.yml", tmp_path, cache_hit="true", cached=_cached(2))
     assert rc == 0 and out["source"] == "cached", log
     assert "::notice" in log and "::warning" not in log, log
 
@@ -185,7 +185,7 @@ def test_no_usable_list_excuses_nothing(case: str, tmp_path: Path) -> None:
         cached = {**_cached(1), "list": {"status": "error", "tests": []}}
     elif case == "no-cache-hit":
         hit = "false"  # a file another job left in a shared workspace
-    rc, out, log, _ = _resolve("ci.yml", tmp_path, live_result="failure", cache_hit=hit, cached=cached)
+    rc, out, log, _ = _resolve("e2e.yml", tmp_path, live_result="failure", cache_hit=hit, cached=cached)
     assert rc == 0, log
     assert out["source"] == "none", (case, out, log)
     assert "list" not in out, (case, out)
@@ -196,7 +196,7 @@ def test_a_successful_job_with_an_unusable_list_fails_closed(tmp_path: Path) -> 
     # The cache stands in for a job that could not run, never for one that ran and
     # returned garbage (Sol P1 on 1b5a5b5df).
     rc, out, log, _ = _resolve(
-        "ci.yml",
+        "e2e.yml",
         tmp_path,
         live='{"status": "error"}',
         live_result="success",
@@ -212,7 +212,7 @@ def test_a_job_that_did_not_succeed_falls_back_to_the_cache(
     tmp_path: Path, live_result: str
 ) -> None:
     rc, out, log, _ = _resolve(
-        "ci.yml",
+        "e2e.yml",
         tmp_path,
         live="",
         live_result=live_result,
@@ -229,7 +229,7 @@ def test_a_usable_list_from_a_fetch_that_did_not_succeed_is_not_trusted(
     # The fetch step is continue-on-error, so it can write an output and then fail
     # (Sol P1 on 069397bdd). Only the verified cache may stand in, never that list.
     rc, out, log, cache_file = _resolve(
-        "ci.yml", tmp_path, live=LIVE, live_result=live_result, cache_hit="false"
+        "e2e.yml", tmp_path, live=LIVE, live_result=live_result, cache_hit="false"
     )
     assert rc == 0 and out["source"] == "none" and "list" not in out, log
     assert not cache_file.exists(), "an untrusted live list must not be cached"
@@ -241,7 +241,7 @@ def test_the_time_shown_comes_from_the_epoch_not_fetched_at(tmp_path: Path) -> N
     doc = _cached(1)
     doc["fetched_at"] = "2099-01-01T00:00:00+0000"
     rc, out, log, _ = _resolve(
-        "ci.yml", tmp_path, live="", live_result="failure", cache_hit="true", cached=doc
+        "e2e.yml", tmp_path, live="", live_result="failure", cache_hit="true", cached=doc
     )
     assert rc == 0 and out["source"] == "cached", log
     shown = time.strftime("%Y-%m-%dT%H:", time.gmtime(doc["fetched_epoch"]))
@@ -257,7 +257,7 @@ def test_a_bad_input_is_a_configuration_error(
 ) -> None:
     # Sol P1 on 08cbe888d: a typo or a missing wire must not read as an outage.
     rc, out, log, _ = _resolve(
-        "ci.yml", tmp_path, live="", live_result=live_result, cache_hit=cache_hit,
+        "e2e.yml", tmp_path, live="", live_result=live_result, cache_hit=cache_hit,
         cached=_cached(1),
     )
     assert rc == 2 and "bad configuration" in log and "list" not in out, log
@@ -267,7 +267,10 @@ def test_a_bad_input_is_a_configuration_error(
 @pytest.mark.parametrize("workflow", sorted(WORKFLOWS))
 def test_the_cache_job_is_self_hosted_and_holds_no_secret(workflow: str) -> None:
     job = _jobs(workflow)[CACHE_JOB]
-    assert job["runs-on"] == _jobs(workflow)["scope"]["runs-on"], "the light self-hosted pool"
+    # e2e.yml's scope job left the light pool for the e2e seats on Wed 4 Nov 2026
+    # (ADR-NEW-e2e-after-ci-gate); the cache job keeps the light chain its verdict uses.
+    light = _jobs(workflow)["verdict" if workflow == "e2e.yml" else "scope"]["runs-on"]
+    assert job["runs-on"] == light, "the light self-hosted pool"
     assert "ubuntu-latest\"') }}" in job["runs-on"] and "vars.CI_RUNS_ON_LINUX" in job["runs-on"]
     assert "secrets." not in yaml.safe_dump(job)
     assert job["needs"] == LIST_JOB
@@ -325,6 +328,5 @@ def test_only_the_default_branch_fetches_the_live_list(workflow: str) -> None:
 def test_pull_requests_do_not_start_the_token_fetch(workflow: str) -> None:
     # Self-hosted, no hosted fallback (ADR-NEW-trunk-token-jobs-self-hosted).
     job = _jobs(workflow)[LIST_JOB]
-    # ci.yml's list job also prefers the main-push reserve (CI_RUNS_ON_MAIN) first.
-    assert job["runs-on"] == (MAIN_TOKEN_RUNS_ON if workflow == "ci.yml" else TOKEN_RUNS_ON)
+    assert job["runs-on"] == TOKEN_RUNS_ON
     assert "github.event_name != 'pull_request'" in job["if"]

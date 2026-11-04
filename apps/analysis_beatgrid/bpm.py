@@ -116,9 +116,7 @@ def least_squares_bpm(times: Sequence[float]) -> tuple[float, float] | None:
         return None
 
     intercept = linear_fit_intercept(n, mean_t, period_s)
-    residual_rms = math.sqrt(
-        sum((t - (intercept + period_s * i)) ** 2 for i, t in enumerate(beats)) / n
-    )
+    residual_rms = math.sqrt(sum((t - (intercept + period_s * i)) ** 2 for i, t in enumerate(beats)) / n)
     return 60.0 / period_s, residual_rms
 
 
@@ -191,9 +189,7 @@ def choose_octave(
 _Octave = tuple[float, float, str, bool]
 
 
-def _family_octave(
-    candidates: Sequence[tuple[float, float]], family: TempoFamily
-) -> _Octave | None:
+def _family_octave(candidates: Sequence[tuple[float, float]], family: TempoFamily) -> _Octave | None:
     """Rule 2: the octave inside the genre family's range, or None when none lands there."""
     in_family = [(m, bpm) for m, bpm in candidates if family.contains(bpm)]
     if not in_family:
@@ -203,9 +199,7 @@ def _family_octave(
     return bpm, multiple, REASON_GENRE_FAMILY, False
 
 
-def _band_octave(
-    candidates: Sequence[tuple[float, float]], in_range: Sequence[tuple[float, float]]
-) -> _Octave:
+def _band_octave(candidates: Sequence[tuple[float, float]], in_range: Sequence[tuple[float, float]]) -> _Octave:
     """Rules 3-6: the [70, 180] band, the model's own level, then the band center."""
     if len(in_range) == 1:
         multiple, bpm = in_range[0]
@@ -227,9 +221,7 @@ def _band_octave(
 _FIT_CONFIDENCE_SCATTER_REF = 0.25
 
 
-def confidence_from_fit_residual(
-    residual_rms_s: float, bpm: float, *, octave_ambiguous: bool = False
-) -> float:
+def confidence_from_fit_residual(residual_rms_s: float, bpm: float, *, octave_ambiguous: bool = False) -> float:
     """Residual as a fraction of one beat, inverted into a 0-1 rank score.
 
     NOT a probability, and named so nobody reads it as one: it is the fraction
@@ -264,9 +256,7 @@ def estimate_bpm(
     if fit is None:
         return None
     raw_bpm, residual_rms_s = fit
-    bpm, multiple, reason, ambiguous = choose_octave(
-        raw_bpm, prior_bpm, scoring=scoring, family=family
-    )
+    bpm, multiple, reason, ambiguous = choose_octave(raw_bpm, prior_bpm, scoring=scoring, family=family)
     return BpmEstimate(
         bpm=bpm,
         raw_bpm=raw_bpm,
@@ -275,7 +265,5 @@ def estimate_bpm(
         octave_ambiguous=ambiguous,
         n_beats=len(beat_times),
         residual_rms_s=residual_rms_s,
-        confidence=confidence_from_fit_residual(
-            residual_rms_s, bpm, octave_ambiguous=ambiguous
-        ),
+        confidence=confidence_from_fit_residual(residual_rms_s, bpm, octave_ambiguous=ambiguous),
     )

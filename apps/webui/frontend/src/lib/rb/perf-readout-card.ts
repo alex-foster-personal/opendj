@@ -54,7 +54,7 @@ export const PERF_READOUT_EXPLAINERS: Readonly<Record<PerfReadoutKey, { name: st
 		memory: {
 			name: 'Memory (MB)',
 			explainer:
-				'Approximate memory held by the app (decoded audio plus JS heap where the browser reports it); good stays out of the orange and red bands.'
+				'Approximate memory of this page (decoded audio plus JS heap where the browser reports it) plus the engine and sidecar processes the engine measured in its own process tree; the orange and red bands judge this page alone.'
 		}
 	});
 

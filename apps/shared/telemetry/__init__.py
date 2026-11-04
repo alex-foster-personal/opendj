@@ -361,9 +361,10 @@ def capture_browser_error(
 
     Returns the Sentry event id, or None when telemetry is off (the common
     case, and not a failure), when the error is a perf-event console mirror,
-    a Vite console line, a transient fetch/abort TypeError (OBS-07),
-    an expected library play-refusal (OBS-5422), or a STATE-14
-    ``STATE_STORE_BUSY`` RbApiError (OBS-5454; token match only),
+    a Vite dev-tooling console line, an expected WebMIDI permission denial,
+    a transient fetch/abort TypeError (OBS-07), an expected library
+    play-refusal (OBS-5422), or a STATE-14 ``STATE_STORE_BUSY`` RbApiError
+    (OBS-5454; token match only),
     when consent is not granted, when a deck is live, or when the quota
     budget refused it. Never raises: reporting an error must not become one.
 

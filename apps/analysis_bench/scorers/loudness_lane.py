@@ -101,9 +101,7 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], dict[str, _TruthRow]]:
     reads = manifest.get("reads") or {}
     truth_name = reads.get("truth")
     if not truth_name:
-        raise ValueError(
-            f"{bundle}/manifest.json declares no reads.truth for the loudness lane"
-        )
+        raise ValueError(f"{bundle}/manifest.json declares no reads.truth for the loudness lane")
     raw = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["loudness"]
     stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
     refuse_malformed_join(bundle, truth_name, raw, stable_ids)
@@ -165,9 +163,7 @@ def _gate_cell(deltas: list[float], tolerance: float, *, lu: bool) -> dict[str, 
     return cell
 
 
-def _score_arm(
-    stable_ids: list[str], truth: dict[str, _TruthRow], results: dict[str, Any]
-) -> dict[str, Any]:
+def _score_arm(stable_ids: list[str], truth: dict[str, _TruthRow], results: dict[str, Any]) -> dict[str, Any]:
     refuse_unknown(results, stable_ids)
     lufs_deltas: list[float] = []
     dbtp_deltas: list[float] = []

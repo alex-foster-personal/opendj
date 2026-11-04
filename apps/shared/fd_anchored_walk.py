@@ -50,6 +50,7 @@ this process trusts it, and every later call re-derives the current
 identity and refuses to walk if it no longer matches -- catching a swapped
 root while still tolerating one that was a symlink from the start.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -207,10 +208,7 @@ def _open_real_directory_in(parent_fd: int, part: str, walked: Path, root: Path)
     except FileNotFoundError:
         raise
     except OSError as exc:
-        why = (
-            "is a symbolic link" if exc.errno == errno.ELOOP
-            else f"cannot be opened ({type(exc).__name__})"
-        )
+        why = "is a symbolic link" if exc.errno == errno.ELOOP else f"cannot be opened ({type(exc).__name__})"
         raise RootReanchorRefused(
             f"{str(walked)!r}, a directory above the root {str(root)!r}, {why}; "
             "every directory above the root must be a real directory"
@@ -301,9 +299,7 @@ def reanchor_root(root: Path) -> bool:
         _ROOT_ANCHORS[str(root.resolve())] = identity
     for forget in _ANCHOR_RESET_HOOKS:
         forget()
-    log.warning(
-        "root %r anchored afresh on request at dev=%d ino=%d", str(root), identity[0], identity[1]
-    )
+    log.warning("root %r anchored afresh on request at dev=%d ino=%d", str(root), identity[0], identity[1])
     return True
 
 
@@ -364,8 +360,7 @@ def resolve_under_root(candidate: Path, root: Path) -> Path:
         # check ever runs. Reject it here, lexically, before opening
         # anything -- including before the root fd itself is opened.
         raise ValueError(
-            f"{candidate!r} contains a '..' component relative to "
-            f"{root!r} -- lexical escape, not a descendant of root"
+            f"{candidate!r} contains a '..' component relative to {root!r} -- lexical escape, not a descendant of root"
         )
     try:
         root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
@@ -380,9 +375,7 @@ def resolve_under_root(candidate: Path, root: Path) -> Path:
         for index, part in enumerate(relative_parts):
             is_last = index == len(relative_parts) - 1
             try:
-                fd = os.open(
-                    part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current_fd
-                )
+                fd = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current_fd)
             except FileNotFoundError:
                 # Not an escape attempt -- the segment (and everything
                 # after it) simply does not exist yet. The returned suffix
@@ -469,9 +462,7 @@ def open_anchored_root(root: Path) -> int | None:
     return root_fd
 
 
-def open_directory_under(
-    root_fd: int, parts: tuple[str, ...]
-) -> tuple[int | None, list[os.stat_result]]:
+def open_directory_under(root_fd: int, parts: tuple[str, ...]) -> tuple[int | None, list[os.stat_result]]:
     """Walk directory ``parts`` below an opened root, one descriptor at a time.
 
     Returns ``(dir_fd, stats)``: the descriptor of the last directory, which

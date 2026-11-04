@@ -15,6 +15,7 @@ import pytest
 
 from apps.webui.port_config import PortConfigError
 from apps.webui.run_agentbox import (
+    AGENTBOX_HOST_ENV,
     AGENTBOX_SSH_HOSTS_ENV,
     EPHEMERAL_LOG_DIR,
     LOG_DIR,
@@ -96,7 +97,8 @@ def test_allowed_hosts_come_from_root_env_and_refuse_blank(tmp_path: Path) -> No
     )
 
 
-def test_log_home_is_durable_only_on_agentbox() -> None:
+def test_log_home_is_durable_only_on_agentbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     assert log_home(hostname="agentbox") == LOG_DIR
     assert log_home(hostname="afmac") == EPHEMERAL_LOG_DIR
     assert log_home(hostname="bifrost2") == EPHEMERAL_LOG_DIR
@@ -152,9 +154,10 @@ TAILNET_HOST = "agentbox.example-tailnet.ts.net"
 
 def test_the_ssh_alias_alone_is_a_complete_allowlist() -> None:
     """No MDT_AGENTBOX_SSH_HOSTS is a configured deployment, not a broken one."""
-    assert allowed_ssh_host("agentbox", environ={}) is True
-    assert allowed_ssh_host("203.0.113.10", environ={}) is False
-    assert allowed_ssh_host("evil.example", environ={}) is False
+    environ = {AGENTBOX_HOST_ENV: "agentbox"}
+    assert allowed_ssh_host("agentbox", environ=environ) is True
+    assert allowed_ssh_host("203.0.113.10", environ=environ) is False
+    assert allowed_ssh_host("evil.example", environ=environ) is False
 
 
 def test_the_tailnet_destination_comes_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,25 +167,33 @@ def test_the_tailnet_destination_comes_from_config(monkeypatch: pytest.MonkeyPat
     to name a node "agentbox", so the assertion below is deliberately about
     membership of the configured set and not about the ".ts.net" suffix.
     """
+    monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     monkeypatch.setenv(AGENTBOX_SSH_HOSTS_ENV, TAILNET_HOST)
     assert allowed_ssh_host(TAILNET_HOST) is True
-    assert allowed_ssh_host("agentbox", environ={AGENTBOX_SSH_HOSTS_ENV: ""}) is True
+    assert allowed_ssh_host(
+        "agentbox", environ={AGENTBOX_HOST_ENV: "agentbox", AGENTBOX_SSH_HOSTS_ENV: ""}
+    ) is True
 
 
 def test_an_unconfigured_tailnet_destination_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(AGENTBOX_SSH_HOSTS_ENV, raising=False)
+    monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     assert allowed_ssh_host(TAILNET_HOST) is False
-    assert TAILNET_HOST not in allowed_ssh_hosts(environ={})
+    assert TAILNET_HOST not in allowed_ssh_hosts(
+        environ={AGENTBOX_HOST_ENV: "agentbox"}
+    )
 
 
 def test_config_is_parsed_as_an_exact_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     monkeypatch.setenv(AGENTBOX_SSH_HOSTS_ENV, f" {TAILNET_HOST} , agentbox-alt ,, ")
     assert allowed_ssh_hosts() == frozenset({"agentbox", TAILNET_HOST, "agentbox-alt"})
 
 
-def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
+def test_ssh_hop_is_tailnet_only_and_not_a_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(AGENTBOX_HOST_ENV, "agentbox")
     assert is_agentbox(hostname="agentbox") is True
     assert is_agentbox(hostname="afmac") is False
     assert allowed_ssh_host("agentbox") is True

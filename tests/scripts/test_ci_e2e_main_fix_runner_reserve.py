@@ -53,6 +53,7 @@ import yaml
 from tests.scripts.ci_runner_routes import (
     E2E_GATE_RUNS_ON,
     E2E_MAIN_FIX_DISJUNCT,
+    E2E_REPAIR_GUARD,
     E2E_MERGE_QUEUE_DISJUNCT,
     E2E_POOL_RUNS_ON,
     E2E_POOL_TAIL,
@@ -109,17 +110,24 @@ def test_gate_prefers_the_e2e_reserve_for_trunk_repair_prs_only() -> None:
     assert "refs/heads/main" not in guard and "'push'" not in guard, guard
 
 
-def test_guard_checks_event_name_before_dereferencing_pull_request() -> None:
-    """if github.event.pull_request is read before the event_name check then a push can error"""
+def test_guard_reads_the_scope_jobs_repair_output_not_the_event_payload() -> None:
+    """if the guard reads github.event.pull_request then a workflow_run (no labels) never routes
+
+    Since Wed 4 Nov 2026 (ADR-NEW-e2e-after-ci-gate) a pull request's e2e run is a
+    workflow_run of CI, whose payload carries no labels; the scope job resolves them
+    through the API and publishes `repair`, which `needs` carries into `runs-on`.
+    """
     raw = _runs_on(GATE_JOB)
-    guard = "(github.event_name == 'pull_request' && contains(github.event.pull_request"
-    assert guard in raw
-    assert raw.index("github.event_name == 'pull_request'") < raw.index("github.event.pull_request")
+    assert E2E_REPAIR_GUARD in raw
+    assert "contains(github.event.pull_request.labels" not in raw.split(f"vars.{VARIABLE}")[0]
+    scope = _jobs()["scope"]
+    assert scope["outputs"]["repair"] == "${{ steps.pr.outputs.repair }}"
+    assert "scope" in _jobs()[GATE_JOB]["needs"]
 
 
-def test_guard_is_the_same_spelling_as_the_pytest_reserve() -> None:
-    """if the e2e guard drifts from ADR-0041's then the two reserves disagree on a repair PR"""
-    pytest_guard = E2E_MAIN_FIX_DISJUNCT.removesuffix(f" && vars.{VARIABLE}")
+def test_the_pytest_reserve_still_reads_the_label_from_its_pull_request_event() -> None:
+    """if ci.yml's reserve guard stops reading the pull_request labels then its repair PR loses the pair"""
+    pytest_guard = "(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
     assert SHARD_RUNS_ON.startswith(f"${{{{ fromJSON({pytest_guard} && vars.CI_RUNS_ON_MAIN_FIX || ")
 
 

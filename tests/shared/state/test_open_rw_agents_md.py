@@ -137,6 +137,58 @@ def test_open_rw_propagates_missing_column_docs_error_on_reopen(tmp_path: Path) 
     assert "tracks.totally_fake_injected_column" in str(excinfo.value)
 
 
+def test_open_rw_tolerates_reverted_v25_playlist_columns(tmp_path: Path) -> None:
+    """if a DB migrated by #7886's reverted v25 build is reopened then it opens and the columns are documented - broken"""
+    db_path = tmp_path / "state.db"
+    conn = open_rw(db_path)
+    live = {row[1] for row in conn.execute("PRAGMA table_info(playlists)")}
+    if "parent_id" not in live:
+        conn.execute("ALTER TABLE playlists ADD COLUMN parent_id TEXT")
+    if "kind" not in live:
+        conn.execute(
+            "ALTER TABLE playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'playlist' "
+            "CHECK (kind IN ('folder', 'playlist', 'set'))"
+        )
+    if "stage" not in live:
+        conn.execute(
+            "ALTER TABLE playlists ADD COLUMN stage TEXT "
+            "CHECK (stage IN ('inbox', 'sorting', 'ready', 'archive'))"
+        )
+    if "set_status" not in live:
+        conn.execute(
+            "ALTER TABLE playlists ADD COLUMN set_status TEXT "
+            "CHECK (set_status IN ('draft', 'ready', 'performed', 'background'))"
+        )
+    if "sort_index" not in live:
+        conn.execute("ALTER TABLE playlists ADD COLUMN sort_index INTEGER")
+    conn.close()
+
+    reopened = open_rw(db_path)  # must not raise MissingColumnDocsError
+    try:
+        live = {
+            row[1]
+            for row in reopened.execute("PRAGMA table_info(playlists)")
+        }
+        assert live >= {
+            "parent_id",
+            "kind",
+            "stage",
+            "set_status",
+            "sort_index",
+        }
+    finally:
+        reopened.close()
+
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    playlists_start = text.index("## `playlists`")
+    playlists_block = text[playlists_start:]
+    next_heading = playlists_block.find("\n## `", 1)
+    if next_heading != -1:
+        playlists_block = playlists_block[:next_heading]
+    for column in ("parent_id", "kind", "stage", "set_status", "sort_index"):
+        assert column in playlists_block
+
+
 def test_open_rw_omits_legacy_leftover_tables_and_still_opens(tmp_path: Path) -> None:
     """if leftover lyric_*_legacy tables exist then open_rw still writes AGENTS.md - broken"""
     db_path = tmp_path / "state.db"

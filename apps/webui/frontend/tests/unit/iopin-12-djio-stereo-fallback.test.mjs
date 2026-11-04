@@ -61,9 +61,6 @@ import { FakeAudioContext, ancestorsOf, installWindow } from './fixtures/fake-we
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-// The engine reads the page URL for ?extroute=; tests that build no window run as a page with no query.
-globalThis.location ??= { search: '' };
-
 const DJIO = 'master12-cue34';
 
 let topology;
@@ -106,6 +103,7 @@ after(async () => {
 	await audio.engine.dispose();
 	clearToasts();
 	delete globalThis.AudioContext;
+	delete globalThis.location;
 	delete globalThis.window;
 });
 
@@ -304,7 +302,12 @@ describe('IOPIN-12 wiring check: a graph build that fails inside an output selec
 		// throws before any sink call is made, so no sink method is reached.
 		const mediaDevices = { enumerateDevices: async () => [], addEventListener() {}, removeEventListener() {} };
 		Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices }, configurable: true, writable: true });
-		player.mixerState.headphones.outputs = [{ id: 'dev-a', label: 'dev-a' }];
+		// AUDFID-01: a CUE pick on the only output is refused as MAIN's own output
+		// before any graph build, so a second output keeps this a build check.
+		player.mixerState.headphones.outputs = [
+			{ id: 'dev-a', label: 'dev-a' },
+			{ id: 'dev-b', label: 'dev-b' }
+		];
 	});
 
 	afterEach(() => {

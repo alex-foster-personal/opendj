@@ -14,9 +14,10 @@ Modules:
 * :mod:`apps.mik.promote`      -- ``unmatched_source_analysis`` -> ``track_fields``
 * :mod:`apps.mik.cli`          -- ``python -m apps.mik``
 
-See ``.agents/skills/mixed-in-key-integration-and-sync/SKILL.md`` and
-``docs/analysis-retention.md``.
+See ``(private path)`` and
+``(private path)``.
 """
+
 from __future__ import annotations
 
 SOURCE = "mik"

@@ -10,6 +10,7 @@ loader) or ``routes/stems_assets.py`` (the migration rail).
 can poll it. ``POST /stems/cache/enforce`` is the same pass the engine's
 timer runs, on demand; ``dry_run`` reports the plan and removes nothing.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -26,8 +27,7 @@ router = APIRouter(tags=["stems"])
 STEM_CACHE_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: {
         "description": (
-            "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are "
-            "malformed; nothing was evicted or saved"
+            "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
         )
     },
     502: {
@@ -107,9 +107,7 @@ class StemCacheStatusOut(BaseModel):
     upload_queue_count: int
     protected_count: int = Field(description="Loaded or playing; never evicted")
     can_rehydrate: bool = Field(description="Whether a hydration source is armed")
-    blocked_reason: str | None = Field(
-        description="Why low disk is not being relieved, or null"
-    )
+    blocked_reason: str | None = Field(description="Why low disk is not being relieved, or null")
     settings: StemCacheSettingsOut
     enforcer_running: bool
     last_enforcement: StemCacheEnforcementOut | None
@@ -130,9 +128,7 @@ def _settings_invalid(exc: stem_cache_budget.StemCacheSettingsError) -> HTTPExce
 
 
 def _index_corrupt(exc: stem_index.StemIndexError) -> HTTPException:
-    return HTTPException(
-        status_code=502, detail={"code": "STEM_INDEX_CORRUPT", "message": str(exc)}
-    )
+    return HTTPException(status_code=502, detail={"code": "STEM_INDEX_CORRUPT", "message": str(exc)})
 
 
 def _enforcement_out(report: stem_cache_budget.EnforceReport) -> StemCacheEnforcementOut:
